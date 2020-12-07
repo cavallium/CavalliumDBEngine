@@ -1,0 +1,387 @@
+syntax = "proto3";
+
+option java_multiple_files = true;
+option java_package = "it.cavallium.dbengine.proto";
+option java_outer_classname = "CavalliumDBEngineProto";
+option objc_class_prefix = "CDBE";
+
+package cavallium.dbengine;
+
+service CavalliumDBEngineService {
+    rpc ResetConnection (ResetConnectionRequest) returns (Empty) {}
+    rpc Ping (Empty) returns (Empty) {}
+
+    rpc DatabaseOpen (DatabaseOpenRequest) returns (HandleResult) {}
+    rpc DatabaseClose (DatabaseCloseRequest) returns (Empty) {}
+    rpc DatabaseSnapshotTake (DatabaseSnapshotTakeRequest) returns (DatabaseSnapshotTakeResult) {}
+    rpc DatabaseSnapshotRelease (DatabaseSnapshotReleaseRequest) returns (Empty) {}
+    rpc SingletonOpen (SingletonOpenRequest) returns (HandleResult) {}
+    rpc DictionaryOpen (DictionaryOpenRequest) returns (HandleResult) {}
+    rpc DictionaryMethodGet (DictionaryMethodGetRequest) returns (DictionaryMethodGetResponse) {}
+    rpc DictionaryMethodContains (DictionaryMethodContainsRequest) returns (DictionaryMethodContainsResponse) {}
+    rpc DictionaryMethodPut (DictionaryMethodPutRequest) returns (DictionaryMethodStandardResult) {}
+    rpc DictionaryMethodPutMulti (DictionaryMethodPutMultiRequest) returns (DictionaryMethodMultiStandardResult) {}
+    rpc DictionaryMethodRemove (DictionaryMethodRemoveRequest) returns (DictionaryMethodStandardResult) {}
+    rpc DictionaryMethodClear (DictionaryMethodClearRequest) returns (Empty) {}
+    rpc DictionaryMethodFastSize (DictionaryMethodSizeRequest) returns (DictionaryMethodSizeResponse) {}
+    rpc DictionaryMethodExactSize (DictionaryMethodSizeRequest) returns (DictionaryMethodSizeResponse) {}
+    rpc DictionaryMethodIsEmpty (DictionaryMethodIsEmptyRequest) returns (DictionaryMethodIsEmptyResponse) {}
+    rpc DictionaryMethodRemoveOne (DictionaryMethodRemoveOneRequest) returns (DictionaryMethodStandardEntityResponse) {}
+    rpc DictionaryMethodForEach (DictionaryMethodForEachRequest) returns (stream DictionaryMethodStandardEntityResponse) {}
+    rpc DictionaryMethodReplaceAll (DictionaryMethodReplaceAllRequest) returns (stream DictionaryMethodReplaceAllResponse) {}
+    rpc SingletonMethodGet (SingletonMethodGetRequest) returns (SingletonMethodGetResponse) {}
+    rpc SingletonMethodSet (SingletonMethodSetRequest) returns (Empty) {}
+
+    rpc LuceneIndexOpen (LuceneIndexOpenRequest) returns (HandleResult) {}
+    rpc LuceneIndexClose (LuceneIndexCloseRequest) returns (Empty) {}
+    rpc LuceneIndexSnapshotTake (LuceneIndexSnapshotTakeRequest) returns (LuceneIndexSnapshotTakeResult) {}
+    rpc LuceneIndexSnapshotRelease (LuceneIndexSnapshotReleaseRequest) returns (Empty) {}
+    rpc LuceneIndexMethodAddDocument (LuceneIndexMethodAddDocumentRequest) returns (Empty) {}
+    rpc LuceneIndexMethodAddDocumentMulti (LuceneIndexMethodAddDocumentMultiRequest) returns (Empty) {}
+    rpc LuceneIndexMethodDeleteDocument (LuceneIndexMethodDeleteDocumentRequest) returns (Empty) {}
+    rpc LuceneIndexMethodUpdateDocument (LuceneIndexMethodUpdateDocumentRequest) returns (Empty) {}
+    rpc LuceneIndexMethodUpdateDocumentMulti (LuceneIndexMethodUpdateDocumentMultiRequest) returns (Empty) {}
+    rpc LuceneIndexMethodDeleteAll (LuceneIndexMethodDeleteAllRequest) returns (Empty) {}
+    rpc LuceneIndexMethodSearch (LuceneIndexMethodSearchRequest) returns (LuceneIndexMethodSearchMultiResponse) {}
+    rpc LuceneIndexMethodMoreLikeThis (LuceneIndexMethodMoreLikeThisRequest) returns (LuceneIndexMethodSearchMultiResponse) {}
+    rpc LuceneIndexMethodSearchStream (LuceneIndexMethodSearchStreamRequest) returns (stream LuceneIndexMethodSearchStreamItem) {}
+    rpc LuceneIndexMethodCount (LuceneIndexMethodCountRequest) returns (LuceneIndexMethodCountResponse) {}
+
+}
+
+enum LLDictionaryResultType {
+    VOID = 0;
+    VALUE_CHANGED = 1;
+    PREVIOUS_VALUE = 2;
+}
+
+message Empty {
+
+}
+
+message HandleResult {
+    int32 handle = 1;
+}
+
+message ResetConnectionRequest {
+}
+
+message DatabaseOpenRequest {
+    bytes name = 1;
+    repeated bytes columnName = 2;
+    bool lowMemory = 3;
+}
+
+message DatabaseCloseRequest {
+    int32 databaseHandle = 1;
+}
+
+message SingletonOpenRequest {
+    int32 databaseHandle = 1;
+    bytes singletonListColumnName = 2;
+    bytes name = 3;
+    bytes defaultValue = 4;
+}
+
+message DictionaryOpenRequest {
+    int32 databaseHandle = 1;
+    bytes columnName = 2;
+}
+
+message DatabaseSnapshotTakeRequest {
+    int32 databaseHandle = 1;
+}
+
+message DatabaseSnapshotReleaseRequest {
+    int32 databaseHandle = 1;
+    int64 sequenceNumber = 2;
+}
+
+message DatabaseSnapshotTakeResult {
+    int64 sequenceNumber = 1;
+}
+
+message DictionaryMethodGetRequest {
+    int32 dictionaryHandle = 1;
+    int64 sequenceNumber = 3;
+
+    bytes key = 2;
+}
+
+message DictionaryMethodGetResponse {
+    bytes value = 1;
+}
+
+message DictionaryMethodContainsRequest {
+    int32 dictionaryHandle = 1;
+    int64 sequenceNumber = 3;
+
+    bytes key = 2;
+}
+
+message DictionaryMethodContainsResponse {
+    bool value = 1;
+}
+
+message DictionaryMethodPutRequest {
+    int32 dictionaryHandle = 1;
+    bytes key = 2;
+    bytes value = 3;
+    LLDictionaryResultType resultType = 4;
+}
+
+message DictionaryMethodPutMultiRequest {
+    int32 dictionaryHandle = 1;
+    repeated bytes key = 2;
+    repeated bytes value = 3;
+    LLDictionaryResultType resultType = 4;
+}
+
+message DictionaryMethodRemoveRequest {
+    int32 dictionaryHandle = 1;
+    bytes key = 2;
+    LLDictionaryResultType resultType = 3;
+}
+
+message DictionaryMethodClearRequest {
+    int32 dictionaryHandle = 1;
+}
+
+message DictionaryMethodSizeRequest {
+    int32 dictionaryHandle = 1;
+    int64 sequenceNumber = 2;
+}
+
+message DictionaryMethodIsEmptyRequest {
+    int32 dictionaryHandle = 1;
+    int64 sequenceNumber = 2;
+}
+
+message DictionaryMethodRemoveOneRequest {
+    int32 dictionaryHandle = 1;
+}
+
+message DictionaryMethodSizeResponse {
+    int64 size = 1;
+}
+
+message DictionaryMethodIsEmptyResponse {
+    bool empty = 1;
+}
+
+message DictionaryMethodStandardResult {
+    bytes value = 1;
+}
+
+message DictionaryMethodMultiStandardResult {
+    repeated bytes value = 1;
+}
+
+message DictionaryMethodForEachRequest {
+    int32 dictionaryHandle = 1;
+    int64 sequenceNumber = 2;
+}
+
+message DictionaryMethodStandardEntityResponse {
+    bytes key = 1;
+    bytes value = 2;
+}
+
+message DictionaryMethodForEachSnapshotRequest {
+    int32 dictionaryHandle = 1;
+}
+
+message DictionaryMethodForEachSnapshotResponse {
+    bytes key = 1;
+    bytes value = 2;
+}
+
+message DictionaryMethodReplaceAllRequest {
+    int32 dictionaryHandle = 1;
+    bool replaceKeys = 2;
+}
+
+message DictionaryMethodReplaceAllResponse {
+    bytes key = 1;
+    bytes value = 2;
+}
+
+message SingletonMethodGetRequest {
+    int32 singletonHandle = 1;
+    int64 sequenceNumber = 2;
+}
+
+message SingletonMethodGetResponse {
+    bytes value = 1;
+}
+
+message SingletonMethodSetRequest {
+    int32 singletonHandle = 1;
+    bytes value = 3;
+}
+
+message LuceneIndexOpenRequest {
+    string name = 1;
+    int32 textFieldsAnalyzer = 3;
+    int32 commitDebounceTime = 2;
+    int32 queryRefreshDebounceTime = 4;
+    bool lowMemory = 5;
+    int32 instancesCount = 6;
+}
+
+message LuceneIndexCloseRequest {
+    int32 handle = 1;
+}
+
+message LuceneIndexSnapshotTakeRequest {
+    int32 handle = 1;
+}
+
+message LuceneIndexSnapshotReleaseRequest {
+    int32 handle = 1;
+    int64 sequenceNumber = 2;
+}
+
+message LuceneIndexSnapshotTakeResult {
+    int64 sequenceNumber = 1;
+}
+
+message LuceneIndexMethodAddDocumentRequest {
+    int32 handle = 1;
+    LLTerm key = 3;
+    repeated LLItem documentItems = 2;
+}
+
+message LuceneIndexMethodAddDocumentMultiRequest {
+    int32 handle = 1;
+    repeated LLTerm key = 3;
+    repeated LLDocument documents = 2;
+}
+
+message LuceneIndexMethodDeleteDocumentRequest {
+    int32 handle = 1;
+    LLTerm key = 2;
+}
+
+message LuceneIndexMethodUpdateDocumentRequest {
+    int32 handle = 1;
+    LLTerm key = 2;
+    repeated LLItem documentItems = 3;
+}
+
+message LuceneIndexMethodUpdateDocumentMultiRequest {
+    int32 handle = 1;
+    repeated LLTerm key = 2;
+    repeated LLDocument documents = 3;
+}
+
+message LuceneIndexMethodDeleteAllRequest {
+    int32 handle = 1;
+}
+
+message LuceneIndexMethodSearchRequest {
+    int32 handle = 1;
+    int64 sequenceNumber = 6;
+
+    string query = 2;
+    int32 limit = 3;
+    LLSort sort = 4;
+    string keyFieldName = 5;
+}
+
+message LuceneIndexMethodMoreLikeThisRequest {
+    int32 handle = 1;
+    int64 sequenceNumber = 5;
+
+    repeated MltField mltFields = 2;
+    int32 limit = 3;
+    string keyFieldName = 4;
+}
+
+message MltField {
+    string key = 1;
+    repeated string values = 2;
+}
+
+message LuceneIndexMethodSearchMultiResponse {
+    repeated LuceneIndexMethodSearchResponse response = 1;
+}
+
+message LuceneIndexMethodSearchResponse {
+    int64 totalHitsCount = 1;
+    repeated LLKeyScore hits = 2;
+}
+
+message LuceneIndexMethodSearchStreamRequest {
+    int32 handle = 1;
+    int64 sequenceNumber = 6;
+
+    int32 shardIndex = 7;
+
+    string query = 2;
+    int32 limit = 3;
+    LLSort sort = 4;
+    string keyFieldName = 5;
+}
+
+message LuceneIndexMethodSearchStreamItem {
+    bool isKey = 1;
+    // If isKey == true:
+    string key = 2;
+    int32 shardIndex = 3;
+    // If isKey == false:
+    int64 approximatedTotalCount = 4;
+}
+
+message LLKeyScore {
+    string key = 1;
+    float score = 2;
+}
+
+message LuceneIndexMethodCountRequest {
+    int32 handle = 1;
+    int64 sequenceNumber = 3;
+
+    string query = 2;
+}
+
+message LuceneIndexMethodCountResponse {
+    int64 count = 1;
+}
+
+message LLSort {
+    string fieldName = 1;
+    LLSortType type = 2;
+    bool reverse = 3;
+}
+
+enum LLSortType {
+    LONG = 0;
+    RANDOM = 1;
+}
+
+message LLItem {
+    LLType type = 1;
+    string name = 2;
+    bytes data1 = 3;
+    bytes data2 = 4;
+}
+
+message LLDocument {
+    repeated LLItem items = 1;
+}
+
+message LLTerm {
+    string key = 1;
+    string value = 2;
+}
+
+enum LLType {
+    StringField = 0;
+    StringFieldStored = 1;
+    IntPoint = 2;
+    LongPoint = 3;
+    SortedNumericDocValuesField = 4;
+    TextField = 5;
+    TextFieldStored = 6;
+}

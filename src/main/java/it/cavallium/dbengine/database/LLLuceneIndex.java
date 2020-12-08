@@ -36,11 +36,9 @@ public interface LLLuceneIndex extends Closeable, LLSnapshottable {
 
 	/**
 	 *
-	 * @param snapshot
-	 * @param query
-	 * @param limit
-	 * @param sort
-	 * @param keyFieldName
+	 * @param limit the limit is valid for each lucene instance.
+	 *               If you have 15 instances, the number of elements returned
+	 *               can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
 	Tuple2<Mono<Long>, Collection<Flux<String>>> searchStream(@Nullable LLSnapshot snapshot,

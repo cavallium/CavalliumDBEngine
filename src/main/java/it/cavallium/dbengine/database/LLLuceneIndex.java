@@ -26,9 +26,21 @@ public interface LLLuceneIndex extends Closeable, LLSnapshottable {
 
 	void deleteAll() throws IOException;
 
+	/**
+	 *
+	 * @param limit the limit is valid for each lucene instance.
+	 *               If you have 15 instances, the number of elements returned
+	 *               can be at most <code>limit * 15</code>
+	 */
 	Collection<LLTopKeys> search(@Nullable LLSnapshot snapshot, String query, int limit, @Nullable LLSort sort, String keyFieldName)
 			throws IOException;
 
+	/**
+	 *
+	 * @param limit the limit is valid for each lucene instance.
+	 *               If you have 15 instances, the number of elements returned
+	 *               can be at most <code>limit * 15</code>
+	 */
 	Collection<LLTopKeys> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Map<String, Set<String>> mltDocumentFields,
 			int limit,

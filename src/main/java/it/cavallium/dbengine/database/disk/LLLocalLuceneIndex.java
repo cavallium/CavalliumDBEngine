@@ -45,10 +45,7 @@ import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSLockFactory;
-import org.apache.lucene.store.NIOFSDirectory;
-import org.apache.lucene.store.SimpleFSDirectory;
-import org.apache.lucene.util.Constants;
+import org.apache.lucene.store.FSDirectory;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.executor.ScheduledTaskLifecycle;
 import org.warp.commonutils.functional.IOFunction;
@@ -98,12 +95,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			throw new IOException("Empty lucene database name");
 		}
 		Path directoryPath = luceneBasePath.resolve(name + ".lucene.db");
-		if (Constants.WINDOWS) {
-			//noinspection deprecation
-			this.directory = new SimpleFSDirectory(directoryPath, FSLockFactory.getDefault());
-		} else {
-			this.directory = new NIOFSDirectory(directoryPath, FSLockFactory.getDefault());
-		}
+		this.directory = FSDirectory.open(directoryPath);
 		this.luceneIndexName = name;
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;

@@ -130,11 +130,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private void registerScheduledFixedTask(Runnable task, Duration duration) {
-		scheduledTasksLifecycle.registerScheduledTask(scheduler.scheduleAtFixedRate(task,
-				duration.toMillis(),
-				duration.toMillis(),
-				TimeUnit.MILLISECONDS
-		));
+		scheduledTasksLifecycle.registerScheduledTask(scheduler.scheduleAtFixedRate(() -> {
+			scheduledTasksLifecycle.startScheduledTask();
+			try {
+				task.run();
+			} finally {
+				scheduledTasksLifecycle.endScheduledTask();
+			}
+		}, duration.toMillis(), duration.toMillis(), TimeUnit.MILLISECONDS));
 	}
 
 	@Override
@@ -401,7 +404,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	private void scheduledQueryRefresh() {
 		try {
-			searcherManager.maybeRefreshBlocking();
+			if (!searcherManager.maybeRefresh()) {
+				// skipped refreshing because another thread is currently refreshing
+			}
 		} catch (IOException ex) {
 			ex.printStackTrace();
 		}

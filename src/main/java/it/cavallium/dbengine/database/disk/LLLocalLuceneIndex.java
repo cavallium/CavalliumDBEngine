@@ -1,6 +1,19 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.LLDocument;
+import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLSort;
+import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLTopKeys;
+import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.LuceneUtils;
+import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.database.luceneutil.AdaptiveStreamSearcher;
+import it.cavallium.dbengine.database.luceneutil.LuceneStreamSearcher;
+import it.cavallium.luceneserializer.luceneserializer.ParseException;
+import it.cavallium.luceneserializer.luceneserializer.QueryParser;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -32,24 +45,14 @@ import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.FSLockFactory;
+import org.apache.lucene.store.NIOFSDirectory;
+import org.apache.lucene.store.SimpleFSDirectory;
+import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.executor.ScheduledTaskLifecycle;
 import org.warp.commonutils.functional.IOFunction;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
-import it.cavallium.dbengine.database.LLDocument;
-import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLSort;
-import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.LLTopKeys;
-import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.LuceneUtils;
-import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
-import it.cavallium.dbengine.database.luceneutil.LuceneStreamSearcher;
-import it.cavallium.luceneserializer.luceneserializer.ParseException;
-import it.cavallium.luceneserializer.luceneserializer.QueryParser;
 import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -95,7 +98,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			throw new IOException("Empty lucene database name");
 		}
 		Path directoryPath = luceneBasePath.resolve(name + ".lucene.db");
-		this.directory = FSDirectory.open(directoryPath);
+		if (Constants.WINDOWS) {
+			//noinspection deprecation
+			this.directory = new SimpleFSDirectory(directoryPath, FSLockFactory.getDefault());
+		} else {
+			this.directory = new NIOFSDirectory(directoryPath, FSLockFactory.getDefault());
+		}
 		this.luceneIndexName = name;
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;

@@ -15,11 +15,13 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 	private final SimpleStreamSearcher simpleStreamSearcher;
 	private final ParallelCollectorStreamSearcher parallelCollectorStreamSearcher;
 	private final PagedStreamSearcher pagedStreamSearcher;
+	private final CountStreamSearcher countStreamSearcher;
 
 	public AdaptiveStreamSearcher() {
 		this.simpleStreamSearcher = new SimpleStreamSearcher();
 		this.parallelCollectorStreamSearcher = new ParallelCollectorStreamSearcher();
 		this.pagedStreamSearcher = new PagedStreamSearcher(simpleStreamSearcher);
+		this.countStreamSearcher = new CountStreamSearcher();
 	}
 
 	@Override
@@ -29,7 +31,9 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 			@Nullable Sort luceneSort,
 			String keyFieldName,
 			Consumer<String> consumer) throws IOException {
-		if (luceneSort == null) {
+		if (limit == 0) {
+			return countStreamSearcher.count(indexSearcher, query);
+		} else if (luceneSort == null) {
 			return parallelCollectorStreamSearcher.streamSearch(indexSearcher, query, limit, null, keyFieldName, consumer);
 		} else {
 			if (limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {

@@ -80,6 +80,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+import org.warp.commonutils.functional.ConsumerResult;
 
 public class DbServerFunctions extends CavalliumDBEngineServiceGrpc.CavalliumDBEngineServiceImplBase {
 
@@ -562,6 +563,7 @@ public class DbServerFunctions extends CavalliumDBEngineServiceGrpc.CavalliumDBE
 			response.setKey(ByteString.copyFrom(key));
 			response.setValue(ByteString.copyFrom(val));
 			responseObserver.onNext(response.build());
+			return ConsumerResult.result();
 		});
 		responseObserver.onCompleted();
 	}

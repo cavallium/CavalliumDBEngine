@@ -9,9 +9,10 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.functional.CancellableConsumer;
+import org.warp.commonutils.functional.CancellableFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 
 public class LLSet implements LLKeyValueDatabaseStructure {
 
@@ -63,12 +64,15 @@ public class LLSet implements LLKeyValueDatabaseStructure {
 		dictionary.clear();
 	}
 
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, Consumer<byte[]> consumer) {
-		dictionary.forEach(snapshot, parallelism, (key, emptyValue) -> consumer.accept(key));
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableConsumer<byte[]> consumer) {
+		return dictionary.forEach(snapshot, parallelism, (key, emptyValue) -> consumer.acceptCancellable(key));
 	}
 
-	public void replaceAll(int parallelism, Function<byte[], byte[]> consumer) throws IOException {
-		dictionary.replaceAll(parallelism, true, (key, emptyValue) -> Map.entry(consumer.apply(key), emptyValue));
+	public ConsumerResult replaceAll(int parallelism, CancellableFunction<byte[], byte[]> consumer) throws IOException {
+		return dictionary.replaceAll(parallelism, true, (key, emptyValue) -> {
+			var result = consumer.applyCancellable(key);
+			return result.copyStatusWith(Map.entry(result.getValue(), emptyValue));
+		});
 	}
 
 	public long size(@Nullable LLSnapshot snapshot, boolean fast) throws IOException {

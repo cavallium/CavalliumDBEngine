@@ -1,5 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -8,8 +12,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
@@ -25,10 +27,9 @@ import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLDictionaryResultType;
-import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLUtils;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 
 @NotAtomic
 public class LLLocalDictionary implements LLDictionary {
@@ -217,19 +218,22 @@ public class LLLocalDictionary implements LLDictionary {
 
 	//todo: implement parallel forEach
 	@Override
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], byte[]> consumer) {
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], byte[]> consumer) {
 		try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
 			iter.seekToFirst();
 			while (iter.isValid()) {
-				consumer.accept(iter.key(), iter.value());
+				if (consumer.acceptCancellable(iter.key(), iter.value()).isCancelled()) {
+					return ConsumerResult.cancelNext();
+				}
 				iter.next();
 			}
 		}
+		return ConsumerResult.result();
 	}
 
 	//todo: implement parallel replace
 	@Override
-	public void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
+	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
 		try {
 			try (var snapshot = replaceKeys ? db.getSnapshot() : null) {
 				try (RocksIterator iter = db.newIterator(cfh, getReadOptions(snapshot));
@@ -249,21 +253,29 @@ public class LLLocalDictionary implements LLDictionary {
 
 					while (iter.isValid()) {
 
-						var result = consumer.apply(iter.key(), iter.value());
-						boolean keyDiffers = !Arrays.equals(iter.key(), result.getKey());
+						var result = consumer.applyCancellable(iter.key(), iter.value());
+						boolean keyDiffers = !Arrays.equals(iter.key(), result.getValue().getKey());
 						if (!replaceKeys && keyDiffers) {
 							throw new IOException("Tried to replace a key");
 						}
 
 						// put if changed or if keys can be swapped/replaced
-						if (replaceKeys || !Arrays.equals(iter.value(), result.getValue())) {
-							writeBatch.put(cfh, result.getKey(), result.getValue());
+						if (replaceKeys || !Arrays.equals(iter.value(), result.getValue().getValue())) {
+							writeBatch.put(cfh, result.getValue().getKey(), result.getValue().getValue());
+						}
+
+						if (result.isCancelled()) {
+							// Cancels and discards the write batch
+							writeBatch.clear();
+							return ConsumerResult.cancelNext();
 						}
 
 						iter.next();
 					}
 
 					writeBatch.writeToDbAndClose();
+
+					return ConsumerResult.result();
 				} finally {
 					db.releaseSnapshot(snapshot);
 				}

@@ -24,12 +24,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 
 @NotAtomic
 public class LLRemoteDictionary implements LLDictionary {
@@ -155,26 +156,33 @@ public class LLRemoteDictionary implements LLDictionary {
 	}
 
 	@Override
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], byte[]> consumer) {
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], byte[]> consumer) {
 		try {
 			var request = DictionaryMethodForEachRequest.newBuilder().setDictionaryHandle(handle);
 			if (snapshot != null) {
 				request.setSequenceNumber(snapshot.getSequenceNumber());
 			}
 			var response = blockingStub.dictionaryMethodForEach(request.build());
-			response.forEachRemaining((entry) -> {
+			while (response.hasNext()) {
+				var entry = response.next();
 				var key = entry.getKey().toByteArray();
 				var value = entry.getValue().toByteArray();
-				consumer.accept(key, value);
-			});
+				var cancelled = consumer.acceptCancellable(key, value);
+				if (cancelled.isCancelled()) {
+					return ConsumerResult.cancelNext();
+				}
+			}
+			return ConsumerResult.result();
 		} catch (StatusRuntimeException ex) {
 			throw new IOError(ex);
 		}
 	}
 
 	@Override
-	public void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
+	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
 		try {
+			//todo: reimplement remote replaceAll using writeBatch
+			//todo: implement cancellation during iteration
 			var response = blockingStub
 					.dictionaryMethodReplaceAll(DictionaryMethodReplaceAllRequest.newBuilder()
 							.setDictionaryHandle(handle)
@@ -183,18 +191,19 @@ public class LLRemoteDictionary implements LLDictionary {
 			response.forEachRemaining((entry) -> {
 				var key = entry.getKey().toByteArray();
 				var value = entry.getValue().toByteArray();
-				var singleResponse = consumer.apply(key, value);
+				var singleResponse = consumer.applyCancellable(key, value);
 				boolean keyDiffers = false;
-				if (!Arrays.equals(key, singleResponse.getKey())) {
+				if (!Arrays.equals(key, singleResponse.getValue().getKey())) {
 					remove_(key, LLDictionaryResultType.VOID);
 					keyDiffers = true;
 				}
 
 				// put if changed
-				if (keyDiffers || !Arrays.equals(value, singleResponse.getValue())) {
-					put_(singleResponse.getKey(), singleResponse.getValue(), LLDictionaryResultType.VOID);
+				if (keyDiffers || !Arrays.equals(value, singleResponse.getValue().getValue())) {
+					put_(singleResponse.getValue().getKey(), singleResponse.getValue().getValue(), LLDictionaryResultType.VOID);
 				}
 			});
+			return ConsumerResult.result();
 		} catch (StatusRuntimeException ex) {
 			throw new IOException(ex);
 		}

@@ -9,10 +9,11 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 
 public class LLMap implements LLKeyValueDatabaseStructure {
 
@@ -56,15 +57,15 @@ public class LLMap implements LLKeyValueDatabaseStructure {
 	/**
 	 * The consumer can be called from different threads
 	 */
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], byte[]> consumer) {
-		dictionary.forEach(snapshot, parallelism, consumer);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], byte[]> consumer) {
+		return dictionary.forEach(snapshot, parallelism, consumer);
 	}
 
 	/**
 	 * The consumer can be called from different threads
 	 */
-	public void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
-		dictionary.replaceAll(parallelism, replaceKeys, consumer);
+	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
+		return dictionary.replaceAll(parallelism, replaceKeys, consumer);
 	}
 
 	@Override

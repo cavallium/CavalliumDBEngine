@@ -1,24 +1,25 @@
 package it.cavallium.dbengine.database.structures;
 
+import it.cavallium.dbengine.database.LLDeepDictionary;
+import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
+import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.functional.TriConsumer;
-import org.warp.commonutils.functional.TriFunction;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.CancellableTriConsumer;
+import org.warp.commonutils.functional.CancellableTriFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 import org.warp.commonutils.type.Bytes;
 import org.warp.commonutils.type.UnmodifiableIterableMap;
 import org.warp.commonutils.type.UnmodifiableMap;
-import it.cavallium.dbengine.database.LLDeepDictionary;
-import it.cavallium.dbengine.database.LLDictionaryResultType;
-import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
-import it.cavallium.dbengine.database.LLSnapshot;
 
 public class LLDeepMap implements LLKeyValueDatabaseStructure {
 
@@ -79,27 +80,27 @@ public class LLDeepMap implements LLKeyValueDatabaseStructure {
 		return dictionary.remove(key1, key2, resultType.getDictionaryResultType());
 	}
 
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer) {
-		dictionary.forEach(snapshot, parallelism, consumer);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer) {
+		return dictionary.forEach(snapshot, parallelism, consumer);
 	}
 
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key1, BiConsumer<byte[], byte[]> consumer) {
-		dictionary.forEach(snapshot, parallelism, key1, consumer);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key1, CancellableBiConsumer<byte[], byte[]> consumer) {
+		return dictionary.forEach(snapshot, parallelism, key1, consumer);
 	}
 
-	public void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer) throws IOException {
+	public void replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer) throws IOException {
 		dictionary.replaceAll(parallelism, replaceKeys, consumer);
 	}
 
-	public void replaceAll(int parallelism, boolean replaceKeys, byte[] key1, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
+	public void replaceAll(int parallelism, boolean replaceKeys, byte[] key1, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
 		dictionary.replaceAll(parallelism, replaceKeys, key1, consumer);
 	}
 
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, TriConsumer<byte[], byte[], byte[]> consumer) {
-		dictionary.forEach(snapshot, parallelism, consumer);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableTriConsumer<byte[], byte[], byte[]> consumer) {
+		return dictionary.forEach(snapshot, parallelism, consumer);
 	}
 
-	public void replaceAll(int parallelism, boolean replaceKeys, TriFunction<byte[], byte[], byte[], ImmutableTriple<byte[], byte[], byte[]>> consumer) throws IOException {
+	public void replaceAll(int parallelism, boolean replaceKeys, CancellableTriFunction<byte[], byte[], byte[], ImmutableTriple<byte[], byte[], byte[]>> consumer) throws IOException {
 		dictionary.replaceAll(parallelism, replaceKeys, consumer);
 	}
 

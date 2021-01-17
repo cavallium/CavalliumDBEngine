@@ -3,14 +3,15 @@ package it.cavallium.dbengine.database;
 import java.io.IOException;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import org.warp.commonutils.functional.TriConsumer;
-import org.warp.commonutils.functional.TriFunction;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.CancellableTriConsumer;
+import org.warp.commonutils.functional.CancellableTriFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 import org.warp.commonutils.type.Bytes;
 import org.warp.commonutils.type.UnmodifiableIterableMap;
 import org.warp.commonutils.type.UnmodifiableMap;
@@ -49,18 +50,18 @@ public interface LLDeepDictionary extends LLKeyValueDatabaseStructure {
 	Optional<byte[]> remove(byte[] key1, byte[] key2, LLDictionaryResultType resultType) throws IOException;
 
 
-	void forEach(@Nullable LLSnapshot snapshot, int parallelism, TriConsumer<byte[], byte[], byte[]> consumer);
+	ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableTriConsumer<byte[], byte[], byte[]> consumer);
 
-	void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer);
+	ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer);
 
-	void forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key1, BiConsumer<byte[], byte[]> consumer);
+	ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key1, CancellableBiConsumer<byte[], byte[]> consumer);
 
 
-	void replaceAll(int parallelism, boolean replaceKeys, TriFunction<byte[], byte[], byte[], ImmutableTriple<byte[], byte[], byte[]>> consumer) throws IOException;
+	ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableTriFunction<byte[], byte[], byte[], ImmutableTriple<byte[], byte[], byte[]>> consumer) throws IOException;
 
-	void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer) throws IOException;
+	ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer) throws IOException;
 
-	void replaceAll(int parallelism, boolean replaceKeys, byte[] key1, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException;
+	ConsumerResult replaceAll(int parallelism, boolean replaceKeys, byte[] key1, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException;
 
 
 	long size(@Nullable LLSnapshot snapshot, boolean fast) throws IOException;

@@ -12,11 +12,12 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.StringJoiner;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
-import java.util.function.Consumer;
-import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.CancellableConsumer;
+import org.warp.commonutils.functional.CancellableFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 import org.warp.commonutils.type.Bytes;
 import org.warp.commonutils.type.UnmodifiableIterableMap;
 import org.warp.commonutils.type.UnmodifiableIterableSet;
@@ -112,26 +113,26 @@ public class LLFixedDeepSet implements LLKeyValueDatabaseStructure {
 		return false;
 	}
 
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], UnmodifiableIterableSet<byte[]>> consumer) {
-		dictionary.forEach(snapshot, parallelism, (key1, entries) -> consumer.accept(key1, entries.toUnmodifiableIterableKeysSet(byte[][]::new)));
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], UnmodifiableIterableSet<byte[]>> consumer) {
+		return dictionary.forEach(snapshot, parallelism, (key1, entries) -> consumer.acceptCancellable(key1, entries.toUnmodifiableIterableKeysSet(byte[][]::new)));
 	}
 
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key1, Consumer<byte[]> consumer) {
-		dictionary.forEach(snapshot, parallelism, key1, (value, empty) -> consumer.accept(value));
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key1, CancellableConsumer<byte[]> consumer) {
+		return dictionary.forEach(snapshot, parallelism, key1, (value, empty) -> consumer.acceptCancellable(value));
 	}
 
-	public void replaceAll(int parallelism, BiFunction<byte[], UnmodifiableIterableSet<byte[]>, Entry<byte[], UnmodifiableSet<Bytes>>> consumer) throws IOException {
+	public void replaceAll(int parallelism, CancellableBiFunction<byte[], UnmodifiableIterableSet<byte[]>, Entry<byte[], UnmodifiableSet<Bytes>>> consumer) throws IOException {
 		dictionary.replaceAll(parallelism, true, (key1, entries) -> {
-			var result = consumer.apply(key1, entries.toUnmodifiableIterableKeysSet(byte[][]::new));
-			var resultItems = result.getValue().toArray(Bytes[]::new);
-			return Map.entry(result.getKey(), UnmodifiableMap.of(resultItems, generateEmptyArray(resultItems.length)));
+			var result = consumer.applyCancellable(key1, entries.toUnmodifiableIterableKeysSet(byte[][]::new));
+			var resultItems = result.getValue().getValue().toArray(Bytes[]::new);
+			return result.copyStatusWith(Map.entry(result.getValue().getKey(), UnmodifiableMap.of(resultItems, generateEmptyArray(resultItems.length))));
 		});
 	}
 
-	public void replaceAll(int parallelism, byte[] key1, Function<byte[], byte[]> consumer) throws IOException {
+	public void replaceAll(int parallelism, byte[] key1, CancellableFunction<byte[], byte[]> consumer) throws IOException {
 		dictionary.replaceAll(parallelism, true, key1, (value, empty) -> {
-			var changedValue = consumer.apply(value);
-			return Map.entry(changedValue, EMPTY_VALUE);
+			var changedValue = consumer.applyCancellable(value);
+			return changedValue.copyStatusWith(Map.entry(changedValue.getValue(), EMPTY_VALUE));
 		});
 	}
 

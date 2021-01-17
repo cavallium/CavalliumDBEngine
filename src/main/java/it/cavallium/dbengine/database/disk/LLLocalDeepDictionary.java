@@ -1,5 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.LLDeepDictionary;
+import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import java.io.IOException;
@@ -9,8 +13,6 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.commons.lang3.tuple.ImmutableTriple;
@@ -27,15 +29,14 @@ import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatchInterface;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
-import org.warp.commonutils.functional.TriConsumer;
-import org.warp.commonutils.functional.TriFunction;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.CancellableTriConsumer;
+import org.warp.commonutils.functional.CancellableTriFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 import org.warp.commonutils.type.Bytes;
 import org.warp.commonutils.type.UnmodifiableIterableMap;
 import org.warp.commonutils.type.UnmodifiableMap;
-import it.cavallium.dbengine.database.LLDeepDictionary;
-import it.cavallium.dbengine.database.LLDictionaryResultType;
-import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLUtils;
 
 @NotAtomic
 public class LLLocalDeepDictionary implements LLDeepDictionary {
@@ -411,12 +412,12 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 	}
 
 	@Override
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, TriConsumer<byte[], byte[], byte[]> consumer) {
-		forEach_(consumer, snapshot == null ? null : snapshotResolver.apply(snapshot), parallelism);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableTriConsumer<byte[], byte[], byte[]> consumer) {
+		return forEach_(consumer, snapshot == null ? null : snapshotResolver.apply(snapshot), parallelism);
 	}
 
 	//todo: implement parallel execution
-	private void forEach_(TriConsumer<byte[], byte[], byte[]> consumer, @Nullable Snapshot snapshot, int parallelism) {
+	private ConsumerResult forEach_(CancellableTriConsumer<byte[], byte[], byte[]> consumer, @Nullable Snapshot snapshot, int parallelism) {
 		try (RocksIterator iterator = (snapshot != null ? db.newIterator(cfh, new ReadOptions().setSnapshot(snapshot))
 				: db.newIterator(cfh))) {
 			iterator.seekToFirst();
@@ -425,20 +426,24 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 				var key1 = getKey1(combinedKey);
 				var key2 = getKey2(combinedKey);
 
-				consumer.accept(key1, key2, iterator.value());
+				var result = consumer.acceptCancellable(key1, key2, iterator.value());
+				if (result.isCancelled()) {
+					return ConsumerResult.cancelNext();
+				}
 
 				iterator.next();
 			}
+			return ConsumerResult.result();
 		}
 	}
 
 	@Override
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer) {
-		forEach_(consumer, snapshot == null ? null : snapshotResolver.apply(snapshot), parallelism);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer) {
+		return forEach_(consumer, snapshot == null ? null : snapshotResolver.apply(snapshot), parallelism);
 	}
 
 	//todo: implement parallel execution
-	private void forEach_(BiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer, @Nullable Snapshot snapshot, int parallelism) {
+	private ConsumerResult forEach_(CancellableBiConsumer<byte[], UnmodifiableIterableMap<byte[], byte[]>> consumer, @Nullable Snapshot snapshot, int parallelism) {
 		try (RocksIterator iterator = (snapshot != null ? db.newIterator(cfh, new ReadOptions().setSnapshot(snapshot))
 				: db.newIterator(cfh))) {
 			iterator.seekToFirst();
@@ -453,7 +458,10 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 
 				if (currentKey1 == null || !Arrays.equals(currentKey1, key1)) {
 					if (currentKey1 != null && !key2Values.isEmpty()) {
-						consumer.accept(currentKey1, UnmodifiableIterableMap.of(key2Keys.toArray(byte[][]::new), key2Values.toArray(byte[][]::new)));
+						var result = consumer.acceptCancellable(currentKey1, UnmodifiableIterableMap.of(key2Keys.toArray(byte[][]::new), key2Values.toArray(byte[][]::new)));
+						if (result.isCancelled()) {
+							return ConsumerResult.cancelNext();
+						}
 					}
 					currentKey1 = key1;
 					key2Keys = new ArrayList<>();
@@ -466,18 +474,22 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 				iterator.next();
 			}
 			if (currentKey1 != null && !key2Values.isEmpty()) {
-				consumer.accept(currentKey1, UnmodifiableIterableMap.of(key2Keys.toArray(byte[][]::new), key2Values.toArray(byte[][]::new)));
+				var result = consumer.acceptCancellable(currentKey1, UnmodifiableIterableMap.of(key2Keys.toArray(byte[][]::new), key2Values.toArray(byte[][]::new)));
+				if (result.isCancelled()) {
+					return ConsumerResult.cancelNext();
+				}
 			}
+			return ConsumerResult.result();
 		}
 	}
 
 	@Override
-	public void forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key, BiConsumer<byte[], byte[]> consumer) {
-		forEach_(key, consumer, snapshot == null ? null : snapshotResolver.apply(snapshot), parallelism);
+	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, byte[] key, CancellableBiConsumer<byte[], byte[]> consumer) {
+		return forEach_(key, consumer, snapshot == null ? null : snapshotResolver.apply(snapshot), parallelism);
 	}
 
 	//todo: implement parallel execution
-	private void forEach_(byte[] key1, BiConsumer<byte[], byte[]> consumer, @Nullable Snapshot snapshot, int parallelism) {
+	private ConsumerResult forEach_(byte[] key1, CancellableBiConsumer<byte[], byte[]> consumer, @Nullable Snapshot snapshot, int parallelism) {
 		try (RocksIterator iterator = (snapshot != null ? db.newIterator(cfh, new ReadOptions().setSnapshot(snapshot))
 				: db.newIterator(cfh))) {
 			iterator.seek(getStartSeekKey(key1));
@@ -491,17 +503,21 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 
 				byte[] key2 = getKey2(combinedKey);
 				byte[] value2 = iterator.value();
-				consumer.accept(key2, value2);
+				var result = consumer.acceptCancellable(key2, value2);
+				if (result.isCancelled()) {
+					return ConsumerResult.cancelNext();
+				}
 
 				iterator.next();
 			}
+			return ConsumerResult.result();
 		}
 	}
 
 	//todo: implement parallel execution
 	//todo: implement replaceKeys = false optimization (like in LLLocalDictionary), check if it's feasible
 	@Override
-	public void replaceAll(int parallelism, boolean replaceKeys, TriFunction<byte[], byte[], byte[], ImmutableTriple<byte[], byte[], byte[]>> consumer) throws IOException {
+	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableTriFunction<byte[], byte[], byte[], ImmutableTriple<byte[], byte[], byte[]>> consumer) throws IOException {
 		var snapshot = db.getSnapshot();
 		try {
 			try (RocksIterator iter = db.newIterator(cfh, new ReadOptions().setSnapshot(snapshot));
@@ -523,20 +539,28 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 					var key1 = getKey1(combinedKey);
 					var key2 = getKey2(combinedKey);
 
-					var result = consumer.apply(key1, key2, iter.value());
-					if (result.getLeft().length != key1Size) {
-						throw new IndexOutOfBoundsException(result.getLeft().length, key1Size, key1Size);
+					var result = consumer.applyCancellable(key1, key2, iter.value());
+					if (result.getValue().getLeft().length != key1Size) {
+						throw new IndexOutOfBoundsException(result.getValue().getLeft().length, key1Size, key1Size);
 					}
-					if (result.getMiddle().length != key2Size) {
-						throw new IndexOutOfBoundsException(result.getMiddle().length, key2Size, key2Size);
+					if (result.getValue().getMiddle().length != key2Size) {
+						throw new IndexOutOfBoundsException(result.getValue().getMiddle().length, key2Size, key2Size);
 					}
 
-					writeBatch.put(cfh, getCombinedKey(result.getLeft(), result.getMiddle()), result.getRight());
+					writeBatch.put(cfh, getCombinedKey(result.getValue().getLeft(), result.getValue().getMiddle()), result.getValue().getRight());
+
+					if (result.isCancelled()) {
+						// Cancels and discards the write batch
+						writeBatch.clear();
+						return ConsumerResult.cancelNext();
+					}
 
 					iter.next();
 				}
 
 				writeBatch.writeToDbAndClose();
+
+				return ConsumerResult.result();
 			}
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
@@ -549,7 +573,7 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 	//todo: implement parallel execution
 	//todo: implement replaceKeys = false optimization (like in LLLocalDictionary), check if it's feasible
 	@Override
-	public void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer)
+	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer)
 			throws IOException {
 		try {
 			var snapshot = db.getSnapshot();
@@ -578,12 +602,18 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 
 					if (currentKey1 == null || !Arrays.equals(currentKey1, key1)) {
 						if (currentKey1 != null && !key2Values.isEmpty()) {
-							replaceAll_(writeBatch,
+							var result = replaceAll_(writeBatch,
 									currentKey1,
 									key2Keys.toArray(byte[][]::new),
 									key2Values.toArray(byte[][]::new),
 									consumer
 							);
+
+							if (result.isCancelled()) {
+								// Cancels and discards the write batch
+								writeBatch.clear();
+								return ConsumerResult.cancelNext();
+							}
 						}
 						currentKey1 = key1;
 						key2Keys = new ObjectArrayList<>();
@@ -596,15 +626,23 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 					iter.next();
 				}
 				if (currentKey1 != null && !key2Values.isEmpty()) {
-					replaceAll_(writeBatch,
+					var result = replaceAll_(writeBatch,
 							currentKey1,
 							key2Keys.toArray(byte[][]::new),
 							key2Values.toArray(byte[][]::new),
 							consumer
 					);
+
+					if (result.isCancelled()) {
+						// Cancels and discards the write batch
+						writeBatch.clear();
+						return ConsumerResult.cancelNext();
+					}
 				}
 
 				writeBatch.writeToDbAndClose();
+
+				return ConsumerResult.result();
 			} finally {
 				db.releaseSnapshot(snapshot);
 				snapshot.close();
@@ -614,23 +652,23 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 		}
 	}
 
-	private void replaceAll_(WriteBatchInterface writeBatch,
+	private ConsumerResult replaceAll_(WriteBatchInterface writeBatch,
 			byte[] key1,
 			byte[][] key2Keys,
 			byte[][] key2Values,
-			BiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer)
+			CancellableBiFunction<byte[], UnmodifiableIterableMap<byte[], byte[]>, Entry<byte[], UnmodifiableMap<Bytes, byte[]>>> consumer)
 			throws RocksDBException {
 		if (key1.length != key1Size) {
 			throw new IndexOutOfBoundsException(key1.length, key1Size, key1Size);
 		}
 		var previousValues = UnmodifiableMap.of(key2Keys, key2Values);
-		var result = consumer.apply(key1, previousValues);
+		var result = consumer.applyCancellable(key1, previousValues);
 
-		var resultKey1 = result.getKey();
+		var resultKey1 = result.getValue().getKey();
 		if (resultKey1.length != key1Size) {
 			throw new IndexOutOfBoundsException(resultKey1.length, key1Size, key1Size);
 		}
-		var resultValues = result.getValue();
+		var resultValues = result.getValue().getValue();
 
 		var mapIterator = resultValues.fastIterator();
 		while (mapIterator.hasNext()) {
@@ -642,13 +680,20 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 
 			var value2 = mapEntry.getValue();
 			writeBatch.put(cfh, getCombinedKey(key1, key2.data), value2);
+
+			if (result.isCancelled()) {
+				// Cancels and discards the write batch
+				writeBatch.clear();
+				return ConsumerResult.cancelNext();
+			}
 		}
+		return ConsumerResult.result();
 	}
 
 	//todo: implement parallel execution
 	//todo: implement replaceKeys = false optimization (like in LLLocalDictionary), check if it's feasible
 	@Override
-	public void replaceAll(int parallelism, boolean replaceKeys, byte[] key1, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
+	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, byte[] key1, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
 		if (key1.length != key1Size) {
 			throw new IndexOutOfBoundsException(key1.length, key1Size, key1Size);
 		}
@@ -685,17 +730,25 @@ public class LLLocalDeepDictionary implements LLDeepDictionary {
 					byte[] key2 = getKey2(combinedKey);
 					byte[] value2 = iter.value();
 
-					var result = consumer.apply(key2, value2);
-					if (result.getKey().length != key2Size) {
-						throw new IndexOutOfBoundsException(result.getKey().length, key2Size, key2Size);
+					var result = consumer.applyCancellable(key2, value2);
+					if (result.getValue().getKey().length != key2Size) {
+						throw new IndexOutOfBoundsException(result.getValue().getKey().length, key2Size, key2Size);
 					}
 
-					writeBatch.put(cfh, result.getKey(), result.getValue());
+					writeBatch.put(cfh, result.getValue().getKey(), result.getValue().getValue());
+
+					if (result.isCancelled()) {
+						// Cancels and discards the write batch
+						writeBatch.clear();
+						return ConsumerResult.cancelNext();
+					}
 
 					iter.next();
 				}
 
 				writeBatch.writeToDbAndClose();
+
+				return ConsumerResult.result();
 			} finally {
 				db.releaseSnapshot(snapshot);
 				snapshot.close();

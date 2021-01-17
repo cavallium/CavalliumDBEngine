@@ -3,11 +3,12 @@ package it.cavallium.dbengine.database;
 import java.io.IOException;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.function.BiConsumer;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
+import org.warp.commonutils.functional.CancellableBiConsumer;
+import org.warp.commonutils.functional.CancellableBiFunction;
+import org.warp.commonutils.functional.ConsumerResult;
 
 @NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
@@ -27,12 +28,12 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	/**
 	 * This method can call the consumer from different threads in parallel
 	 */
-	void forEach(@Nullable LLSnapshot snapshot, int parallelism, BiConsumer<byte[], byte[]> consumer);
+	ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], byte[]> consumer);
 
 	/**
 	 * This method can call the consumer from different threads in parallel
 	 */
-	void replaceAll(int parallelism, boolean replaceKeys, BiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException;
+	ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException;
 
 	void clear() throws IOException;
 

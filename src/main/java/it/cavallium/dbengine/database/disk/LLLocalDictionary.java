@@ -43,7 +43,6 @@ public class LLLocalDictionary implements LLDictionary {
 	private static final byte[] FIRST_KEY = new byte[]{};
 	private static final byte[] NO_DATA = new byte[0];
 	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
-	private static final List<byte[]> EMPTY_UNMODIFIABLE_LIST = List.of();
 	private final RocksDB db;
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;

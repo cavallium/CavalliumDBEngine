@@ -3,6 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
@@ -21,12 +23,9 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.StampedLock;
-import java.util.function.BiConsumer;
-import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.batch.ParallelUtils;
 import org.warp.commonutils.functional.IOBiConsumer;
@@ -35,7 +34,7 @@ import org.warp.commonutils.functional.IOTriConsumer;
 import org.warp.commonutils.locks.LockUtils;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuples;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
@@ -166,26 +165,6 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		});
 	}
 
-	@Override
-	public Collection<LLTopKeys> search(@Nullable LLSnapshot snapshot,
-			String query,
-			int limit,
-			@Nullable LLSort sort,
-			String keyFieldName) throws IOException {
-		return LockUtils.readLockIO(access, () -> {
-			Collection<Collection<LLTopKeys>> result = new ConcurrentLinkedQueue<>();
-
-			ParallelUtils.parallelizeIO((IOBiConsumer<LLLuceneIndex, LLSnapshot> s) -> {
-				for (int i = 0; i < luceneIndices.length; i++) {
-					s.consume(luceneIndices[i], resolveSnapshot(snapshot, i));
-				}
-			}, maxQueueSize, luceneIndices.length, 1, (instance, instanceSnapshot) -> {
-				result.add(instance.search(instanceSnapshot, query, limit, sort, keyFieldName));
-			});
-			return result;
-		}).stream().flatMap(Collection::stream).collect(Collectors.toList());
-	}
-
 	private LLTopKeys mergeTopKeys(Collection<LLTopKeys> multi) {
 		long totalHitsCount = 0;
 		LLKeyScore[] hits;
@@ -215,57 +194,61 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Collection<LLTopKeys> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Map<String, Set<String>> mltDocumentFields,
 			int limit,
-			String keyFieldName) throws IOException {
-		return LockUtils.readLockIO(access, () -> {
-			Collection<Collection<LLTopKeys>> result = new ConcurrentLinkedQueue<>();
-
-			ParallelUtils.parallelizeIO((IOBiConsumer<LLLuceneIndex, LLSnapshot> s) -> {
-				for (int i = 0; i < luceneIndices.length; i++) {
-					s.consume(luceneIndices[i], resolveSnapshot(snapshot, i));
-				}
-			}, maxQueueSize, luceneIndices.length, 1, (instance, instanceSnapshot) -> {
-				result.add(instance.moreLikeThis(instanceSnapshot, mltDocumentFields, limit, keyFieldName));
-			});
-			return result;
-		}).stream().flatMap(Collection::stream).collect(Collectors.toList());
+			String keyFieldName) {
+		return Mono
+				.fromSupplier(access::readLock)
+				.subscribeOn(Schedulers.boundedElastic())
+				.flatMap(stamp -> Flux
+						.fromArray(luceneIndices)
+						.index()
+						.flatMap(tuple -> Mono
+								.fromCallable(() -> resolveSnapshot(snapshot, (int) (long) tuple.getT1()))
+								.subscribeOn(Schedulers.boundedElastic())
+								.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot))
+						)
+						.flatMap(tuple -> tuple.getT1().moreLikeThis(tuple.getT2(), mltDocumentFields, limit, keyFieldName))
+						.reduce(LLSearchResult.accumulator())
+						.materialize()
+						.flatMap(signal -> Mono
+								.fromRunnable(() -> access.unlockRead(stamp))
+								.subscribeOn(Schedulers.boundedElastic())
+								.thenReturn(signal)
+						)
+						.dematerialize()
+				);
 	}
 
 	@Override
-	public Tuple2<Mono<Long>, Collection<Flux<String>>> searchStream(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
 			String query,
 			int limit,
 			@Nullable LLSort sort,
+			LLScoreMode scoreMode,
 			String keyFieldName) {
-		Collection<Tuple2<Mono<Long>, Collection<Flux<String>>>> multi = LockUtils.readLock(access, () -> {
-			Collection<Tuple2<Mono<Long>, Collection<Flux<String>>>> result = new ConcurrentLinkedQueue<>();
-
-			ParallelUtils.parallelize((BiConsumer<LLLuceneIndex, LLSnapshot> s) -> {
-				for (int i = 0; i < luceneIndices.length; i++) {
-					s.accept(luceneIndices[i], resolveSnapshot(snapshot, i));
-				}
-			}, maxQueueSize, luceneIndices.length, 1, (instance, instanceSnapshot) -> {
-				result.add(instance.searchStream(instanceSnapshot, query, limit, sort, keyFieldName));
-			});
-			return result;
-		});
-
-		Mono<Long> result1;
-		Collection<Flux<String>> result2;
-
-		result1 = Mono.zip(multi.stream().map(Tuple2::getT1).collect(Collectors.toList()), (items) -> {
-			long total = 0;
-			for (Object item : items) {
-				total += (Long) item;
-			}
-			return total;
-		});
-
-		result2 = multi.stream().map(Tuple2::getT2).flatMap(Collection::stream).collect(Collectors.toList());
-
-		return Tuples.of(result1, result2);
+		return Mono
+				.fromSupplier(access::readLock)
+				.subscribeOn(Schedulers.boundedElastic())
+				.flatMap(stamp -> Flux
+						.fromArray(luceneIndices)
+						.index()
+						.flatMap(tuple -> Mono
+										.fromCallable(() -> resolveSnapshot(snapshot, (int) (long) tuple.getT1()))
+										.subscribeOn(Schedulers.boundedElastic())
+										.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot))
+						)
+						.flatMap(tuple -> tuple.getT1().search(tuple.getT2(), query, limit, sort, scoreMode, keyFieldName))
+						.reduce(LLSearchResult.accumulator())
+						.materialize()
+						.flatMap(signal -> Mono
+								.fromRunnable(() -> access.unlockRead(stamp))
+								.subscribeOn(Schedulers.boundedElastic())
+								.thenReturn(signal)
+						)
+						.dematerialize()
+				);
 	}
 
 	@Override

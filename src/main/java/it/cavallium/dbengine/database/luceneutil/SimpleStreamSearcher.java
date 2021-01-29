@@ -1,14 +1,17 @@
 package it.cavallium.dbengine.database.luceneutil;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.jetbrains.annotations.Nullable;
@@ -19,13 +22,16 @@ import org.jetbrains.annotations.Nullable;
 public class SimpleStreamSearcher implements LuceneStreamSearcher {
 
 	@Override
-	public Long streamSearch(IndexSearcher indexSearcher,
+	public void search(IndexSearcher indexSearcher,
 			Query query,
 			int limit,
 			@Nullable Sort luceneSort,
+			ScoreMode scoreMode,
 			String keyFieldName,
-			Consumer<String> consumer) throws IOException {
-		TopDocs topDocs = indexSearcher.search(query, limit, luceneSort);
+			Consumer<LLKeyScore> resultsConsumer,
+			LongConsumer totalHitsConsumer) throws IOException {
+		TopDocs topDocs = indexSearcher.search(query, limit, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
+		totalHitsConsumer.accept(topDocs.totalHits.value);
 		var hits = ObjectArrayList.wrap(topDocs.scoreDocs);
 		for (ScoreDoc hit : hits) {
 			int docId = hit.doc;
@@ -45,10 +51,9 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 				if (field == null) {
 					System.err.println("Can't get key of document docId:" + docId + ",score:" + score);
 				} else {
-					consumer.accept(field.stringValue());
+					resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
 				}
 			}
 		}
-		return topDocs.totalHits.value;
 	}
 }

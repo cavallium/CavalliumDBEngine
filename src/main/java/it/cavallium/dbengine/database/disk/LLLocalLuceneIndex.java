@@ -3,58 +3,57 @@ package it.cavallium.dbengine.database.disk;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.LLTopKeys;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.LuceneUtils;
 import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.database.luceneutil.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.database.luceneutil.LuceneStreamSearcher;
+import it.cavallium.dbengine.database.luceneutil.PagedStreamSearcher;
 import it.cavallium.luceneserializer.luceneserializer.ParseException;
 import it.cavallium.luceneserializer.luceneserializer.QueryParser;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedList;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.queries.mlt.MoreLikeThis;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.executor.ScheduledTaskLifecycle;
 import org.warp.commonutils.functional.IOFunction;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
-import reactor.core.publisher.EmitterProcessor;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.Sinks;
+import reactor.core.publisher.Sinks.EmissionException;
+import reactor.core.publisher.Sinks.EmitResult;
+import reactor.core.publisher.Sinks.Many;
+import reactor.core.publisher.Sinks.One;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public class LLLocalLuceneIndex implements LLLuceneIndex {
@@ -221,147 +220,134 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriter.commit();
 	}
 
-	@Override
-	public Collection<LLTopKeys> search(@Nullable LLSnapshot snapshot, String queryString, int limit, @Nullable LLSort sort,
-			String keyFieldName)
-			throws IOException {
-		try {
-			var luceneIndexSnapshot = resolveSnapshot(snapshot);
-
-			Query query = QueryParser.parse(queryString);
-			Sort luceneSort = LLUtils.toSort(sort);
-
-			return Collections.singleton(runSearch(luceneIndexSnapshot, (indexSearcher) -> {
-				return blockingSearch(indexSearcher, limit, query, luceneSort, keyFieldName);
-			}));
-		} catch (ParseException e) {
-			throw new IOException("Error during query count!", e);
-		}
-	}
-
-	@Override
-	public Collection<LLTopKeys> moreLikeThis(@Nullable LLSnapshot snapshot, Map<String, Set<String>> mltDocumentFields, int limit,
-			String keyFieldName)
-			throws IOException {
-		var luceneIndexSnapshot = resolveSnapshot(snapshot);
-
-		if (mltDocumentFields.isEmpty()) {
-			return Collections.singleton(new LLTopKeys(0, new LLKeyScore[0]));
-		}
-
-		return Collections.singleton(runSearch(luceneIndexSnapshot, (indexSearcher) -> {
-
-			var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
-			mlt.setAnalyzer(indexWriter.getAnalyzer());
-			mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-			mlt.setMinTermFreq(1);
-			//mlt.setMinDocFreq(1);
-			mlt.setBoost(true);
-
-			// Get the reference doc and apply it to MoreLikeThis, to generate the query
-			@SuppressWarnings({"unchecked", "rawtypes"})
-			Query query = mlt.like((Map) mltDocumentFields);
-
-			// Search
-			return blockingSearch(indexSearcher, limit, query, null, keyFieldName);
-		}));
-	}
-
-	private static LLTopKeys blockingSearch(IndexSearcher indexSearcher,
-			int limit,
-			Query query,
-			Sort luceneSort,
-			String keyFieldName) throws IOException {
-		TopDocs results;
-		List<LLKeyScore> keyScores;
-
-		results = luceneSort != null ? indexSearcher.search(query, limit, luceneSort)
-				: indexSearcher.search(query, limit);
-		var hits = ObjectArrayList.wrap(results.scoreDocs);
-		keyScores = new LinkedList<>();
-		for (ScoreDoc hit : hits) {
-			int docId = hit.doc;
-			float score = hit.score;
-			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
-			if (d.getFields().isEmpty()) {
-				System.err.println("The document docId:" + docId + ",score:" + score + " is empty.");
-				var realFields = indexSearcher.doc(docId).getFields();
-				if (!realFields.isEmpty()) {
-					System.err.println("Present fields:");
-					for (IndexableField field : realFields) {
-						System.err.println(" - " + field.name());
-					}
-				}
+	private Mono<IndexSearcher> acquireSearcherWrapper(LLSnapshot snapshot) {
+		return Mono.fromCallable(() -> {
+			if (snapshot == null) {
+				return searcherManager.acquire();
 			} else {
-				var field = d.getField(keyFieldName);
-				if (field == null) {
-					System.err.println("Can't get key of document docId:" + docId + ",score:" + score);
-				} else {
-					keyScores.add(new LLKeyScore(field.stringValue(), score));
+				return resolveSnapshot(snapshot).getIndexSearcher();
+			}
+		}).subscribeOn(Schedulers.boundedElastic());
+	}
+
+	private Mono<Void> releaseSearcherWrapper(LLSnapshot snapshot, IndexSearcher indexSearcher) {
+		return Mono.<Void>fromRunnable(() -> {
+			if (snapshot == null) {
+				try {
+					searcherManager.release(indexSearcher);
+				} catch (IOException e) {
+					e.printStackTrace();
 				}
 			}
-		}
-		return new LLTopKeys(results.totalHits.value, keyScores.toArray(new LLKeyScore[0]));
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
-	@SuppressWarnings("UnnecessaryLocalVariable")
+	@SuppressWarnings({"Convert2MethodRef", "unchecked", "rawtypes"})
 	@Override
-	public Tuple2<Mono<Long>, Collection<Flux<String>>> searchStream(@Nullable LLSnapshot snapshot, String queryString, int limit,
-			@Nullable LLSort sort, String keyFieldName) {
-		try {
-			Query query = QueryParser.parse(queryString);
-			Sort luceneSort = LLUtils.toSort(sort);
-
-			var acquireSearcherWrappedBlocking = Mono
-					.fromCallable(() -> {
-						if (snapshot == null) {
-							return searcherManager.acquire();
-						} else {
-							return resolveSnapshot(snapshot).getIndexSearcher();
-						}
-					})
-					.subscribeOn(Schedulers.boundedElastic());
-
-			EmitterProcessor<Long> countProcessor = EmitterProcessor.create();
-			EmitterProcessor<String> resultsProcessor = EmitterProcessor.create();
-
-			var publisher = acquireSearcherWrappedBlocking.flatMapMany(indexSearcher -> {
-				return Flux.<Object>push(sink -> {
-					try {
-						Long approximatedTotalResultsCount = streamSearcher.streamSearch(indexSearcher,
-								query,
-								limit,
-								luceneSort,
-								keyFieldName,
-								sink::next
-						);
-						sink.next(approximatedTotalResultsCount);
-						sink.complete();
-					} catch (IOException e) {
-						sink.error(e);
-					}
-					}).subscribeOn(Schedulers.boundedElastic())
-						.doOnTerminate(() -> {
-							if (snapshot == null) {
-								try {
-									searcherManager.release(indexSearcher);
-								} catch (IOException e) {
-									e.printStackTrace();
-								}
-							}
-						});
-			}).publish();
-
-			publisher.filter(item -> item instanceof Long).cast(Long.class).subscribe(countProcessor);
-			publisher.filter(item -> item instanceof String).cast(String.class).subscribe(resultsProcessor);
-
-			publisher.connect();
-
-			return Tuples.of(countProcessor.single(0L), Collections.singleton(resultsProcessor));
-		} catch (ParseException e) {
-			var error = new IOException("Error during query count!", e);
-			return Tuples.of(Mono.error(error), Collections.singleton(Flux.error(error)));
+	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
+			Map<String, Set<String>> mltDocumentFields,
+			int limit,
+			String keyFieldName) {
+		if (mltDocumentFields.isEmpty()) {
+			return Mono.just(LLSearchResult.empty());
 		}
+
+		return acquireSearcherWrapper(snapshot)
+				.flatMap(indexSearcher -> Mono
+						.fromCallable(() -> {
+							var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
+							mlt.setAnalyzer(indexWriter.getAnalyzer());
+							mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+							mlt.setMinTermFreq(1);
+							//mlt.setMinDocFreq(1);
+							mlt.setBoost(true);
+
+							// Get the reference doc and apply it to MoreLikeThis, to generate the query
+							return mlt.like((Map) mltDocumentFields);
+						})
+						.subscribeOn(Schedulers.boundedElastic())
+						.flatMap(query -> Mono
+								.fromCallable(() -> {
+									One<Long> totalHitsCountSink = Sinks.one();
+									Many<LLKeyScore> topKeysSink = Sinks.many().unicast().onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
+
+									streamSearcher.search(indexSearcher,
+											query,
+											limit,
+											null,
+											ScoreMode.COMPLETE,
+											keyFieldName,
+											keyScore -> {
+												EmitResult result = topKeysSink.tryEmitNext(keyScore);
+												if (result.isFailure()) {
+													throw new EmissionException(result);
+												}
+											},
+											totalHitsCount -> {
+												EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
+												if (result.isFailure()) {
+													throw new EmissionException(result);
+												}
+											});
+
+									return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
+								}).subscribeOn(Schedulers.boundedElastic())
+						).then()
+						.materialize()
+						.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
+						.dematerialize()
+				);
+	}
+
+	@SuppressWarnings("Convert2MethodRef")
+	@Override
+	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, String queryString, int limit,
+			@Nullable LLSort sort, LLScoreMode scoreMode, String keyFieldName) {
+
+		return acquireSearcherWrapper(snapshot)
+				.flatMap(indexSearcher -> Mono
+						.fromCallable(() -> {
+							Query query = QueryParser.parse(queryString);
+							Sort luceneSort = LLUtils.toSort(sort);
+							org.apache.lucene.search.ScoreMode luceneScoreMode = LLUtils.toScoreMode(scoreMode);
+							return Tuples.of(query, Optional.ofNullable(luceneSort), luceneScoreMode);
+						})
+						.subscribeOn(Schedulers.boundedElastic())
+						.flatMap(tuple -> Mono
+								.fromCallable(() -> {
+									Query query = tuple.getT1();
+									Sort luceneSort = tuple.getT2().orElse(null);
+									ScoreMode luceneScoreMode = tuple.getT3();
+
+									One<Long> totalHitsCountSink = Sinks.one();
+									Many<LLKeyScore> topKeysSink = Sinks.many().unicast().onBackpressureBuffer(new ArrayBlockingQueue<>(PagedStreamSearcher.MAX_ITEMS_PER_PAGE));
+
+									streamSearcher.search(indexSearcher,
+											query,
+											limit,
+											luceneSort,
+											luceneScoreMode,
+											keyFieldName,
+											keyScore -> {
+												EmitResult result = topKeysSink.tryEmitNext(keyScore);
+												if (result.isFailure()) {
+													throw new EmissionException(result);
+												}
+											},
+											totalHitsCount -> {
+												EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
+												if (result.isFailure()) {
+													throw new EmissionException(result);
+												}
+											});
+
+									return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
+								}).subscribeOn(Schedulers.boundedElastic())
+						)
+						.materialize()
+						.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
+						.dematerialize()
+				);
 	}
 
 	@Override
@@ -394,11 +380,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 	}
 
+	@SuppressWarnings("unused")
 	private void scheduledQueryRefresh() {
 		try {
-			if (!searcherManager.maybeRefresh()) {
-				// skipped refreshing because another thread is currently refreshing
-			}
+			boolean refreshStarted = searcherManager.maybeRefresh();
+			// if refreshStarted == false, another thread is currently already refreshing
 		} catch (IOException ex) {
 			ex.printStackTrace();
 		}

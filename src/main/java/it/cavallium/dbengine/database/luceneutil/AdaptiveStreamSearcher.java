@@ -1,9 +1,12 @@
 package it.cavallium.dbengine.database.luceneutil;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import java.io.IOException;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 
@@ -25,21 +28,23 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 	}
 
 	@Override
-	public Long streamSearch(IndexSearcher indexSearcher,
+	public void search(IndexSearcher indexSearcher,
 			Query query,
 			int limit,
 			@Nullable Sort luceneSort,
+			ScoreMode scoreMode,
 			String keyFieldName,
-			Consumer<String> consumer) throws IOException {
+			Consumer<LLKeyScore> consumer,
+			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit == 0) {
-			return countStreamSearcher.count(indexSearcher, query);
+			totalHitsConsumer.accept(countStreamSearcher.count(indexSearcher, query));
 		} else if (luceneSort == null) {
-			return parallelCollectorStreamSearcher.streamSearch(indexSearcher, query, limit, null, keyFieldName, consumer);
+			parallelCollectorStreamSearcher.search(indexSearcher, query, limit, null, scoreMode, keyFieldName, consumer, totalHitsConsumer);
 		} else {
 			if (limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {
-				return pagedStreamSearcher.streamSearch(indexSearcher, query, limit, luceneSort, keyFieldName, consumer);
+				pagedStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, consumer, totalHitsConsumer);
 			} else {
-				return simpleStreamSearcher.streamSearch(indexSearcher, query, limit, luceneSort, keyFieldName, consumer);
+				simpleStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, consumer, totalHitsConsumer);
 			}
 		}
 	}

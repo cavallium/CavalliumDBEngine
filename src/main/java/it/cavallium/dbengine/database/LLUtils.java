@@ -4,6 +4,8 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.protobuf.ByteString;
 import it.cavallium.dbengine.database.utils.RandomSortField;
+import it.cavallium.dbengine.proto.LLKeyScore;
+import it.cavallium.dbengine.proto.LLType;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -19,13 +21,13 @@ import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSortField;
 import org.jetbrains.annotations.Nullable;
-import it.cavallium.dbengine.proto.LLKeyScore;
-import it.cavallium.dbengine.proto.LLType;
 
+@SuppressWarnings("unused")
 public class LLUtils {
 
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
@@ -50,6 +52,15 @@ public class LLUtils {
 			return new Sort(new RandomSortField());
 		}
 		return null;
+	}
+
+	public static ScoreMode toScoreMode(LLScoreMode scoreMode) {
+		switch (scoreMode) {
+			case COMPLETE: return ScoreMode.COMPLETE;
+			case TOP_SCORES: return ScoreMode.TOP_SCORES;
+			case COMPLETE_NO_SCORES: return ScoreMode.COMPLETE_NO_SCORES;
+			default: throw new IllegalStateException("Unexpected value: " + scoreMode);
+		}
 	}
 
 	public static Term toTerm(LLTerm term) {
@@ -176,6 +187,7 @@ public class LLUtils {
 		return termItemsList.stream().map(LLUtils::toLocal).collect(Collectors.toList());
 	}
 
+	@SuppressWarnings("ConstantConditions")
 	private static LLItem toLocal(it.cavallium.dbengine.proto.LLItem item) {
 		var data2 = item.getData2() != null ? item.getData2().toByteArray() : null;
 		return new LLItem(it.cavallium.dbengine.database.LLType.valueOf(item.getType().toString()),

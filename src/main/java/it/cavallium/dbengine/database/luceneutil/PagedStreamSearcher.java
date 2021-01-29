@@ -1,13 +1,16 @@
 package it.cavallium.dbengine.database.luceneutil;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import java.io.IOException;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.jetbrains.annotations.Nullable;
@@ -26,45 +29,49 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 	}
 
 	@Override
-	public Long streamSearch(IndexSearcher indexSearcher,
+	public void search(IndexSearcher indexSearcher,
 			Query query,
 			int limit,
 			@Nullable Sort luceneSort,
+			ScoreMode scoreMode,
 			String keyFieldName,
-			Consumer<String> consumer) throws IOException {
+			Consumer<LLKeyScore> resultsConsumer,
+			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit < MAX_ITEMS_PER_PAGE) {
 			// Use a normal search method because the limit is low
-			return baseStreamSearcher.streamSearch(indexSearcher, query, limit, luceneSort, keyFieldName, consumer);
+			baseStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, resultsConsumer, totalHitsConsumer);
+			return;
 		}
 		IntWrapper currentAllowedResults = new IntWrapper(limit);
 
 		// Run the first page search
-		TopDocs lastTopDocs = indexSearcher.search(query, MAX_ITEMS_PER_PAGE, luceneSort);
+		TopDocs lastTopDocs = indexSearcher.search(query, MAX_ITEMS_PER_PAGE, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
+		totalHitsConsumer.accept(lastTopDocs.totalHits.value);
 		if (lastTopDocs.scoreDocs.length > 0) {
 			ScoreDoc lastScoreDoc = getLastItem(lastTopDocs.scoreDocs);
-			consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, keyFieldName, consumer);
+			consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, scoreMode, keyFieldName, resultsConsumer);
 
 			// Run the searches for each page until the end
 			boolean finished = currentAllowedResults.var <= 0;
 			while (!finished) {
-				lastTopDocs = indexSearcher.searchAfter(lastScoreDoc, query, MAX_ITEMS_PER_PAGE, luceneSort);
+				lastTopDocs = indexSearcher.searchAfter(lastScoreDoc, query, MAX_ITEMS_PER_PAGE, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
 				if (lastTopDocs.scoreDocs.length > 0) {
 					lastScoreDoc = getLastItem(lastTopDocs.scoreDocs);
-					consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, keyFieldName, consumer);
+					consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, scoreMode, keyFieldName, resultsConsumer);
 				}
 				if (lastTopDocs.scoreDocs.length < MAX_ITEMS_PER_PAGE || currentAllowedResults.var <= 0) {
 					finished = true;
 				}
 			}
 		}
-		return lastTopDocs.totalHits.value;
 	}
 
 	private void consumeHits(IntWrapper currentAllowedResults,
 			ScoreDoc[] hits,
 			IndexSearcher indexSearcher,
+			ScoreMode scoreMode,
 			String keyFieldName,
-			Consumer<String> consumer) throws IOException {
+			Consumer<LLKeyScore> resultsConsumer) throws IOException {
 		for (ScoreDoc hit : hits) {
 			int docId = hit.doc;
 			float score = hit.score;
@@ -85,7 +92,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 					if (field == null) {
 						System.err.println("Can't get key of document docId:" + docId + ",score:" + score);
 					} else {
-						consumer.accept(field.stringValue());
+						resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
 					}
 				}
 			} else {

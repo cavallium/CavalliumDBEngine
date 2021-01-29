@@ -1,9 +1,12 @@
 package it.cavallium.dbengine.database.luceneutil;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import java.io.IOException;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,15 +18,18 @@ public interface LuceneStreamSearcher {
 	 * @param query the query
 	 * @param limit the maximum number of results
 	 * @param luceneSort the sorting method used for the search
+	 * @param scoreMode score mode
 	 * @param keyFieldName the name of the key field
-	 * @param consumer the consumer of results
-	 * @return the approximated total count of results
+	 * @param resultsConsumer the consumer of results
+	 * @param totalHitsConsumer the consumer of total count of results
 	 * @throws IOException thrown if there is an error
 	 */
-	Long streamSearch(IndexSearcher indexSearcher,
+	void search(IndexSearcher indexSearcher,
 			Query query,
 			int limit,
 			@Nullable Sort luceneSort,
+			ScoreMode scoreMode,
 			String keyFieldName,
-			Consumer<String> consumer) throws IOException;
+			Consumer<LLKeyScore> resultsConsumer,
+			LongConsumer totalHitsConsumer) throws IOException;
 }

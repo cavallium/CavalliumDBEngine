@@ -1,15 +1,18 @@
 package it.cavallium.dbengine.database.luceneutil;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.utils.LuceneParallelStreamCollectorManager;
 import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
+import java.util.function.LongConsumer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 
@@ -19,19 +22,21 @@ import org.jetbrains.annotations.Nullable;
 public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 
 	@Override
-	public Long streamSearch(IndexSearcher indexSearcher,
+	public void search(IndexSearcher indexSearcher,
 			Query query,
 			int limit,
 			@Nullable Sort luceneSort,
+			ScoreMode scoreMode,
 			String keyFieldName,
-			Consumer<String> consumer) throws IOException {
+			Consumer<LLKeyScore> resultsConsumer,
+			LongConsumer totalHitsConsumer) throws IOException {
 		if (luceneSort != null) {
 			throw new IllegalArgumentException("ParallelCollectorStreamSearcher doesn't support sorted searches");
 		}
 
 		AtomicInteger currentCount = new AtomicInteger();
 
-		var result = indexSearcher.search(query, LuceneParallelStreamCollectorManager.fromConsumer(docId -> {
+		var result = indexSearcher.search(query, LuceneParallelStreamCollectorManager.fromConsumer(scoreMode, (docId, score) -> {
 			if (currentCount.getAndIncrement() >= limit) {
 				return false;
 			} else {
@@ -51,7 +56,7 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 						if (field == null) {
 							System.err.println("Can't get key of document docId:" + docId);
 						} else {
-							consumer.accept(field.stringValue());
+							resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
 						}
 					}
 				} catch (IOException e) {
@@ -62,6 +67,6 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 			}
 		}));
 		//todo: check the accuracy of our hits counter!
-		return result.getTotalHitsCount();
+		totalHitsConsumer.accept(result.getTotalHitsCount());
 	}
 }

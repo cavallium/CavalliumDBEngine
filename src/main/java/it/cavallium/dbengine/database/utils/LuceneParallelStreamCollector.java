@@ -12,15 +12,18 @@ import org.apache.lucene.search.ScoreMode;
 
 public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 
+	private final int base;
+	private final ScoreMode scoreMode;
 	private final LuceneParallelStreamConsumer streamConsumer;
 	private final AtomicBoolean stopped;
 	private final AtomicLong totalHitsCounter;
 	private final ReentrantLock lock;
-	private final int base;
+	private Scorable scorer;
 
-	public LuceneParallelStreamCollector(int base, LuceneParallelStreamConsumer streamConsumer,
+	public LuceneParallelStreamCollector(int base, ScoreMode scoreMode, LuceneParallelStreamConsumer streamConsumer,
 			AtomicBoolean stopped, AtomicLong totalHitsCounter, ReentrantLock lock) {
 		this.base = base;
+		this.scoreMode = scoreMode;
 		this.streamConsumer = streamConsumer;
 		this.stopped = stopped;
 		this.totalHitsCounter = totalHitsCounter;
@@ -28,13 +31,13 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 	}
 
 	@Override
-	public final LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
-		return new LuceneParallelStreamCollector(context.docBase, streamConsumer, stopped, totalHitsCounter, lock);
+	public final LeafCollector getLeafCollector(LeafReaderContext context) {
+		return new LuceneParallelStreamCollector(context.docBase, scoreMode, streamConsumer, stopped, totalHitsCounter, lock);
 	}
 
 	@Override
-	public void setScorer(Scorable scorer) throws IOException {
-
+	public void setScorer(Scorable scorer) {
+		this.scorer = scorer;
 	}
 
 	@Override
@@ -44,7 +47,8 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 		lock.lock();
 		try {
 			if (!stopped.get()) {
-				if (!streamConsumer.consume(doc)) {
+				assert (scorer == null) || scorer.docID() == doc;
+				if (!streamConsumer.consume(doc, scorer == null ? 0 : scorer.score())) {
 					stopped.set(true);
 				}
 			}
@@ -55,6 +59,6 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 
 	@Override
 	public ScoreMode scoreMode() {
-		return ScoreMode.COMPLETE_NO_SCORES;
+		return scoreMode;
 	}
 }

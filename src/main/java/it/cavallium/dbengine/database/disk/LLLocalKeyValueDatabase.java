@@ -1,5 +1,10 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLKeyValueDatabase;
+import it.cavallium.dbengine.database.LLSingleton;
+import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -31,12 +36,6 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WALRecoveryMode;
-import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.database.LLDeepDictionary;
-import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLKeyValueDatabase;
-import it.cavallium.dbengine.database.LLSingleton;
-import it.cavallium.dbengine.database.LLSnapshot;
 
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
@@ -54,6 +53,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 
+	@SuppressWarnings("CommentedOutCode")
 	public LLLocalKeyValueDatabase(String name, Path path, List<Column> columns, List<ColumnFamilyHandle> handles,
 			boolean crashIfWalError, boolean lowMemory) throws IOException {
 		Options options = openRocksDb(path, crashIfWalError, lowMemory);
@@ -139,6 +139,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force flush
 	}
 
+	@SuppressWarnings("CommentedOutCode")
 	private static Options openRocksDb(Path path, boolean crashIfWalError, boolean lowMemory)
 			throws IOException {
 		// Get databases directory path
@@ -243,8 +244,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 		var handles = new LinkedList<ColumnFamilyHandle>();
 
-		/**
-		 * SkipStatsUpdateOnDbOpen = true because this RocksDB.open session is used only to add just some columns
+		/*
+		  SkipStatsUpdateOnDbOpen = true because this RocksDB.open session is used only to add just some columns
 		 */
 		//var dbOptionsFastLoadSlowEdit = new DBOptions(options.setSkipStatsUpdateOnDbOpen(true));
 
@@ -270,8 +271,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			descriptorsToCreate
 					.removeIf((cf) -> Arrays.equals(cf.getName(), DEFAULT_COLUMN_FAMILY.getName()));
 
-			/**
-			 * SkipStatsUpdateOnDbOpen = true because this RocksDB.open session is used only to add just some columns
+			/*
+			  SkipStatsUpdateOnDbOpen = true because this RocksDB.open session is used only to add just some columns
 			 */
 			//var dbOptionsFastLoadSlowEdit = options.setSkipStatsUpdateOnDbOpen(true);
 
@@ -307,17 +308,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				handles.get(Column.special(Column.toString(columnName))),
 				name,
 				(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber())
-		);
-	}
-
-	@Override
-	public LLDeepDictionary getDeepDictionary(byte[] columnName, int keySize, int key2Size) {
-		return new LLLocalDeepDictionary(db,
-				handles.get(Column.special(Column.toString(columnName))),
-				name,
-				(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
-				keySize,
-				key2Size
 		);
 	}
 
@@ -360,6 +350,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	/**
 	 * Call this method ONLY AFTER flushing completely a db and closing it!
 	 */
+	@SuppressWarnings("unused")
 	private void deleteUnusedOldLogFiles() {
 		Path basePath = dbPath;
 		try {

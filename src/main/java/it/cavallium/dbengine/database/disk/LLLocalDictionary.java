@@ -2,17 +2,18 @@ package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.Consumer;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -27,9 +28,12 @@ import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import org.warp.commonutils.functional.CancellableBiConsumer;
 import org.warp.commonutils.functional.CancellableBiFunction;
 import org.warp.commonutils.functional.ConsumerResult;
+import org.warp.commonutils.type.VariableWrapper;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 @NotAtomic
 public class LLLocalDictionary implements LLDictionary {
@@ -40,6 +44,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
 	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
 
+	private static final byte[] FIRST_KEY = new byte[]{};
 	private static final byte[] NO_DATA = new byte[0];
 	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
 	private static final List<byte[]> EMPTY_UNMODIFIABLE_LIST = List.of();
@@ -82,102 +87,206 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Optional<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) throws IOException {
-		try {
-			Holder<byte[]> data = new Holder<>();
-			if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
-				if (data.getValue() != null) {
-					return Optional.of(data.getValue());
-				} else {
-					byte[] value = db.get(cfh, resolveSnapshot(snapshot), key);
-					return Optional.ofNullable(value);
-				}
-			} else {
-				return Optional.empty();
-			}
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
-	}
-
-	@Override
-	public boolean contains(@Nullable LLSnapshot snapshot, byte[] key) throws IOException {
-		return contains_(snapshot, key);
-	}
-
-	private boolean contains_(@Nullable LLSnapshot snapshot, byte[] key) throws IOException {
-		try {
-			int size = RocksDB.NOT_FOUND;
-			Holder<byte[]> data = new Holder<>();
-			if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
-				if (data.getValue() != null) {
-					size = data.getValue().length;
-				} else {
-					size = db.get(cfh, resolveSnapshot(snapshot), key, NO_DATA);
-				}
-			}
-			return size != RocksDB.NOT_FOUND;
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
-	}
-
-	@Override
-	public Optional<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType) throws IOException {
-		try {
-			byte[] response = null;
-			switch (resultType) {
-				case VALUE_CHANGED:
-					response = LLUtils.booleanToResponse(!contains_(null, key));
-					break;
-				case PREVIOUS_VALUE:
-					var data = new Holder<byte[]>();
-					if (db.keyMayExist(cfh, key, data)) {
+	public Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) {
+		return Mono
+				.fromCallable(() -> {
+					Holder<byte[]> data = new Holder<>();
+					if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
 						if (data.getValue() != null) {
-							response = data.getValue();
+							return data.getValue();
 						} else {
-							response = db.get(cfh, key);
+							return db.get(cfh, resolveSnapshot(snapshot), key);
 						}
 					} else {
-						response = null;
+						return null;
 					}
-					break;
-			}
-			db.put(cfh, key, value);
-			return Optional.ofNullable(response);
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void putMulti(byte[][] key, byte[][] value, LLDictionaryResultType resultType, Consumer<byte[]> responsesConsumer)
-			throws IOException {
-		if (key.length == value.length) {
-			List<byte[]> responses;
-			try (WriteBatch writeBatch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
-
-				if (resultType == LLDictionaryResultType.VOID) {
-					responses = EMPTY_UNMODIFIABLE_LIST;
-				} else {
-					responses = db.multiGetAsList(newCfhList(cfh, key.length), Arrays.asList(key));
-				}
-
-				for (int i = 0; i < key.length; i++) {
-					writeBatch.put(cfh, key[i], value[i]);
-				}
-
-				db.write(BATCH_WRITE_OPTIONS, writeBatch);
-			} catch (RocksDBException e) {
-				throw new IOException(e);
-			}
-
-			for (byte[] response : responses) {
-				responsesConsumer.accept(response);
-			}
+	public Mono<Boolean> isEmpty(@Nullable LLSnapshot snapshot, LLRange range) {
+		if (range.isSingle()) {
+			return containsKey(snapshot, range.getSingle()).map(contains -> !contains);
 		} else {
-			throw new IOException("Wrong parameters count");
+			return containsRange(snapshot, range).map(contains -> !contains);
 		}
+	}
+
+	public Mono<Boolean> containsRange(@Nullable LLSnapshot snapshot, LLRange range) {
+		return Mono
+				.fromCallable(() -> {
+					try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+						if (range.hasMin()) {
+							iter.seek(range.getMin());
+						} else {
+							iter.seekToFirst();
+						}
+						if (!iter.isValid()) {
+							return false;
+						}
+
+						if (range.hasMax()) {
+							byte[] key1 = iter.key();
+							return Arrays.compareUnsigned(key1, range.getMax()) <= 0;
+						} else {
+							return true;
+						}
+					}
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
+	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, byte[] key) {
+		return Mono
+				.fromCallable(() -> {
+					int size = RocksDB.NOT_FOUND;
+					Holder<byte[]> data = new Holder<>();
+					if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
+						if (data.getValue() != null) {
+							size = data.getValue().length;
+						} else {
+							size = db.get(cfh, resolveSnapshot(snapshot), key, NO_DATA);
+						}
+					}
+					return size != RocksDB.NOT_FOUND;
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
+	}
+
+	@Override
+	public Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType) {
+		Mono<byte[]> response = null;
+		switch (resultType) {
+			case VALUE_CHANGED:
+				response = containsKey(null, key).single().map(LLUtils::booleanToResponse);
+				break;
+			case PREVIOUS_VALUE:
+				response = Mono
+						.fromCallable(() -> {
+							var data = new Holder<byte[]>();
+							if (db.keyMayExist(cfh, key, data)) {
+								if (data.getValue() != null) {
+									return data.getValue();
+								} else {
+									return db.get(cfh, key);
+								}
+							} else {
+								return null;
+							}
+						})
+						.onErrorMap(IOException::new)
+						.subscribeOn(Schedulers.boundedElastic());
+				break;
+			case VOID:
+				response = Mono.empty();
+				break;
+		}
+
+		return Mono
+				.fromCallable(() -> {
+					db.put(cfh, key, value);
+					return null;
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic())
+				.then(response);
+	}
+
+	@Override
+	public Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType) {
+		Mono<byte[]> response = null;
+		switch (resultType) {
+			case VALUE_CHANGED:
+				response = containsKey(null, key).single().map(LLUtils::booleanToResponse);
+				break;
+			case PREVIOUS_VALUE:
+				response = Mono
+						.fromCallable(() -> {
+							var data = new Holder<byte[]>();
+							if (db.keyMayExist(cfh, key, data)) {
+								if (data.getValue() != null) {
+									return data.getValue();
+								} else {
+									return db.get(cfh, key);
+								}
+							} else {
+								return null;
+							}
+						})
+						.onErrorMap(IOException::new)
+						.subscribeOn(Schedulers.boundedElastic());
+				break;
+			case VOID:
+				response = Mono.empty();
+				break;
+		}
+
+		return Mono
+				.fromCallable(() -> {
+					db.delete(cfh, key);
+					return null;
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic())
+				.then(response);
+	}
+
+	@Override
+	public Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys) {
+		return keys.flatMap(key -> this.get(snapshot, key).map(value -> Map.entry(key, value)));
+	}
+
+	@Override
+	public Flux<Entry<byte[], byte[]>> putMulti(Flux<Entry<byte[], byte[]>> entries, boolean getOldValues) {
+		return Mono
+				.fromCallable(() -> new CappedWriteBatch(db,
+						CAPPED_WRITE_BATCH_CAP,
+						RESERVED_WRITE_BATCH_SIZE,
+						MAX_WRITE_BATCH_SIZE,
+						BATCH_WRITE_OPTIONS
+				))
+				.subscribeOn(Schedulers.boundedElastic())
+				.flatMapMany(writeBatch -> entries
+						.flatMap(newEntry -> Mono
+								.defer(() -> {
+									if (getOldValues) {
+										return get(null, newEntry.getKey());
+									} else {
+										return Mono.empty();
+									}
+								})
+								.concatWith(Mono
+										.<byte[]>fromCallable(() -> {
+											synchronized (writeBatch) {
+												writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
+											}
+											return null;
+										})
+										.subscribeOn(Schedulers.boundedElastic())
+								)
+								.map(oldValue -> Map.entry(newEntry.getKey(), oldValue))
+						)
+						.concatWith(Mono
+								.<Entry<byte[], byte[]>>fromCallable(() -> {
+									synchronized (writeBatch) {
+										writeBatch.writeToDbAndClose();
+										writeBatch.close();
+									}
+									return null;
+								})
+								.subscribeOn(Schedulers.boundedElastic())
+						)
+						.doFinally(signalType -> {
+							synchronized (writeBatch) {
+								writeBatch.close();
+							}
+						})
+				)
+				.onErrorMap(IOException::new);
 	}
 
 	private static List<ColumnFamilyHandle> newCfhList(ColumnFamilyHandle cfh, int size) {
@@ -189,139 +298,225 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Optional<byte[]> remove(byte[] key, LLDictionaryResultType resultType) throws IOException {
-		try {
-			byte[] response = null;
-			switch (resultType) {
-				case VALUE_CHANGED:
-					response = LLUtils.booleanToResponse(contains_(null, key));
-					break;
-				case PREVIOUS_VALUE:
-					var data = new Holder<byte[]>();
-					if (db.keyMayExist(cfh, key, data)) {
-						if (data.getValue() != null) {
-							response = data.getValue();
-						} else {
-							response = db.get(cfh, key);
-						}
+	public Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
+		if (range.isSingle()) {
+			return getRangeSingle(snapshot, range.getMin());
+		} else {
+			return getRangeMulti(snapshot, range);
+		}
+	}
+
+	private Flux<Entry<byte[],byte[]>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
+		return Mono
+				.fromCallable(() -> {
+					var iter = db.newIterator(cfh, resolveSnapshot(snapshot));
+					if (range.hasMin()) {
+						iter.seek(range.getMin());
 					} else {
-						response = null;
+						iter.seekToFirst();
 					}
-					break;
-			}
-			db.delete(cfh, key);
-			return Optional.ofNullable(response);
-		} catch (RocksDBException e) {
-			throw new IOException(e);
+					return iter;
+				})
+				.subscribeOn(Schedulers.boundedElastic())
+				.flatMapMany(rocksIterator -> Flux
+						.<Entry<byte[], byte[]>>fromIterable(() -> {
+							VariableWrapper<byte[]> nextKey = new VariableWrapper<>(null);
+							VariableWrapper<byte[]> nextValue = new VariableWrapper<>(null);
+							return new Iterator<>() {
+								@Override
+								public boolean hasNext() {
+									assert nextKey.var == null;
+									assert nextValue.var == null;
+									if (!rocksIterator.isValid()) {
+										nextKey.var = null;
+										nextValue.var = null;
+										return false;
+									}
+									var key = rocksIterator.key();
+									var value = rocksIterator.value();
+									if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
+										nextKey.var = null;
+										nextValue.var = null;
+										return false;
+									}
+									nextKey.var = key;
+									nextValue.var = value;
+									return true;
+								}
+
+								@Override
+								public Entry<byte[], byte[]> next() {
+									var key = nextKey.var;
+									var val = nextValue.var;
+									assert key != null;
+									assert val != null;
+									nextKey.var = null;
+									nextValue.var = null;
+									return Map.entry(key, val);
+								}
+							};
+						})
+						.doFinally(signalType -> rocksIterator.close())
+						.subscribeOn(Schedulers.boundedElastic())
+				);
+	}
+
+	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key) {
+		return this
+				.get(snapshot, key)
+				.map(value -> Map.entry(key, value))
+				.flux();
+	}
+
+	@Override
+	public Flux<Entry<byte[], byte[]>> setRange(LLRange range,
+			Flux<Entry<byte[], byte[]>> entries,
+			boolean getOldValues) {
+		if (range.isAll()) {
+			return clear().thenMany(Flux.empty());
+		} else {
+			return Mono
+					.fromCallable(() -> new CappedWriteBatch(db, CAPPED_WRITE_BATCH_CAP, RESERVED_WRITE_BATCH_SIZE, MAX_WRITE_BATCH_SIZE, BATCH_WRITE_OPTIONS))
+					.subscribeOn(Schedulers.boundedElastic())
+					.flatMapMany(writeBatch -> Mono
+							.fromCallable(() -> {
+								synchronized (writeBatch) {
+									if (range.hasMin() && range.hasMax()) {
+										writeBatch.deleteRange(cfh, range.getMin(), range.getMax());
+										writeBatch.delete(cfh, range.getMax());
+									} else if (range.hasMax()) {
+										writeBatch.deleteRange(cfh, FIRST_KEY, range.getMax());
+										writeBatch.delete(cfh, range.getMax());
+									} else {
+										try (var it = db.newIterator(cfh, getReadOptions(null))) {
+											it.seekToLast();
+											if (it.isValid()) {
+												writeBatch.deleteRange(cfh, range.getMin(), it.key());
+												writeBatch.delete(cfh, it.key());
+											}
+										}
+									}
+								}
+								return null;
+							})
+							.subscribeOn(Schedulers.boundedElastic())
+							.thenMany(entries)
+							.flatMap(newEntry -> Mono
+									.defer(() -> {
+										if (getOldValues) {
+											return get(null, newEntry.getKey());
+										} else {
+											return Mono.empty();
+										}
+									})
+									.concatWith(Mono
+											.<byte[]>fromCallable(() -> {
+												synchronized (writeBatch) {
+													writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
+												}
+												return null;
+											})
+											.subscribeOn(Schedulers.boundedElastic())
+									)
+									.map(oldValue -> Map.entry(newEntry.getKey(), oldValue))
+							)
+							.concatWith(Mono
+									.<Entry<byte[], byte[]>>fromCallable(() -> {
+										synchronized (writeBatch) {
+											writeBatch.writeToDbAndClose();
+										}
+										return null;
+									})
+									.subscribeOn(Schedulers.boundedElastic())
+							)
+							.doFinally(signalType -> {
+								synchronized (writeBatch) {
+									writeBatch.close();
+								}
+							})
+					)
+					.onErrorMap(IOException::new);
 		}
 	}
 
-	//todo: implement parallel forEach
-	@Override
-	public ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], byte[]> consumer) {
-		try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-			iter.seekToFirst();
-			while (iter.isValid()) {
-				if (consumer.acceptCancellable(iter.key(), iter.value()).isCancelled()) {
-					return ConsumerResult.cancelNext();
-				}
-				iter.next();
-			}
-		}
-		return ConsumerResult.result();
-	}
+	public Mono<Void> clear() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					try (RocksIterator iter = db.newIterator(cfh); CappedWriteBatch writeBatch = new CappedWriteBatch(db,
+							CAPPED_WRITE_BATCH_CAP,
+							RESERVED_WRITE_BATCH_SIZE,
+							MAX_WRITE_BATCH_SIZE,
+							BATCH_WRITE_OPTIONS
+					)) {
 
-	//todo: implement parallel replace
-	@Override
-	public ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException {
-		try {
-			try (var snapshot = replaceKeys ? db.getSnapshot() : null) {
-				try (RocksIterator iter = db.newIterator(cfh, getReadOptions(snapshot));
-						CappedWriteBatch writeBatch = new CappedWriteBatch(db, CAPPED_WRITE_BATCH_CAP, RESERVED_WRITE_BATCH_SIZE, MAX_WRITE_BATCH_SIZE, BATCH_WRITE_OPTIONS)) {
+						iter.seekToFirst();
 
-					iter.seekToFirst();
-
-					if (replaceKeys) {
 						while (iter.isValid()) {
 							writeBatch.delete(cfh, iter.key());
 
 							iter.next();
 						}
+
+						writeBatch.writeToDbAndClose();
+
+						// Compact range
+						db.compactRange(cfh);
+
+						db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
+						db.flushWal(true);
+
+						var finalSize = exactSize(null);
+						if (finalSize != 0) {
+							throw new IllegalStateException("The dictionary is not empty after calling clear()");
+						}
 					}
+					return null;
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 
-					iter.seekToFirst();
-
-					while (iter.isValid()) {
-
-						var result = consumer.applyCancellable(iter.key(), iter.value());
-						boolean keyDiffers = !Arrays.equals(iter.key(), result.getValue().getKey());
-						if (!replaceKeys && keyDiffers) {
-							throw new IOException("Tried to replace a key");
-						}
-
-						// put if changed or if keys can be swapped/replaced
-						if (replaceKeys || !Arrays.equals(iter.value(), result.getValue().getValue())) {
-							writeBatch.put(cfh, result.getValue().getKey(), result.getValue().getValue());
-						}
-
-						if (result.isCancelled()) {
-							// Cancels and discards the write batch
-							writeBatch.clear();
-							return ConsumerResult.cancelNext();
-						}
-
-						iter.next();
-					}
-
-					writeBatch.writeToDbAndClose();
-
-					return ConsumerResult.result();
-				} finally {
-					db.releaseSnapshot(snapshot);
-				}
-			}
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
-	}
-
-	// This method is exactly the same of LLLocalDictionary. Remember to keep the code equal
-	@Override
-	public void clear() throws IOException {
-		try (RocksIterator iter = db.newIterator(cfh);
-				CappedWriteBatch writeBatch = new CappedWriteBatch(db, CAPPED_WRITE_BATCH_CAP, RESERVED_WRITE_BATCH_SIZE, MAX_WRITE_BATCH_SIZE, BATCH_WRITE_OPTIONS)) {
-
-			iter.seekToFirst();
-
-			while (iter.isValid()) {
-				writeBatch.delete(cfh, iter.key());
-
-				iter.next();
-			}
-
-			writeBatch.writeToDbAndClose();
-
-			// Compact range
-			db.compactRange(cfh);
-
-			db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
-			db.flushWal(true);
-
-			var finalSize = exactSize(null);
-			if (finalSize != 0) {
-				throw new IllegalStateException("The dictionary is not empty after calling clear()");
-			}
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
 	}
 
 	@Override
-	public long size(@Nullable LLSnapshot snapshot, boolean fast) throws IOException {
-		return fast ? fastSize(snapshot) : exactSize(snapshot);
+	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast) {
+		return Mono
+				.defer(() -> {
+					if (range.isAll()) {
+						return Mono
+								.fromCallable(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
+								.onErrorMap(IOException::new)
+								.subscribeOn(Schedulers.boundedElastic());
+					} else {
+						return Mono
+								.fromCallable(() -> {
+									try (var iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+										if (range.hasMin()) {
+											iter.seek(range.getMin());
+										} else {
+											iter.seekToFirst();
+										}
+										long i = 0;
+										while (iter.isValid()) {
+											if (range.hasMax()) {
+												byte[] key1 = iter.key();
+												if (Arrays.compareUnsigned(key1, range.getMax()) > 0) {
+													break;
+												}
+											}
+
+											iter.next();
+											i++;
+										}
+										return i;
+									}
+								})
+								.onErrorMap(IOException::new)
+								.subscribeOn(Schedulers.boundedElastic());
+					}
+				});
 	}
 
-	public long fastSize(@Nullable LLSnapshot snapshot) {
+	private long fastSizeAll(@Nullable LLSnapshot snapshot) {
 		var rocksdbSnapshot = resolveSnapshot(snapshot);
 		if (USE_CURRENT_FASTSIZE_FOR_OLD_SNAPSHOTS || rocksdbSnapshot.snapshot() == null) {
 			try {
@@ -344,7 +539,7 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
-	public long exactSize(@Nullable LLSnapshot snapshot) {
+	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		long count = 0;
 		try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
 			iter.seekToFirst();
@@ -357,29 +552,48 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public boolean isEmpty(@Nullable LLSnapshot snapshot) {
-		try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-			iter.seekToFirst();
-			if (iter.isValid()) {
-				return false;
-			}
-		}
-		return true;
+	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range) {
+		return Mono
+				.fromCallable(() -> {
+					try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+						if (range.hasMin()) {
+							iter.seek(range.getMin());
+						} else {
+							iter.seekToFirst();
+						}
+						if (!iter.isValid()) {
+							return true;
+						}
+						return range.hasMax() && Arrays.compareUnsigned(iter.key(), range.getMax()) > 0;
+					}
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public Optional<Entry<byte[], byte[]>> removeOne() throws IOException {
-		try (RocksIterator iter = db.newIterator(cfh)) {
-			iter.seekToFirst();
-			if (iter.isValid()) {
-				byte[] key = iter.key();
-				byte[] value = iter.value();
-				db.delete(cfh, key);
-				return Optional.of(Map.entry(key, value));
-			}
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
-		return Optional.empty();
+	public Mono<Entry<byte[], byte[]>> removeOne(LLRange range) {
+		return Mono
+				.fromCallable(() -> {
+					try (RocksIterator iter = db.newIterator(cfh)) {
+						if (range.hasMin()) {
+							iter.seek(range.getMin());
+						} else {
+							iter.seekToFirst();
+						}
+						if (!iter.isValid()) {
+							return null;
+						}
+						if (range.hasMax() && Arrays.compareUnsigned(iter.key(), range.getMax()) > 0) {
+							return null;
+						}
+						byte[] key = iter.key();
+						byte[] value = iter.value();
+						db.delete(cfh, key);
+						return Map.entry(key, value);
+					}
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 }

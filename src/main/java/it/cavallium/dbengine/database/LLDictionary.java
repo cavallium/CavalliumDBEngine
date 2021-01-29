@@ -1,45 +1,45 @@
 package it.cavallium.dbengine.database;
 
-import java.io.IOException;
 import java.util.Map.Entry;
-import java.util.Optional;
-import java.util.function.Consumer;
+import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import org.warp.commonutils.functional.CancellableBiConsumer;
-import org.warp.commonutils.functional.CancellableBiFunction;
-import org.warp.commonutils.functional.ConsumerResult;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 @NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
-	Optional<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) throws IOException;
+	Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key);
 
-	boolean contains(@Nullable LLSnapshot snapshot, byte[] key) throws IOException;
+	Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType);
 
-	Optional<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType)
-			throws IOException;
+	Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType);
 
-	void putMulti(byte[][] key, byte[][] value, LLDictionaryResultType resultType,
-			Consumer<byte[]> responses) throws IOException;
+	Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys);
 
-	Optional<byte[]> remove(byte[] key, LLDictionaryResultType resultType) throws IOException;
+	Flux<Entry<byte[], byte[]>> putMulti(Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
 
-	/**
-	 * This method can call the consumer from different threads in parallel
-	 */
-	ConsumerResult forEach(@Nullable LLSnapshot snapshot, int parallelism, CancellableBiConsumer<byte[], byte[]> consumer);
+	Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range);
 
-	/**
-	 * This method can call the consumer from different threads in parallel
-	 */
-	ConsumerResult replaceAll(int parallelism, boolean replaceKeys, CancellableBiFunction<byte[], byte[], Entry<byte[], byte[]>> consumer) throws IOException;
+	Flux<Entry<byte[], byte[]>> setRange(LLRange range, Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
 
-	void clear() throws IOException;
+	default Mono<Void> replaceRange(LLRange range, boolean canKeysChange, Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer) {
+		Flux<Entry<byte[], byte[]>> replacedFlux = this.getRange(null, range).flatMap(entriesReplacer);
+		if (canKeysChange) {
+			return this
+					.setRange(range, replacedFlux, false)
+					.then();
+		} else {
+			return this
+					.putMulti(replacedFlux, false)
+					.then();
+		}
+	}
 
-	long size(@Nullable LLSnapshot snapshot, boolean fast) throws IOException;
+	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range);
 
-	boolean isEmpty(@Nullable LLSnapshot snapshot) throws IOException;
+	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast);
 
-	Optional<Entry<byte[], byte[]>> removeOne() throws IOException;
+	Mono<Entry<byte[], byte[]>> removeOne(LLRange range);
 }

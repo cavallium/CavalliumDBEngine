@@ -6,10 +6,8 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -246,25 +244,7 @@ public class LLLocalDictionary implements LLDictionary {
 				))
 				.subscribeOn(Schedulers.boundedElastic())
 				.flatMapMany(writeBatch -> entries
-						.flatMap(newEntry -> Mono
-								.defer(() -> {
-									if (getOldValues) {
-										return get(null, newEntry.getKey());
-									} else {
-										return Mono.empty();
-									}
-								})
-								.concatWith(Mono
-										.<byte[]>fromCallable(() -> {
-											synchronized (writeBatch) {
-												writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
-											}
-											return null;
-										})
-										.subscribeOn(Schedulers.boundedElastic())
-								)
-								.map(oldValue -> Map.entry(newEntry.getKey(), oldValue))
-						)
+						.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
 						.concatWith(Mono
 								.<Entry<byte[], byte[]>>fromCallable(() -> {
 									synchronized (writeBatch) {
@@ -284,12 +264,25 @@ public class LLLocalDictionary implements LLDictionary {
 				.onErrorMap(IOException::new);
 	}
 
-	private static List<ColumnFamilyHandle> newCfhList(ColumnFamilyHandle cfh, int size) {
-		var list = new ArrayList<ColumnFamilyHandle>(size);
-		for (int i = 0; i < size; i++) {
-			list.add(cfh);
-		}
-		return list;
+	@NotNull
+	private Mono<Entry<byte[], byte[]>> putEntryToWriteBatch(Entry<byte[], byte[]> newEntry, boolean getOldValues,
+			CappedWriteBatch writeBatch) {
+		return Mono.from(Mono
+				.<byte[]>defer(() -> {
+					if (getOldValues) {
+						return get(null, newEntry.getKey());
+					} else {
+						return Mono.empty();
+					}
+				})
+				.concatWith(Mono.<byte[]>fromCallable(() -> {
+					synchronized (writeBatch) {
+						writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
+					}
+					return null;
+				})
+				.subscribeOn(Schedulers.boundedElastic()))
+				.map(oldValue -> Map.entry(newEntry.getKey(), oldValue)));
 	}
 
 	@Override
@@ -396,29 +389,12 @@ public class LLLocalDictionary implements LLDictionary {
 							})
 							.subscribeOn(Schedulers.boundedElastic())
 							.thenMany(entries)
-							.flatMap(newEntry -> Mono
-									.defer(() -> {
-										if (getOldValues) {
-											return get(null, newEntry.getKey());
-										} else {
-											return Mono.empty();
-										}
-									})
-									.concatWith(Mono
-											.<byte[]>fromCallable(() -> {
-												synchronized (writeBatch) {
-													writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
-												}
-												return null;
-											})
-											.subscribeOn(Schedulers.boundedElastic())
-									)
-									.map(oldValue -> Map.entry(newEntry.getKey(), oldValue))
-							)
+							.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
 							.concatWith(Mono
 									.<Entry<byte[], byte[]>>fromCallable(() -> {
 										synchronized (writeBatch) {
 											writeBatch.writeToDbAndClose();
+											writeBatch.close();
 										}
 										return null;
 									})

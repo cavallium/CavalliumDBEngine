@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -25,11 +24,8 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.Snapshot;
-import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import org.warp.commonutils.functional.CancellableBiFunction;
-import org.warp.commonutils.functional.ConsumerResult;
 import org.warp.commonutils.type.VariableWrapper;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -106,7 +102,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Boolean> isEmpty(@Nullable LLSnapshot snapshot, LLRange range) {
+	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range) {
 		if (range.isSingle()) {
 			return containsKey(snapshot, range.getSingle()).map(contains -> !contains);
 		} else {
@@ -464,11 +460,6 @@ public class LLLocalDictionary implements LLDictionary {
 
 						db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
 						db.flushWal(true);
-
-						var finalSize = exactSize(null);
-						if (finalSize != 0) {
-							throw new IllegalStateException("The dictionary is not empty after calling clear()");
-						}
 					}
 					return null;
 				})
@@ -549,26 +540,6 @@ public class LLLocalDictionary implements LLDictionary {
 			}
 			return count;
 		}
-	}
-
-	@Override
-	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range) {
-		return Mono
-				.fromCallable(() -> {
-					try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							iter.seek(range.getMin());
-						} else {
-							iter.seekToFirst();
-						}
-						if (!iter.isValid()) {
-							return true;
-						}
-						return range.hasMax() && Arrays.compareUnsigned(iter.key(), range.getMax()) > 0;
-					}
-				})
-				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override

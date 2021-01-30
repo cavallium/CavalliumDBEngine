@@ -13,7 +13,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends DatabaseEntry<Map<T, U>> {
+public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends DatabaseStageEntry<Map<T, U>> {
 
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 

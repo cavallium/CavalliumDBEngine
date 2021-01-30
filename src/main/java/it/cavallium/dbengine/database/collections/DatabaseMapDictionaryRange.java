@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.util.Arrays;
@@ -14,7 +13,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods
-public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte[], DatabaseEntry<byte[]>> {
+public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>> {
 
 	public static final byte[] NO_PREFIX = new byte[0];
 	private final LLDictionary dictionary;
@@ -108,52 +107,15 @@ public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte
 	}
 
 	@Override
-	public Mono<DatabaseEntry<byte[]>> at(@Nullable CompositeSnapshot snapshot, byte[] keySuffix) {
-		return Mono.just(new SingleDatabaseEntry(keySuffix));
+	public Mono<DatabaseStageEntry<byte[]>> at(@Nullable CompositeSnapshot snapshot, byte[] keySuffix) {
+		return Mono.just(new DatabaseSingle(dictionary, toKey(keySuffix)));
 	}
 
 	@Override
-	public Flux<Entry<byte[], DatabaseEntry<byte[]>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+	public Flux<Entry<byte[], DatabaseStageEntry<byte[]>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range)
 				.map(this::stripPrefix)
-				.map(keySuffix -> Map.entry(keySuffix, new SingleDatabaseEntry(keySuffix)));
-	}
-
-	private class SingleDatabaseEntry implements DatabaseEntry<byte[]> {
-
-		private final byte[] keySuffix;
-
-		public SingleDatabaseEntry(byte[] keySuffix) {
-			this.keySuffix = keySuffix;
-		}
-
-		@Override
-		public Mono<byte[]> get(@Nullable CompositeSnapshot snapshot) {
-			return dictionary.get(resolveSnapshot(snapshot), toKey(keySuffix));
-		}
-
-		@Override
-		public Mono<byte[]> setAndGetPrevious(byte[] value) {
-			return dictionary.put(toKey(keySuffix), value, LLDictionaryResultType.PREVIOUS_VALUE);
-		}
-
-		@Override
-		public Mono<byte[]> clearAndGetPrevious() {
-			return dictionary.remove(toKey(keySuffix), LLDictionaryResultType.PREVIOUS_VALUE);
-		}
-
-		@Override
-		public Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
-			return dictionary
-					.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(toKey(keySuffix)))
-					.map(empty -> empty ? 0L : 1L);
-		}
-
-		@Override
-		public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-			return dictionary
-					.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(toKey(keySuffix)));
-		}
+				.map(keySuffix -> Map.entry(keySuffix, new DatabaseSingle(dictionary, toKey(keySuffix))));
 	}
 }

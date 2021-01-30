@@ -13,10 +13,11 @@ import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods
-public abstract class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>> implements DatabaseStageMap<byte[], U, US> {
+public class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>> implements DatabaseStageMap<byte[], U, US> {
 
 	public static final byte[] EMPTY_BYTES = new byte[0];
 	private final LLDictionary dictionary;
+	private final SubStageGetter<U, US> subStageGetter;
 	private final byte[] keyPrefix;
 	private final int keySuffixLength;
 	private final int keyExtLength;
@@ -64,12 +65,13 @@ public abstract class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>
 	}
 
 	@SuppressWarnings("unused")
-	public DatabaseMapDictionaryParent(LLDictionary dictionary, int keyLength, int keyExtLength) {
-		this(dictionary, EMPTY_BYTES, keyLength, keyExtLength);
+	public DatabaseMapDictionaryParent(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, int keyLength, int keyExtLength) {
+		this(dictionary, subStageGetter, EMPTY_BYTES, keyLength, keyExtLength);
 	}
 
-	public DatabaseMapDictionaryParent(LLDictionary dictionary, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
+	public DatabaseMapDictionaryParent(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
 		this.dictionary = dictionary;
+		this.subStageGetter = subStageGetter;
 		this.keyPrefix = prefixKey;
 		this.keySuffixLength = keySuffixLength;
 		this.keyExtLength = keyExtLength;
@@ -104,15 +106,34 @@ public abstract class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>
 	 * Remove ext from suffix
 	 */
 	private byte[] trimSuffix(byte[] keySuffix) {
-		if (keySuffix.length == keySuffixLength) return keySuffix;
+		if (keySuffix.length == keySuffixLength)
+			return keySuffix;
 		return Arrays.copyOf(keySuffix, keySuffixLength);
+	}
+
+	/**
+	 * Remove ext from full key
+	 */
+	private byte[] removeExtFromFullKey(byte[] key) {
+		return Arrays.copyOf(key, keyPrefix.length + keySuffixLength);
+	}
+
+	/**
+	 * Add prefix to suffix
+	 */
+	private byte[] toKeyWithoutExt(byte[] suffixKey) {
+		assert suffixKey.length == keySuffixLength;
+		byte[] result = Arrays.copyOf(keyPrefix, keyPrefix.length + keySuffixLength);
+		System.arraycopy(suffixKey, 0, result, keyPrefix.length, keySuffixLength);
+		return result;
 	}
 
 	/**
 	 * Remove suffix from keySuffix, returning probably an empty byte array
 	 */
 	private byte[] stripSuffix(byte[] keySuffix) {
-		if (keySuffix.length == this.keySuffixLength) return EMPTY_BYTES;
+		if (keySuffix.length == this.keySuffixLength)
+			return EMPTY_BYTES;
 		return Arrays.copyOfRange(keySuffix, this.keySuffixLength, keySuffix.length);
 	}
 
@@ -132,34 +153,22 @@ public abstract class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>
 
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, byte[] keySuffix) {
-		return this.subStage(
-				this.dictionary
-						.getRange(resolveSnapshot(snapshot), toExtRange(stripPrefix(keySuffix)))
-						.map(key -> {
-							byte[] keyExt = this.stripSuffix(this.stripPrefix(key.getKey()));
-							return Map.entry(keyExt, key.getValue());
-						})
+		Flux<byte[]> rangeKeys = this
+				.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffix)
 		);
+		return this.subStageGetter
+				.subStage(dictionary, snapshot, toKeyWithoutExt(keySuffix), rangeKeys);
 	}
 
 	@Override
 	public Flux<Entry<byte[], US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		Flux<GroupedFlux<byte[], Entry<byte[], byte[]>>> groupedFlux = dictionary
-				.getRange(resolveSnapshot(snapshot), range)
-				.groupBy(entry -> this.trimSuffix(this.stripPrefix(entry.getKey())));
+		Flux<GroupedFlux<byte[], byte[]>> groupedFlux = dictionary
+				.getRangeKeys(resolveSnapshot(snapshot), range)
+				.groupBy(this::removeExtFromFullKey);
 		return groupedFlux
-				.flatMap(keyValueFlux -> this
-						.subStage(keyValueFlux.map(key -> {
-							byte[] keyExt = this.stripSuffix(this.stripPrefix(key.getKey()));
-							return Map.entry(keyExt, key.getValue());
-						}))
-						.map(us -> Map.entry(keyValueFlux.key(), us))
+				.flatMap(rangeKeys -> this.subStageGetter
+						.subStage(dictionary, snapshot, rangeKeys.key(), rangeKeys)
+						.map(us -> Map.entry(rangeKeys.key(), us))
 				);
 	}
-
-	/**
-	 *
-	 * @param keyValueFlux a flux with keyExt and full values from the same keySuffix
-	 */
-	protected abstract Mono<US> subStage(Flux<Entry<byte[], byte[]>> keyValueFlux);
 }

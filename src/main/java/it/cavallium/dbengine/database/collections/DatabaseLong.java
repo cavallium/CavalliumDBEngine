@@ -1,26 +1,33 @@
 package it.cavallium.dbengine.database.collections;
 
 import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
-public class LLInt implements LLKeyValueDatabaseStructure {
+public class DatabaseLong implements LLKeyValueDatabaseStructure {
 
 	private final LLSingleton singleton;
 
-	public LLInt(LLSingleton singleton) {
+	public DatabaseLong(LLSingleton singleton) {
 		this.singleton = singleton;
 	}
 
-	public Mono<Integer> get(@Nullable LLSnapshot snapshot) {
-		return singleton.get(snapshot).map(Ints::fromByteArray);
+	public Mono<Long> get(@Nullable LLSnapshot snapshot) {
+		return singleton.get(snapshot).map(array -> {
+			if (array.length == 4) {
+				return (long) Ints.fromByteArray(array);
+			} else {
+				return Longs.fromByteArray(array);
+			}
+		});
 	}
 
-	public Mono<Void> set(int value) {
-		return singleton.set(Ints.toByteArray(value));
+	public Mono<Void> set(long value) {
+		return singleton.set(Longs.toByteArray(value));
 	}
 
 	@Override

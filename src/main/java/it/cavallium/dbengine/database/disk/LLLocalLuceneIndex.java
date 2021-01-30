@@ -14,7 +14,6 @@ import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.database.luceneutil.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.database.luceneutil.LuceneStreamSearcher;
 import it.cavallium.dbengine.database.luceneutil.PagedStreamSearcher;
-import it.cavallium.luceneserializer.luceneserializer.ParseException;
 import it.cavallium.luceneserializer.luceneserializer.QueryParser;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -44,7 +43,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.executor.ScheduledTaskLifecycle;
-import org.warp.commonutils.functional.IOFunction;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -137,87 +135,115 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public LLSnapshot takeSnapshot() throws IOException {
-
-		long snapshotSeqNo = lastSnapshotSeqNo.incrementAndGet();
-
-		IndexCommit snapshot = takeLuceneSnapshot();
-		this.snapshots.put(snapshotSeqNo, new LuceneIndexSnapshot(snapshot));
-		return new LLSnapshot(snapshotSeqNo);
+	public Mono<LLSnapshot> takeSnapshot() {
+		return Mono
+				.fromCallable(lastSnapshotSeqNo::incrementAndGet)
+				.subscribeOn(Schedulers.boundedElastic())
+				.flatMap(snapshotSeqNo -> takeLuceneSnapshot()
+						.flatMap(snapshot -> Mono
+								.fromCallable(() -> {
+									this.snapshots.put(snapshotSeqNo, new LuceneIndexSnapshot(snapshot));
+									return new LLSnapshot(snapshotSeqNo);
+								})
+								.subscribeOn(Schedulers.boundedElastic())
+						)
+				);
 	}
 
 	/**
 	 * Use internally. This method commits before taking the snapshot if there are no commits in a new database,
 	 * avoiding the exception.
 	 */
-	private IndexCommit takeLuceneSnapshot() throws IOException {
-		try {
-			return snapshotter.snapshot();
-		} catch (IllegalStateException ex) {
-			if ("No index commit to snapshot".equals(ex.getMessage())) {
-				indexWriter.commit();
+	private Mono<IndexCommit> takeLuceneSnapshot() {
+		return Mono.fromCallable(() -> {
+			try {
 				return snapshotter.snapshot();
-			} else {
-				throw ex;
+			} catch (IllegalStateException ex) {
+				if ("No index commit to snapshot".equals(ex.getMessage())) {
+					indexWriter.commit();
+					return snapshotter.snapshot();
+				} else {
+					throw ex;
+				}
 			}
-		}
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void releaseSnapshot(LLSnapshot snapshot) throws IOException {
-		var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
-		if (indexSnapshot == null) {
-			throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
-		}
+	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
+		return Mono.<Void>fromCallable(() -> {
+			var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
+			if (indexSnapshot == null) {
+				throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
+			}
 
-		indexSnapshot.close();
+			indexSnapshot.close();
 
-		var luceneIndexSnapshot = indexSnapshot.getSnapshot();
-		snapshotter.release(luceneIndexSnapshot);
-		// Delete unused files after releasing the snapshot
-		indexWriter.deleteUnusedFiles();
+			var luceneIndexSnapshot = indexSnapshot.getSnapshot();
+			snapshotter.release(luceneIndexSnapshot);
+			// Delete unused files after releasing the snapshot
+			indexWriter.deleteUnusedFiles();
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void addDocument(LLTerm key, LLDocument doc) throws IOException {
-		indexWriter.addDocument(LLUtils.toDocument(doc));
+	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
+		return Mono.<Void>fromCallable(() -> {
+			indexWriter.addDocument(LLUtils.toDocument(doc));
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void addDocuments(Iterable<LLTerm> keys, Iterable<LLDocument> docs) throws IOException {
+	public Mono<Void> addDocuments(Iterable<LLTerm> keys, Iterable<LLDocument> docs) {
+		return Mono.<Void>fromCallable(() -> {
 		indexWriter.addDocuments(LLUtils.toDocuments(docs));
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void deleteDocument(LLTerm id) throws IOException {
-		indexWriter.deleteDocuments(LLUtils.toTerm(id));
+	public Mono<Void> deleteDocument(LLTerm id) {
+		return Mono.<Void>fromCallable(() -> {
+			indexWriter.deleteDocuments(LLUtils.toTerm(id));
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void updateDocument(LLTerm id, LLDocument document) throws IOException {
-		indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
+	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
+		return Mono.<Void>fromCallable(() -> {
+			indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void updateDocuments(Iterable<LLTerm> ids, Iterable<LLDocument> documents)
-			throws IOException {
-		var idIt = ids.iterator();
-		var docIt = documents.iterator();
-		while (idIt.hasNext()) {
-			var id = idIt.next();
-			var doc = docIt.next();
+	public Mono<Void> updateDocuments(Iterable<LLTerm> ids, Iterable<LLDocument> documents) {
+		return Mono.<Void>fromCallable(() -> {
+			var idIt = ids.iterator();
+			var docIt = documents.iterator();
+			while (idIt.hasNext()) {
+				var id = idIt.next();
+				var doc = docIt.next();
 
-			indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(doc));
-		}
+				indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(doc));
+			}
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void deleteAll() throws IOException {
-		indexWriter.deleteAll();
-		indexWriter.commit();
-		indexWriter.forceMergeDeletes(true);
-		indexWriter.flush();
-		indexWriter.commit();
+	public Mono<Void> deleteAll() {
+		return Mono.<Void>fromCallable(() -> {
+			indexWriter.deleteAll();
+			indexWriter.commit();
+			indexWriter.forceMergeDeletes(true);
+			indexWriter.flush();
+			indexWriter.commit();
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	private Mono<IndexSearcher> acquireSearcherWrapper(LLSnapshot snapshot) {
@@ -351,23 +377,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public long count(@Nullable LLSnapshot snapshot, String queryString) throws IOException {
-		try {
-			var luceneIndexSnapshot = resolveSnapshot(snapshot);
-
-			Query query = QueryParser.parse(queryString);
-
-			return (long) runSearch(luceneIndexSnapshot, (indexSearcher) -> indexSearcher.count(query));
-		} catch (ParseException e) {
-			throw new IOException("Error during query count!", e);
-		}
-	}
-
-	@Override
-	public void close() throws IOException {
-		scheduledTasksLifecycle.cancelAndWait();
-		indexWriter.close();
-		directory.close();
+	public Mono<Void> close() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					scheduledTasksLifecycle.cancelAndWait();
+					indexWriter.close();
+					directory.close();
+					return null;
+				})
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	private void scheduledCommit() {
@@ -387,20 +405,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			// if refreshStarted == false, another thread is currently already refreshing
 		} catch (IOException ex) {
 			ex.printStackTrace();
-		}
-	}
-
-	private <U> U runSearch(@Nullable LuceneIndexSnapshot snapshot, IOFunction<IndexSearcher, U> searchExecutor)
-			throws IOException {
-		if (snapshot != null) {
-			return searchExecutor.apply(snapshot.getIndexSearcher());
-		} else {
-			var indexSearcher = searcherManager.acquire();
-			try {
-				return searchExecutor.apply(indexSearcher);
-			} finally {
-				searcherManager.release(indexSearcher);
-			}
 		}
 	}
 

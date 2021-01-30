@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.database;
 
-import java.io.IOException;
+import reactor.core.publisher.Mono;
 
 public interface LLSnapshottable {
 
-	LLSnapshot takeSnapshot() throws IOException;
+	Mono<LLSnapshot> takeSnapshot();
 
-	void releaseSnapshot(LLSnapshot snapshot) throws IOException;
+	Mono<Void> releaseSnapshot(LLSnapshot snapshot);
 }

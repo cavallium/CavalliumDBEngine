@@ -1,27 +1,25 @@
 package it.cavallium.dbengine.database;
 
-import java.io.Closeable;
-import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
-public interface LLLuceneIndex extends Closeable, LLSnapshottable {
+public interface LLLuceneIndex extends LLSnapshottable {
 
 	String getLuceneIndexName();
 
-	void addDocument(LLTerm id, LLDocument doc) throws IOException;
+	Mono<Void> addDocument(LLTerm id, LLDocument doc);
 
-	void addDocuments(Iterable<LLTerm> keys, Iterable<LLDocument> documents) throws IOException;
+	Mono<Void> addDocuments(Iterable<LLTerm> keys, Iterable<LLDocument> documents);
 
-	void deleteDocument(LLTerm id) throws IOException;
+	Mono<Void> deleteDocument(LLTerm id);
 
-	void updateDocument(LLTerm id, LLDocument document) throws IOException;
+	Mono<Void> updateDocument(LLTerm id, LLDocument document);
 
-	void updateDocuments(Iterable<LLTerm> ids, Iterable<LLDocument> documents) throws IOException;
+	Mono<Void> updateDocuments(Iterable<LLTerm> ids, Iterable<LLDocument> documents);
 
-	void deleteAll() throws IOException;
+	Mono<Void> deleteAll();
 
 	/**
 	 *
@@ -49,7 +47,13 @@ public interface LLLuceneIndex extends Closeable, LLSnapshottable {
 			LLScoreMode scoreMode,
 			String keyFieldName);
 
-	long count(@Nullable LLSnapshot snapshot, String query) throws IOException;
+	default Mono<Long> count(@Nullable LLSnapshot snapshot, String queryString) {
+		return this.search(snapshot, queryString, 0, null, null, null)
+				.flatMap(LLSearchResult::totalHitsCount)
+				.single();
+	}
 
 	boolean isLowMemoryMode();
+
+	Mono<Void> close();
 }

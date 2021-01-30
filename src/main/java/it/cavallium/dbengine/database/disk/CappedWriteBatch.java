@@ -78,12 +78,14 @@ public class CappedWriteBatch implements WriteBatchInterface, AutoCloseable {
 		flushIfNeeded(false);
 	}
 
+	@Deprecated
 	@Override
 	public void remove(byte[] key) throws RocksDBException {
 		writeBatch.remove(key);
 		flushIfNeeded(false);
 	}
 
+	@Deprecated
 	@Override
 	public void remove(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
 		writeBatch.remove(columnFamilyHandle, key);

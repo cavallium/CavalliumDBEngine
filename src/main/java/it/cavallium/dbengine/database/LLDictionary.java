@@ -22,6 +22,8 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range);
 
+	Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range);
+
 	Flux<Entry<byte[], byte[]>> setRange(LLRange range, Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
 
 	default Mono<Void> replaceRange(LLRange range, boolean canKeysChange, Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer) {

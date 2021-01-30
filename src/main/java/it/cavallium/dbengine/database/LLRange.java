@@ -26,6 +26,14 @@ public class LLRange {
 		return new LLRange(null, max);
 	}
 
+	public static LLRange single(byte[] single) {
+		return new LLRange(single, single);
+	}
+
+	public static LLRange of(byte[] min, byte[] max) {
+		return new LLRange(min, max);
+	}
+
 	public boolean isAll() {
 		return min == null && max == null;
 	}

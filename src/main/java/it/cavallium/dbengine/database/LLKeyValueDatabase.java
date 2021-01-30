@@ -2,11 +2,11 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import it.cavallium.dbengine.database.collections.LLInt;
+import it.cavallium.dbengine.database.collections.LLLong;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import it.cavallium.dbengine.database.structures.LLInt;
-import it.cavallium.dbengine.database.structures.LLLong;
 
 public interface LLKeyValueDatabase extends Closeable, LLSnapshottable, LLKeyValueDatabaseStructure {
 

@@ -3,7 +3,7 @@ package it.cavallium.dbengine.database;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.protobuf.ByteString;
-import it.cavallium.dbengine.database.utils.RandomSortField;
+import it.cavallium.dbengine.lucene.RandomSortField;
 import it.cavallium.dbengine.proto.LLKeyScore;
 import it.cavallium.dbengine.proto.LLType;
 import java.nio.ByteBuffer;

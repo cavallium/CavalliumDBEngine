@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.indicizer;
 
+import it.cavallium.dbengine.database.DatabaseMemoryMode;
 import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSort;

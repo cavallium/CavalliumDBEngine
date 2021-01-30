@@ -10,6 +10,8 @@ import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
@@ -22,10 +24,15 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public void connect() throws IOException {
-		if (Files.notExists(basePath)) {
-			Files.createDirectories(basePath);
-		}
+	public Mono<Void> connect() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					if (Files.notExists(basePath)) {
+						Files.createDirectories(basePath);
+					}
+					return null;
+				})
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
@@ -62,17 +69,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public void disconnect() throws IOException {
-
-	}
-
-	@Override
-	public void ping() {
-
-	}
-
-	@Override
-	public double getMediumLatencyMillis() {
-		return 0;
+	public Mono<Void> disconnect() {
+		return Mono.empty();
 	}
 }

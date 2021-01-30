@@ -4,10 +4,11 @@ import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
+import reactor.core.publisher.Mono;
 
 public interface LLDatabaseConnection {
 
-	void connect() throws IOException;
+	Mono<Void> connect();
 
 	LLKeyValueDatabase getDatabase(String name, List<Column> columns, boolean lowMemory) throws IOException;
 
@@ -18,9 +19,5 @@ public interface LLDatabaseConnection {
 			Duration commitDebounceTime,
 			boolean lowMemory) throws IOException;
 
-	void disconnect() throws IOException;
-
-	void ping() throws IOException;
-
-	double getMediumLatencyMillis() throws IOException;
+	Mono<Void> disconnect();
 }

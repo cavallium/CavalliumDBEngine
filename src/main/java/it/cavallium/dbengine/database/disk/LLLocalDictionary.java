@@ -269,6 +269,13 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key) {
+		return this
+				.get(snapshot, key)
+				.map(value -> Map.entry(key, value))
+				.flux();
+	}
+
 	private Flux<Entry<byte[],byte[]>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
 		return Mono
 				.fromCallable(() -> {
@@ -324,11 +331,68 @@ public class LLLocalDictionary implements LLDictionary {
 				);
 	}
 
-	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key) {
+	@Override
+	public Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range) {
+		if (range.isSingle()) {
+			return getRangeKeysSingle(snapshot, range.getMin());
+		} else {
+			return getRangeKeysMulti(snapshot, range);
+		}
+	}
+
+	private Flux<byte[]> getRangeKeysSingle(LLSnapshot snapshot, byte[] key) {
 		return this
-				.get(snapshot, key)
-				.map(value -> Map.entry(key, value))
+				.containsKey(snapshot, key)
+				.filter(contains -> contains)
+				.map(contains -> key)
 				.flux();
+	}
+
+	private Flux<byte[]> getRangeKeysMulti(LLSnapshot snapshot, LLRange range) {
+		return Mono
+				.fromCallable(() -> {
+					var iter = db.newIterator(cfh, resolveSnapshot(snapshot));
+					if (range.hasMin()) {
+						iter.seek(range.getMin());
+					} else {
+						iter.seekToFirst();
+					}
+					return iter;
+				})
+				.subscribeOn(Schedulers.boundedElastic())
+				.flatMapMany(rocksIterator -> Flux
+						.<byte[]>fromIterable(() -> {
+							VariableWrapper<byte[]> nextKey = new VariableWrapper<>(null);
+							return new Iterator<>() {
+								@Override
+								public boolean hasNext() {
+									assert nextKey.var == null;
+									if (!rocksIterator.isValid()) {
+										nextKey.var = null;
+										return false;
+									}
+									var key = rocksIterator.key();
+									var value = rocksIterator.value();
+									if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
+										nextKey.var = null;
+										return false;
+									}
+									nextKey.var = key;
+									return true;
+								}
+
+								@Override
+								public byte[] next() {
+									var key = nextKey.var;
+									assert key != null;
+									nextKey.var = null;
+									return key;
+								}
+							};
+						})
+						.doFinally(signalType -> rocksIterator.close())
+						.subscribeOn(Schedulers.boundedElastic())
+				);
 	}
 
 	@Override

@@ -5,8 +5,8 @@ import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
-import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Mono;
 
 public class LLLong implements LLKeyValueDatabaseStructure {
 
@@ -16,17 +16,18 @@ public class LLLong implements LLKeyValueDatabaseStructure {
 		this.singleton = singleton;
 	}
 
-	public long get(@Nullable LLSnapshot snapshot) throws IOException {
-		var array = singleton.get(snapshot);
-		if (array.length == 4) {
-			return Ints.fromByteArray(array);
-		} else {
-			return Longs.fromByteArray(array);
-		}
+	public Mono<Long> get(@Nullable LLSnapshot snapshot) {
+		return singleton.get(snapshot).map(array -> {
+			if (array.length == 4) {
+				return (long) Ints.fromByteArray(array);
+			} else {
+				return Longs.fromByteArray(array);
+			}
+		});
 	}
 
-	public void set(long value) throws IOException {
-		singleton.set(Longs.toByteArray(value));
+	public Mono<Void> set(long value) {
+		return singleton.set(Longs.toByteArray(value));
 	}
 
 	@Override

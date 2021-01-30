@@ -10,6 +10,8 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class LLLocalSingleton implements LLSingleton {
 
@@ -44,21 +46,22 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	@Override
-	public byte[] get(@Nullable LLSnapshot snapshot) throws IOException {
-		try {
-			return db.get(cfh, resolveSnapshot(snapshot), name);
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
+	public Mono<byte[]> get(@Nullable LLSnapshot snapshot) {
+		return Mono
+				.fromCallable(() -> db.get(cfh, resolveSnapshot(snapshot), name))
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public void set(byte[] value) throws IOException {
-		try {
-			db.put(cfh, name, value);
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
+	public Mono<Void> set(byte[] value) {
+		return Mono
+				.<Void>fromCallable(() -> {
+					db.put(cfh, name, value);
+					return null;
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override

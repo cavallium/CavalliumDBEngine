@@ -4,8 +4,8 @@ import com.google.common.primitives.Ints;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
-import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Mono;
 
 public class LLInt implements LLKeyValueDatabaseStructure {
 
@@ -15,12 +15,12 @@ public class LLInt implements LLKeyValueDatabaseStructure {
 		this.singleton = singleton;
 	}
 
-	public int get(@Nullable LLSnapshot snapshot) throws IOException {
-		return Ints.fromByteArray(singleton.get(snapshot));
+	public Mono<Integer> get(@Nullable LLSnapshot snapshot) {
+		return singleton.get(snapshot).map(Ints::fromByteArray);
 	}
 
-	public void set(int value) throws IOException {
-		singleton.set(Ints.toByteArray(value));
+	public Mono<Void> set(int value) {
+		return singleton.set(Ints.toByteArray(value));
 	}
 
 	@Override

@@ -1,11 +1,11 @@
 package it.cavallium.dbengine.database;
 
-import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Mono;
 
 public interface LLSingleton extends LLKeyValueDatabaseStructure {
 
-	byte[] get(@Nullable LLSnapshot snapshot) throws IOException;
+	Mono<byte[]> get(@Nullable LLSnapshot snapshot);
 
-	void set(byte[] value) throws IOException;
+	Mono<Void> set(byte[] value);
 }

@@ -18,6 +18,7 @@ import it.cavallium.luceneserializer.luceneserializer.QueryParser;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -45,6 +46,7 @@ import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.executor.ScheduledTaskLifecycle;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.EmissionException;
@@ -52,6 +54,7 @@ import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.publisher.Sinks.Many;
 import reactor.core.publisher.Sinks.One;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public class LLLocalLuceneIndex implements LLLuceneIndex {
@@ -196,12 +199,20 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Iterable<LLTerm> keys, Iterable<LLDocument> docs) {
-		return Mono.<Void>fromCallable(() -> {
-		indexWriter.addDocuments(LLUtils.toDocuments(docs));
-			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+	public Mono<Void> addDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
+		return documents
+				.flatMap(group -> group
+						.collectList()
+						.flatMap(docs -> Mono
+								.<Void>fromCallable(() -> {
+									indexWriter.addDocuments(LLUtils.toDocuments(docs));
+									return null;
+								})
+								.subscribeOn(Schedulers.boundedElastic()))
+				)
+				.then();
 	}
+
 
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
@@ -220,18 +231,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Iterable<LLTerm> ids, Iterable<LLDocument> documents) {
-		return Mono.<Void>fromCallable(() -> {
-			var idIt = ids.iterator();
-			var docIt = documents.iterator();
-			while (idIt.hasNext()) {
-				var id = idIt.next();
-				var doc = docIt.next();
+	public Mono<Void> updateDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
+		return documents.flatMap(this::updateDocuments).then();
+	}
 
-				indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(doc));
-			}
-			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+	private Mono<Void> updateDocuments(GroupedFlux<LLTerm, LLDocument> documents) {
+		return documents
+				.map(LLUtils::toDocument)
+				.collectList()
+				.flatMap(luceneDocuments -> Mono
+						.<Void>fromCallable(() -> {
+							indexWriter.updateDocuments(LLUtils.toTerm(documents.key()), luceneDocuments);
+							return null;
+						})
+						.subscribeOn(Schedulers.boundedElastic())
+				);
 	}
 
 	@Override
@@ -271,58 +285,62 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@SuppressWarnings({"Convert2MethodRef", "unchecked", "rawtypes"})
 	@Override
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			Map<String, Set<String>> mltDocumentFields,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			int limit,
 			String keyFieldName) {
-		if (mltDocumentFields.isEmpty()) {
-			return Mono.just(LLSearchResult.empty());
-		}
+		return mltDocumentFieldsFlux
+				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
+				.flatMap(mltDocumentFields -> {
+					if (mltDocumentFields.isEmpty()) {
+						return Mono.just(LLSearchResult.empty());
+					}
 
-		return acquireSearcherWrapper(snapshot)
-				.flatMap(indexSearcher -> Mono
-						.fromCallable(() -> {
-							var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
-							mlt.setAnalyzer(indexWriter.getAnalyzer());
-							mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-							mlt.setMinTermFreq(1);
-							//mlt.setMinDocFreq(1);
-							mlt.setBoost(true);
+					return acquireSearcherWrapper(snapshot)
+							.flatMap(indexSearcher -> Mono
+									.fromCallable(() -> {
+										var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
+										mlt.setAnalyzer(indexWriter.getAnalyzer());
+										mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+										mlt.setMinTermFreq(1);
+										//mlt.setMinDocFreq(1);
+										mlt.setBoost(true);
 
-							// Get the reference doc and apply it to MoreLikeThis, to generate the query
-							return mlt.like((Map) mltDocumentFields);
-						})
-						.subscribeOn(Schedulers.boundedElastic())
-						.flatMap(query -> Mono
-								.fromCallable(() -> {
-									One<Long> totalHitsCountSink = Sinks.one();
-									Many<LLKeyScore> topKeysSink = Sinks.many().unicast().onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
+										// Get the reference doc and apply it to MoreLikeThis, to generate the query
+										return mlt.like((Map) mltDocumentFields);
+									})
+									.subscribeOn(Schedulers.boundedElastic())
+									.flatMap(query -> Mono
+											.fromCallable(() -> {
+												One<Long> totalHitsCountSink = Sinks.one();
+												Many<LLKeyScore> topKeysSink = Sinks.many().unicast().onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
 
-									streamSearcher.search(indexSearcher,
-											query,
-											limit,
-											null,
-											ScoreMode.COMPLETE,
-											keyFieldName,
-											keyScore -> {
-												EmitResult result = topKeysSink.tryEmitNext(keyScore);
-												if (result.isFailure()) {
-													throw new EmissionException(result);
-												}
-											},
-											totalHitsCount -> {
-												EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
-												if (result.isFailure()) {
-													throw new EmissionException(result);
-												}
-											});
+												streamSearcher.search(indexSearcher,
+														query,
+														limit,
+														null,
+														ScoreMode.COMPLETE,
+														keyFieldName,
+														keyScore -> {
+															EmitResult result = topKeysSink.tryEmitNext(keyScore);
+															if (result.isFailure()) {
+																throw new EmissionException(result);
+															}
+														},
+														totalHitsCount -> {
+															EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
+															if (result.isFailure()) {
+																throw new EmissionException(result);
+															}
+														});
 
-									return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
-								}).subscribeOn(Schedulers.boundedElastic())
-						).then()
-						.materialize()
-						.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
-						.dematerialize()
-				);
+												return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
+											}).subscribeOn(Schedulers.boundedElastic())
+									).then()
+									.materialize()
+									.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
+									.dematerialize()
+							);
+				});
 	}
 
 	@SuppressWarnings("Convert2MethodRef")

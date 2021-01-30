@@ -1,9 +1,11 @@
 package it.cavallium.dbengine.database;
 
-import java.util.Map;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 public interface LLLuceneIndex extends LLSnapshottable {
 
@@ -11,13 +13,13 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	Mono<Void> addDocument(LLTerm id, LLDocument doc);
 
-	Mono<Void> addDocuments(Iterable<LLTerm> keys, Iterable<LLDocument> documents);
+	Mono<Void> addDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents);
 
 	Mono<Void> deleteDocument(LLTerm id);
 
 	Mono<Void> updateDocument(LLTerm id, LLDocument document);
 
-	Mono<Void> updateDocuments(Iterable<LLTerm> ids, Iterable<LLDocument> documents);
+	Mono<Void> updateDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents);
 
 	Mono<Void> deleteAll();
 
@@ -29,7 +31,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 * @return the collection has one or more flux
 	 */
 	Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			Map<String, Set<String>> mltDocumentFields,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
 			int limit,
 			String keyFieldName);
 

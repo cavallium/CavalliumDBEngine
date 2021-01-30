@@ -12,7 +12,10 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-// todo: implement optimized methods
+/**
+ * @deprecated Use DatabaseMapDictionaryParent with SubStageGetterSingle
+ */
+@Deprecated
 public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>> {
 
 	public static final byte[] NO_PREFIX = new byte[0];

@@ -13,7 +13,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * @deprecated Use DatabaseMapDictionaryParent with SubStageGetterSingle
+ * @deprecated Use DatabaseMapDictionary with SubStageGetterSingle
  */
 @Deprecated
 public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>> {

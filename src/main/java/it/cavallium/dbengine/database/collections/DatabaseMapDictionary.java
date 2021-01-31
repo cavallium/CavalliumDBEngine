@@ -13,11 +13,12 @@ import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods
-public class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>> implements DatabaseStageMap<byte[], U, US> {
+public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
 
 	public static final byte[] EMPTY_BYTES = new byte[0];
 	private final LLDictionary dictionary;
 	private final SubStageGetter<U, US> subStageGetter;
+	private final FixedLengthSerializer<T> suffixKeySerializer;
 	private final byte[] keyPrefix;
 	private final int keySuffixLength;
 	private final int keyExtLength;
@@ -65,13 +66,14 @@ public class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>> impleme
 	}
 
 	@SuppressWarnings("unused")
-	public DatabaseMapDictionaryParent(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, int keyLength, int keyExtLength) {
-		this(dictionary, subStageGetter, EMPTY_BYTES, keyLength, keyExtLength);
+	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySerializer, int keyLength, int keyExtLength) {
+		this(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyLength, keyExtLength);
 	}
 
-	public DatabaseMapDictionaryParent(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
+	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> suffixKeySerializer, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
 		this.dictionary = dictionary;
 		this.subStageGetter = subStageGetter;
+		this.suffixKeySerializer = suffixKeySerializer;
 		this.keyPrefix = prefixKey;
 		this.keySuffixLength = keySuffixLength;
 		this.keyExtLength = keyExtLength;
@@ -152,23 +154,32 @@ public class DatabaseMapDictionaryParent<U, US extends DatabaseStage<U>> impleme
 	}
 
 	@Override
-	public Mono<US> at(@Nullable CompositeSnapshot snapshot, byte[] keySuffix) {
+	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
+		byte[] keySuffixData = serializeSuffix(keySuffix);
 		Flux<byte[]> rangeKeys = this
-				.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffix)
+				.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData)
 		);
 		return this.subStageGetter
-				.subStage(dictionary, snapshot, toKeyWithoutExt(keySuffix), rangeKeys);
+				.subStage(dictionary, snapshot, toKeyWithoutExt(keySuffixData), rangeKeys);
 	}
 
 	@Override
-	public Flux<Entry<byte[], US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		Flux<GroupedFlux<byte[], byte[]>> groupedFlux = dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range)
 				.groupBy(this::removeExtFromFullKey);
 		return groupedFlux
 				.flatMap(rangeKeys -> this.subStageGetter
 						.subStage(dictionary, snapshot, rangeKeys.key(), rangeKeys)
-						.map(us -> Map.entry(rangeKeys.key(), us))
+						.map(us -> Map.entry(this.deserializeSuffix(this.stripPrefix(rangeKeys.key())), us))
 				);
+	}
+
+	private T deserializeSuffix(byte[] suffix) {
+		return (T) new Object();
+	}
+
+	private byte[] serializeSuffix(T keySuffix) {
+		return new byte[0];
 	}
 }

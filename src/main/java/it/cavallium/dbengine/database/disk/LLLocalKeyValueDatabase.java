@@ -61,6 +61,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		Options options = openRocksDb(path, crashIfWalError, lowMemory);
 		try {
 			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
+			descriptors
+					.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 			for (Column column : columns) {
 				descriptors
 						.add(new ColumnFamilyDescriptor(column.getName().getBytes(StandardCharsets.US_ASCII)));
@@ -240,6 +242,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		});
 
 		List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
+		descriptors.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 		for (byte[] existingColumnFamily : existingColumnFamilies) {
 			descriptors.add(new ColumnFamilyDescriptor(existingColumnFamily));
 		}

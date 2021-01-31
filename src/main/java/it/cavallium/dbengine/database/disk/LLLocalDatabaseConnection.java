@@ -1,15 +1,14 @@
 package it.cavallium.dbengine.database.disk;
 
-import java.io.IOException;
+import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.database.LLDatabaseConnection;
+import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
-import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.database.LLDatabaseConnection;
-import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -24,48 +23,59 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<Void> connect() {
+	public Mono<LLDatabaseConnection> connect() {
 		return Mono
-				.<Void>fromCallable(() -> {
+				.<LLDatabaseConnection>fromCallable(() -> {
 					if (Files.notExists(basePath)) {
 						Files.createDirectories(basePath);
 					}
-					return null;
+					return this;
 				})
 				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public LLLocalKeyValueDatabase getDatabase(String name, List<Column> columns, boolean lowMemory) throws IOException {
-		return new LLLocalKeyValueDatabase(name, basePath.resolve("database_" + name), columns, new LinkedList<>(),
-				crashIfWalError, lowMemory);
+	public Mono<LLLocalKeyValueDatabase> getDatabase(String name, List<Column> columns, boolean lowMemory) {
+		return Mono
+				.<LLLocalKeyValueDatabase>fromCallable(() -> new LLLocalKeyValueDatabase(name,
+						basePath.resolve("database_" + name),
+						columns,
+						new LinkedList<>(),
+						crashIfWalError,
+						lowMemory
+				))
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public LLLuceneIndex getLuceneIndex(String name,
+	public Mono<LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
 			TextFieldsAnalyzer textFieldsAnalyzer,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
-			boolean lowMemory) throws IOException {
-		if (instancesCount != 1) {
-			return new LLLocalMultiLuceneIndex(basePath.resolve("lucene"),
-					name,
-					instancesCount,
-					textFieldsAnalyzer,
-					queryRefreshDebounceTime,
-					commitDebounceTime,
-					lowMemory
-			);
-		} else {
-			return new LLLocalLuceneIndex(basePath.resolve("lucene"),
-					name,
-					textFieldsAnalyzer,
-					queryRefreshDebounceTime,
-					commitDebounceTime,
-					lowMemory
-			);
-		}
+			boolean lowMemory) {
+		return Mono
+				.fromCallable(() -> {
+					if (instancesCount != 1) {
+						return new LLLocalMultiLuceneIndex(basePath.resolve("lucene"),
+								name,
+								instancesCount,
+								textFieldsAnalyzer,
+								queryRefreshDebounceTime,
+								commitDebounceTime,
+								lowMemory
+						);
+					} else {
+						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
+								name,
+								textFieldsAnalyzer,
+								queryRefreshDebounceTime,
+								commitDebounceTime,
+								lowMemory
+						);
+					}
+				})
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override

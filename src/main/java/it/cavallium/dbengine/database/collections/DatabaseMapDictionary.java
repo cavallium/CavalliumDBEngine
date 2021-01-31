@@ -3,223 +3,172 @@ package it.cavallium.dbengine.database.collections;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLRange;
-import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLUtils;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuples;
 
-// todo: implement optimized methods
-public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
+/**
+ * Optimized implementation of "DatabaseMapDictionary with SubStageGetterSingle"
+ */
+public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> {
 
-	public static final byte[] EMPTY_BYTES = new byte[0];
-	private final LLDictionary dictionary;
-	private final SubStageGetter<U, US> subStageGetter;
-	private final FixedLengthSerializer<T> keySuffixSerializer;
-	private final byte[] keyPrefix;
-	private final int keySuffixLength;
-	private final int keyExtLength;
-	private final LLRange range;
+	private final Serializer<U> valueSerializer;
 
-	private static byte[] firstKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
-		return fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+	protected DatabaseMapDictionary(LLDictionary dictionary, byte[] prefixKey, FixedLengthSerializer<T> keySuffixSerializer, Serializer<U> valueSerializer) {
+		super(dictionary, new SubStageGetterSingle<>(valueSerializer), keySuffixSerializer, prefixKey, 0);
+		this.valueSerializer = valueSerializer;
 	}
 
-	private static byte[] lastKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
-		return fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0xFF);
-	}
-
-	private static byte[] fillKeySuffixAndExt(byte[] prefixKey, int prefixLength, int suffixLength, int extLength, byte fillValue) {
-		assert prefixKey.length == prefixLength;
-		assert suffixLength > 0;
-		assert extLength > 0;
-		byte[] result = Arrays.copyOf(prefixKey, prefixLength + suffixLength + extLength);
-		Arrays.fill(result, prefixLength, result.length, fillValue);
-		return result;
-	}
-
-	private static byte[] firstKey(byte[] prefixKey, byte[] suffixKey, int prefixLength, int suffixLength, int extLength) {
-		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
-	}
-
-	private static byte[] lastKey(byte[] prefixKey, byte[] suffixKey, int prefixLength, int suffixLength, int extLength) {
-		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0xFF);
-	}
-
-	private static byte[] fillKeyExt(byte[] prefixKey,
-			byte[] suffixKey,
-			int prefixLength,
-			int suffixLength,
-			int extLength,
-			byte fillValue) {
-		assert prefixKey.length == prefixLength;
-		assert suffixKey.length == suffixLength;
-		assert suffixLength > 0;
-		assert extLength > 0;
-		byte[] result = Arrays.copyOf(prefixKey, prefixLength + suffixLength + extLength);
-		System.arraycopy(suffixKey, 0, result, prefixLength, suffixLength);
-		Arrays.fill(result, prefixLength + suffixLength, result.length, fillValue);
-		return result;
-	}
-
-	public static <T, U> DatabaseMapDictionary<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
-			SubStageGetterSingle<U> subStageGetter,
-			FixedLengthSerializer<T> keySerializer) {
-		return new DatabaseMapDictionary<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, 0);
-	}
-
-	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionary<T, U, US> deep(LLDictionary dictionary,
-			SubStageGetter<U, US> subStageGetter,
+	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
 			FixedLengthSerializer<T> keySerializer,
-			int keyExtLength) {
-		return new DatabaseMapDictionary<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
+			Serializer<U> valueSerializer) {
+		return new DatabaseMapDictionary<>(dictionary, EMPTY_BYTES, keySerializer, valueSerializer);
 	}
 
-	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionary<T, U, US> deepIntermediate(LLDictionary dictionary,
-			SubStageGetter<U, US> subStageGetter,
+	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
 			FixedLengthSerializer<T> keySuffixSerializer,
-			byte[] prefixKey,
-			int keyExtLength) {
-		return new DatabaseMapDictionary<>(dictionary, subStageGetter, keySuffixSerializer, prefixKey, keyExtLength);
+			Serializer<U> valueSerializer,
+			byte[] prefixKey) {
+		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer);
 	}
 
-	private DatabaseMapDictionary(LLDictionary dictionary,
-			SubStageGetter<U, US> subStageGetter,
-			FixedLengthSerializer<T> keySuffixSerializer,
-			byte[] prefixKey,
-			int keyExtLength) {
-		this.dictionary = dictionary;
-		this.subStageGetter = subStageGetter;
-		this.keySuffixSerializer = keySuffixSerializer;
-		this.keyPrefix = prefixKey;
-		this.keySuffixLength = keySuffixSerializer.getLength();
-		this.keyExtLength = keyExtLength;
-		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
-		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
-		this.range = keyPrefix.length == 0 ? LLRange.all() : LLRange.of(firstKey, lastKey);
-	}
-
-	@SuppressWarnings("unused")
-	private boolean suffixKeyConsistency(int keySuffixLength) {
-		return this.keySuffixLength == keySuffixLength;
-	}
-
-	@SuppressWarnings("unused")
-	private boolean extKeyConsistency(int keyExtLength) {
-		return this.keyExtLength == keyExtLength;
-	}
-
-	@SuppressWarnings("unused")
-	private boolean suffixAndExtKeyConsistency(int keySuffixAndExtLength) {
-		return this.keySuffixLength + this.keyExtLength == keySuffixAndExtLength;
-	}
-
-	/**
-	 * Keep only suffix and ext
-	 */
-	private byte[] stripPrefix(byte[] key) {
-		return Arrays.copyOfRange(key, this.keyPrefix.length, key.length);
-	}
-
-	/**
-	 * Remove ext from suffix
-	 */
-	private byte[] trimSuffix(byte[] keySuffix) {
-		if (keySuffix.length == keySuffixLength)
-			return keySuffix;
-		return Arrays.copyOf(keySuffix, keySuffixLength);
-	}
-
-	/**
-	 * Remove ext from full key
-	 */
-	private byte[] removeExtFromFullKey(byte[] key) {
-		return Arrays.copyOf(key, keyPrefix.length + keySuffixLength);
-	}
-
-	/**
-	 * Add prefix to suffix
-	 */
-	private byte[] toKeyWithoutExt(byte[] suffixKey) {
-		assert suffixKey.length == keySuffixLength;
-		byte[] result = Arrays.copyOf(keyPrefix, keyPrefix.length + keySuffixLength);
-		System.arraycopy(suffixKey, 0, result, keyPrefix.length, keySuffixLength);
-		return result;
-	}
-
-	/**
-	 * Remove suffix from keySuffix, returning probably an empty byte array
-	 */
-	private byte[] stripSuffix(byte[] keySuffix) {
-		if (keySuffix.length == this.keySuffixLength)
-			return EMPTY_BYTES;
-		return Arrays.copyOfRange(keySuffix, this.keySuffixLength, keySuffix.length);
-	}
-
-	private LLSnapshot resolveSnapshot(@Nullable CompositeSnapshot snapshot) {
-		if (snapshot == null) {
-			return null;
-		} else {
-			return snapshot.getSnapshot(dictionary);
-		}
-	}
-
-	private LLRange toExtRange(byte[] keySuffix) {
-		byte[] first = firstKey(keyPrefix, keySuffix, keyPrefix.length, keySuffixLength, keyExtLength);
-		byte[] end = lastKey(keyPrefix, keySuffix, keyPrefix.length, keySuffixLength, keyExtLength);
-		return LLRange.of(first, end);
+	private byte[] toKey(byte[] suffixKey) {
+		assert suffixKeyConsistency(suffixKey.length);
+		byte[] key = Arrays.copyOf(keyPrefix, keyPrefix.length + suffixKey.length);
+		System.arraycopy(suffixKey, 0, key, keyPrefix.length, suffixKey.length);
+		return key;
 	}
 
 	@Override
-	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		byte[] keySuffixData = serializeSuffix(keySuffix);
-		Flux<byte[]> rangeKeys = this
-				.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData)
-		);
-		return this.subStageGetter
-				.subStage(dictionary, snapshot, toKeyWithoutExt(keySuffixData), rangeKeys);
+	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot) {
+		return dictionary
+				.getRange(resolveSnapshot(snapshot), range)
+				.collectMap(entry -> deserializeSuffix(stripPrefix(entry.getKey())), entry -> deserialize(entry.getValue()), HashMap::new);
 	}
 
 	@Override
-	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		Flux<GroupedFlux<byte[], byte[]>> groupedFlux = dictionary
+	public Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
+		return dictionary
+				.setRange(range,
+						Flux
+								.fromIterable(value.entrySet())
+								.map(entry -> Map.entry(serializeSuffix(entry.getKey()), serialize(entry.getValue()))),
+						true
+				)
+				.collectMap(entry -> deserializeSuffix(stripPrefix(entry.getKey())), entry -> deserialize(entry.getValue()), HashMap::new);
+	}
+
+	private Entry<byte[], byte[]> stripPrefix(Entry<byte[], byte[]> entry) {
+		byte[] keySuffix = stripPrefix(entry.getKey());
+		return Map.entry(keySuffix, entry.getValue());
+	}
+
+	@Override
+	public Mono<Map<T, U>> clearAndGetPrevious() {
+		return dictionary
+				.setRange(range, Flux.empty(), true)
+				.collectMap(entry -> deserializeSuffix(stripPrefix(entry.getKey())), entry -> deserialize(entry.getValue()), HashMap::new);
+	}
+
+	@Override
+	public Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
+		return dictionary.sizeRange(resolveSnapshot(snapshot), range, true);
+	}
+
+	@Override
+	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
+		return Mono.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noopBytes())).map(entry -> new DatabaseSingleMapped<>(entry, valueSerializer));
+	}
+
+	@Override
+	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T keySuffix) {
+		return dictionary.get(resolveSnapshot(snapshot), toKey(serializeSuffix(keySuffix))).map(this::deserialize);
+	}
+
+	@Override
+	public Mono<Void> putValue(T keySuffix, U value) {
+		return dictionary.put(toKey(serializeSuffix(keySuffix)), serialize(value), LLDictionaryResultType.VOID).then();
+	}
+
+	@Override
+	public Mono<U> putValueAndGetPrevious(T keySuffix, U value) {
+		return dictionary
+				.put(toKey(serializeSuffix(keySuffix)), serialize(value), LLDictionaryResultType.PREVIOUS_VALUE)
+				.map(this::deserialize);
+	}
+
+	@Override
+	public Mono<Boolean> putValueAndGetStatus(T keySuffix, U value) {
+		return dictionary
+				.put(toKey(serializeSuffix(keySuffix)), serialize(value), LLDictionaryResultType.VALUE_CHANGED)
+				.map(LLUtils::responseToBoolean);
+	}
+
+	@Override
+	public Mono<Void> remove(T keySuffix) {
+		return dictionary.remove(toKey(serializeSuffix(keySuffix)), LLDictionaryResultType.VOID).then();
+	}
+
+	@Override
+	public Mono<U> removeAndGetPrevious(T keySuffix) {
+		return dictionary
+				.remove(toKey(serializeSuffix(keySuffix)), LLDictionaryResultType.PREVIOUS_VALUE)
+				.map(this::deserialize);
+	}
+
+	@Override
+	public Mono<Boolean> removeAndGetStatus(T keySuffix) {
+		return dictionary
+				.remove(toKey(serializeSuffix(keySuffix)), LLDictionaryResultType.VALUE_CHANGED)
+				.map(LLUtils::responseToBoolean);
+	}
+
+	@Override
+	public Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
+		return dictionary
+				.getMulti(resolveSnapshot(snapshot), keys.map(keySuffix -> toKey(serializeSuffix(keySuffix))))
+				.map(entry -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey())), deserialize(entry.getValue())));
+	}
+
+	@Override
+	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range)
-				.groupBy(this::removeExtFromFullKey);
-		return groupedFlux
-				.flatMap(rangeKeys -> this.subStageGetter
-						.subStage(dictionary, snapshot, rangeKeys.key(), rangeKeys)
-						.map(us -> Map.entry(this.deserializeSuffix(this.stripPrefix(rangeKeys.key())), us))
-				);
+				.map(keySuffix -> Map.entry(deserializeSuffix(stripPrefix(keySuffix)),
+						new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary, toKey(stripPrefix(keySuffix)), Serializer.noopBytes()),
+								valueSerializer
+						)
+				));
 	}
 
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		var newValues = entries
-				.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
-				.flatMap(tuple -> tuple.getT1().set(tuple.getT2()));
-
-		return getAllStages(null)
-				.flatMap(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
-				.concatWith(newValues.then(Mono.empty()));
+		var serializedEntries = entries
+				.map(entry -> Map.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue())));
+		return dictionary.setRange(range, serializedEntries, true)
+				.map(entry -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey())), deserialize(entry.getValue())));
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private T deserializeSuffix(byte[] keySuffix) {
-		var serialized = Unpooled.wrappedBuffer(keySuffix);
-		return keySuffixSerializer.deserialize(serialized);
+	private U deserialize(byte[] bytes) {
+		var serialized = Unpooled.wrappedBuffer(bytes);
+		return valueSerializer.deserialize(serialized);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private byte[] serializeSuffix(T keySuffix) {
-		var output = Unpooled.buffer(keySuffixLength, keySuffixLength);
-		var outputBytes = new byte[keySuffixLength];
-		keySuffixSerializer.serialize(keySuffix, output);
-		output.getBytes(0, outputBytes, 0, keySuffixLength);
+	private byte[] serialize(U bytes) {
+		var output = Unpooled.buffer();
+		valueSerializer.serialize(bytes, output);
+		output.resetReaderIndex();
+		int length = output.readableBytes();
+		var outputBytes = new byte[length];
+		output.getBytes(0, outputBytes, 0, length);
 		return outputBytes;
 	}
 }

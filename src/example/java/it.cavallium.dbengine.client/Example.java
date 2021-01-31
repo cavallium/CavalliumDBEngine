@@ -3,8 +3,10 @@ package it.cavallium.dbengine.client;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.FixedLengthSerializer;
+import it.cavallium.dbengine.database.collections.Serializer;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import java.nio.file.Path;
@@ -24,11 +26,12 @@ import reactor.util.function.Tuples;
 public class Example {
 
 	private static final boolean printPreviousValue = false;
+	private static final int numRepeats = 100000;
 
 	public static void main(String[] args) {
-		System.out.println("Test");
 		testAtPut();
 		testPutValueAndGetPrevious();
+		testPutValue();
 		testPutValue()
 				.subscribeOn(Schedulers.parallel())
 				.blockOptional();
@@ -43,7 +46,7 @@ public class Example {
 		return test("MapDictionary::at::put (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
 				tuple -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
@@ -57,7 +60,7 @@ public class Example {
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
 								})
 						),
-				100000,
+				numRepeats,
 				tuple -> tuple.getT1().close());
 	}
 
@@ -70,7 +73,7 @@ public class Example {
 		return test("MapDictionary::putValueAndGetPrevious (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
 				tuple -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
@@ -83,7 +86,7 @@ public class Example {
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
 								})
 						),
-				10000,
+				numRepeats,
 				tuple -> tuple.getT1().close());
 	}
 
@@ -96,7 +99,7 @@ public class Example {
 		return test("MapDictionary::putValue (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
 				tuple -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
@@ -105,7 +108,82 @@ public class Example {
 								})
 								.then(tuple.getT2().putValue(itemKeyBuffer, newValue))
 						),
-				10000,
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> rangeTestAtPut() {
+		var ser = FixedLengthSerializer.noop(4);
+		var vser = Serializer.noopBytes();
+		var itemKey = new byte[]{0, 1, 2, 3};
+		var newValue = new byte[]{4, 5, 6, 7};
+		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
+		return test("MapDictionaryRange::at::put (same key, same value)",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
+				tuple -> Mono
+						.defer(() -> Mono
+								.fromRunnable(() -> {
+									if (printPreviousValue)
+										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
+								})
+								.then(tuple.getT2().at(null, itemKeyBuffer))
+								.flatMap(handle -> handle.setAndGetPrevious(newValue))
+								.doOnSuccess(oldValue -> {
+									if (printPreviousValue)
+										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
+								})
+						),
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> rangeTestPutValueAndGetPrevious() {
+		var ser = FixedLengthSerializer.noop(4);
+		var vser = Serializer.noopBytes();
+		var itemKey = new byte[]{0, 1, 2, 3};
+		var newValue = new byte[]{4, 5, 6, 7};
+		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
+		return test("MapDictionaryRange::putValueAndGetPrevious (same key, same value)",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
+				tuple -> Mono
+						.defer(() -> Mono
+								.fromRunnable(() -> {
+									if (printPreviousValue)
+										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
+								})
+								.then(tuple.getT2().putValueAndGetPrevious(itemKeyBuffer, newValue))
+								.doOnSuccess(oldValue -> {
+									if (printPreviousValue)
+										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
+								})
+						),
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> rangeTestPutValue() {
+		var ser = FixedLengthSerializer.noop(4);
+		var vser = Serializer.noopBytes();
+		var itemKey = new byte[]{0, 1, 2, 3};
+		var newValue = new byte[]{4, 5, 6, 7};
+		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
+		return test("MapDictionaryRange::putValue (same key, same value)",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
+				tuple -> Mono
+						.defer(() -> Mono
+								.fromRunnable(() -> {
+									if (printPreviousValue)
+										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
+								})
+								.then(tuple.getT2().putValue(itemKeyBuffer, newValue))
+						),
+				numRepeats,
 				tuple -> tuple.getT1().close());
 	}
 

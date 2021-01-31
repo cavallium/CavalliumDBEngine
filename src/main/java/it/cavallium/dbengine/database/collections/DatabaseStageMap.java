@@ -69,12 +69,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return setAllValuesAndGetPrevious(entries).then();
 	}
 
-	default Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		return this
-				.clear()
-				.thenMany(entries)
-				.flatMap(entry -> this.putValue(entry.getKey(), entry.getValue()).thenReturn(entry));
-	}
+	Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries);
 
 	default Mono<Void> clear() {
 		return setAllValues(Flux.empty());

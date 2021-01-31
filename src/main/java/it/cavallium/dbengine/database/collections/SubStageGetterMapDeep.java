@@ -12,16 +12,13 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 
 	private final SubStageGetter<U, US> subStageGetter;
 	private final FixedLengthSerializer<T> keySerializer;
-	private final int keyLength;
 	private final int keyExtLength;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
 			FixedLengthSerializer<T> keySerializer,
-			int keyLength,
 			int keyExtLength) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;
-		this.keyLength = keyLength;
 		this.keyExtLength = keyExtLength;
 	}
 
@@ -34,7 +31,6 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 				subStageGetter,
 				keySerializer,
 				prefixKey,
-				keyLength,
 				keyExtLength
 		));
 	}

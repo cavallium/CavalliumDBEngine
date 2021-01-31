@@ -12,11 +12,12 @@ public class Column {
 		this.name = name;
 	}
 
-	public static Column hashMap(String name) {
+	public static Column dictionary(String name) {
 		return new Column("hash_map_" + name);
 	}
 
-	public static Column fixedSet(String name) {
+	@Deprecated
+	public static Column deprecatedSet(String name) {
 		return new Column("hash_set_" + name);
 	}
 

@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuples;
 
 // todo: implement optimized methods
 public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
@@ -67,16 +68,16 @@ public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements
 	}
 
 	@SuppressWarnings("unused")
-	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySerializer, int keyLength, int keyExtLength) {
-		this(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyLength, keyExtLength);
+	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySerializer, int keyExtLength) {
+		this(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
 	}
 
-	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySuffixSerializer, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
+	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySuffixSerializer, byte[] prefixKey, int keyExtLength) {
 		this.dictionary = dictionary;
 		this.subStageGetter = subStageGetter;
 		this.keySuffixSerializer = keySuffixSerializer;
 		this.keyPrefix = prefixKey;
-		this.keySuffixLength = keySuffixLength;
+		this.keySuffixLength = keySuffixSerializer.getLength();
 		this.keyExtLength = keyExtLength;
 		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
 		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
@@ -176,17 +177,28 @@ public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements
 				);
 	}
 
+	@Override
+	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
+		var newValues = entries
+				.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
+				.flatMap(tuple -> tuple.getT1().set(tuple.getT2()));
+
+		return getAllStages(null)
+				.flatMap(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
+				.concatWith(newValues.then(Mono.empty()));
+	}
+
 	//todo: temporary wrapper. convert the whole class to buffers
 	private T deserializeSuffix(byte[] keySuffix) {
 		var serialized = Unpooled.wrappedBuffer(keySuffix);
-		return keySuffixSerializer.deserialize(serialized, keySuffixLength);
+		return keySuffixSerializer.deserialize(serialized);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private byte[] serializeSuffix(T keySuffix) {
 		var output = Unpooled.buffer(keySuffixLength, keySuffixLength);
 		var outputBytes = new byte[keySuffixLength];
-		keySuffixSerializer.serialize(keySuffix, output, keySuffixLength);
+		keySuffixSerializer.serialize(keySuffix, output);
 		output.getBytes(0, outputBytes, 0, keySuffixLength);
 		return outputBytes;
 	}

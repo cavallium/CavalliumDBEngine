@@ -4,20 +4,27 @@ import io.netty.buffer.ByteBuf;
 
 public interface FixedLengthSerializer<B> {
 
-	B deserialize(ByteBuf serialized, int length);
+	B deserialize(ByteBuf serialized);
 
-	void serialize(B deserialized, ByteBuf output, int length);
+	void serialize(B deserialized, ByteBuf output);
 
-	static FixedLengthSerializer<ByteBuf> noop() {
+	int getLength();
+
+	static FixedLengthSerializer<ByteBuf> noop(int length) {
 		return new FixedLengthSerializer<>() {
 			@Override
-			public ByteBuf deserialize(ByteBuf serialized, int length) {
+			public ByteBuf deserialize(ByteBuf serialized) {
 				return serialized.readSlice(length);
 			}
 
 			@Override
-			public void serialize(ByteBuf deserialized, ByteBuf output, int length) {
+			public void serialize(ByteBuf deserialized, ByteBuf output) {
 				output.writeBytes(deserialized, length);
+			}
+
+			@Override
+			public int getLength() {
+				return length;
 			}
 		};
 	}

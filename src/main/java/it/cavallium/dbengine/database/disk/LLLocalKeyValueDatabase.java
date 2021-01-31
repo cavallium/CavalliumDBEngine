@@ -1,9 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
-import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.File;
 import java.io.IOException;
@@ -293,36 +291,35 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public LLSingleton getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue)
-			throws IOException {
-		try {
-			return new LLLocalSingleton(db,
-					handles.get(Column.special(Column.toString(singletonListColumnName))),
-					(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
-					LLLocalKeyValueDatabase.this.name,
-					name,
-					defaultValue);
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
+	public Mono<LLLocalSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue) {
+		return Mono
+				.fromCallable(() -> new LLLocalSingleton(db,
+						handles.get(Column.special(Column.toString(singletonListColumnName))),
+						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
+						LLLocalKeyValueDatabase.this.name,
+						name,
+						defaultValue
+				))
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public LLDictionary getDictionary(byte[] columnName) {
-		return new LLLocalDictionary(db,
-				handles.get(Column.special(Column.toString(columnName))),
-				name,
-				(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber())
-		);
+	public Mono<LLLocalDictionary> getDictionary(byte[] columnName) {
+		return Mono
+				.fromCallable(() -> new LLLocalDictionary(db,
+						handles.get(Column.special(Column.toString(columnName))),
+						name,
+						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber())
+				))
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
-	public long getProperty(String propertyName) throws IOException {
-		try {
-			return db.getAggregatedLongProperty(propertyName);
-		} catch (RocksDBException exception) {
-			throw new IOException(exception);
-		}
+	public Mono<Long> getProperty(String propertyName) {
+		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override

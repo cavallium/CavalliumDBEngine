@@ -121,4 +121,9 @@ public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte
 				.map(this::stripPrefix)
 				.map(keySuffix -> Map.entry(keySuffix, new DatabaseSingle(dictionary, toKey(keySuffix))));
 	}
+
+	@Override
+	public Flux<Entry<byte[], byte[]>> setAllValuesAndGetPrevious(Flux<Entry<byte[], byte[]>> entries) {
+		return dictionary.setRange(range, Flux.empty(), true);
+	}
 }

@@ -2,11 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 
-public interface FixedLengthSerializer<B> {
-
-	B deserialize(ByteBuf serialized);
-
-	void serialize(B deserialized, ByteBuf output);
+public interface FixedLengthSerializer<B> extends Serializer<B> {
 
 	int getLength();
 
@@ -19,6 +15,7 @@ public interface FixedLengthSerializer<B> {
 
 			@Override
 			public void serialize(ByteBuf deserialized, ByteBuf output) {
+				deserialized.resetReaderIndex();
 				output.writeBytes(deserialized, length);
 			}
 

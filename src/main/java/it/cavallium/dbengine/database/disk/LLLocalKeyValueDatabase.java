@@ -349,13 +349,19 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public void close() throws IOException {
-		try {
-			flushAndCloseDb(db, new ArrayList<>(handles.values()));
-			deleteUnusedOldLogFiles();
-		} catch (RocksDBException e) {
-			throw new IOException(e);
-		}
+	public Mono<Void> close() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					try {
+						flushAndCloseDb(db, new ArrayList<>(handles.values()));
+						deleteUnusedOldLogFiles();
+					} catch (RocksDBException e) {
+						throw new IOException(e);
+					}
+					return null;
+				})
+				.onErrorMap(IOException::new)
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	/**

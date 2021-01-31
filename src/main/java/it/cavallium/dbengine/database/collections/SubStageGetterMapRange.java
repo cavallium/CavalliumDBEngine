@@ -7,19 +7,21 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SubStageGetterMapRange implements SubStageGetter<Map<byte[], byte[]>, DatabaseStageEntry<Map<byte[], byte[]>>> {
+public class SubStageGetterMapRange<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
 
-	private final int keyLength;
+	private final FixedLengthSerializer<T> keySerializer;
+	private final Serializer<U> valueSerializer;
 
-	public SubStageGetterMapRange(int keyLength) {
-		this.keyLength = keyLength;
+	public SubStageGetterMapRange(FixedLengthSerializer<T> keySerializer, Serializer<U> valueSerializer) {
+		this.keySerializer = keySerializer;
+		this.valueSerializer = valueSerializer;
 	}
 
 	@Override
-	public Mono<DatabaseStageEntry<Map<byte[], byte[]>>> subStage(LLDictionary dictionary,
+	public Mono<DatabaseStageEntry<Map<T, U>>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
-		return Mono.just(new DatabaseMapDictionaryRange(dictionary, prefixKey, keyLength));
+		return Mono.just(new DatabaseMapDictionaryRange<>(dictionary, prefixKey, keySerializer, valueSerializer));
 	}
 }

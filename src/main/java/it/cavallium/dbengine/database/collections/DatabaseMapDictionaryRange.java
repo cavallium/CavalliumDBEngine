@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLRange;
@@ -13,16 +14,16 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * @deprecated Use DatabaseMapDictionary with SubStageGetterSingle
+ * Optimized implementation of "DatabaseMapDictionary with SubStageGetterSingle"
  */
-@Deprecated
-public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>> {
+public class DatabaseMapDictionaryRange<T, U> implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
 	public static final byte[] NO_PREFIX = new byte[0];
 	private final LLDictionary dictionary;
 	private final byte[] keyPrefix;
-	private final int keySuffixLength;
+	private final FixedLengthSerializer<T> keySuffixSerializer;
 	private final LLRange range;
+	private final Serializer<U> valueSerializer;
 
 	private static byte[] lastKey(byte[] prefixKey, int prefixLength, int suffixLength) {
 		assert prefixKey.length == prefixLength;
@@ -39,21 +40,22 @@ public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte
 	}
 
 	@SuppressWarnings("unused")
-	public DatabaseMapDictionaryRange(LLDictionary dictionary, int keyLength) {
-		this(dictionary, NO_PREFIX, keyLength);
+	public DatabaseMapDictionaryRange(LLDictionary dictionary, FixedLengthSerializer<T> keySuffixSerializer, Serializer<U> valueSerializer) {
+		this(dictionary, NO_PREFIX, keySuffixSerializer, valueSerializer);
 	}
 
-	public DatabaseMapDictionaryRange(LLDictionary dictionary, byte[] prefixKey, int keySuffixLength) {
+	public DatabaseMapDictionaryRange(LLDictionary dictionary, byte[] prefixKey, FixedLengthSerializer<T> keySuffixSerializer, Serializer<U> valueSerializer) {
 		this.dictionary = dictionary;
 		this.keyPrefix = prefixKey;
-		this.keySuffixLength = keySuffixLength;
-		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixLength);
-		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixLength);
+		this.keySuffixSerializer = keySuffixSerializer;
+		this.valueSerializer = valueSerializer;
+		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixSerializer.getLength());
+		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixSerializer.getLength());
 		this.range = keyPrefix.length == 0 ? LLRange.all() : LLRange.of(firstKey, lastKey);
 	}
 
 	private boolean suffixKeyConsistency(int keySuffixLength) {
-		return this.keySuffixLength == keySuffixLength;
+		return this.keySuffixSerializer.getLength() == keySuffixLength;
 	}
 
 	private byte[] toKey(byte[] suffixKey) {
@@ -76,19 +78,24 @@ public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte
 	}
 
 	@Override
-	public Mono<Map<byte[], byte[]>> get(@Nullable CompositeSnapshot snapshot) {
+	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), range)
 				.map(this::stripPrefix)
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
+				.collectMap(entry -> deserializeSuffix(entry.getKey()), entry -> deserialize(entry.getValue()), HashMap::new);
 	}
 
 	@Override
-	public Mono<Map<byte[], byte[]>> setAndGetPrevious(Map<byte[], byte[]> value) {
+	public Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
 		return dictionary
-				.setRange(range, Flux.fromIterable(value.entrySet()), true)
+				.setRange(range,
+						Flux
+								.fromIterable(value.entrySet())
+								.map(entry -> Map.entry(serializeSuffix(entry.getKey()), serialize(entry.getValue()))),
+						true
+				)
 				.map(this::stripPrefix)
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
+				.collectMap(entry -> deserializeSuffix(entry.getKey()), entry -> deserialize(entry.getValue()), HashMap::new);
 	}
 
 	private Entry<byte[], byte[]> stripPrefix(Entry<byte[], byte[]> entry) {
@@ -97,11 +104,11 @@ public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte
 	}
 
 	@Override
-	public Mono<Map<byte[], byte[]>> clearAndGetPrevious() {
+	public Mono<Map<T, U>> clearAndGetPrevious() {
 		return dictionary
 				.setRange(range, Flux.empty(), true)
 				.map(this::stripPrefix)
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
+				.collectMap(entry -> deserializeSuffix(entry.getKey()), entry -> deserialize(entry.getValue()), HashMap::new);
 	}
 
 	@Override
@@ -110,20 +117,59 @@ public class DatabaseMapDictionaryRange implements DatabaseStageMap<byte[], byte
 	}
 
 	@Override
-	public Mono<DatabaseStageEntry<byte[]>> at(@Nullable CompositeSnapshot snapshot, byte[] keySuffix) {
-		return Mono.just(new DatabaseSingle(dictionary, toKey(keySuffix)));
+	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
+		return Mono.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noopBytes())).map(entry -> new DatabaseSingleMapped<>(entry, valueSerializer));
 	}
 
 	@Override
-	public Flux<Entry<byte[], DatabaseStageEntry<byte[]>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range)
 				.map(this::stripPrefix)
-				.map(keySuffix -> Map.entry(keySuffix, new DatabaseSingle(dictionary, toKey(keySuffix))));
+				.map(keySuffix -> Map.entry(deserializeSuffix(keySuffix),
+						new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary, toKey(keySuffix), Serializer.noopBytes()),
+								valueSerializer
+						)
+				));
 	}
 
 	@Override
-	public Flux<Entry<byte[], byte[]>> setAllValuesAndGetPrevious(Flux<Entry<byte[], byte[]>> entries) {
-		return dictionary.setRange(range, Flux.empty(), true);
+	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
+		var serializedEntries = entries
+				.map(entry -> Map.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue())));
+		return dictionary.setRange(range, serializedEntries, true)
+				.map(entry -> Map.entry(deserializeSuffix(entry.getKey()), deserialize(entry.getValue())));
+	}
+
+	//todo: temporary wrapper. convert the whole class to buffers
+	private U deserialize(byte[] bytes) {
+		var serialized = Unpooled.wrappedBuffer(bytes);
+		return valueSerializer.deserialize(serialized);
+	}
+
+	//todo: temporary wrapper. convert the whole class to buffers
+	private byte[] serialize(U bytes) {
+		var output = Unpooled.buffer();
+		valueSerializer.serialize(bytes, output);
+		output.resetReaderIndex();
+		int length = output.readableBytes();
+		var outputBytes = new byte[length];
+		output.getBytes(0, outputBytes, 0, length);
+		return outputBytes;
+	}
+
+	//todo: temporary wrapper. convert the whole class to buffers
+	private T deserializeSuffix(byte[] keySuffix) {
+		var serialized = Unpooled.wrappedBuffer(keySuffix);
+		return keySuffixSerializer.deserialize(serialized);
+	}
+
+	//todo: temporary wrapper. convert the whole class to buffers
+	private byte[] serializeSuffix(T keySuffix) {
+		var output = Unpooled.buffer(keySuffixSerializer.getLength(), keySuffixSerializer.getLength());
+		var outputBytes = new byte[keySuffixSerializer.getLength()];
+		keySuffixSerializer.serialize(keySuffix, output);
+		output.getBytes(0, outputBytes, 0, keySuffixSerializer.getLength());
+		return outputBytes;
 	}
 }

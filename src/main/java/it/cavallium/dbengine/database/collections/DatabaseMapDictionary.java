@@ -67,12 +67,32 @@ public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements
 		return result;
 	}
 
-	@SuppressWarnings("unused")
-	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySerializer, int keyExtLength) {
-		this(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
+	public static <T, U> DatabaseMapDictionary<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
+			SubStageGetterSingle<U> subStageGetter,
+			FixedLengthSerializer<T> keySerializer) {
+		return new DatabaseMapDictionary<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, 0);
 	}
 
-	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySuffixSerializer, byte[] prefixKey, int keyExtLength) {
+	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionary<T, U, US> deep(LLDictionary dictionary,
+			SubStageGetter<U, US> subStageGetter,
+			FixedLengthSerializer<T> keySerializer,
+			int keyExtLength) {
+		return new DatabaseMapDictionary<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
+	}
+
+	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionary<T, U, US> deepIntermediate(LLDictionary dictionary,
+			SubStageGetter<U, US> subStageGetter,
+			FixedLengthSerializer<T> keySuffixSerializer,
+			byte[] prefixKey,
+			int keyExtLength) {
+		return new DatabaseMapDictionary<>(dictionary, subStageGetter, keySuffixSerializer, prefixKey, keyExtLength);
+	}
+
+	private DatabaseMapDictionary(LLDictionary dictionary,
+			SubStageGetter<U, US> subStageGetter,
+			FixedLengthSerializer<T> keySuffixSerializer,
+			byte[] prefixKey,
+			int keyExtLength) {
 		this.dictionary = dictionary;
 		this.subStageGetter = subStageGetter;
 		this.keySuffixSerializer = keySuffixSerializer;

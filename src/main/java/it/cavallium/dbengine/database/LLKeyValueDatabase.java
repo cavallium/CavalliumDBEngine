@@ -3,11 +3,10 @@ package it.cavallium.dbengine.database;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
-import java.io.Closeable;
 import java.nio.charset.StandardCharsets;
 import reactor.core.publisher.Mono;
 
-public interface LLKeyValueDatabase extends Closeable, LLSnapshottable, LLKeyValueDatabaseStructure {
+public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure {
 
 	Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue);
 
@@ -41,4 +40,6 @@ public interface LLKeyValueDatabase extends Closeable, LLSnapshottable, LLKeyVal
 	}
 
 	Mono<Long> getProperty(String propertyName);
+
+	Mono<Void> close();
 }

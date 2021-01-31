@@ -27,7 +27,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
-		return Mono.just(new DatabaseMapDictionary<>(dictionary,
+		return Mono.just(DatabaseMapDictionary.deepIntermediate(dictionary,
 				subStageGetter,
 				keySerializer,
 				prefixKey,

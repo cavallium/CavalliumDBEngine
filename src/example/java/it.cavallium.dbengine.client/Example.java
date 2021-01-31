@@ -57,7 +57,7 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
-				tuple -> Mono
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
 									if (printPreviousValue)
@@ -69,8 +69,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
 								})
-						)
-						.repeat(batchSize)
+						))
 						.then(),
 				numRepeats,
 				tuple -> tuple.getT1().close());
@@ -86,7 +85,7 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
-				tuple -> Mono
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
 									if (printPreviousValue)
@@ -97,8 +96,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
 								})
-						)
-						.repeat(batchSize)
+						))
 						.then(),
 				numRepeats,
 				tuple -> tuple.getT1().close());
@@ -114,15 +112,14 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
-				tuple -> Mono
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
 								.then(tuple.getT2().putValue(itemKeyBuffer, newValue))
-						)
-						.repeat(batchSize)
+						))
 						.then(),
 				numRepeats,
 				tuple -> tuple.getT1().close());
@@ -158,7 +155,7 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
-				tuple -> Mono
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
 									if (printPreviousValue)
@@ -170,8 +167,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
 								})
-						)
-						.repeat(batchSize)
+						))
 						.then(),
 				numRepeats,
 				tuple -> tuple.getT1().close());
@@ -187,7 +183,7 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
-				tuple -> Mono
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
 									if (printPreviousValue)
@@ -198,8 +194,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
 								})
-						)
-						.repeat(batchSize)
+						))
 						.then(),
 				numRepeats,
 				tuple -> tuple.getT1().close());
@@ -215,15 +210,14 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
-				tuple -> Mono
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
 								.then(tuple.getT2().putValue(itemKeyBuffer, newValue))
-						)
-						.repeat(batchSize)
+						))
 						.then(),
 				numRepeats,
 				tuple -> tuple.getT1().close());
@@ -259,14 +253,17 @@ public class Example {
 		One<Instant> instantInitTest = Sinks.one();
 		One<Instant> instantEndTest = Sinks.one();
 		One<Instant> instantEnd = Sinks.one();
+		Duration WAIT_TIME = Duration.ofSeconds(5);
+		Duration WAIT_TIME_END = Duration.ofSeconds(5);
 		return Mono
 				.fromRunnable(() -> instantInit.tryEmitValue(now()))
 				.then(setup)
+				.delayElement(WAIT_TIME)
 				.doOnSuccess(s -> instantInitTest.tryEmitValue(now()))
-				.flatMap(a -> Mono.defer(() -> test.apply(a))
-						.repeat(numRepeats)
+				.flatMap(a ->Mono.defer(() -> test.apply(a)).repeat(numRepeats)
 						.then()
 						.doOnSuccess(s -> instantEndTest.tryEmitValue(now()))
+						.delayElement(WAIT_TIME_END)
 						.then(close.apply(a)))
 				.doOnSuccess(s -> instantEnd.tryEmitValue(now()))
 				.then(Mono.zip(instantInit.asMono(), instantInitTest.asMono(), instantEndTest.asMono(), instantEnd.asMono()))
@@ -288,7 +285,7 @@ public class Example {
 							.format(Duration.between(tuple.getT2(), tuple.getT3()).toNanos() / (double) 1000000) + "ms");
 					System.out.println("\t - Total time (setup+test+end): " + DecimalFormat
 							.getInstance(Locale.ITALY)
-							.format(Duration.between(tuple.getT1(), tuple.getT4()).toNanos() / (double) 1000000) + "ms");
+							.format(Duration.between(tuple.getT1(), tuple.getT4().minus(WAIT_TIME)).toNanos() / (double) 1000000) + "ms");
 					System.out.println("----------------------------------------------------------------------");
 				})
 				.then();

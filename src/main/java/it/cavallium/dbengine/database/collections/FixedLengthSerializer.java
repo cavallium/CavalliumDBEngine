@@ -15,8 +15,7 @@ public interface FixedLengthSerializer<B> extends Serializer<B> {
 
 			@Override
 			public void serialize(ByteBuf deserialized, ByteBuf output) {
-				deserialized.resetReaderIndex();
-				output.writeBytes(deserialized, length);
+				output.writeBytes(deserialized.slice(), length);
 			}
 
 			@Override

@@ -7,12 +7,12 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SubStageGetterMapRange<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
+public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
 
 	private final FixedLengthSerializer<T> keySerializer;
 	private final Serializer<U> valueSerializer;
 
-	public SubStageGetterMapRange(FixedLengthSerializer<T> keySerializer, Serializer<U> valueSerializer) {
+	public SubStageGetterMap(FixedLengthSerializer<T> keySerializer, Serializer<U> valueSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 	}

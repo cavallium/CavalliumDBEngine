@@ -43,7 +43,7 @@ public class Example {
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
-		return test("MapDictionary::at::put (same key, same value)",
+		return test("MapDictionaryDeep::at::put (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
@@ -70,7 +70,7 @@ public class Example {
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
-		return test("MapDictionary::putValueAndGetPrevious (same key, same value)",
+		return test("MapDictionaryDeep::putValueAndGetPrevious (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
@@ -96,7 +96,7 @@ public class Example {
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
-		return test("MapDictionary::putValue (same key, same value)",
+		return test("MapDictionaryDeep::putValue (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
@@ -118,7 +118,7 @@ public class Example {
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
-		return test("MapDictionaryRange::at::put (same key, same value)",
+		return test("MapDictionary::at::put (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
@@ -145,7 +145,7 @@ public class Example {
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
-		return test("MapDictionaryRange::putValueAndGetPrevious (same key, same value)",
+		return test("MapDictionary::putValueAndGetPrevious (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
@@ -171,7 +171,7 @@ public class Example {
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
-		return test("MapDictionaryRange::putValue (same key, same value)",
+		return test("MapDictionary::putValue (same key, same value)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),

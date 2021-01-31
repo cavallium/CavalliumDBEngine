@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLRange;
@@ -18,7 +19,7 @@ public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements
 	public static final byte[] EMPTY_BYTES = new byte[0];
 	private final LLDictionary dictionary;
 	private final SubStageGetter<U, US> subStageGetter;
-	private final FixedLengthSerializer<T> suffixKeySerializer;
+	private final FixedLengthSerializer<T> keySuffixSerializer;
 	private final byte[] keyPrefix;
 	private final int keySuffixLength;
 	private final int keyExtLength;
@@ -70,10 +71,10 @@ public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements
 		this(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyLength, keyExtLength);
 	}
 
-	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> suffixKeySerializer, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
+	public DatabaseMapDictionary(LLDictionary dictionary, SubStageGetter<U, US> subStageGetter, FixedLengthSerializer<T> keySuffixSerializer, byte[] prefixKey, int keySuffixLength, int keyExtLength) {
 		this.dictionary = dictionary;
 		this.subStageGetter = subStageGetter;
-		this.suffixKeySerializer = suffixKeySerializer;
+		this.keySuffixSerializer = keySuffixSerializer;
 		this.keyPrefix = prefixKey;
 		this.keySuffixLength = keySuffixLength;
 		this.keyExtLength = keyExtLength;
@@ -175,11 +176,18 @@ public class DatabaseMapDictionary<T, U, US extends DatabaseStage<U>> implements
 				);
 	}
 
-	private T deserializeSuffix(byte[] suffix) {
-		return (T) new Object();
+	//todo: temporary wrapper. convert the whole class to buffers
+	private T deserializeSuffix(byte[] keySuffix) {
+		var serialized = Unpooled.wrappedBuffer(keySuffix);
+		return keySuffixSerializer.deserialize(serialized, keySuffixLength);
 	}
 
+	//todo: temporary wrapper. convert the whole class to buffers
 	private byte[] serializeSuffix(T keySuffix) {
-		return new byte[0];
+		var output = Unpooled.buffer(keySuffixLength, keySuffixLength);
+		var outputBytes = new byte[keySuffixLength];
+		keySuffixSerializer.serialize(keySuffix, output, keySuffixLength);
+		output.getBytes(0, outputBytes, 0, keySuffixLength);
+		return outputBytes;
 	}
 }

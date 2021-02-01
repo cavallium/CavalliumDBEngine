@@ -255,7 +255,7 @@ public class Example {
 	}
 
 	private static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
-		var wrkspcPath = Path.of("/home/ubuntu/tempdb/");
+		var wrkspcPath = Path.of("/tmp/tempdb/");
 		return Mono
 				.fromCallable(() -> {
 					if (Files.exists(wrkspcPath)) {
@@ -277,7 +277,11 @@ public class Example {
 				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), false));
 	}
 
-	public static  <A, B, C> Mono<Void> test(String name, Mono<A> setup, Function<A, Mono<B>> test, long numRepeats, Function<A, Mono<C>> close) {
+	public static <A, B, C> Mono<Void> test(String name,
+			Mono<A> setup,
+			Function<A, Mono<B>> test,
+			long numRepeats,
+			Function<A, Mono<C>> close) {
 		One<Instant> instantInit = Sinks.one();
 		One<Instant> instantInitTest = Sinks.one();
 		One<Instant> instantEndTest = Sinks.one();

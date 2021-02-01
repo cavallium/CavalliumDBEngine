@@ -1,8 +1,6 @@
 package it.cavallium.dbengine.client;
 
 import com.google.common.primitives.Ints;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
@@ -65,7 +63,6 @@ public class Example {
 		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
-		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
 		return test("MapDictionaryDeep::at::put (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
@@ -76,7 +73,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
-								.then(tuple.getT2().at(null, itemKeyBuffer))
+								.then(tuple.getT2().at(null, itemKey))
 								.flatMap(handle -> handle.setAndGetPrevious(newValue))
 								.doOnSuccess(oldValue -> {
 									if (printPreviousValue)
@@ -93,7 +90,6 @@ public class Example {
 		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
-		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
 		return test("MapDictionaryDeep::putValueAndGetPrevious (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
@@ -104,7 +100,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
-								.then(tuple.getT2().putValueAndGetPrevious(itemKeyBuffer, newValue))
+								.then(tuple.getT2().putValueAndGetPrevious(itemKey, newValue))
 								.doOnSuccess(oldValue -> {
 									if (printPreviousValue)
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
@@ -120,7 +116,6 @@ public class Example {
 		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
-		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
 		return test("MapDictionaryDeep::putValue (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
@@ -131,7 +126,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
-								.then(tuple.getT2().putValue(itemKeyBuffer, newValue))
+								.then(tuple.getT2().putValue(itemKey, newValue))
 						))
 						.then(),
 				numRepeats,
@@ -141,9 +136,9 @@ public class Example {
 	private static Mono<Void> testPutMulti() {
 		var ssg = new SubStageGetterSingleBytes();
 		var ser = SerializerFixedBinaryLength.noop(4);
-		HashMap<ByteBuf, byte[]> keysToPut = new HashMap<>();
+		HashMap<byte[], byte[]> keysToPut = new HashMap<>();
 		for (int i = 0; i < batchSize; i++) {
-			keysToPut.put(Unpooled.wrappedBuffer(Ints.toByteArray(i * 3)), Ints.toByteArray(i * 11));
+			keysToPut.put(Ints.toByteArray(i * 3), Ints.toByteArray(i * 11));
 		}
 		var putMultiFlux = Flux.fromIterable(keysToPut.entrySet());
 		return test("MapDictionaryDeep::putMulti (batch of " + batchSize + " entries)",
@@ -159,10 +154,9 @@ public class Example {
 
 	private static Mono<Void> rangeTestAtPut() {
 		var ser = SerializerFixedBinaryLength.noop(4);
-		var vser = Serializer.noopBytes();
+		var vser = Serializer.noop();
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
-		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
 		return test("MapDictionary::at::put (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
@@ -173,7 +167,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
-								.then(tuple.getT2().at(null, itemKeyBuffer))
+								.then(tuple.getT2().at(null, itemKey))
 								.flatMap(handle -> handle.setAndGetPrevious(newValue))
 								.doOnSuccess(oldValue -> {
 									if (printPreviousValue)
@@ -187,10 +181,9 @@ public class Example {
 
 	private static Mono<Void> rangeTestPutValueAndGetPrevious() {
 		var ser = SerializerFixedBinaryLength.noop(4);
-		var vser = Serializer.noopBytes();
+		var vser = Serializer.noop();
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
-		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
 		return test("MapDictionary::putValueAndGetPrevious (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
@@ -201,7 +194,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
-								.then(tuple.getT2().putValueAndGetPrevious(itemKeyBuffer, newValue))
+								.then(tuple.getT2().putValueAndGetPrevious(itemKey, newValue))
 								.doOnSuccess(oldValue -> {
 									if (printPreviousValue)
 										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
@@ -214,10 +207,9 @@ public class Example {
 
 	private static Mono<Void> rangeTestPutValue() {
 		var ser = SerializerFixedBinaryLength.noop(4);
-		var vser = Serializer.noopBytes();
+		var vser = Serializer.noop();
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
-		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
 		return test("MapDictionary::putValue (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
@@ -228,7 +220,7 @@ public class Example {
 									if (printPreviousValue)
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
-								.then(tuple.getT2().putValue(itemKeyBuffer, newValue))
+								.then(tuple.getT2().putValue(itemKey, newValue))
 						))
 						.then(),
 				numRepeats,
@@ -237,10 +229,10 @@ public class Example {
 
 	private static Mono<Void> rangeTestPutMulti() {
 		var ser = SerializerFixedBinaryLength.noop(4);
-		var vser = Serializer.noopBytes();
-		HashMap<ByteBuf, byte[]> keysToPut = new HashMap<>();
+		var vser = Serializer.noop();
+		HashMap<byte[], byte[]> keysToPut = new HashMap<>();
 		for (int i = 0; i < batchSize; i++) {
-			keysToPut.put(Unpooled.wrappedBuffer(Ints.toByteArray(i * 3)), Ints.toByteArray(i * 11));
+			keysToPut.put(Ints.toByteArray(i * 3), Ints.toByteArray(i * 11));
 		}
 		var putMultiFlux = Flux.fromIterable(keysToPut.entrySet());
 		return test("MapDictionary::putMulti (batch of " + batchSize + " entries)",

@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -19,25 +17,25 @@ import reactor.core.publisher.Mono;
  */
 public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> {
 
-	private final Serializer<U, ByteBuf> valueSerializer;
+	private final Serializer<U, byte[]> valueSerializer;
 
 	protected DatabaseMapDictionary(LLDictionary dictionary,
 			byte[] prefixKey,
-			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
-			Serializer<U, ByteBuf> valueSerializer) {
+			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
+			Serializer<U, byte[]> valueSerializer) {
 		super(dictionary, new SubStageGetterSingle<>(valueSerializer), keySuffixSerializer, prefixKey, 0);
 		this.valueSerializer = valueSerializer;
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
-			Serializer<U, ByteBuf> valueSerializer) {
+			SerializerFixedBinaryLength<T, byte[]> keySerializer,
+			Serializer<U, byte[]> valueSerializer) {
 		return new DatabaseMapDictionary<>(dictionary, EMPTY_BYTES, keySerializer, valueSerializer);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
-			Serializer<U, ByteBuf> valueSerializer,
+			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
+			Serializer<U, byte[]> valueSerializer,
 			byte[] prefixKey) {
 		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer);
 	}
@@ -97,7 +95,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono
-				.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noopBytes()))
+				.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noop()))
 				.map(entry -> new DatabaseSingleMapped<>(entry, valueSerializer));
 	}
 
@@ -168,7 +166,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						new DatabaseSingleMapped<>(
 								new DatabaseSingle<>(dictionary,
 										toKey(stripPrefix(keySuffix)),
-										Serializer.noopBytes()),
+										Serializer.noop()),
 								valueSerializer
 						)
 				));
@@ -184,18 +182,11 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private U deserialize(byte[] bytes) {
-		var serialized = Unpooled.wrappedBuffer(bytes);
-		return valueSerializer.deserialize(serialized);
+		return valueSerializer.deserialize(bytes);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private byte[] serialize(U bytes) {
-		var output = Unpooled.buffer();
-		valueSerializer.serialize(bytes, output);
-		output.resetReaderIndex();
-		int length = output.readableBytes();
-		var outputBytes = new byte[length];
-		output.getBytes(0, outputBytes, 0, length);
-		return outputBytes;
+		return valueSerializer.serialize(bytes);
 	}
 }

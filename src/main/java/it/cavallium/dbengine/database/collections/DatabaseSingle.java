@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -14,9 +12,9 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	private final LLDictionary dictionary;
 	private final byte[] key;
-	private final Serializer<U, ByteBuf> serializer;
+	private final Serializer<U, byte[]> serializer;
 
-	public DatabaseSingle(LLDictionary dictionary, byte[] key, Serializer<U, ByteBuf> serializer) {
+	public DatabaseSingle(LLDictionary dictionary, byte[] key, Serializer<U, byte[]> serializer) {
 		this.dictionary = dictionary;
 		this.key = key;
 		this.serializer = serializer;
@@ -60,18 +58,11 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private U deserialize(byte[] bytes) {
-		var serialized = Unpooled.wrappedBuffer(bytes);
-		return serializer.deserialize(serialized);
+		return serializer.deserialize(bytes);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private byte[] serialize(U bytes) {
-		var output = Unpooled.buffer();
-		serializer.serialize(bytes, output);
-		output.resetReaderIndex();
-		int length = output.readableBytes();
-		var outputBytes = new byte[length];
-		output.getBytes(0, outputBytes, 0, length);
-		return outputBytes;
+		return serializer.serialize(bytes);
 	}
 }

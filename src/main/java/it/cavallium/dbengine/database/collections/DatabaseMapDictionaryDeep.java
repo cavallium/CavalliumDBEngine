@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLRange;
@@ -21,7 +19,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public static final byte[] EMPTY_BYTES = new byte[0];
 	protected final LLDictionary dictionary;
 	protected final SubStageGetter<U, US> subStageGetter;
-	protected final SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer;
+	protected final SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer;
 	protected final byte[] keyPrefix;
 	protected final int keySuffixLength;
 	protected final int keyExtLength;
@@ -87,14 +85,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(
 			LLDictionary dictionary,
 			SubStageGetterSingle<U> subStageGetter,
-			SerializerFixedBinaryLength<T, ByteBuf> keySerializer) {
+			SerializerFixedBinaryLength<T, byte[]> keySerializer) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, 0);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(
 			LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
+			SerializerFixedBinaryLength<T, byte[]> keySerializer,
 			int keyExtLength) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
 	}
@@ -102,7 +100,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(
 			LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
+			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
 			byte[] prefixKey,
 			int keyExtLength) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySuffixSerializer, prefixKey, keyExtLength);
@@ -110,7 +108,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
+			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
 			byte[] prefixKey,
 			int keyExtLength) {
 		this.dictionary = dictionary;
@@ -230,16 +228,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	protected T deserializeSuffix(byte[] keySuffix) {
-		var serialized = Unpooled.wrappedBuffer(keySuffix);
-		return keySuffixSerializer.deserialize(serialized);
+		return keySuffixSerializer.deserialize(keySuffix);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	protected byte[] serializeSuffix(T keySuffix) {
-		var output = Unpooled.buffer(keySuffixLength, keySuffixLength);
-		var outputBytes = new byte[keySuffixLength];
-		keySuffixSerializer.serialize(keySuffix, output);
-		output.getBytes(0, outputBytes, 0, keySuffixLength);
-		return outputBytes;
+		return keySuffixSerializer.serialize(keySuffix);
 	}
 }

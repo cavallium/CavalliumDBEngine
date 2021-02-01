@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import java.util.Map;
@@ -12,11 +11,11 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
 
 	private final SubStageGetter<U, US> subStageGetter;
-	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
+	private final SerializerFixedBinaryLength<T, byte[]> keySerializer;
 	private final int keyExtLength;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
+			SerializerFixedBinaryLength<T, byte[]> keySerializer,
 			int keyExtLength) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;

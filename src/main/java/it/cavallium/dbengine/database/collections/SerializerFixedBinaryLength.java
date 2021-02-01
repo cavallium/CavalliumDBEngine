@@ -1,21 +1,21 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-
 public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 	int getSerializedBinaryLength();
 
-	static SerializerFixedBinaryLength<ByteBuf, ByteBuf> noop(int length) {
+	static SerializerFixedBinaryLength<byte[], byte[]> noop(int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public ByteBuf deserialize(ByteBuf serialized) {
-				return serialized.readSlice(length);
+			public byte[] deserialize(byte[] serialized) {
+				assert serialized.length == getSerializedBinaryLength();
+				return serialized;
 			}
 
 			@Override
-			public void serialize(ByteBuf deserialized, ByteBuf output) {
-				output.writeBytes(deserialized.slice(), length);
+			public byte[] serialize(byte[] deserialized) {
+				assert deserialized.length == getSerializedBinaryLength();
+				return deserialized;
 			}
 
 			@Override

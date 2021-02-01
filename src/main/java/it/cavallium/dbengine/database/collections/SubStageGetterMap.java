@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import java.util.Map;
@@ -10,11 +9,11 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
 
-	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
-	private final Serializer<U, ByteBuf> valueSerializer;
+	private final SerializerFixedBinaryLength<T, byte[]> keySerializer;
+	private final Serializer<U, byte[]> valueSerializer;
 
-	public SubStageGetterMap(SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
-			Serializer<U, ByteBuf> valueSerializer) {
+	public SubStageGetterMap(SerializerFixedBinaryLength<T, byte[]> keySerializer,
+			Serializer<U, byte[]> valueSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 	}

@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import java.util.Arrays;
@@ -11,9 +9,9 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageEntry<T>> {
 
-	private final Serializer<T, ByteBuf> serializer;
+	private final Serializer<T, byte[]> serializer;
 
-	public SubStageGetterSingle(Serializer<T, ByteBuf> serializer) {
+	public SubStageGetterSingle(Serializer<T, byte[]> serializer) {
 		this.serializer = serializer;
 	}
 
@@ -32,18 +30,11 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private T deserialize(byte[] bytes) {
-		var serialized = Unpooled.wrappedBuffer(bytes);
-		return serializer.deserialize(serialized);
+		return serializer.deserialize(bytes);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	private byte[] serialize(T bytes) {
-		var output = Unpooled.buffer();
-		serializer.serialize(bytes, output);
-		output.resetReaderIndex();
-		int length = output.readableBytes();
-		var outputBytes = new byte[length];
-		output.getBytes(0, outputBytes, 0, length);
-		return outputBytes;
+		return serializer.serialize(bytes);
 	}
 }

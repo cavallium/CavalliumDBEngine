@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -10,9 +11,9 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageEntry<T>> {
 
-	private final Serializer<T> serializer;
+	private final Serializer<T, ByteBuf> serializer;
 
-	public SubStageGetterSingle(Serializer<T> serializer) {
+	public SubStageGetterSingle(Serializer<T, ByteBuf> serializer) {
 		this.serializer = serializer;
 	}
 

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import org.jetbrains.annotations.Nullable;
@@ -8,9 +9,9 @@ import reactor.core.publisher.Mono;
 public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
 
 	private final DatabaseSingle<byte[]> serializedSingle;
-	private final Serializer<U> serializer;
+	private final Serializer<U, ByteBuf> serializer;
 
-	public DatabaseSingleMapped(DatabaseSingle<byte[]> serializedSingle, Serializer<U> serializer) {
+	public DatabaseSingleMapped(DatabaseSingle<byte[]> serializedSingle, Serializer<U, ByteBuf> serializer) {
 		this.serializedSingle = serializedSingle;
 		this.serializer = serializer;
 	}

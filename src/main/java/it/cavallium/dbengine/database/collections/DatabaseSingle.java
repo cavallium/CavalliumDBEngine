@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -13,9 +14,9 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	private final LLDictionary dictionary;
 	private final byte[] key;
-	private final Serializer<U> serializer;
+	private final Serializer<U, ByteBuf> serializer;
 
-	public DatabaseSingle(LLDictionary dictionary, byte[] key, Serializer<U> serializer) {
+	public DatabaseSingle(LLDictionary dictionary, byte[] key, Serializer<U, ByteBuf> serializer) {
 		this.dictionary = dictionary;
 		this.key = key;
 		this.serializer = serializer;

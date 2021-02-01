@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -18,22 +19,22 @@ import reactor.core.publisher.Mono;
  */
 public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> {
 
-	private final Serializer<U> valueSerializer;
+	private final Serializer<U, ByteBuf> valueSerializer;
 
-	protected DatabaseMapDictionary(LLDictionary dictionary, byte[] prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer, Serializer<U> valueSerializer) {
+	protected DatabaseMapDictionary(LLDictionary dictionary, byte[] prefixKey, SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer, Serializer<U, ByteBuf> valueSerializer) {
 		super(dictionary, new SubStageGetterSingle<>(valueSerializer), keySuffixSerializer, prefixKey, 0);
 		this.valueSerializer = valueSerializer;
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySerializer,
-			Serializer<U> valueSerializer) {
+			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
+			Serializer<U, ByteBuf> valueSerializer) {
 		return new DatabaseMapDictionary<>(dictionary, EMPTY_BYTES, keySerializer, valueSerializer);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Serializer<U> valueSerializer,
+			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
+			Serializer<U, ByteBuf> valueSerializer,
 			byte[] prefixKey) {
 		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer);
 	}

@@ -20,12 +20,25 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 			@Nullable CompositeSnapshot snapshot,
 			byte[] keyPrefix,
 			Flux<byte[]> keyFlux) {
-		return keyFlux.singleOrEmpty().flatMap(key -> Mono.fromCallable(() -> {
-			if (!Arrays.equals(keyPrefix, key)) {
-				throw new IndexOutOfBoundsException("Found more than one element!");
-			}
-			return null;
-		})).thenReturn(new DatabaseSingle<>(dictionary, keyPrefix, serializer));
+		//System.out.println(Thread.currentThread() + "subStageGetterSingle1");
+		return keyFlux
+				.singleOrEmpty()
+				.flatMap(key -> Mono
+						.<DatabaseStageEntry<T>>fromCallable(() -> {
+							//System.out.println(Thread.currentThread() + "subStageGetterSingle2");
+							if (!Arrays.equals(keyPrefix, key)) {
+								throw new IndexOutOfBoundsException("Found more than one element!");
+							}
+							return null;
+						})
+				)
+				.then(Mono.fromSupplier(() -> {
+					//System.out.println(Thread.currentThread() + "subStageGetterSingle3");
+					return new DatabaseSingle<T>(dictionary,
+							keyPrefix,
+							serializer
+					);
+				}));
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import java.util.List;
 import java.util.Map.Entry;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -22,21 +23,30 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range);
 
+	Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+
 	Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range);
+
+	Flux<List<byte[]>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
 
 	Flux<Entry<byte[], byte[]>> setRange(LLRange range, Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
 
 	default Mono<Void> replaceRange(LLRange range, boolean canKeysChange, Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer) {
-		Flux<Entry<byte[], byte[]>> replacedFlux = this.getRange(null, range).flatMap(entriesReplacer);
-		if (canKeysChange) {
-			return this
-					.setRange(range, replacedFlux, false)
-					.then();
-		} else {
-			return this
-					.putMulti(replacedFlux, false)
-					.then();
-		}
+		return Mono.defer(() -> {
+			if (canKeysChange) {
+				return this
+						.setRange(range, this
+								.getRange(null, range)
+								.flatMap(entriesReplacer), false)
+						.then();
+			} else {
+				return this
+						.putMulti(this
+								.getRange(null, range)
+								.flatMap(entriesReplacer), false)
+						.then();
+			}
+		});
 	}
 
 	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range);

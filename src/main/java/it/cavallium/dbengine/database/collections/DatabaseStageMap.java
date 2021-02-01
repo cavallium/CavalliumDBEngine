@@ -30,7 +30,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return at(null, key).flatMap(v -> v.setAndGetPrevious(value));
+		return at(null, key).single().flatMap(v -> v.setAndGetPrevious(value));
 	}
 
 	default Mono<Boolean> putValueAndGetStatus(T key, U value) {
@@ -76,21 +76,19 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> replaceAllValues(boolean canKeysChange, Function<Entry<T, U>, Mono<Entry<T, U>>> entriesReplacer) {
-		Flux<Entry<T, U>> replacedFlux = this
-				.getAllValues(null)
-				.flatMap(entriesReplacer);
-		if (canKeysChange) {
-			return this
-					.setAllValues(replacedFlux)
-					.then();
-		} else {
-			return replacedFlux
-					.flatMap(replacedEntry -> this
-							.at(null, replacedEntry.getKey())
-							.map(entry -> entry.set(replacedEntry.getValue()))
-					)
-					.then();
-		}
+		return Mono.defer(() -> {
+			if (canKeysChange) {
+				return this.setAllValues(this.getAllValues(null).flatMap(entriesReplacer)).then();
+			} else {
+				return this
+						.getAllValues(null)
+						.flatMap(entriesReplacer)
+						.flatMap(replacedEntry -> this
+								.at(null, replacedEntry.getKey())
+								.map(entry -> entry.set(replacedEntry.getValue())))
+						.then();
+			}
+		});
 	}
 
 	default Mono<Void> replaceAll(Function<Entry<T, US>, Mono<Void>> entriesReplacer) {

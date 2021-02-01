@@ -319,24 +319,32 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 														.unicast()
 														.onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
 
-												streamSearcher.search(indexSearcher,
-														query,
-														limit,
-														null,
-														ScoreMode.COMPLETE,
-														keyFieldName,
-														keyScore -> {
-															EmitResult result = topKeysSink.tryEmitNext(keyScore);
-															if (result.isFailure()) {
-																throw new EmissionException(result);
-															}
-														},
-														totalHitsCount -> {
-															EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
-															if (result.isFailure()) {
-																throw new EmissionException(result);
-															}
-														});
+												luceneScheduler.schedule(() -> {
+													try {
+														streamSearcher.search(indexSearcher,
+																query,
+																limit,
+																null,
+																ScoreMode.COMPLETE,
+																keyFieldName,
+																keyScore -> {
+																	EmitResult result = topKeysSink.tryEmitNext(keyScore);
+																	if (result.isFailure()) {
+																		throw new EmissionException(result);
+																	}
+																},
+																totalHitsCount -> {
+																	EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
+																	if (result.isFailure()) {
+																		throw new EmissionException(result);
+																	}
+																});
+														topKeysSink.tryEmitComplete();
+													} catch (IOException e) {
+														topKeysSink.tryEmitError(e);
+														totalHitsCountSink.tryEmitError(e);
+													}
+												});
 
 												return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
 											}).subscribeOn(luceneScheduler)
@@ -374,24 +382,32 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 											.unicast()
 											.onBackpressureBuffer(new ArrayBlockingQueue<>(PagedStreamSearcher.MAX_ITEMS_PER_PAGE));
 
-									streamSearcher.search(indexSearcher,
-											query,
-											limit,
-											luceneSort,
-											luceneScoreMode,
-											keyFieldName,
-											keyScore -> {
-												EmitResult result = topKeysSink.tryEmitNext(keyScore);
-												if (result.isFailure()) {
-													throw new EmissionException(result);
-												}
-											},
-											totalHitsCount -> {
-												EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
-												if (result.isFailure()) {
-													throw new EmissionException(result);
-												}
-											});
+									luceneScheduler.schedule(() -> {
+										try {
+											streamSearcher.search(indexSearcher,
+													query,
+													limit,
+													luceneSort,
+													luceneScoreMode,
+													keyFieldName,
+													keyScore -> {
+														EmitResult result = topKeysSink.tryEmitNext(keyScore);
+														if (result.isFailure()) {
+															throw new EmissionException(result);
+														}
+													},
+													totalHitsCount -> {
+														EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
+														if (result.isFailure()) {
+															throw new EmissionException(result);
+														}
+													});
+											topKeysSink.tryEmitComplete();
+										} catch (IOException e) {
+											topKeysSink.tryEmitError(e);
+											totalHitsCountSink.tryEmitError(e);
+										}
+									});
 
 									return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
 								}).subscribeOn(luceneScheduler)

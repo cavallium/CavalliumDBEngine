@@ -73,8 +73,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	private Entry<byte[], byte[]> stripPrefix(Entry<byte[], byte[]> entry) {
-		byte[] keySuffix = stripPrefix(entry.getKey());
-		return Map.entry(keySuffix, entry.getValue());
+		return Map.entry(stripPrefix(entry.getKey()), entry.getValue());
 	}
 
 	@Override
@@ -89,7 +88,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return dictionary.sizeRange(resolveSnapshot(snapshot), range, true);
+		return dictionary.sizeRange(resolveSnapshot(snapshot), range, fast);
 	}
 
 	@Override
@@ -174,9 +173,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		var serializedEntries = entries
-				.map(entry -> Map.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue())));
-		return dictionary.setRange(range, serializedEntries, true)
+		return dictionary
+				.setRange(range,
+						entries.map(entry ->
+								Map.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue()))), true)
 				.map(entry -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey())), deserialize(entry.getValue())));
 	}
 

@@ -5,8 +5,8 @@ import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
-import it.cavallium.dbengine.database.collections.SerializerFixedBinaryLength;
 import it.cavallium.dbengine.database.collections.Serializer;
+import it.cavallium.dbengine.database.collections.SerializerFixedBinaryLength;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import java.io.IOException;
@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -32,7 +33,7 @@ import reactor.util.function.Tuples;
 public class Example {
 
 	private static final boolean printPreviousValue = false;
-	private static final int numRepeats = 100;
+	private static final int numRepeats = 1000;
 	private static final int batchSize = 10000;
 
 	public static void main(String[] args) throws InterruptedException {
@@ -52,8 +53,8 @@ public class Example {
 
 		 */
 
-		testPutMulti()
-				.then(rangeTestPutMulti())
+		rangeTestPutMultiProgressive()
+				.then(rangeTestPutMultiSame())
 				.subscribeOn(Schedulers.parallel())
 				.blockOptional();
 	}
@@ -145,11 +146,14 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
-				tuple -> Mono
-						.defer(() -> tuple.getT2().putMulti(putMultiFlux)
-						),
+				tuple -> Mono.defer(() -> tuple.getT2().putMulti(putMultiFlux)),
 				numRepeats,
-				tuple -> tuple.getT1().close());
+				tuple -> Mono
+						.fromRunnable(() -> System.out.println("Calculating size"))
+						.then(tuple.getT2().size(null, false))
+						.doOnNext(s -> System.out.println("Size after: " + s))
+						.then(tuple.getT1().close())
+		);
 	}
 
 	private static Mono<Void> rangeTestAtPut() {
@@ -227,23 +231,56 @@ public class Example {
 				tuple -> tuple.getT1().close());
 	}
 
-	private static Mono<Void> rangeTestPutMulti() {
+	private static Mono<Void> rangeTestPutMultiSame() {
 		var ser = SerializerFixedBinaryLength.noop(4);
 		var vser = Serializer.noop();
 		HashMap<byte[], byte[]> keysToPut = new HashMap<>();
 		for (int i = 0; i < batchSize; i++) {
 			keysToPut.put(Ints.toByteArray(i * 3), Ints.toByteArray(i * 11));
 		}
-		var putMultiFlux = Flux.fromIterable(keysToPut.entrySet());
 		return test("MapDictionary::putMulti (batch of " + batchSize + " entries)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
 				tuple -> Mono
-						.defer(() -> tuple.getT2().putMulti(putMultiFlux)
+						.defer(() -> tuple.getT2().putMulti(Flux.fromIterable(keysToPut.entrySet()))
 						),
 				numRepeats,
-				tuple -> tuple.getT1().close());
+				tuple -> Mono
+						.fromRunnable(() -> System.out.println("Calculating size"))
+						.then(tuple.getT2().size(null, false))
+						.doOnNext(s -> System.out.println("Size after: " + s))
+						.then(tuple.getT1().close())
+		);
+	}
+
+	private static Mono<Void> rangeTestPutMultiProgressive() {
+		var ser = SerializerFixedBinaryLength.noop(4);
+		var vser = Serializer.noop();
+		AtomicInteger ai = new AtomicInteger(0);
+		return test("MapDictionary::putMulti (batch of " + batchSize + " entries)",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
+				tuple -> Mono
+						.defer(() -> {
+							var aiv = ai.incrementAndGet();
+							HashMap<byte[], byte[]> keysToPut = new HashMap<>();
+							for (int i = 0; i < batchSize; i++) {
+								keysToPut.put(
+										Ints.toByteArray(i * 3 + (batchSize * aiv)),
+										Ints.toByteArray(i * 11 + (batchSize * aiv))
+								);
+							}
+							return tuple.getT2().putMulti(Flux.fromIterable(keysToPut.entrySet()));
+						}),
+				numRepeats,
+				tuple -> Mono
+						.fromRunnable(() -> System.out.println("Calculating size"))
+						.then(tuple.getT2().size(null, false))
+						.doOnNext(s -> System.out.println("Size after: " + s))
+						.then(tuple.getT1().close())
+		);
 	}
 
 	private static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
@@ -282,18 +319,20 @@ public class Example {
 		Duration WAIT_TIME_END = Duration.ofSeconds(5);
 		return Mono
 				.delay(WAIT_TIME)
+				.doOnSuccess(s -> {
+					System.out.println("----------------------------------------------------------------------");
+					System.out.println(name);
+				})
 				.then(Mono.fromRunnable(() -> instantInit.tryEmitValue(now())))
 				.then(setup)
 				.doOnSuccess(s -> instantInitTest.tryEmitValue(now()))
-				.flatMap(a ->Mono.defer(() -> test.apply(a)).repeat(numRepeats)
+				.flatMap(a -> Mono.defer(() -> test.apply(a)).repeat(numRepeats - 1)
 						.then()
 						.doOnSuccess(s -> instantEndTest.tryEmitValue(now()))
 						.then(close.apply(a)))
 				.doOnSuccess(s -> instantEnd.tryEmitValue(now()))
 				.then(Mono.zip(instantInit.asMono(), instantInitTest.asMono(), instantEndTest.asMono(), instantEnd.asMono()))
 				.doOnSuccess(tuple -> {
-					System.out.println("----------------------------------------------------------------------");
-					System.out.println(name);
 					System.out.println(
 							"\t - Executed " + DecimalFormat.getInstance(Locale.ITALY).format((numRepeats * batchSize)) + " times:");
 					System.out.println("\t - Test time: " + DecimalFormat

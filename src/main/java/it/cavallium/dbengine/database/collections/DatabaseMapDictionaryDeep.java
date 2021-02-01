@@ -9,11 +9,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
 // todo: implement optimized methods
+@SuppressWarnings("Convert2MethodRef")
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
 
 	public static final byte[] EMPTY_BYTES = new byte[0];
@@ -196,34 +196,40 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		byte[] keySuffixData = serializeSuffix(keySuffix);
-		Flux<byte[]> rangeKeys = this
-				.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData)
-		);
 		return this.subStageGetter
-				.subStage(dictionary, snapshot, toKeyWithoutExt(keySuffixData), rangeKeys);
-	}
-
-	@Override
-	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		Flux<GroupedFlux<byte[], byte[]>> groupedFlux = dictionary
-				.getRangeKeys(resolveSnapshot(snapshot), range)
-				.groupBy(this::removeExtFromFullKey);
-		return groupedFlux
-				.flatMap(rangeKeys -> this.subStageGetter
-						.subStage(dictionary, snapshot, rangeKeys.key(), rangeKeys)
-						.map(us -> Map.entry(this.deserializeSuffix(this.stripPrefix(rangeKeys.key())), us))
+				.subStage(dictionary,
+						snapshot,
+						toKeyWithoutExt(keySuffixData),
+						this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData))
 				);
 	}
 
 	@Override
-	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		var newValues = entries
-				.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
-				.flatMap(tuple -> tuple.getT1().set(tuple.getT2()));
+	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+		return dictionary
+				.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
+				.flatMap(rangeKeys -> {
+					//System.out.println(Thread.currentThread() + "\tkReceived range key flux");
+					byte[] groupKeyWithoutExt = removeExtFromFullKey(rangeKeys.get(0));
+					byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
+					return this.subStageGetter
+									.subStage(dictionary, snapshot, groupKeyWithoutExt, Flux.fromIterable(rangeKeys))
+									//.doOnSuccess(s -> System.out.println(Thread.currentThread() + "\tObtained stage for a key"))
+									.map(us -> Map.entry(this.deserializeSuffix(groupSuffix), us));
+									//.doOnSuccess(s -> System.out.println(Thread.currentThread() + "\tMapped stage for a key"));
+						}
+				);
+				//.doOnNext(s -> System.out.println(Thread.currentThread() + "\tNext stage"))
+	}
 
+	@Override
+	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return getAllStages(null)
 				.flatMap(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
-				.concatWith(newValues.then(Mono.empty()));
+				.concatWith(entries
+						.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
+						.flatMap(tuple -> tuple.getT1().set(tuple.getT2()))
+						.then(Mono.empty()));
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

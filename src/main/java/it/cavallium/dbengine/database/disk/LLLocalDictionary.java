@@ -9,7 +9,6 @@ import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -27,7 +26,6 @@ import org.rocksdb.RocksIterator;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import org.warp.commonutils.type.VariableWrapper;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -159,55 +157,59 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType) {
-		Mono<byte[]> response = getPrevValue(key, resultType);
-		return Mono
-				.fromCallable(() -> {
-					db.put(cfh, key, value);
-					return null;
-				})
-				.onErrorMap(IOException::new)
-				.subscribeOn(dbScheduler)
-				.then(response);
+		return getPrevValue(key, resultType)
+				.concatWith(Mono
+						.fromCallable(() -> {
+							db.put(cfh, key, value);
+							return null;
+						})
+						.onErrorMap(IOException::new)
+						.subscribeOn(dbScheduler)
+						.then(Mono.empty())
+				).singleOrEmpty();
 	}
 
 	@Override
 	public Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType) {
-		Mono<byte[]> response = getPrevValue(key, resultType);
-		return Mono
-				.fromCallable(() -> {
-					db.delete(cfh, key);
-					return null;
-				})
-				.onErrorMap(IOException::new)
-				.subscribeOn(dbScheduler)
-				.then(response);
+		return getPrevValue(key, resultType)
+				.concatWith(Mono
+						.fromCallable(() -> {
+							db.delete(cfh, key);
+							return null;
+						})
+						.onErrorMap(IOException::new)
+						.subscribeOn(dbScheduler)
+						.then(Mono.empty())
+				).singleOrEmpty();
 	}
 
 	private Mono<byte[]> getPrevValue(byte[] key, LLDictionaryResultType resultType) {
-		switch (resultType) {
-			case VALUE_CHANGED:
-				return containsKey(null, key).single().map(LLUtils::booleanToResponse);
-			case PREVIOUS_VALUE:
-				return Mono
-						.fromCallable(() -> {
-							var data = new Holder<byte[]>();
-							if (db.keyMayExist(cfh, key, data)) {
-								if (data.getValue() != null) {
-									return data.getValue();
+		return Mono.defer(() -> {
+			switch (resultType) {
+				case VALUE_CHANGED:
+					return containsKey(null, key).single().map(LLUtils::booleanToResponse);
+				case PREVIOUS_VALUE:
+					return Mono
+							.fromCallable(() -> {
+								var data = new Holder<byte[]>();
+								if (db.keyMayExist(cfh, key, data)) {
+									if (data.getValue() != null) {
+										return data.getValue();
+									} else {
+										return db.get(cfh, key);
+									}
 								} else {
-									return db.get(cfh, key);
+									return null;
 								}
-							} else {
-								return null;
-							}
-						})
-						.onErrorMap(IOException::new)
-						.subscribeOn(dbScheduler);
-			case VOID:
-				return Mono.empty();
-			default:
-				return Mono.error(new IllegalStateException("Unexpected value: " + resultType));
-		}
+							})
+							.onErrorMap(IOException::new)
+							.subscribeOn(dbScheduler);
+				case VOID:
+					return Mono.empty();
+				default:
+					return Mono.error(new IllegalStateException("Unexpected value: " + resultType));
+			}
+		});
 	}
 
 	@Override
@@ -242,11 +244,12 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<Entry<byte[], byte[]>> putMulti(Flux<Entry<byte[], byte[]>> entries, boolean getOldValues) {
 		return entries
 				.window(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.publishOn(dbScheduler)
 				.flatMap(Flux::collectList)
 				.flatMap(entriesWindow -> this
 						.getMulti(null, Flux.fromIterable(entriesWindow).map(Entry::getKey))
+						.publishOn(dbScheduler)
 						.concatWith(Mono.fromCallable(() -> {
+							//System.out.println(Thread.currentThread()+"\tTest");
 							var batch = new CappedWriteBatch(db,
 									CAPPED_WRITE_BATCH_CAP,
 									RESERVED_WRITE_BATCH_SIZE,
@@ -311,11 +314,26 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
-		if (range.isSingle()) {
-			return getRangeSingle(snapshot, range.getMin());
-		} else {
-			return getRangeMulti(snapshot, range);
-		}
+		return Flux.defer(() -> {
+			if (range.isSingle()) {
+				return getRangeSingle(snapshot, range.getMin());
+			} else {
+				return getRangeMulti(snapshot, range);
+			}
+		});
+	}
+
+	@Override
+	public Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
+			int prefixLength) {
+		return Flux.defer(() -> {
+			if (range.isSingle()) {
+				return getRangeSingle(snapshot, range.getMin()).map(List::of);
+			} else {
+				return getRangeMultiGrouped(snapshot, range, prefixLength);
+			}
+		});
 	}
 
 	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key) {
@@ -326,67 +344,138 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<Entry<byte[],byte[]>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
-		return Mono
-				.fromCallable(() -> {
-					var iter = db.newIterator(cfh, resolveSnapshot(snapshot));
-					if (range.hasMin()) {
-						iter.seek(range.getMin());
-					} else {
-						iter.seekToFirst();
+		return Flux
+				.<Entry<byte[], byte[]>>push(sink -> {
+					//System.out.println(Thread.currentThread() + "\tPreparing Read rande item");
+					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+						if (range.hasMin()) {
+							rocksIterator.seek(range.getMin());
+						} else {
+							rocksIterator.seekToFirst();
+						}
+						byte[] key;
+						while (rocksIterator.isValid()) {
+							key = rocksIterator.key();
+							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
+								break;
+							}
+							//System.out.println(Thread.currentThread() + "\tRead rande item");
+							sink.next(Map.entry(key, rocksIterator.value()));
+							rocksIterator.next();
+						}
+					} finally {
+						//System.out.println(Thread.currentThread() + "\tFinish Read rande item");
+						sink.complete();
 					}
-					return iter;
 				})
-				.subscribeOn(dbScheduler)
-				.flatMapMany(rocksIterator -> Flux
-						.<Entry<byte[], byte[]>>fromIterable(() -> {
-							VariableWrapper<byte[]> nextKey = new VariableWrapper<>(null);
-							VariableWrapper<byte[]> nextValue = new VariableWrapper<>(null);
-							return new Iterator<>() {
-								@Override
-								public boolean hasNext() {
-									assert nextKey.var == null;
-									assert nextValue.var == null;
-									if (!rocksIterator.isValid()) {
-										nextKey.var = null;
-										nextValue.var = null;
-										return false;
-									}
-									var key = rocksIterator.key();
-									var value = rocksIterator.value();
-									if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-										nextKey.var = null;
-										nextValue.var = null;
-										return false;
-									}
-									nextKey.var = key;
-									nextValue.var = value;
-									return true;
-								}
+				.subscribeOn(dbScheduler);
+	}
 
-								@Override
-								public Entry<byte[], byte[]> next() {
-									var key = nextKey.var;
-									var val = nextValue.var;
-									assert key != null;
-									assert val != null;
-									nextKey.var = null;
-									nextValue.var = null;
-									return Map.entry(key, val);
+	private Flux<List<Entry<byte[],byte[]>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
+		return Flux
+				.<List<Entry<byte[], byte[]>>>push(sink -> {
+					//System.out.println(Thread.currentThread() + "\tPreparing Read rande item");
+					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+						if (range.hasMin()) {
+							rocksIterator.seek(range.getMin());
+						} else {
+							rocksIterator.seekToFirst();
+						}
+						byte[] firstGroupKey = null;
+						List<Entry<byte[], byte[]>> currentGroupValues = new ArrayList<>();
+
+						byte[] key;
+						while (rocksIterator.isValid()) {
+							key = rocksIterator.key();
+							if (firstGroupKey == null) { // Fix first value
+								firstGroupKey = key;
+							}
+							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
+								break;
+							}
+							if (Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
+								currentGroupValues.add(Map.entry(key, rocksIterator.value()));
+							} else {
+								if (!currentGroupValues.isEmpty()) {
+									//System.out.println(Thread.currentThread() + "\tRead rande item");
+									sink.next(currentGroupValues);
 								}
-							};
-						})
-						.doFinally(signalType -> rocksIterator.close())
-						.subscribeOn(dbScheduler)
-				);
+								firstGroupKey = key;
+								currentGroupValues = new ArrayList<>();
+							}
+							rocksIterator.next();
+						}
+						if (!currentGroupValues.isEmpty()) {
+							//System.out.println(Thread.currentThread() + "\tRead rande item");
+							sink.next(currentGroupValues);
+						}
+					} finally {
+						//System.out.println(Thread.currentThread() + "\tFinish Read rande item");
+						sink.complete();
+					}
+				})
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
 	public Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range) {
-		if (range.isSingle()) {
-			return getRangeKeysSingle(snapshot, range.getMin());
-		} else {
-			return getRangeKeysMulti(snapshot, range);
-		}
+		return Flux.defer(() -> {
+			if (range.isSingle()) {
+				//System.out.println(Thread.currentThread() + "getRangeKeys single");
+				return getRangeKeysSingle(snapshot, range.getMin()).doOnTerminate(() -> {}/*System.out.println(Thread.currentThread() + "getRangeKeys single end")*/);
+			} else {
+				//System.out.println(Thread.currentThread() + "getRangeKeys multi");
+				return getRangeKeysMulti(snapshot, range);
+			}
+		});
+	}
+
+	@Override
+	public Flux<List<byte[]>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
+		return Flux
+				.<List<byte[]>>push(sink -> {
+					//System.out.println(Thread.currentThread() + "\tPreparing Read rande item");
+					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+						if (range.hasMin()) {
+							rocksIterator.seek(range.getMin());
+						} else {
+							rocksIterator.seekToFirst();
+						}
+						byte[] firstGroupKey = null;
+						List<byte[]> currentGroupValues = new ArrayList<>();
+
+						byte[] key;
+						while (rocksIterator.isValid()) {
+							key = rocksIterator.key();
+							if (firstGroupKey == null) { // Fix first value
+								firstGroupKey = key;
+							}
+							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
+								break;
+							}
+							if (Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
+								currentGroupValues.add(key);
+							} else {
+								if (!currentGroupValues.isEmpty()) {
+									//System.out.println(Thread.currentThread() + "\tRead rande item");
+									sink.next(currentGroupValues);
+								}
+								firstGroupKey = key;
+								currentGroupValues = new ArrayList<>();
+								currentGroupValues.add(key);
+							}
+							rocksIterator.next();
+						}
+						if (!currentGroupValues.isEmpty()) {
+							//System.out.println(Thread.currentThread() + "\tRead rande item");
+							sink.next(currentGroupValues);
+						}
+					} finally {
+						//System.out.println(Thread.currentThread() + "\tFinish Read rande item");
+						sink.complete();
+					}
+				})
+				.subscribeOn(dbScheduler);
 	}
 
 	private Flux<byte[]> getRangeKeysSingle(LLSnapshot snapshot, byte[] key) {
@@ -398,105 +487,90 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<byte[]> getRangeKeysMulti(LLSnapshot snapshot, LLRange range) {
-		return Mono
-				.fromCallable(() -> {
-					var iter = db.newIterator(cfh, resolveSnapshot(snapshot));
-					if (range.hasMin()) {
-						iter.seek(range.getMin());
-					} else {
-						iter.seekToFirst();
+		return Flux
+				.<byte[]>push(sink -> {
+					//System.out.println(Thread.currentThread() + "\tkPreparing Read rande item");
+					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+						if (range.hasMin()) {
+							rocksIterator.seek(range.getMin());
+						} else {
+							rocksIterator.seekToFirst();
+						}
+						byte[] key;
+						sink.onRequest(l -> {}/*System.out.println(Thread.currentThread() + "\tkRequested " + l)*/);
+						while (rocksIterator.isValid()) {
+							key = rocksIterator.key();
+							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
+								break;
+							}
+							//System.out.println(Thread.currentThread() + "\tkRead rande item");
+							sink.next(key);
+							rocksIterator.next();
+						}
+					} finally {
+						//System.out.println(Thread.currentThread() + "\tkFinish Read rande item");
+						sink.complete();
 					}
-					return iter;
+					//System.out.println(Thread.currentThread() + "\tkFinish end Read rande item");
 				})
-				.subscribeOn(dbScheduler)
-				.flatMapMany(rocksIterator -> Flux
-						.<byte[]>fromIterable(() -> {
-							VariableWrapper<byte[]> nextKey = new VariableWrapper<>(null);
-							return new Iterator<>() {
-								@Override
-								public boolean hasNext() {
-									assert nextKey.var == null;
-									if (!rocksIterator.isValid()) {
-										nextKey.var = null;
-										return false;
-									}
-									var key = rocksIterator.key();
-									var value = rocksIterator.value();
-									if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-										nextKey.var = null;
-										return false;
-									}
-									nextKey.var = key;
-									return true;
-								}
-
-								@Override
-								public byte[] next() {
-									var key = nextKey.var;
-									assert key != null;
-									nextKey.var = null;
-									return key;
-								}
-							};
-						})
-						.doFinally(signalType -> rocksIterator.close())
-						.subscribeOn(dbScheduler)
-				);
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
 	public Flux<Entry<byte[], byte[]>> setRange(LLRange range,
 			Flux<Entry<byte[], byte[]>> entries,
 			boolean getOldValues) {
-		if (range.isAll()) {
-			return clear().thenMany(Flux.empty());
-		} else {
-			return Mono
-					.fromCallable(() -> new CappedWriteBatch(db,
-							CAPPED_WRITE_BATCH_CAP,
-							RESERVED_WRITE_BATCH_SIZE,
-							MAX_WRITE_BATCH_SIZE,
-							BATCH_WRITE_OPTIONS
-					))
-					.subscribeOn(dbScheduler)
-					.flatMapMany(writeBatch -> Mono
-							.fromCallable(() -> {
-								synchronized (writeBatch) {
-									if (range.hasMin() && range.hasMax()) {
-										writeBatch.deleteRange(cfh, range.getMin(), range.getMax());
-										writeBatch.delete(cfh, range.getMax());
-									} else if (range.hasMax()) {
-										writeBatch.deleteRange(cfh, FIRST_KEY, range.getMax());
-										writeBatch.delete(cfh, range.getMax());
-									} else {
-										try (var it = db.newIterator(cfh, getReadOptions(null))) {
-											it.seekToLast();
-											if (it.isValid()) {
-												writeBatch.deleteRange(cfh, range.getMin(), it.key());
-												writeBatch.delete(cfh, it.key());
+		return Flux.defer(() -> {
+			if (range.isAll()) {
+				return clear().thenMany(Flux.empty());
+			} else {
+				return Mono
+						.fromCallable(() -> new CappedWriteBatch(db,
+								CAPPED_WRITE_BATCH_CAP,
+								RESERVED_WRITE_BATCH_SIZE,
+								MAX_WRITE_BATCH_SIZE,
+								BATCH_WRITE_OPTIONS
+						))
+						.subscribeOn(dbScheduler)
+						.flatMapMany(writeBatch -> Mono
+								.fromCallable(() -> {
+									synchronized (writeBatch) {
+										if (range.hasMin() && range.hasMax()) {
+											writeBatch.deleteRange(cfh, range.getMin(), range.getMax());
+											writeBatch.delete(cfh, range.getMax());
+										} else if (range.hasMax()) {
+											writeBatch.deleteRange(cfh, FIRST_KEY, range.getMax());
+											writeBatch.delete(cfh, range.getMax());
+										} else {
+											try (var it = db.newIterator(cfh, getReadOptions(null))) {
+												it.seekToLast();
+												if (it.isValid()) {
+													writeBatch.deleteRange(cfh, range.getMin(), it.key());
+													writeBatch.delete(cfh, it.key());
+												}
 											}
 										}
 									}
-								}
-								return null;
-							})
-							.subscribeOn(dbScheduler)
-							.thenMany(entries)
-							.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
-							.concatWith(Mono.<Entry<byte[], byte[]>>fromCallable(() -> {
-								synchronized (writeBatch) {
-									writeBatch.writeToDbAndClose();
-									writeBatch.close();
-								}
-								return null;
-							}).subscribeOn(dbScheduler))
-							.doFinally(signalType -> {
-								synchronized (writeBatch) {
-									writeBatch.close();
-								}
-							}))
-					.onErrorMap(IOException::new);
-		}
+									return null;
+								})
+								.subscribeOn(dbScheduler)
+								.thenMany(entries)
+								.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
+								.concatWith(Mono.<Entry<byte[], byte[]>>fromCallable(() -> {
+									synchronized (writeBatch) {
+										writeBatch.writeToDbAndClose();
+										writeBatch.close();
+									}
+									return null;
+								}).subscribeOn(dbScheduler))
+								.doFinally(signalType -> {
+									synchronized (writeBatch) {
+										writeBatch.close();
+									}
+								}))
+						.onErrorMap(IOException::new);
+			}
+		});
 	}
 
 	public Mono<Void> clear() {

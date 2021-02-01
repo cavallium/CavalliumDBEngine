@@ -5,9 +5,12 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -27,7 +30,7 @@ import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import org.warp.commonutils.type.VariableWrapper;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 @NotAtomic
 public class LLLocalDictionary implements LLDictionary {
@@ -36,6 +39,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int RESERVED_WRITE_BATCH_SIZE = 2 * 1024 * 1024; // 2MiB
 	static final long MAX_WRITE_BATCH_SIZE = 1024L * 1024L * 1024L; // 1GiB
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
+	static final int MULTI_GET_WINDOW = 500;
 	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
 
 	private static final byte[] FIRST_KEY = new byte[]{};
@@ -44,17 +48,20 @@ public class LLLocalDictionary implements LLDictionary {
 	private final RocksDB db;
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;
+	private final Scheduler dbScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 
 	public LLLocalDictionary(@NotNull RocksDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
+			Scheduler dbScheduler,
 			Function<LLSnapshot, Snapshot> snapshotResolver) {
 		Objects.requireNonNull(db);
 		this.db = db;
 		Objects.requireNonNull(columnFamilyHandle);
 		this.cfh = columnFamilyHandle;
 		this.databaseName = databaseName;
+		this.dbScheduler = dbScheduler;
 		this.snapshotResolver = snapshotResolver;
 	}
 
@@ -95,7 +102,7 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -129,7 +136,7 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, byte[] key) {
@@ -147,7 +154,7 @@ public class LLLocalDictionary implements LLDictionary {
 					return size != RocksDB.NOT_FOUND;
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -159,7 +166,7 @@ public class LLLocalDictionary implements LLDictionary {
 					return null;
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(dbScheduler)
 				.then(response);
 	}
 
@@ -172,7 +179,7 @@ public class LLLocalDictionary implements LLDictionary {
 					return null;
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(dbScheduler)
 				.then(response);
 	}
 
@@ -195,7 +202,7 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						})
 						.onErrorMap(IOException::new)
-						.subscribeOn(Schedulers.boundedElastic());
+						.subscribeOn(dbScheduler);
 			case VOID:
 				return Mono.empty();
 			default:
@@ -205,39 +212,56 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys) {
-		return keys.flatMap(key -> this.get(snapshot, key).map(value -> Map.entry(key, value)));
+		return keys
+				.window(MULTI_GET_WINDOW)
+				.flatMap(keysWindowFlux -> keysWindowFlux.collectList()
+						.flatMapMany(keysWindow -> Mono
+								.<ArrayList<Entry<byte[], byte[]>>>fromCallable(() -> {
+									var handlesArray = new ColumnFamilyHandle[keysWindow.size()];
+									Arrays.fill(handlesArray, cfh);
+									var handles = ObjectArrayList.wrap(handlesArray, handlesArray.length);
+									var results = db.multiGetAsList(resolveSnapshot(snapshot), handles, keysWindow);
+									var mappedResults = new ArrayList<Entry<byte[], byte[]>>(results.size());
+									for (int i = 0; i < results.size(); i++) {
+										var val = results.get(i);
+										if (val != null) {
+											results.set(i, null);
+											mappedResults.add(Map.entry(keysWindow.get(i), val));
+										}
+									}
+									return mappedResults;
+								})
+								.subscribeOn(dbScheduler)
+								.<Entry<byte[], byte[]>>flatMapMany(Flux::fromIterable)
+						)
+				)
+				.onErrorMap(IOException::new);
 	}
 
 	@Override
 	public Flux<Entry<byte[], byte[]>> putMulti(Flux<Entry<byte[], byte[]>> entries, boolean getOldValues) {
-		return Mono
-				.fromCallable(() -> new CappedWriteBatch(db,
-						CAPPED_WRITE_BATCH_CAP,
-						RESERVED_WRITE_BATCH_SIZE,
-						MAX_WRITE_BATCH_SIZE,
-						BATCH_WRITE_OPTIONS
-				))
-				.subscribeOn(Schedulers.boundedElastic())
-				.flatMapMany(writeBatch -> entries
-						.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
-						.concatWith(Mono
-								.<Entry<byte[], byte[]>>fromCallable(() -> {
-									synchronized (writeBatch) {
-										writeBatch.writeToDbAndClose();
-										writeBatch.close();
-									}
-									return null;
-								})
-								.subscribeOn(Schedulers.boundedElastic())
-						)
-						.doFinally(signalType -> {
-							synchronized (writeBatch) {
-								writeBatch.close();
+		return entries
+				.window(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
+				.publishOn(dbScheduler)
+				.flatMap(Flux::collectList)
+				.flatMap(entriesWindow -> this
+						.getMulti(null, Flux.fromIterable(entriesWindow).map(Entry::getKey))
+						.concatWith(Mono.fromCallable(() -> {
+							var batch = new CappedWriteBatch(db,
+									CAPPED_WRITE_BATCH_CAP,
+									RESERVED_WRITE_BATCH_SIZE,
+									MAX_WRITE_BATCH_SIZE,
+									BATCH_WRITE_OPTIONS
+							);
+							for (Entry<byte[], byte[]> entry : entriesWindow) {
+								batch.put(entry.getKey(), entry.getValue());
 							}
-						})
-				)
-				.onErrorMap(IOException::new);
+							batch.writeToDbAndClose();
+							batch.close();
+							return null;
+						})));
 	}
+
 
 	@NotNull
 	private Mono<Entry<byte[], byte[]>> putEntryToWriteBatch(Entry<byte[], byte[]> newEntry, boolean getOldValues,
@@ -256,8 +280,33 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					return null;
 				})
-				.subscribeOn(Schedulers.boundedElastic()))
+						.subscribeOn(dbScheduler))
 				.map(oldValue -> Map.entry(newEntry.getKey(), oldValue)));
+	}
+
+	@NotNull
+	private Flux<Entry<byte[], byte[]>> putEntryToWriteBatch(List<Entry<byte[], byte[]>> newEntries, boolean getOldValues,
+			CappedWriteBatch writeBatch) {
+		return Flux
+				.from(Flux
+						.defer(() -> {
+							if (getOldValues) {
+								return getMulti(null, Flux.fromIterable(newEntries).map(Entry::getKey));
+							} else {
+								return Flux.empty();
+							}
+						})
+						.concatWith(Mono
+								.<Entry<byte[], byte[]>>fromCallable(() -> {
+									synchronized (writeBatch) {
+										for (Entry<byte[], byte[]> newEntry : newEntries) {
+											writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
+										}
+									}
+									return null;
+								}).subscribeOn(dbScheduler)
+						)
+				);
 	}
 
 	@Override
@@ -287,7 +336,7 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					return iter;
 				})
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(dbScheduler)
 				.flatMapMany(rocksIterator -> Flux
 						.<Entry<byte[], byte[]>>fromIterable(() -> {
 							VariableWrapper<byte[]> nextKey = new VariableWrapper<>(null);
@@ -327,7 +376,7 @@ public class LLLocalDictionary implements LLDictionary {
 							};
 						})
 						.doFinally(signalType -> rocksIterator.close())
-						.subscribeOn(Schedulers.boundedElastic())
+						.subscribeOn(dbScheduler)
 				);
 	}
 
@@ -359,7 +408,7 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					return iter;
 				})
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(dbScheduler)
 				.flatMapMany(rocksIterator -> Flux
 						.<byte[]>fromIterable(() -> {
 							VariableWrapper<byte[]> nextKey = new VariableWrapper<>(null);
@@ -391,7 +440,7 @@ public class LLLocalDictionary implements LLDictionary {
 							};
 						})
 						.doFinally(signalType -> rocksIterator.close())
-						.subscribeOn(Schedulers.boundedElastic())
+						.subscribeOn(dbScheduler)
 				);
 	}
 
@@ -404,7 +453,7 @@ public class LLLocalDictionary implements LLDictionary {
 		} else {
 			return Mono
 					.fromCallable(() -> new CappedWriteBatch(db, CAPPED_WRITE_BATCH_CAP, RESERVED_WRITE_BATCH_SIZE, MAX_WRITE_BATCH_SIZE, BATCH_WRITE_OPTIONS))
-					.subscribeOn(Schedulers.boundedElastic())
+					.subscribeOn(dbScheduler)
 					.flatMapMany(writeBatch -> Mono
 							.fromCallable(() -> {
 								synchronized (writeBatch) {
@@ -426,7 +475,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								return null;
 							})
-							.subscribeOn(Schedulers.boundedElastic())
+							.subscribeOn(dbScheduler)
 							.thenMany(entries)
 							.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
 							.concatWith(Mono
@@ -437,7 +486,7 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										return null;
 									})
-									.subscribeOn(Schedulers.boundedElastic())
+									.subscribeOn(dbScheduler)
 							)
 							.doFinally(signalType -> {
 								synchronized (writeBatch) {
@@ -478,7 +527,7 @@ public class LLLocalDictionary implements LLDictionary {
 					return null;
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 
 	}
 
@@ -490,7 +539,7 @@ public class LLLocalDictionary implements LLDictionary {
 						return Mono
 								.fromCallable(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
 								.onErrorMap(IOException::new)
-								.subscribeOn(Schedulers.boundedElastic());
+								.subscribeOn(dbScheduler);
 					} else {
 						return Mono
 								.fromCallable(() -> {
@@ -516,7 +565,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								})
 								.onErrorMap(IOException::new)
-								.subscribeOn(Schedulers.boundedElastic());
+								.subscribeOn(dbScheduler);
 					}
 				});
 	}
@@ -579,6 +628,6 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 }

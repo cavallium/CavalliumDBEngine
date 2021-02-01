@@ -26,7 +26,7 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 				throw new IndexOutOfBoundsException("Found more than one element!");
 			}
 			return null;
-		})).thenReturn(new DatabaseSingle(dictionary, keyPrefix, Serializer.noopBytes()));
+		})).thenReturn(new DatabaseSingle<>(dictionary, keyPrefix, serializer));
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

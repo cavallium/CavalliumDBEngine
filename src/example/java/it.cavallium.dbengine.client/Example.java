@@ -5,20 +5,24 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
-import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.FixedLengthSerializer;
 import it.cavallium.dbengine.database.collections.Serializer;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.text.DecimalFormat;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletionException;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -30,10 +34,11 @@ import reactor.util.function.Tuples;
 public class Example {
 
 	private static final boolean printPreviousValue = false;
-	private static final int numRepeats = 500;
-	private static final int batchSize = 1000;
+	private static final int numRepeats = 100;
+	private static final int batchSize = 10000;
 
 	public static void main(String[] args) throws InterruptedException {
+		/*
 		testAtPut();
 		testPutValueAndGetPrevious();
 		testPutValue();
@@ -42,6 +47,14 @@ public class Example {
 				.then(testPutValue())
 				.then(rangeTestPutValue())
 				.then(testPutMulti())
+				.then(rangeTestPutMulti())
+				.subscribeOn(Schedulers.parallel())
+				.blockOptional();
+
+
+		 */
+
+		testPutMulti()
 				.then(rangeTestPutMulti())
 				.subscribeOn(Schedulers.parallel())
 				.blockOptional();
@@ -128,9 +141,8 @@ public class Example {
 	private static Mono<Void> testPutMulti() {
 		var ssg = new SubStageGetterSingleBytes();
 		var ser = FixedLengthSerializer.noop(4);
-		int batchSize = 1000;
 		HashMap<ByteBuf, byte[]> keysToPut = new HashMap<>();
-		for (int i = 0; i < 1000; i++) {
+		for (int i = 0; i < batchSize; i++) {
 			keysToPut.put(Unpooled.wrappedBuffer(Ints.toByteArray(i * 3)), Ints.toByteArray(i * 11));
 		}
 		var putMultiFlux = Flux.fromIterable(keysToPut.entrySet());
@@ -243,8 +255,25 @@ public class Example {
 	}
 
 	private static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
-		return new LLLocalDatabaseConnection(Path.of("/tmp/"), true)
-				.connect()
+		var wrkspcPath = Path.of("/home/ubuntu/tempdb/");
+		return Mono
+				.fromCallable(() -> {
+					if (Files.exists(wrkspcPath)) {
+						Files.walk(wrkspcPath)
+								.sorted(Comparator.reverseOrder())
+								.forEach(file -> {
+									try {
+										Files.delete(file);
+									} catch (IOException ex) {
+										throw new CompletionException(ex);
+									}
+								});
+					}
+					Files.createDirectories(wrkspcPath);
+					return null;
+				})
+				.subscribeOn(Schedulers.boundedElastic())
+				.then(new LLLocalDatabaseConnection(wrkspcPath, true).connect())
 				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), false));
 	}
 
@@ -256,14 +285,13 @@ public class Example {
 		Duration WAIT_TIME = Duration.ofSeconds(5);
 		Duration WAIT_TIME_END = Duration.ofSeconds(5);
 		return Mono
-				.fromRunnable(() -> instantInit.tryEmitValue(now()))
+				.delay(WAIT_TIME)
+				.then(Mono.fromRunnable(() -> instantInit.tryEmitValue(now())))
 				.then(setup)
-				.delayElement(WAIT_TIME)
 				.doOnSuccess(s -> instantInitTest.tryEmitValue(now()))
 				.flatMap(a ->Mono.defer(() -> test.apply(a)).repeat(numRepeats)
 						.then()
 						.doOnSuccess(s -> instantEndTest.tryEmitValue(now()))
-						.delayElement(WAIT_TIME_END)
 						.then(close.apply(a)))
 				.doOnSuccess(s -> instantEnd.tryEmitValue(now()))
 				.then(Mono.zip(instantInit.asMono(), instantInitTest.asMono(), instantEndTest.asMono(), instantEnd.asMono()))
@@ -271,23 +299,24 @@ public class Example {
 					System.out.println("----------------------------------------------------------------------");
 					System.out.println(name);
 					System.out.println(
-							"\t - Executed " + DecimalFormat.getInstance(Locale.ITALY).format(numRepeats) + " times:");
+							"\t - Executed " + DecimalFormat.getInstance(Locale.ITALY).format((numRepeats * batchSize)) + " times:");
 					System.out.println("\t - Test time: " + DecimalFormat
 							.getInstance(Locale.ITALY)
-							.format(Duration.between(tuple.getT2(), tuple.getT3()).toNanos() / (double) numRepeats / (double) 1000000)
+							.format(Duration.between(tuple.getT2(), tuple.getT3()).toNanos() / (double) (numRepeats * batchSize) / (double) 1000000)
 							+ "ms");
 					System.out.println("\t - Test speed: " + DecimalFormat
 							.getInstance(Locale.ITALY)
-							.format(numRepeats / (Duration.between(tuple.getT2(), tuple.getT3()).toNanos() / (double) 1000000 / (double) 1000))
+							.format((numRepeats * batchSize) / (Duration.between(tuple.getT2(), tuple.getT3()).toNanos() / (double) 1000000 / (double) 1000))
 							+ " tests/s");
 					System.out.println("\t - Total time: " + DecimalFormat
 							.getInstance(Locale.ITALY)
 							.format(Duration.between(tuple.getT2(), tuple.getT3()).toNanos() / (double) 1000000) + "ms");
 					System.out.println("\t - Total time (setup+test+end): " + DecimalFormat
 							.getInstance(Locale.ITALY)
-							.format(Duration.between(tuple.getT1(), tuple.getT4().minus(WAIT_TIME)).toNanos() / (double) 1000000) + "ms");
+							.format(Duration.between(tuple.getT1(), tuple.getT4()).toNanos() / (double) 1000000) + "ms");
 					System.out.println("----------------------------------------------------------------------");
 				})
+				.delayElement(WAIT_TIME_END)
 				.then();
 	}
 

@@ -35,6 +35,7 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WALRecoveryMode;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
@@ -46,6 +47,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 
+	private final Scheduler dbScheduler;
 	private final Path dbPath;
 	private final String name;
 	private RocksDB db;
@@ -73,6 +75,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			Path dbPath = Paths.get(dbPathString);
 			this.dbPath = dbPath;
 			this.name = name;
+			this.dbScheduler = Schedulers.newBoundedElastic(Runtime.getRuntime().availableProcessors(),
+					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+					"db-" + name,
+					60,
+					true
+			);
 
 			createIfNotExists(descriptors, options, dbPath, dbPathString);
 			// Create all column families that don't exist
@@ -301,7 +309,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						defaultValue
 				))
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -310,16 +318,17 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				.fromCallable(() -> new LLLocalDictionary(db,
 						handles.get(Column.special(Column.toString(columnName))),
 						name,
+						dbScheduler,
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber())
 				))
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -331,7 +340,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
 					return new LLSnapshot(currentSnapshotSequenceNumber);
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -345,7 +354,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					db.releaseSnapshot(dbSnapshot);
 					return null;
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -361,7 +370,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					return null;
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	/**

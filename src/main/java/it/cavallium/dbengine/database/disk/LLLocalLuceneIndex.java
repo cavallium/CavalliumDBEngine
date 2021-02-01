@@ -53,6 +53,7 @@ import reactor.core.publisher.Sinks.EmissionException;
 import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.publisher.Sinks.Many;
 import reactor.core.publisher.Sinks.One;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
@@ -67,6 +68,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private static final ScheduledExecutorService scheduler
 			= Executors.newSingleThreadScheduledExecutor(new ShortNamedThreadFactory("Lucene"));
+	private static final Scheduler luceneScheduler = Schedulers.fromExecutorService(scheduler);
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -141,14 +143,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
 				.fromCallable(lastSnapshotSeqNo::incrementAndGet)
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(luceneScheduler)
 				.flatMap(snapshotSeqNo -> takeLuceneSnapshot()
 						.flatMap(snapshot -> Mono
 								.fromCallable(() -> {
 									this.snapshots.put(snapshotSeqNo, new LuceneIndexSnapshot(snapshot));
 									return new LLSnapshot(snapshotSeqNo);
 								})
-								.subscribeOn(Schedulers.boundedElastic())
+								.subscribeOn(luceneScheduler)
 						)
 				);
 	}
@@ -169,7 +171,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					throw ex;
 				}
 			}
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	@Override
@@ -187,7 +189,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			// Delete unused files after releasing the snapshot
 			indexWriter.deleteUnusedFiles();
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	@Override
@@ -195,7 +197,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			indexWriter.addDocument(LLUtils.toDocument(doc));
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	@Override
@@ -208,7 +210,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									indexWriter.addDocuments(LLUtils.toDocuments(docs));
 									return null;
 								})
-								.subscribeOn(Schedulers.boundedElastic()))
+								.subscribeOn(luceneScheduler))
 				)
 				.then();
 	}
@@ -219,7 +221,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			indexWriter.deleteDocuments(LLUtils.toTerm(id));
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	@Override
@@ -227,7 +229,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	@Override
@@ -244,7 +246,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							indexWriter.updateDocuments(LLUtils.toTerm(documents.key()), luceneDocuments);
 							return null;
 						})
-						.subscribeOn(Schedulers.boundedElastic())
+						.subscribeOn(luceneScheduler)
 				);
 	}
 
@@ -257,7 +259,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			indexWriter.flush();
 			indexWriter.commit();
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	private Mono<IndexSearcher> acquireSearcherWrapper(LLSnapshot snapshot) {
@@ -267,7 +269,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			} else {
 				return resolveSnapshot(snapshot).getIndexSearcher();
 			}
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	private Mono<Void> releaseSearcherWrapper(LLSnapshot snapshot, IndexSearcher indexSearcher) {
@@ -279,7 +281,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					e.printStackTrace();
 				}
 			}
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneScheduler);
 	}
 
 	@SuppressWarnings({"Convert2MethodRef", "unchecked", "rawtypes"})
@@ -308,7 +310,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										// Get the reference doc and apply it to MoreLikeThis, to generate the query
 										return mlt.like((Map) mltDocumentFields);
 									})
-									.subscribeOn(Schedulers.boundedElastic())
+									.subscribeOn(luceneScheduler)
 									.flatMap(query -> Mono
 											.fromCallable(() -> {
 												One<Long> totalHitsCountSink = Sinks.one();
@@ -334,7 +336,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 														});
 
 												return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
-											}).subscribeOn(Schedulers.boundedElastic())
+											}).subscribeOn(luceneScheduler)
 									).then()
 									.materialize()
 									.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
@@ -356,7 +358,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							org.apache.lucene.search.ScoreMode luceneScoreMode = LLUtils.toScoreMode(scoreMode);
 							return Tuples.of(query, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
-						.subscribeOn(Schedulers.boundedElastic())
+						.subscribeOn(luceneScheduler)
 						.flatMap(tuple -> Mono
 								.fromCallable(() -> {
 									Query query = tuple.getT1();
@@ -386,7 +388,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 											});
 
 									return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
-								}).subscribeOn(Schedulers.boundedElastic())
+								}).subscribeOn(luceneScheduler)
 						)
 						.materialize()
 						.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
@@ -403,7 +405,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					directory.close();
 					return null;
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(luceneScheduler);
 	}
 
 	private void scheduledCommit() {

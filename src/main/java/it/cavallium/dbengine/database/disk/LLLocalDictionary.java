@@ -452,7 +452,12 @@ public class LLLocalDictionary implements LLDictionary {
 			return clear().thenMany(Flux.empty());
 		} else {
 			return Mono
-					.fromCallable(() -> new CappedWriteBatch(db, CAPPED_WRITE_BATCH_CAP, RESERVED_WRITE_BATCH_SIZE, MAX_WRITE_BATCH_SIZE, BATCH_WRITE_OPTIONS))
+					.fromCallable(() -> new CappedWriteBatch(db,
+							CAPPED_WRITE_BATCH_CAP,
+							RESERVED_WRITE_BATCH_SIZE,
+							MAX_WRITE_BATCH_SIZE,
+							BATCH_WRITE_OPTIONS
+					))
 					.subscribeOn(dbScheduler)
 					.flatMapMany(writeBatch -> Mono
 							.fromCallable(() -> {
@@ -478,22 +483,18 @@ public class LLLocalDictionary implements LLDictionary {
 							.subscribeOn(dbScheduler)
 							.thenMany(entries)
 							.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
-							.concatWith(Mono
-									.<Entry<byte[], byte[]>>fromCallable(() -> {
-										synchronized (writeBatch) {
-											writeBatch.writeToDbAndClose();
-											writeBatch.close();
-										}
-										return null;
-									})
-									.subscribeOn(dbScheduler)
-							)
+							.concatWith(Mono.<Entry<byte[], byte[]>>fromCallable(() -> {
+								synchronized (writeBatch) {
+									writeBatch.writeToDbAndClose();
+									writeBatch.close();
+								}
+								return null;
+							}).subscribeOn(dbScheduler))
 							.doFinally(signalType -> {
 								synchronized (writeBatch) {
 									writeBatch.close();
 								}
-							})
-					)
+							}))
 					.onErrorMap(IOException::new);
 		}
 	}

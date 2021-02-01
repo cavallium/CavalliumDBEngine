@@ -174,8 +174,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setWalTtlSeconds(30); // flush wal after 30 seconds
 		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(false); // Flush all WALs during startup
-		options.setWalRecoveryMode(crashIfWalError ? WALRecoveryMode.AbsoluteConsistency
-						: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted. Default: TolerateCorruptedTailRecords
+		options.setWalRecoveryMode(crashIfWalError
+				? WALRecoveryMode.AbsoluteConsistency
+				: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted.Default: TolerateCorruptedTailRecords
 		options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
 		options.setPreserveDeletes(false);
 		options.setKeepLogFileNum(10);

@@ -314,7 +314,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									.flatMap(query -> Mono
 											.fromCallable(() -> {
 												One<Long> totalHitsCountSink = Sinks.one();
-												Many<LLKeyScore> topKeysSink = Sinks.many().unicast().onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
+												Many<LLKeyScore> topKeysSink = Sinks
+														.many()
+														.unicast()
+														.onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
 
 												streamSearcher.search(indexSearcher,
 														query,
@@ -366,7 +369,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									ScoreMode luceneScoreMode = tuple.getT3();
 
 									One<Long> totalHitsCountSink = Sinks.one();
-									Many<LLKeyScore> topKeysSink = Sinks.many().unicast().onBackpressureBuffer(new ArrayBlockingQueue<>(PagedStreamSearcher.MAX_ITEMS_PER_PAGE));
+									Many<LLKeyScore> topKeysSink = Sinks
+											.many()
+											.unicast()
+											.onBackpressureBuffer(new ArrayBlockingQueue<>(PagedStreamSearcher.MAX_ITEMS_PER_PAGE));
 
 									streamSearcher.search(indexSearcher,
 											query,

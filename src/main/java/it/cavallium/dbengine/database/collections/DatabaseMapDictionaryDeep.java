@@ -35,7 +35,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0xFF);
 	}
 
-	protected static byte[] fillKeySuffixAndExt(byte[] prefixKey, int prefixLength, int suffixLength, int extLength, byte fillValue) {
+	protected static byte[] fillKeySuffixAndExt(byte[] prefixKey,
+			int prefixLength,
+			int suffixLength,
+			int extLength,
+			byte fillValue) {
 		assert prefixKey.length == prefixLength;
 		assert suffixLength > 0;
 		assert extLength > 0;
@@ -44,11 +48,19 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return result;
 	}
 
-	protected static byte[] firstKey(byte[] prefixKey, byte[] suffixKey, int prefixLength, int suffixLength, int extLength) {
+	protected static byte[] firstKey(byte[] prefixKey,
+			byte[] suffixKey,
+			int prefixLength,
+			int suffixLength,
+			int extLength) {
 		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
 	}
 
-	protected static byte[] lastKey(byte[] prefixKey, byte[] suffixKey, int prefixLength, int suffixLength, int extLength) {
+	protected static byte[] lastKey(byte[] prefixKey,
+			byte[] suffixKey,
+			int prefixLength,
+			int suffixLength,
+			int extLength) {
 		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0xFF);
 	}
 
@@ -72,20 +84,23 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	 * Use DatabaseMapDictionaryRange.simple instead
 	 */
 	@Deprecated
-	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
+	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(
+			LLDictionary dictionary,
 			SubStageGetterSingle<U> subStageGetter,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, 0);
 	}
 
-	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(LLDictionary dictionary,
+	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(
+			LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
 			int keyExtLength) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
 	}
 
-	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(LLDictionary dictionary,
+	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(
+			LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
 			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
 			byte[] prefixKey,

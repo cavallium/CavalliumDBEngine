@@ -13,7 +13,8 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
 	private final Serializer<U, ByteBuf> valueSerializer;
 
-	public SubStageGetterMap(SerializerFixedBinaryLength<T, ByteBuf> keySerializer, Serializer<U, ByteBuf> valueSerializer) {
+	public SubStageGetterMap(SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
+			Serializer<U, ByteBuf> valueSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 	}

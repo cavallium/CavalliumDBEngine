@@ -21,7 +21,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	private final Serializer<U, ByteBuf> valueSerializer;
 
-	protected DatabaseMapDictionary(LLDictionary dictionary, byte[] prefixKey, SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer, Serializer<U, ByteBuf> valueSerializer) {
+	protected DatabaseMapDictionary(LLDictionary dictionary,
+			byte[] prefixKey,
+			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer,
+			Serializer<U, ByteBuf> valueSerializer) {
 		super(dictionary, new SubStageGetterSingle<>(valueSerializer), keySuffixSerializer, prefixKey, 0);
 		this.valueSerializer = valueSerializer;
 	}
@@ -50,7 +53,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), range)
-				.collectMap(entry -> deserializeSuffix(stripPrefix(entry.getKey())), entry -> deserialize(entry.getValue()), HashMap::new);
+				.collectMap(
+						entry -> deserializeSuffix(stripPrefix(entry.getKey())),
+						entry -> deserialize(entry.getValue()),
+						HashMap::new);
 	}
 
 	@Override
@@ -62,7 +68,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 								.map(entry -> Map.entry(serializeSuffix(entry.getKey()), serialize(entry.getValue()))),
 						true
 				)
-				.collectMap(entry -> deserializeSuffix(stripPrefix(entry.getKey())), entry -> deserialize(entry.getValue()), HashMap::new);
+				.collectMap(
+						entry -> deserializeSuffix(stripPrefix(entry.getKey())),
+						entry -> deserialize(entry.getValue()),
+						HashMap::new);
 	}
 
 	private Entry<byte[], byte[]> stripPrefix(Entry<byte[], byte[]> entry) {
@@ -74,7 +83,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Map<T, U>> clearAndGetPrevious() {
 		return dictionary
 				.setRange(range, Flux.empty(), true)
-				.collectMap(entry -> deserializeSuffix(stripPrefix(entry.getKey())), entry -> deserialize(entry.getValue()), HashMap::new);
+				.collectMap(
+						entry -> deserializeSuffix(stripPrefix(entry.getKey())),
+						entry -> deserialize(entry.getValue()),
+						HashMap::new);
 	}
 
 	@Override
@@ -84,7 +96,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		return Mono.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noopBytes())).map(entry -> new DatabaseSingleMapped<>(entry, valueSerializer));
+		return Mono
+				.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noopBytes()))
+				.map(entry -> new DatabaseSingleMapped<>(entry, valueSerializer));
 	}
 
 	@Override
@@ -141,7 +155,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
 		return dictionary
 				.putMulti(entries
-						.map(entry -> Map.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue()))), false)
+						.map(entry -> Map
+								.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue()))), false)
 				.then();
 	}
 
@@ -150,7 +165,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range)
 				.map(keySuffix -> Map.entry(deserializeSuffix(stripPrefix(keySuffix)),
-						new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary, toKey(stripPrefix(keySuffix)), Serializer.noopBytes()),
+						new DatabaseSingleMapped<>(
+								new DatabaseSingle<>(dictionary,
+										toKey(stripPrefix(keySuffix)),
+										Serializer.noopBytes()),
 								valueSerializer
 						)
 				));

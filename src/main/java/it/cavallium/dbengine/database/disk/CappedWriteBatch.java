@@ -19,10 +19,13 @@ public class CappedWriteBatch implements WriteBatchInterface, AutoCloseable {
 	private final WriteBatch writeBatch;
 
 	/**
-	 *
 	 * @param cap The limit of operations
 	 */
-	public CappedWriteBatch(RocksDB db, int cap, int reservedWriteBatchSize, long maxWriteBatchSize, WriteOptions writeOptions) {
+	public CappedWriteBatch(RocksDB db,
+			int cap,
+			int reservedWriteBatchSize,
+			long maxWriteBatchSize,
+			WriteOptions writeOptions) {
 		this.db = db;
 		this.cap = cap;
 		this.writeOptions = writeOptions;

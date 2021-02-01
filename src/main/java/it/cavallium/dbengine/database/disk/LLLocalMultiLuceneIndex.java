@@ -196,7 +196,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
 				.fromCallable(() -> {
-					CopyOnWriteArrayList<LLSnapshot> instancesSnapshots = new CopyOnWriteArrayList<>(new LLSnapshot[luceneIndices.length]);
+					CopyOnWriteArrayList<LLSnapshot> instancesSnapshots
+							= new CopyOnWriteArrayList<>(new LLSnapshot[luceneIndices.length]);
 					var snapIndex = nextSnapshotNumber.getAndIncrement();
 
 					ParallelUtils.parallelizeIO((IOBiConsumer<LLLuceneIndex, Integer> s) -> {

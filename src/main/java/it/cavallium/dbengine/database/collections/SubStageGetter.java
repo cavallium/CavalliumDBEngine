@@ -8,5 +8,8 @@ import reactor.core.publisher.Mono;
 
 public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 
-	Mono<US> subStage(LLDictionary dictionary, @Nullable CompositeSnapshot snapshot, byte[] prefixKey, Flux<byte[]> keyFlux);
+	Mono<US> subStage(LLDictionary dictionary,
+			@Nullable CompositeSnapshot snapshot,
+			byte[] prefixKey,
+			Flux<byte[]> keyFlux);
 }

@@ -9,10 +9,10 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
 
-	private final FixedLengthSerializer<T> keySerializer;
+	private final SerializerFixedBinaryLength<T> keySerializer;
 	private final Serializer<U> valueSerializer;
 
-	public SubStageGetterMap(FixedLengthSerializer<T> keySerializer, Serializer<U> valueSerializer) {
+	public SubStageGetterMap(SerializerFixedBinaryLength<T> keySerializer, Serializer<U> valueSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 	}

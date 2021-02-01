@@ -20,7 +20,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public static final byte[] EMPTY_BYTES = new byte[0];
 	protected final LLDictionary dictionary;
 	protected final SubStageGetter<U, US> subStageGetter;
-	protected final FixedLengthSerializer<T> keySuffixSerializer;
+	protected final SerializerFixedBinaryLength<T> keySuffixSerializer;
 	protected final byte[] keyPrefix;
 	protected final int keySuffixLength;
 	protected final int keyExtLength;
@@ -73,20 +73,20 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Deprecated
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
 			SubStageGetterSingle<U> subStageGetter,
-			FixedLengthSerializer<T> keySerializer) {
+			SerializerFixedBinaryLength<T> keySerializer) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, 0);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
-			FixedLengthSerializer<T> keySerializer,
+			SerializerFixedBinaryLength<T> keySerializer,
 			int keyExtLength) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySerializer, EMPTY_BYTES, keyExtLength);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
-			FixedLengthSerializer<T> keySuffixSerializer,
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			byte[] prefixKey,
 			int keyExtLength) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, subStageGetter, keySuffixSerializer, prefixKey, keyExtLength);
@@ -94,14 +94,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary,
 			SubStageGetter<U, US> subStageGetter,
-			FixedLengthSerializer<T> keySuffixSerializer,
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			byte[] prefixKey,
 			int keyExtLength) {
 		this.dictionary = dictionary;
 		this.subStageGetter = subStageGetter;
 		this.keySuffixSerializer = keySuffixSerializer;
 		this.keyPrefix = prefixKey;
-		this.keySuffixLength = keySuffixSerializer.getLength();
+		this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
 		this.keyExtLength = keyExtLength;
 		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
 		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);

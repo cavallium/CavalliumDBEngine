@@ -7,7 +7,7 @@ import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
-import it.cavallium.dbengine.database.collections.FixedLengthSerializer;
+import it.cavallium.dbengine.database.collections.SerializerFixedBinaryLength;
 import it.cavallium.dbengine.database.collections.Serializer;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
@@ -62,7 +62,7 @@ public class Example {
 
 	private static Mono<Void> testAtPut() {
 		var ssg = new SubStageGetterSingleBytes();
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
@@ -90,7 +90,7 @@ public class Example {
 
 	private static Mono<Void> testPutValueAndGetPrevious() {
 		var ssg = new SubStageGetterSingleBytes();
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
@@ -117,7 +117,7 @@ public class Example {
 
 	private static Mono<Void> testPutValue() {
 		var ssg = new SubStageGetterSingleBytes();
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
 		var itemKeyBuffer = Unpooled.wrappedBuffer(itemKey);
@@ -140,7 +140,7 @@ public class Example {
 
 	private static Mono<Void> testPutMulti() {
 		var ssg = new SubStageGetterSingleBytes();
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		HashMap<ByteBuf, byte[]> keysToPut = new HashMap<>();
 		for (int i = 0; i < batchSize; i++) {
 			keysToPut.put(Unpooled.wrappedBuffer(Ints.toByteArray(i * 3)), Ints.toByteArray(i * 11));
@@ -158,7 +158,7 @@ public class Example {
 	}
 
 	private static Mono<Void> rangeTestAtPut() {
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var vser = Serializer.noopBytes();
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
@@ -186,7 +186,7 @@ public class Example {
 	}
 
 	private static Mono<Void> rangeTestPutValueAndGetPrevious() {
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var vser = Serializer.noopBytes();
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
@@ -213,7 +213,7 @@ public class Example {
 	}
 
 	private static Mono<Void> rangeTestPutValue() {
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var vser = Serializer.noopBytes();
 		var itemKey = new byte[]{0, 1, 2, 3};
 		var newValue = new byte[]{4, 5, 6, 7};
@@ -236,7 +236,7 @@ public class Example {
 	}
 
 	private static Mono<Void> rangeTestPutMulti() {
-		var ser = FixedLengthSerializer.noop(4);
+		var ser = SerializerFixedBinaryLength.noop(4);
 		var vser = Serializer.noopBytes();
 		HashMap<ByteBuf, byte[]> keysToPut = new HashMap<>();
 		for (int i = 0; i < batchSize; i++) {

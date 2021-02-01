@@ -2,12 +2,12 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 
-public interface FixedLengthSerializer<B> extends Serializer<B> {
+public interface SerializerFixedBinaryLength<B> extends Serializer<B> {
 
-	int getLength();
+	int getSerializedBinaryLength();
 
-	static FixedLengthSerializer<ByteBuf> noop(int length) {
-		return new FixedLengthSerializer<>() {
+	static SerializerFixedBinaryLength<ByteBuf> noop(int length) {
+		return new SerializerFixedBinaryLength<>() {
 			@Override
 			public ByteBuf deserialize(ByteBuf serialized) {
 				return serialized.readSlice(length);
@@ -19,7 +19,7 @@ public interface FixedLengthSerializer<B> extends Serializer<B> {
 			}
 
 			@Override
-			public int getLength() {
+			public int getSerializedBinaryLength() {
 				return length;
 			}
 		};

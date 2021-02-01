@@ -20,19 +20,19 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	private final Serializer<U> valueSerializer;
 
-	protected DatabaseMapDictionary(LLDictionary dictionary, byte[] prefixKey, FixedLengthSerializer<T> keySuffixSerializer, Serializer<U> valueSerializer) {
+	protected DatabaseMapDictionary(LLDictionary dictionary, byte[] prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer, Serializer<U> valueSerializer) {
 		super(dictionary, new SubStageGetterSingle<>(valueSerializer), keySuffixSerializer, prefixKey, 0);
 		this.valueSerializer = valueSerializer;
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
-			FixedLengthSerializer<T> keySerializer,
+			SerializerFixedBinaryLength<T> keySerializer,
 			Serializer<U> valueSerializer) {
 		return new DatabaseMapDictionary<>(dictionary, EMPTY_BYTES, keySerializer, valueSerializer);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
-			FixedLengthSerializer<T> keySuffixSerializer,
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			byte[] prefixKey) {
 		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer);

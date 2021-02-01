@@ -2,13 +2,13 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 
-public interface Serializer<B> {
+public interface Serializer<A, B> {
 
-	B deserialize(ByteBuf serialized);
+	A deserialize(B serialized);
 
-	void serialize(B deserialized, ByteBuf output);
+	void serialize(A deserialized, B output);
 
-	static Serializer<ByteBuf> noop() {
+	static Serializer<ByteBuf, ByteBuf> noop() {
 		return new Serializer<>() {
 			@Override
 			public ByteBuf deserialize(ByteBuf serialized) {
@@ -23,7 +23,7 @@ public interface Serializer<B> {
 		};
 	}
 
-	static Serializer<byte[]> noopBytes() {
+	static Serializer<byte[], ByteBuf> noopBytes() {
 		return new Serializer<>() {
 			@Override
 			public byte[] deserialize(ByteBuf serialized) {

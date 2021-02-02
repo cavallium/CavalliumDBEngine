@@ -5,6 +5,7 @@ import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 

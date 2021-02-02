@@ -2,6 +2,8 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -32,10 +34,8 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
-		Mono<DatabaseMapDictionary<T, U>> result = Mono.just(DatabaseMapDictionary.tail(dictionary,
-				keySerializer,
-				valueSerializer,
-				prefixKey
+		Mono<DatabaseMapDictionary<T, U>> result = Mono.just(DatabaseMapDictionary.tail(dictionary, prefixKey, keySerializer,
+				valueSerializer
 		));
 		if (assertsEnabled) {
 			return checkKeyFluxConsistency(prefixKey, keyFlux).then(result);

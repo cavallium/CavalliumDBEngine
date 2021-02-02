@@ -9,8 +9,8 @@ import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.QueryableBuilder;
-import it.cavallium.dbengine.database.collections.Serializer;
-import it.cavallium.dbengine.database.collections.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMapDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
@@ -36,7 +36,7 @@ import reactor.core.publisher.Sinks.One;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuples;
 
-public class Example {
+public class SpeedExample {
 
 	public static final boolean printPreviousValue = false;
 	private static final int numRepeats = 1000;
@@ -81,7 +81,7 @@ public class Example {
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> {
 							var builder = new QueryableBuilder(2);
-							return builder.wrap(DatabaseMapDictionaryDeep.simple(dict, builder.tail(ssg, ser), builder.serializer()));
+							return builder.wrap(DatabaseMapDictionaryDeep.simple(dict, builder.serializer(), builder.tail(ssg, ser)));
 						})),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -109,7 +109,11 @@ public class Example {
 		return test("2 level put",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.deepTail(dict, ssg, k1ser, ssg.getKeyBinaryLength()))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.deepTail(dict,
+								k1ser,
+								ssg.getKeyBinaryLength(),
+								ssg
+						))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> {
 					var itemKey1 = Ints.toByteArray(n / 4);
 					var itemKey2 = Ints.toByteArray(n);
@@ -147,7 +151,7 @@ public class Example {
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> {
 							return DatabaseMapDictionaryDeep
-									.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength());
+									.deepTail(dict, k1ser, ssg2.getKeyBinaryLength(), ssg2);
 						})),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> {
 					var itemKey1 = Ints.toByteArray(n / 4);
@@ -188,7 +192,7 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep
-								.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength()))),
+								.deepTail(dict, k1ser, ssg2.getKeyBinaryLength(), ssg2))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> {
 					var itemKey1 = Ints.toByteArray(n / 4);
 					var itemKey2 = Longs.toByteArray(n);
@@ -225,7 +229,7 @@ public class Example {
 		return test("MapDictionaryDeep::at::put (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
@@ -252,7 +256,7 @@ public class Example {
 		return test("MapDictionaryDeep::putValueAndGetPrevious (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
@@ -278,7 +282,7 @@ public class Example {
 		return test("MapDictionaryDeep::putValue (same key, same value, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
 								.fromRunnable(() -> {
@@ -303,7 +307,7 @@ public class Example {
 		return test("MapDictionaryDeep::putMulti (batch of " + batchSize + " entries)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ssg, ser))),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Mono.defer(() -> tuple.getT2().putMulti(putMultiFlux)),
 				numRepeats,
 				tuple -> Mono

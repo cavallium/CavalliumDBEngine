@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+
 public class QueryableBuilder {
 
 	public QueryableBuilder(int stagesNumber) {

@@ -4,6 +4,8 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -23,7 +25,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			byte[] prefixKey,
 			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
 			Serializer<U, byte[]> valueSerializer) {
-		super(dictionary, new SubStageGetterSingle<>(valueSerializer), keySuffixSerializer, prefixKey, 0);
+		super(dictionary, prefixKey, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0);
 		this.valueSerializer = valueSerializer;
 	}
 
@@ -34,9 +36,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
+			byte[] prefixKey,
 			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
-			Serializer<U, byte[]> valueSerializer,
-			byte[] prefixKey) {
+			Serializer<U, byte[]> valueSerializer) {
 		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer);
 	}
 

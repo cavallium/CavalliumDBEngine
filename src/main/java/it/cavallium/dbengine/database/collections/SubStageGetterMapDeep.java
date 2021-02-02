@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -48,9 +49,9 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
 		Mono<DatabaseMapDictionaryDeep<T, U, US>> result = Mono.just(DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
-				subStageGetter,
-				keySerializer,
 				prefixKey,
+				keySerializer,
+				subStageGetter,
 				keyExtLength
 		));
 		if (assertsEnabled) {

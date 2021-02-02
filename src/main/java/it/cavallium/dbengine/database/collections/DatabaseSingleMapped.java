@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 

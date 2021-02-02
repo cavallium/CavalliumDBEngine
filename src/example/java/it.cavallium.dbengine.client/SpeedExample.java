@@ -43,9 +43,6 @@ public class SpeedExample {
 	public static final int batchSize = 1000;
 
 	public static void main(String[] args) throws InterruptedException {
-		testPutValue().block();
-
-		/*
 		rangeTestPutMultiSame()
 				.then(rangeTestPutMultiProgressive())
 				.then(testPutMulti())
@@ -55,7 +52,7 @@ public class SpeedExample {
 				.then(test3LevelPut())
 				.then(test4LevelPut())
 				.subscribeOn(Schedulers.parallel())
-				.blockOptional();*/
+				.blockOptional();
 	}
 
 	private static Mono<Void> testCreateQueryable() {

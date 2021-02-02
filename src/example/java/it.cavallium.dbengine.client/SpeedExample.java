@@ -39,26 +39,13 @@ import reactor.util.function.Tuples;
 public class SpeedExample {
 
 	public static final boolean printPreviousValue = false;
-	private static final int numRepeats = 1000;
-	private static final int batchSize = 1000;
+	public static final int numRepeats = 1000;
+	public static final int batchSize = 1000;
 
 	public static void main(String[] args) throws InterruptedException {
+		testPutValue().block();
+
 		/*
-		testAtPut();
-		testPutValueAndGetPrevious();
-		testPutValue();
-		testAtPut()
-				.then(rangeTestAtPut())
-				.then(testPutValue())
-				.then(rangeTestPutValue())
-				.then(testPutMulti())
-				.then(rangeTestPutMulti())
-				.subscribeOn(Schedulers.parallel())
-				.blockOptional();
-
-
-		 */
-
 		rangeTestPutMultiSame()
 				.then(rangeTestPutMultiProgressive())
 				.then(testPutMulti())
@@ -68,7 +55,7 @@ public class SpeedExample {
 				.then(test3LevelPut())
 				.then(test4LevelPut())
 				.subscribeOn(Schedulers.parallel())
-				.blockOptional();
+				.blockOptional();*/
 	}
 
 	private static Mono<Void> testCreateQueryable() {
@@ -445,7 +432,7 @@ public class SpeedExample {
 		);
 	}
 
-	private static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
+	public static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
 		var wrkspcPath = Path.of("/tmp/tempdb/");
 		return Mono
 				.fromCallable(() -> {

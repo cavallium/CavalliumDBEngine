@@ -82,7 +82,11 @@ public class CodecsExample {
 	}
 
 	private static void testConversion() {
-		writeOld().then().then(readNew()).subscribeOn(Schedulers.parallel()).blockOptional();
+		writeOld()
+				.then()
+				.then(readNew())
+				.subscribeOn(Schedulers.parallel())
+				.blockOptional();
 	}
 
 	private static SubStageGetterSingle<CurrentCustomType> getNewSubStageGetter() {

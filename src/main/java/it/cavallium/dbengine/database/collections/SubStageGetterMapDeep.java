@@ -7,8 +7,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
-		SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
+public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements SubStageGetter<Map<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
 
 	private static final boolean assertsEnabled;
 	static {
@@ -44,11 +43,11 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	}
 
 	@Override
-	public Mono<DatabaseStageEntry<Map<T, U>>> subStage(LLDictionary dictionary,
+	public Mono<DatabaseMapDictionaryDeep<T, U, US>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
-		Mono<DatabaseStageEntry<Map<T, U>>> result = Mono.just(DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
+		Mono<DatabaseMapDictionaryDeep<T, U, US>> result = Mono.just(DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
 				subStageGetter,
 				keySerializer,
 				prefixKey,

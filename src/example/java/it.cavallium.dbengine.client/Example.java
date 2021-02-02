@@ -26,7 +26,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -147,7 +146,8 @@ public class Example {
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> {
-							return DatabaseMapDictionaryDeep.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength());
+							return DatabaseMapDictionaryDeep
+									.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength());
 						})),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> {
 					var itemKey1 = Ints.toByteArray(n / 4);
@@ -161,9 +161,7 @@ public class Example {
 											System.out.println("Setting new value at key " + Arrays.toString(itemKey1) + "+" + Arrays.toString(itemKey2) + "+" + Arrays.toString(itemKey3) + ": " + Arrays.toString(newValue));
 									})
 									.then(tuple.getT2().at(null, itemKey1))
-									.map(handle -> (DatabaseStageMap<byte[], Map<byte[], byte[]>, DatabaseStageEntry<Map<byte[], byte[]>>>) handle)
 									.flatMap(handleK1 -> handleK1.at(null, itemKey2))
-									.map(handle -> (DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>>) handle)
 									.flatMap(handleK2 -> handleK2.at(null, itemKey3))
 									.flatMap(handleK3 -> handleK3.setAndGetPrevious(newValue))
 									.doOnSuccess(oldValue -> {
@@ -183,15 +181,14 @@ public class Example {
 		var k3ser = SerializerFixedBinaryLength.noop(4);
 		var k4ser = SerializerFixedBinaryLength.noop(8);
 		var vser = SerializerFixedBinaryLength.noop(4);
-		var ssg4 = new SubStageGetterMap<byte[], byte[]>(k4ser, vser);
+		SubStageGetterMap<byte[], byte[]> ssg4 = new SubStageGetterMap<>(k4ser, vser);
 		var ssg3 = new SubStageGetterMapDeep<>(ssg4, k3ser, ssg4.getKeyBinaryLength());
 		var ssg2 = new SubStageGetterMapDeep<>(ssg3, k2ser, ssg3.getKeyBinaryLength());
 		return test("4 level put",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> {
-							return DatabaseMapDictionaryDeep.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength());
-						})),
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep
+								.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength()))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> {
 					var itemKey1 = Ints.toByteArray(n / 4);
 					var itemKey2 = Longs.toByteArray(n);
@@ -205,11 +202,8 @@ public class Example {
 											System.out.println("Setting new value at key " + Arrays.toString(itemKey1) + "+" + Arrays.toString(itemKey2) + "+" + Arrays.toString(itemKey3) + "+" + Arrays.toString(itemKey4) + ": " + Arrays.toString(newValue));
 									})
 									.then(tuple.getT2().at(null, itemKey1))
-									.map(handle -> (DatabaseStageMap<byte[], Map<byte[], Map<byte[], byte[]>>, DatabaseStageEntry<Map<byte[], Map<byte[], byte[]>>>>) handle)
 									.flatMap(handleK1 -> handleK1.at(null, itemKey2))
-									.map(handle -> (DatabaseStageMap<byte[], Map<byte[], byte[]>, DatabaseStageEntry<Map<byte[], byte[]>>>) handle)
 									.flatMap(handleK2 -> handleK2.at(null, itemKey3))
-									.map(handle -> (DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>>) handle)
 									.flatMap(handleK3 -> handleK3.at(null, itemKey4))
 									.flatMap(handleK4 -> handleK4.setAndGetPrevious(newValue))
 									.doOnSuccess(oldValue -> {

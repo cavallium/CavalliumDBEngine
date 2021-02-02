@@ -7,7 +7,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
+public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseMapDictionary<T, U>> {
 
 	private static final boolean assertsEnabled;
 	static {
@@ -28,11 +28,11 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	}
 
 	@Override
-	public Mono<DatabaseStageEntry<Map<T, U>>> subStage(LLDictionary dictionary,
+	public Mono<DatabaseMapDictionary<T, U>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
-		Mono<DatabaseStageEntry<Map<T, U>>> result = Mono.just(DatabaseMapDictionary.tail(dictionary,
+		Mono<DatabaseMapDictionary<T, U>> result = Mono.just(DatabaseMapDictionary.tail(dictionary,
 				keySerializer,
 				valueSerializer,
 				prefixKey

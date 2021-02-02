@@ -26,12 +26,10 @@ import reactor.util.function.Tuples;
 public class CodecsExample {
 
 	public static void main(String[] args) {
-		var oldCodec = new OldCustomTypeCodec();
-		var oldCodecs = new Codecs<OldCustomType>();
-		oldCodecs.registerCodec(1, oldCodec);
-		var oldSerializer = new CodecSerializer<>(oldCodecs, oldCodec, 1, true);
-		var oldSsg = new SubStageGetterSingle<>(oldSerializer);
+		writeOld().then().then(readNew()).subscribeOn(Schedulers.parallel()).blockOptional();
+	}
 
+	private static Mono<Void> readNew() {
 		var newCodec = new NewCustomTypeCodecV2();
 		var newCodecs = new Codecs<CurrentCustomType>();
 		newCodecs.registerCodec(1, new NewCustomTypeCodecV1());
@@ -39,18 +37,12 @@ public class CodecsExample {
 		var newSerializer = new CodecSerializer<>(newCodecs, newCodec, 2, true);
 		var newSsg = new SubStageGetterSingle<>(newSerializer);
 
-		tempDb(true)
+		return tempDb(false)
 				.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-				.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, SerializerFixedBinaryLength.longSerializer(), oldSsg)))
-				.flatMap(tuple -> {
-					var oldValue = new OldCustomType(155);
-					System.out.println("Writing to disk old value with codec id 1: " + oldValue);
-
-					return tuple.getT2().putValue(15L, oldValue).then(tuple.getT1().close());
-				})
-				.then(tempDb(false))
-				.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-				.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, SerializerFixedBinaryLength.longSerializer(), newSsg)))
+				.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict,
+						SerializerFixedBinaryLength.longSerializer(),
+						newSsg
+				)))
 				.flatMap(tuple -> {
 					System.out.println("Reading from disk current value with any codec id...");
 					return tuple.getT2().getValue(null, 15L).doOnSuccess(s -> {
@@ -60,9 +52,28 @@ public class CodecsExample {
 							System.out.println("Current value read successfully: " + s);
 						}
 					}).then(tuple.getT1().close());
-				})
-				.subscribeOn(Schedulers.parallel())
-				.blockOptional();
+				});
+	}
+
+	private static Mono<Void> writeOld() {
+		var oldCodec = new OldCustomTypeCodec();
+		var oldCodecs = new Codecs<OldCustomType>();
+		oldCodecs.registerCodec(1, oldCodec);
+		var oldSerializer = new CodecSerializer<>(oldCodecs, oldCodec, 1, true);
+		var oldSsg = new SubStageGetterSingle<>(oldSerializer);
+
+		return tempDb(true)
+				.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+				.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict,
+						SerializerFixedBinaryLength.longSerializer(),
+						oldSsg
+				)))
+				.flatMap(tuple -> {
+					var oldValue = new OldCustomType(155);
+					System.out.println("Writing to disk old value with codec id 1: " + oldValue);
+
+					return tuple.getT2().putValue(15L, oldValue).then(tuple.getT1().close());
+				});
 	}
 
 	private static class OldCustomTypeCodec implements Codec<OldCustomType> {

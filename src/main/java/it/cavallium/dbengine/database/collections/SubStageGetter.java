@@ -12,4 +12,6 @@ public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux);
+
+	boolean needsKeyFlux();
 }

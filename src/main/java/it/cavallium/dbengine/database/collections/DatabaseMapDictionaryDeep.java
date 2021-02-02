@@ -40,7 +40,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			byte fillValue) {
 		assert prefixKey.length == prefixLength;
 		assert suffixLength > 0;
-		assert extLength > 0;
+		assert extLength >= 0;
 		byte[] result = Arrays.copyOf(prefixKey, prefixLength + suffixLength + extLength);
 		Arrays.fill(result, prefixLength, result.length, fillValue);
 		return result;
@@ -71,7 +71,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		assert prefixKey.length == prefixLength;
 		assert suffixKey.length == suffixLength;
 		assert suffixLength > 0;
-		assert extLength > 0;
+		assert extLength >= 0;
 		byte[] result = Arrays.copyOf(prefixKey, prefixLength + suffixLength + extLength);
 		System.arraycopy(suffixKey, 0, result, prefixLength, suffixLength);
 		Arrays.fill(result, prefixLength + suffixLength, result.length, fillValue);
@@ -120,6 +120,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
 		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
 		this.range = keyPrefix.length == 0 ? LLRange.all() : LLRange.of(firstKey, lastKey);
+		assert subStageKeysConsistency(keyPrefix.length + keySuffixLength + keyExtLength);
 	}
 
 	@SuppressWarnings("unused")
@@ -167,6 +168,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		assert suffixKey.length == keySuffixLength;
 		byte[] result = Arrays.copyOf(keyPrefix, keyPrefix.length + keySuffixLength);
 		System.arraycopy(suffixKey, 0, result, keyPrefix.length, keySuffixLength);
+		assert result.length == keyPrefix.length + keySuffixLength;
 		return result;
 	}
 
@@ -193,6 +195,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return LLRange.of(first, end);
 	}
 
+	@SuppressWarnings("ReactiveStreamsUnusedPublisher")
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		byte[] keySuffixData = serializeSuffix(keySuffix);
@@ -200,26 +203,57 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				.subStage(dictionary,
 						snapshot,
 						toKeyWithoutExt(keySuffixData),
-						this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData))
+						this.subStageGetter.needsKeyFlux()
+								? this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData))
+								: Flux.empty()
 				);
 	}
 
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		return dictionary
-				.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
-				.flatMap(rangeKeys -> {
-					//System.out.println(Thread.currentThread() + "\tkReceived range key flux");
-					byte[] groupKeyWithoutExt = removeExtFromFullKey(rangeKeys.get(0));
-					byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
-					return this.subStageGetter
-									.subStage(dictionary, snapshot, groupKeyWithoutExt, Flux.fromIterable(rangeKeys))
-									//.doOnSuccess(s -> System.out.println(Thread.currentThread() + "\tObtained stage for a key"))
+		return Flux.defer(() -> {
+			if (this.subStageGetter.needsKeyFlux()) {
+				return dictionary
+						.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
+						.flatMap(rangeKeys -> {
+							byte[] groupKeyWithExt = rangeKeys.get(0);
+							byte[] groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt);
+							byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
+							assert subStageKeysConsistency(groupKeyWithExt.length);
+							return this.subStageGetter
+									.subStage(dictionary,
+											snapshot,
+											groupKeyWithoutExt,
+											this.subStageGetter.needsKeyFlux() ? Flux.defer(() -> Flux.fromIterable(rangeKeys)) : Flux.empty()
+									)
 									.map(us -> Map.entry(this.deserializeSuffix(groupSuffix), us));
-									//.doOnSuccess(s -> System.out.println(Thread.currentThread() + "\tMapped stage for a key"));
-						}
-				);
-				//.doOnNext(s -> System.out.println(Thread.currentThread() + "\tNext stage"))
+						});
+			} else {
+				return dictionary
+						.getOneKey(resolveSnapshot(snapshot), range)
+						.flatMap(randomKeyWithExt -> {
+							byte[] keyWithoutExt = removeExtFromFullKey(randomKeyWithExt);
+							byte[] keySuffix = this.stripPrefix(keyWithoutExt);
+							assert subStageKeysConsistency(keyWithoutExt.length);
+							return this.subStageGetter
+									.subStage(dictionary, snapshot, keyWithoutExt, Mono.just(randomKeyWithExt).flux())
+									.map(us -> Map.entry(this.deserializeSuffix(keySuffix), us));
+						});
+			}
+		});
+
+	}
+
+	private boolean subStageKeysConsistency(int totalKeyLength) {
+		if (subStageGetter instanceof SubStageGetterMapDeep) {
+			return totalKeyLength
+					== keyPrefix.length + keySuffixLength + ((SubStageGetterMapDeep<?, ?, ?>) subStageGetter).getKeyBinaryLength();
+		} else if (subStageGetter instanceof SubStageGetterMap) {
+			return totalKeyLength
+					== keyPrefix.length + keySuffixLength + ((SubStageGetterMap<?, ?>) subStageGetter).getKeyBinaryLength();
+		} else {
+			return true;
+		}
 	}
 
 	@Override
@@ -234,11 +268,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	protected T deserializeSuffix(byte[] keySuffix) {
+		assert suffixKeyConsistency(keySuffix.length);
 		return keySuffixSerializer.deserialize(keySuffix);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	protected byte[] serializeSuffix(T keySuffix) {
-		return keySuffixSerializer.serialize(keySuffix);
+		byte[] suffixData = keySuffixSerializer.serialize(keySuffix);
+		assert suffixKeyConsistency(suffixData.length);
+		return suffixData;
 	}
 }

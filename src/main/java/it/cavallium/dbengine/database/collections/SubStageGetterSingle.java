@@ -41,6 +41,11 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 				}));
 	}
 
+	@Override
+	public boolean needsKeyFlux() {
+		return true;
+	}
+
 	//todo: temporary wrapper. convert the whole class to buffers
 	private T deserialize(byte[] bytes) {
 		return serializer.deserialize(bytes);

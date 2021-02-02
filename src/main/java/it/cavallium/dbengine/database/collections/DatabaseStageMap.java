@@ -1,14 +1,13 @@
 package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
+import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
-import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
-import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -26,7 +25,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return putValueAndGetStatus(key, value).then();
+		return at(null, key).single().flatMap(v -> v.set(value));
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
@@ -34,7 +33,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Boolean> putValueAndGetStatus(T key, U value) {
-		return putValueAndGetPrevious(key, value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(false);
+		return at(null, key).single().flatMap(v -> v.setAndGetStatus(value));
 	}
 
 	default Mono<Void> remove(T key) {

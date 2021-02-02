@@ -9,6 +9,15 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseStageEntry<Map<T, U>>> {
 
+	private static final boolean assertsEnabled;
+	static {
+		boolean assertsEnabledTmp = false;
+		//noinspection AssertWithSideEffects
+		assert assertsEnabledTmp = true;
+		//noinspection ConstantConditions
+		assertsEnabled = assertsEnabledTmp;
+	}
+
 	private final SerializerFixedBinaryLength<T, byte[]> keySerializer;
 	private final Serializer<U, byte[]> valueSerializer;
 
@@ -23,6 +32,30 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
 			Flux<byte[]> keyFlux) {
-		return Mono.just(DatabaseMapDictionary.tail(dictionary, keySerializer, valueSerializer, prefixKey));
+		Mono<DatabaseStageEntry<Map<T, U>>> result = Mono.just(DatabaseMapDictionary.tail(dictionary,
+				keySerializer,
+				valueSerializer,
+				prefixKey
+		));
+		if (assertsEnabled) {
+			return checkKeyFluxConsistency(prefixKey, keyFlux).then(result);
+		} else {
+			return result;
+		}
+	}
+
+	@Override
+	public boolean needsKeyFlux() {
+		return assertsEnabled;
+	}
+
+	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {
+		return keyFlux.doOnNext(key -> {
+			assert key.length == prefixKey.length + getKeyBinaryLength();
+		}).then();
+	}
+
+	public int getKeyBinaryLength() {
+		return keySerializer.getSerializedBinaryLength();
 	}
 }

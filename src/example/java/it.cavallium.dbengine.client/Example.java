@@ -1,12 +1,18 @@
 package it.cavallium.dbengine.client;
 
 import com.google.common.primitives.Ints;
+import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
+import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
+import it.cavallium.dbengine.database.collections.DatabaseStageMap;
+import it.cavallium.dbengine.database.collections.QueryableBuilder;
 import it.cavallium.dbengine.database.collections.Serializer;
 import it.cavallium.dbengine.database.collections.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.database.collections.SubStageGetterMap;
+import it.cavallium.dbengine.database.collections.SubStageGetterMapDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import java.io.IOException;
@@ -20,6 +26,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -32,9 +39,9 @@ import reactor.util.function.Tuples;
 
 public class Example {
 
-	private static final boolean printPreviousValue = false;
+	public static final boolean printPreviousValue = false;
 	private static final int numRepeats = 1000;
-	private static final int batchSize = 10000;
+	private static final int batchSize = 1000;
 
 	public static void main(String[] args) throws InterruptedException {
 		/*
@@ -53,10 +60,167 @@ public class Example {
 
 		 */
 
-		rangeTestPutMultiProgressive()
-				.then(rangeTestPutMultiSame())
+		rangeTestPutMultiSame()
+				.then(rangeTestPutMultiProgressive())
+				.then(testPutMulti())
+				.then(testPutValue())
+				.then(testAtPut())
+				.then(test2LevelPut())
+				.then(test3LevelPut())
+				.then(test4LevelPut())
 				.subscribeOn(Schedulers.parallel())
 				.blockOptional();
+	}
+
+	private static Mono<Void> testCreateQueryable() {
+		var ssg = new SubStageGetterSingleBytes();
+		var ser = SerializerFixedBinaryLength.noop(4);
+		var itemKey = new byte[]{0, 1, 2, 3};
+		var newValue = new byte[]{4, 5, 6, 7};
+		return test("Create Queryable",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> {
+							var builder = new QueryableBuilder(2);
+							return builder.wrap(DatabaseMapDictionaryDeep.simple(dict, builder.tail(ssg, ser), builder.serializer()));
+						})),
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
+						.defer(() -> Mono
+								.fromRunnable(() -> {
+									if (printPreviousValue)
+										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
+								})
+								.then(tuple.getT2().at(null, itemKey))
+								.flatMap(handle -> handle.setAndGetPrevious(newValue))
+								.doOnSuccess(oldValue -> {
+									if (printPreviousValue)
+										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
+								})
+						))
+						.then(),
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> test2LevelPut() {
+		var k1ser = SerializerFixedBinaryLength.noop(4);
+		var k2ser = SerializerFixedBinaryLength.noop(4);
+		var vser = SerializerFixedBinaryLength.noop(4);
+		var ssg = new SubStageGetterMap<byte[], byte[]>(k2ser, vser);
+		return test("2 level put",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.deepTail(dict, ssg, k1ser, ssg.getKeyBinaryLength()))),
+				tuple -> Flux.range(0, batchSize).flatMap(n -> {
+					var itemKey1 = Ints.toByteArray(n / 4);
+					var itemKey2 = Ints.toByteArray(n);
+					var newValue = Ints.toByteArray(n);
+					return Mono
+							.defer(() -> Mono
+									.fromRunnable(() -> {
+										if (printPreviousValue)
+											System.out.println("Setting new value at key " + Arrays.toString(itemKey1) + "+" + Arrays.toString(itemKey2) + ": " + Arrays.toString(newValue));
+									})
+									.then(tuple.getT2().at(null, itemKey1))
+									.map(handle -> (DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>>) handle)
+									.flatMap(handleK1 -> handleK1.at(null, itemKey2))
+									.flatMap(handleK2 -> handleK2.setAndGetPrevious(newValue))
+									.doOnSuccess(oldValue -> {
+										if (printPreviousValue)
+											System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
+									})
+							);
+				})
+						.then(),
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> test3LevelPut() {
+		var k1ser = SerializerFixedBinaryLength.noop(4);
+		var k2ser = SerializerFixedBinaryLength.noop(8);
+		var k3ser = SerializerFixedBinaryLength.noop(4);
+		var vser = SerializerFixedBinaryLength.noop(4);
+		var ssg3 = new SubStageGetterMap<byte[], byte[]>(k3ser, vser);
+		var ssg2 = new SubStageGetterMapDeep<>(ssg3, k2ser, ssg3.getKeyBinaryLength());
+		return test("3 level put",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> {
+							return DatabaseMapDictionaryDeep.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength());
+						})),
+				tuple -> Flux.range(0, batchSize).flatMap(n -> {
+					var itemKey1 = Ints.toByteArray(n / 4);
+					var itemKey2 = Longs.toByteArray(n);
+					var itemKey3 = Ints.toByteArray(n);
+					var newValue = Ints.toByteArray(n);
+					return Mono
+							.defer(() -> Mono
+									.fromRunnable(() -> {
+										if (printPreviousValue)
+											System.out.println("Setting new value at key " + Arrays.toString(itemKey1) + "+" + Arrays.toString(itemKey2) + "+" + Arrays.toString(itemKey3) + ": " + Arrays.toString(newValue));
+									})
+									.then(tuple.getT2().at(null, itemKey1))
+									.map(handle -> (DatabaseStageMap<byte[], Map<byte[], byte[]>, DatabaseStageEntry<Map<byte[], byte[]>>>) handle)
+									.flatMap(handleK1 -> handleK1.at(null, itemKey2))
+									.map(handle -> (DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>>) handle)
+									.flatMap(handleK2 -> handleK2.at(null, itemKey3))
+									.flatMap(handleK3 -> handleK3.setAndGetPrevious(newValue))
+									.doOnSuccess(oldValue -> {
+										if (printPreviousValue)
+											System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
+									})
+							);
+				})
+						.then(),
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> test4LevelPut() {
+		var k1ser = SerializerFixedBinaryLength.noop(4);
+		var k2ser = SerializerFixedBinaryLength.noop(8);
+		var k3ser = SerializerFixedBinaryLength.noop(4);
+		var k4ser = SerializerFixedBinaryLength.noop(8);
+		var vser = SerializerFixedBinaryLength.noop(4);
+		var ssg4 = new SubStageGetterMap<byte[], byte[]>(k4ser, vser);
+		var ssg3 = new SubStageGetterMapDeep<>(ssg4, k3ser, ssg4.getKeyBinaryLength());
+		var ssg2 = new SubStageGetterMapDeep<>(ssg3, k2ser, ssg3.getKeyBinaryLength());
+		return test("4 level put",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> {
+							return DatabaseMapDictionaryDeep.deepTail(dict, ssg2, k1ser, ssg2.getKeyBinaryLength());
+						})),
+				tuple -> Flux.range(0, batchSize).flatMap(n -> {
+					var itemKey1 = Ints.toByteArray(n / 4);
+					var itemKey2 = Longs.toByteArray(n);
+					var itemKey3 = Ints.toByteArray(n * 2);
+					var itemKey4 = Longs.toByteArray(n * 3L);
+					var newValue = Ints.toByteArray(n * 4);
+					return Mono
+							.defer(() -> Mono
+									.fromRunnable(() -> {
+										if (printPreviousValue)
+											System.out.println("Setting new value at key " + Arrays.toString(itemKey1) + "+" + Arrays.toString(itemKey2) + "+" + Arrays.toString(itemKey3) + "+" + Arrays.toString(itemKey4) + ": " + Arrays.toString(newValue));
+									})
+									.then(tuple.getT2().at(null, itemKey1))
+									.map(handle -> (DatabaseStageMap<byte[], Map<byte[], Map<byte[], byte[]>>, DatabaseStageEntry<Map<byte[], Map<byte[], byte[]>>>>) handle)
+									.flatMap(handleK1 -> handleK1.at(null, itemKey2))
+									.map(handle -> (DatabaseStageMap<byte[], Map<byte[], byte[]>, DatabaseStageEntry<Map<byte[], byte[]>>>) handle)
+									.flatMap(handleK2 -> handleK2.at(null, itemKey3))
+									.map(handle -> (DatabaseStageMap<byte[], byte[], DatabaseStageEntry<byte[]>>) handle)
+									.flatMap(handleK3 -> handleK3.at(null, itemKey4))
+									.flatMap(handleK4 -> handleK4.setAndGetPrevious(newValue))
+									.doOnSuccess(oldValue -> {
+										if (printPreviousValue)
+											System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
+									})
+							);
+				})
+						.then(),
+				numRepeats,
+				tuple -> tuple.getT1().close());
 	}
 
 	private static Mono<Void> testAtPut() {
@@ -238,7 +402,7 @@ public class Example {
 		for (int i = 0; i < batchSize; i++) {
 			keysToPut.put(Ints.toByteArray(i * 3), Ints.toByteArray(i * 11));
 		}
-		return test("MapDictionary::putMulti (batch of " + batchSize + " entries)",
+		return test("MapDictionary::putMulti (same keys, batch of " + batchSize + " entries)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
@@ -258,7 +422,7 @@ public class Example {
 		var ser = SerializerFixedBinaryLength.noop(4);
 		var vser = Serializer.noop();
 		AtomicInteger ai = new AtomicInteger(0);
-		return test("MapDictionary::putMulti (batch of " + batchSize + " entries)",
+		return test("MapDictionary::putMulti (progressive keys, batch of " + batchSize + " entries)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),

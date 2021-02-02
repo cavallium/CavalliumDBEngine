@@ -53,5 +53,9 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast);
 
+	Mono<Entry<byte[], byte[]>> getOne(@Nullable LLSnapshot snapshot, LLRange range);
+
+	Mono<byte[]> getOneKey(@Nullable LLSnapshot snapshot, LLRange range);
+
 	Mono<Entry<byte[], byte[]>> removeOne(LLRange range);
 }

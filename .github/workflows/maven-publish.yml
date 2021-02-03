@@ -35,6 +35,9 @@ jobs:
           server-id: mchv-release-distribution
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
+        env:
+          MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}
       - name: Deploy to Maven (Release)
         if: github.ref == 'refs/heads/master'
         shell: bash

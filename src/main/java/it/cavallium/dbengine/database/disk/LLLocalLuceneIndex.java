@@ -61,9 +61,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with
-	 * parallel commits or parallel refreshes.
+	 * concurrent commits or concurrent refreshes.
 	 */
-	private static final Scheduler luceneScheduler = Schedulers.newBoundedElastic(1,
+	private static final Scheduler luceneBlockingScheduler = Schedulers.newBoundedElastic(1,
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"Lucene",
 			120,
@@ -124,7 +124,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private void registerScheduledFixedTask(Runnable task, Duration duration) {
-		scheduledTasksLifecycle.registerScheduledTask(luceneScheduler.schedulePeriodically(() -> {
+		scheduledTasksLifecycle.registerScheduledTask(luceneBlockingScheduler.schedulePeriodically(() -> {
 			scheduledTasksLifecycle.startScheduledTask();
 			try {
 				task.run();
@@ -143,14 +143,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
 				.fromCallable(lastSnapshotSeqNo::incrementAndGet)
-				.subscribeOn(luceneScheduler)
+				.subscribeOn(luceneBlockingScheduler)
 				.flatMap(snapshotSeqNo -> takeLuceneSnapshot()
 						.flatMap(snapshot -> Mono
 								.fromCallable(() -> {
 									this.snapshots.put(snapshotSeqNo, new LuceneIndexSnapshot(snapshot));
 									return new LLSnapshot(snapshotSeqNo);
 								})
-								.subscribeOn(luceneScheduler)
+								.subscribeOn(luceneBlockingScheduler)
 						)
 				);
 	}
@@ -160,18 +160,23 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 * avoiding the exception.
 	 */
 	private Mono<IndexCommit> takeLuceneSnapshot() {
-		return Mono.fromCallable(() -> {
-			try {
-				return snapshotter.snapshot();
-			} catch (IllegalStateException ex) {
-				if ("No index commit to snapshot".equals(ex.getMessage())) {
-					indexWriter.commit();
-					return snapshotter.snapshot();
-				} else {
-					throw ex;
-				}
-			}
-		}).subscribeOn(luceneScheduler);
+		return Mono
+				.fromCallable(() -> {
+					try {
+						//noinspection BlockingMethodInNonBlockingContext
+						return snapshotter.snapshot();
+					} catch (IllegalStateException ex) {
+						if ("No index commit to snapshot".equals(ex.getMessage())) {
+							//noinspection BlockingMethodInNonBlockingContext
+							indexWriter.commit();
+							//noinspection BlockingMethodInNonBlockingContext
+							return snapshotter.snapshot();
+						} else {
+							throw ex;
+						}
+					}
+				})
+				.subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
@@ -182,22 +187,26 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
 			}
 
+			//noinspection BlockingMethodInNonBlockingContext
 			indexSnapshot.close();
 
 			var luceneIndexSnapshot = indexSnapshot.getSnapshot();
+			//noinspection BlockingMethodInNonBlockingContext
 			snapshotter.release(luceneIndexSnapshot);
 			// Delete unused files after releasing the snapshot
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.deleteUnusedFiles();
 			return null;
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
 		return Mono.<Void>fromCallable(() -> {
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.addDocument(LLUtils.toDocument(doc));
 			return null;
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
@@ -207,10 +216,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.collectList()
 						.flatMap(docs -> Mono
 								.<Void>fromCallable(() -> {
+									//noinspection BlockingMethodInNonBlockingContext
 									indexWriter.addDocuments(LLUtils.toDocuments(docs));
 									return null;
 								})
-								.subscribeOn(luceneScheduler))
+								.subscribeOn(luceneBlockingScheduler))
 				)
 				.then();
 	}
@@ -219,17 +229,19 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
 		return Mono.<Void>fromCallable(() -> {
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.deleteDocuments(LLUtils.toTerm(id));
 			return null;
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
 	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
 		return Mono.<Void>fromCallable(() -> {
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
 			return null;
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
@@ -243,45 +255,53 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.collectList()
 				.flatMap(luceneDocuments -> Mono
 						.<Void>fromCallable(() -> {
+							//noinspection BlockingMethodInNonBlockingContext
 							indexWriter.updateDocuments(LLUtils.toTerm(documents.key()), luceneDocuments);
 							return null;
 						})
-						.subscribeOn(luceneScheduler)
+						.subscribeOn(luceneBlockingScheduler)
 				);
 	}
 
 	@Override
 	public Mono<Void> deleteAll() {
 		return Mono.<Void>fromCallable(() -> {
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.deleteAll();
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.commit();
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.forceMergeDeletes(true);
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.flush();
+			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.commit();
 			return null;
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	private Mono<IndexSearcher> acquireSearcherWrapper(LLSnapshot snapshot) {
 		return Mono.fromCallable(() -> {
 			if (snapshot == null) {
+				//noinspection BlockingMethodInNonBlockingContext
 				return searcherManager.acquire();
 			} else {
 				return resolveSnapshot(snapshot).getIndexSearcher();
 			}
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	private Mono<Void> releaseSearcherWrapper(LLSnapshot snapshot, IndexSearcher indexSearcher) {
 		return Mono.<Void>fromRunnable(() -> {
 			if (snapshot == null) {
 				try {
+					//noinspection BlockingMethodInNonBlockingContext
 					searcherManager.release(indexSearcher);
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
 			}
-		}).subscribeOn(luceneScheduler);
+		}).subscribeOn(luceneBlockingScheduler);
 	}
 
 	@SuppressWarnings({"Convert2MethodRef", "unchecked", "rawtypes"})
@@ -308,9 +328,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										mlt.setBoost(true);
 
 										// Get the reference doc and apply it to MoreLikeThis, to generate the query
+										//noinspection BlockingMethodInNonBlockingContext
 										return mlt.like((Map) mltDocumentFields);
 									})
-									.subscribeOn(luceneScheduler)
+									.subscribeOn(luceneBlockingScheduler)
 									.flatMap(query -> Mono
 											.fromCallable(() -> {
 												One<Long> totalHitsCountSink = Sinks.one();
@@ -319,7 +340,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 														.unicast()
 														.onBackpressureBuffer(new ArrayBlockingQueue<>(1000));
 
-												luceneScheduler.schedule(() -> {
+												luceneBlockingScheduler.schedule(() -> {
 													try {
 														streamSearcher.search(indexSearcher,
 																query,
@@ -347,7 +368,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 												});
 
 												return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
-											}).subscribeOn(luceneScheduler)
+											}).subscribeOn(luceneBlockingScheduler)
 									).then()
 									.materialize()
 									.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
@@ -369,7 +390,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							org.apache.lucene.search.ScoreMode luceneScoreMode = LLUtils.toScoreMode(scoreMode);
 							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
-						.subscribeOn(luceneScheduler)
+						.subscribeOn(luceneBlockingScheduler)
 						.flatMap(tuple -> Mono
 								.fromCallable(() -> {
 									Query luceneQuery = tuple.getT1();
@@ -382,7 +403,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 											.unicast()
 											.onBackpressureBuffer(new ArrayBlockingQueue<>(PagedStreamSearcher.MAX_ITEMS_PER_PAGE));
 
-									luceneScheduler.schedule(() -> {
+									luceneBlockingScheduler.schedule(() -> {
 										try {
 											streamSearcher.search(indexSearcher,
 													luceneQuery,
@@ -410,7 +431,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									});
 
 									return new LLSearchResult(totalHitsCountSink.asMono(), Flux.just(topKeysSink.asFlux()));
-								}).subscribeOn(luceneScheduler)
+								}).subscribeOn(luceneBlockingScheduler)
 						)
 						.materialize()
 						.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
@@ -423,11 +444,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono
 				.<Void>fromCallable(() -> {
 					scheduledTasksLifecycle.cancelAndWait();
+					//noinspection BlockingMethodInNonBlockingContext
 					indexWriter.close();
+					//noinspection BlockingMethodInNonBlockingContext
 					directory.close();
 					return null;
 				})
-				.subscribeOn(luceneScheduler);
+				.subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
@@ -436,14 +459,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.<Void>fromCallable(() -> {
 					scheduledTasksLifecycle.startScheduledTask();
 					try {
+						//noinspection BlockingMethodInNonBlockingContext
 						indexWriter.commit();
+						//noinspection BlockingMethodInNonBlockingContext
 						indexWriter.flush();
 					} finally {
 						scheduledTasksLifecycle.endScheduledTask();
 					}
 					return null;
 				})
-				.subscribeOn(luceneScheduler);
+				.subscribeOn(luceneBlockingScheduler);
 	}
 
 	@Override
@@ -452,13 +477,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.<Void>fromCallable(() -> {
 					scheduledTasksLifecycle.startScheduledTask();
 					try {
+						//noinspection BlockingMethodInNonBlockingContext
 						searcherManager.maybeRefreshBlocking();
 					} finally {
 						scheduledTasksLifecycle.endScheduledTask();
 					}
 					return null;
 				})
-				.subscribeOn(luceneScheduler);
+				.subscribeOn(luceneBlockingScheduler);
 	}
 
 	private void scheduledCommit() {

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.serializer;
 
+@SuppressWarnings("unused")
 public class SortedNumericDocValuesFieldSlowRangeQuery implements Query {
 
 	private final String name;

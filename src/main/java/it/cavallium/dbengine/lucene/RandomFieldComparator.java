@@ -65,7 +65,7 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 		var randomizedScorer = new Scorable() {
 
 			@Override
-			public float score() throws IOException {
+			public float score() {
 				return randomize(scorer.docID());
 			}
 
@@ -81,9 +81,10 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 		}
 	}
 
+	@SuppressWarnings("RedundantCast")
 	@Override
 	public Float value(int slot) {
-		return Float.valueOf(scores[slot]);
+		return (float) scores[slot];
 	}
 
 	// Override because we sort reverse of natural Float order:

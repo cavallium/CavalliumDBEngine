@@ -14,8 +14,8 @@ public class PhraseQuery implements Query {
 		StringBuilder data = new StringBuilder();
 		StringBuilder listData = new StringBuilder();
 		listData.append(parts.length).append('|');
-		for (int i = 0; i < parts.length; i++) {
-			StringifyUtils.stringifyTermPosition(listData, parts[i]);
+		for (TermPosition part : parts) {
+			StringifyUtils.stringifyTermPosition(listData, part);
 		}
 		StringifyUtils.writeHeader(data, QueryConstructorType.TERM_POSITION_LIST, listData);
 		StringifyUtils.writeHeader(output, QueryConstructorType.PHRASE_QUERY, data);

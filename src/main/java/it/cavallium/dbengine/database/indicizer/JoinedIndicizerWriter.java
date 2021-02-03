@@ -11,6 +11,7 @@ import org.jetbrains.annotations.Nullable;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import reactor.core.publisher.Mono;
 
+@SuppressWarnings("SpellCheckingInspection")
 public class JoinedIndicizerWriter<KEY, DBTYPE, JOINEDTYPE> implements LuceneIndicizerWriter<KEY, DBTYPE> {
 
 	private final LuceneIndicizerWriter<KEY, JOINEDTYPE> indicizerWriter;

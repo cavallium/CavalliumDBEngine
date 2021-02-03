@@ -14,7 +14,6 @@ import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
 // todo: implement optimized methods
-@SuppressWarnings("Convert2MethodRef")
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
 
 	public static final byte[] EMPTY_BYTES = new byte[0];
@@ -144,15 +143,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	/**
-	 * Remove ext from suffix
-	 */
-	protected byte[] trimSuffix(byte[] keySuffix) {
-		if (keySuffix.length == keySuffixLength)
-			return keySuffix;
-		return Arrays.copyOf(keySuffix, keySuffixLength);
-	}
-
-	/**
 	 * Remove ext from full key
 	 */
 	protected byte[] removeExtFromFullKey(byte[] key) {
@@ -168,15 +158,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		System.arraycopy(suffixKey, 0, result, keyPrefix.length, keySuffixLength);
 		assert result.length == keyPrefix.length + keySuffixLength;
 		return result;
-	}
-
-	/**
-	 * Remove suffix from keySuffix, returning probably an empty byte array
-	 */
-	protected byte[] stripSuffix(byte[] keySuffix) {
-		if (keySuffix.length == this.keySuffixLength)
-			return EMPTY_BYTES;
-		return Arrays.copyOfRange(keySuffix, this.keySuffixLength, keySuffix.length);
 	}
 
 	protected LLSnapshot resolveSnapshot(@Nullable CompositeSnapshot snapshot) {

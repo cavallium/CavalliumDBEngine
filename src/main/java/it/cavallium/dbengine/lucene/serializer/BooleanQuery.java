@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.serializer;
 
 import java.util.Collection;
 
+@SuppressWarnings("unused")
 public class BooleanQuery implements Query {
 
 	private final BooleanQueryPart[] parts;
@@ -26,8 +27,8 @@ public class BooleanQuery implements Query {
 		StringifyUtils.stringifyInt(data, minShouldMatch);
 		StringBuilder listData = new StringBuilder();
 		listData.append(parts.length).append('|');
-		for (int i = 0; i < parts.length; i++) {
-			parts[i].stringify(listData);
+		for (BooleanQueryPart part : parts) {
+			part.stringify(listData);
 		}
 		StringifyUtils.writeHeader(data, QueryConstructorType.BOOLEAN_QUERY_INFO_LIST, listData);
 		StringifyUtils.writeHeader(output, QueryConstructorType.BOOLEAN_QUERY, data);

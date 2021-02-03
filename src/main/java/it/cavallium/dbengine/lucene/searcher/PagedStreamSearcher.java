@@ -49,7 +49,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 		totalHitsConsumer.accept(lastTopDocs.totalHits.value);
 		if (lastTopDocs.scoreDocs.length > 0) {
 			ScoreDoc lastScoreDoc = getLastItem(lastTopDocs.scoreDocs);
-			consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, scoreMode, keyFieldName, resultsConsumer);
+			consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, keyFieldName, resultsConsumer);
 
 			// Run the searches for each page until the end
 			boolean finished = currentAllowedResults.var <= 0;
@@ -57,7 +57,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 				lastTopDocs = indexSearcher.searchAfter(lastScoreDoc, query, MAX_ITEMS_PER_PAGE, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
 				if (lastTopDocs.scoreDocs.length > 0) {
 					lastScoreDoc = getLastItem(lastTopDocs.scoreDocs);
-					consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, scoreMode, keyFieldName, resultsConsumer);
+					consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, keyFieldName, resultsConsumer);
 				}
 				if (lastTopDocs.scoreDocs.length < MAX_ITEMS_PER_PAGE || currentAllowedResults.var <= 0) {
 					finished = true;
@@ -69,7 +69,6 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 	private void consumeHits(IntWrapper currentAllowedResults,
 			ScoreDoc[] hits,
 			IndexSearcher indexSearcher,
-			ScoreMode scoreMode,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer) throws IOException {
 		for (ScoreDoc hit : hits) {

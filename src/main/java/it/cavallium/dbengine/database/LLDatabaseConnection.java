@@ -5,6 +5,7 @@ import java.time.Duration;
 import java.util.List;
 import reactor.core.publisher.Mono;
 
+@SuppressWarnings("UnusedReturnValue")
 public interface LLDatabaseConnection {
 
 	Mono<? extends LLDatabaseConnection> connect();

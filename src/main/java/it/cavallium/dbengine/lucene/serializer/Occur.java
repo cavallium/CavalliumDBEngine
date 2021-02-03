@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.serializer;
 
 import org.apache.lucene.search.BooleanClause;
 
+@SuppressWarnings("unused")
 public class Occur implements SerializedQueryObject {
 
 	private final BooleanClause.Occur occur;

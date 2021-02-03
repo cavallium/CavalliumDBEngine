@@ -8,13 +8,12 @@ import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
-import it.cavallium.dbengine.database.collections.QueryableBuilder;
-import it.cavallium.dbengine.database.serialization.Serializer;
-import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMapDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
+import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,36 +52,6 @@ public class SpeedExample {
 				.then(test4LevelPut())
 				.subscribeOn(Schedulers.parallel())
 				.blockOptional();
-	}
-
-	private static Mono<Void> testCreateQueryable() {
-		var ssg = new SubStageGetterSingleBytes();
-		var ser = SerializerFixedBinaryLength.noop(4);
-		var itemKey = new byte[]{0, 1, 2, 3};
-		var newValue = new byte[]{4, 5, 6, 7};
-		return test("Create Queryable",
-				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
-						.map(tuple -> tuple.mapT2(dict -> {
-							var builder = new QueryableBuilder(2);
-							return builder.wrap(DatabaseMapDictionaryDeep.simple(dict, builder.serializer(), builder.tail(ssg, ser)));
-						})),
-				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
-						.defer(() -> Mono
-								.fromRunnable(() -> {
-									if (printPreviousValue)
-										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
-								})
-								.then(tuple.getT2().at(null, itemKey))
-								.flatMap(handle -> handle.setAndGetPrevious(newValue))
-								.doOnSuccess(oldValue -> {
-									if (printPreviousValue)
-										System.out.println("Old value: " + (oldValue == null ? "None" : Arrays.toString(oldValue)));
-								})
-						))
-						.then(),
-				numRepeats,
-				tuple -> tuple.getT1().close());
 	}
 
 	private static Mono<Void> test2LevelPut() {

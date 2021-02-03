@@ -4,6 +4,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import org.jetbrains.annotations.NotNull;
 
+@SuppressWarnings("unused")
 public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 	int getSerializedBinaryLength();

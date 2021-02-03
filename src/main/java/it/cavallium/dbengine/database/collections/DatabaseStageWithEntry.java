@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-public interface DatabaseEntryable<T> {
+public interface DatabaseStageWithEntry<T> {
 
 	DatabaseStageEntry<T> entry();
 }

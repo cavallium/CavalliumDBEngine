@@ -5,7 +5,7 @@ import java.util.Objects;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
-public interface DatabaseStage<T> extends DatabaseEntryable<T> {
+public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 
 	Mono<T> get(@Nullable CompositeSnapshot snapshot);
 

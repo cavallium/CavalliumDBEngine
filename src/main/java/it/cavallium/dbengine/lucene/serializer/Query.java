@@ -16,7 +16,7 @@ import org.apache.lucene.index.Term;
 
 public interface Query extends SerializedQueryObject {
 
-	static Query approximativeSearch(TextFieldsAnalyzer yotsubaAnalyzer, String field, String text) {
+	static Query approximateSearch(TextFieldsAnalyzer yotsubaAnalyzer, String field, String text) {
 		try {
 			var terms = getTerms(yotsubaAnalyzer, field, text);
 

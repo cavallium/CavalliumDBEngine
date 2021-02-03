@@ -8,6 +8,7 @@ import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+@SuppressWarnings("unused")
 @NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 

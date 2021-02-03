@@ -12,6 +12,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
+@SuppressWarnings("unused")
 public interface LuceneIndicizerWriter<T, U> {
 
 	Mono<Void> add(T key, U value);

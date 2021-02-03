@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import java.io.IOException;
 
+@SuppressWarnings("SpellCheckingInspection")
 public interface JoinerBlocking<KEY, DBVALUE, JOINEDVALUE> {
 
 	interface ValueGetterBlocking<KEY, VALUE> {

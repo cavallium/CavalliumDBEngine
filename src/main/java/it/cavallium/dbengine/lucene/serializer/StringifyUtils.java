@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import org.apache.lucene.index.Term;
 
+@SuppressWarnings("unused")
 public class StringifyUtils {
 
 	public static void stringifyFloat(StringBuilder output, float value) {

@@ -9,15 +9,11 @@ import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.serializer.Query;
-import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -25,7 +21,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.batch.ParallelUtils;
 import org.warp.commonutils.functional.IOBiConsumer;
-import org.warp.commonutils.functional.TriFunction;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
@@ -93,34 +88,6 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> addDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
 		return documents.flatMap(docs -> getLuceneIndex(docs.key()).addDocuments(documents)).then();
-	}
-
-	private Mono<Void> runPerInstance(Iterable<LLTerm> keys,
-			Iterable<LLDocument> documents,
-			TriFunction<LLLuceneIndex, Iterable<LLTerm>, Iterable<LLDocument>, Mono<Void>> consumer) {
-		var keysIt = keys.iterator();
-		var docsIt = documents.iterator();
-
-		Int2ObjectMap<List<LLTerm>> perInstanceKeys = new Int2ObjectOpenHashMap<>();
-		Int2ObjectMap<List<LLDocument>> perInstanceDocs = new Int2ObjectOpenHashMap<>();
-
-		while (keysIt.hasNext()) {
-			LLTerm key = keysIt.next();
-			LLDocument doc = docsIt.next();
-			var instanceId = getLuceneIndexId(key);
-
-			perInstanceKeys.computeIfAbsent(instanceId, iid -> new ArrayList<>()).add(key);
-			perInstanceDocs.computeIfAbsent(instanceId, iid -> new ArrayList<>()).add(doc);
-		}
-
-		return Flux
-				.fromIterable(perInstanceKeys.int2ObjectEntrySet())
-				.flatMap(currentInstanceEntry -> {
-					int instanceId = currentInstanceEntry.getIntKey();
-					List<LLTerm> currentInstanceKeys = currentInstanceEntry.getValue();
-					return consumer.apply(this.luceneIndices[instanceId], currentInstanceKeys, perInstanceDocs.get(instanceId));
-				})
-				.then();
 	}
 
 	@Override

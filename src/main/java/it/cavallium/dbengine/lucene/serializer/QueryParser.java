@@ -23,8 +23,7 @@ public class QueryParser {
 
 	public static Query parse(String text) throws ParseException {
 		try {
-			var builtQuery = (Query) parse(text, new AtomicInteger(0));
-			return builtQuery;
+			return (Query) parse(text, new AtomicInteger(0));
 		} catch (Exception e) {
 			throw new ParseException(e);
 		}
@@ -72,10 +71,13 @@ public class QueryParser {
 		switch (type) {
 			case TERM_QUERY:
 				Term term = (Term) parse(completeText, position);
+				assert term != null;
 				return new TermQuery(term);
 			case BOOST_QUERY:
 				Query query = (Query) parse(completeText, position);
 				Float numb = (Float) parse(completeText, position);
+				assert query != null;
+				assert numb != null;
 				return new BoostQuery(query, numb);
 			case FUZZY_QUERY:
 				Term fqTerm = (Term) parse(completeText, position);
@@ -83,11 +85,16 @@ public class QueryParser {
 				Integer numb2 = (Integer) parse(completeText, position);
 				Integer numb3 = (Integer) parse(completeText, position);
 				Boolean bool1 = (Boolean) parse(completeText, position);
+				assert fqTerm != null;
+				assert numb1 != null;
+				assert numb2 != null;
+				assert numb3 != null;
+				assert bool1 != null;
 				return new FuzzyQuery(fqTerm, numb1, numb2, numb3, bool1);
 			case PHRASE_QUERY:
-				//noinspection unchecked
 				TermPosition[] pqTerms = (TermPosition[]) parse(completeText, position);
 				var pqB = new PhraseQuery.Builder();
+				assert pqTerms != null;
 				for (TermPosition pqTerm : pqTerms) {
 					if (pqTerm != null) {
 						pqB.add(pqTerm.getTerm(), pqTerm.getPosition());
@@ -99,7 +106,6 @@ public class QueryParser {
 				//noinspection ConstantConditions
 				int minShouldMatch = (Integer) parse(completeText, position);
 				bqB.setMinimumNumberShouldMatch(minShouldMatch);
-				//noinspection unchecked
 				BooleanQueryInfo[] bqTerms = (BooleanQueryInfo[]) parse(completeText, position);
 				assert bqTerms != null;
 				for (BooleanQueryInfo bqTerm : bqTerms) {
@@ -113,26 +119,39 @@ public class QueryParser {
 			case INT_POINT_EXACT_QUERY:
 				String string1 = (String) parse(completeText, position);
 				Integer int1 = (Integer) parse(completeText, position);
+				assert string1 != null;
+				assert int1 != null;
 				return IntPoint.newExactQuery(string1, int1);
 			case LONG_POINT_EXACT_QUERY:
 				String string5 = (String) parse(completeText, position);
 				Long long3 = (Long) parse(completeText, position);
+				assert string5 != null;
+				assert long3 != null;
 				return LongPoint.newExactQuery(string5, long3);
 			case SORTED_SLOW_RANGE_QUERY:
 				String string2 = (String) parse(completeText, position);
 				Long long1 = (Long) parse(completeText, position);
 				Long long2 = (Long) parse(completeText, position);
+				assert string2 != null;
+				assert long1 != null;
+				assert long2 != null;
 				return SortedNumericDocValuesField.newSlowRangeQuery(string2, long1, long2);
 			case LONG_POINT_RANGE_QUERY:
-				String stringx2 = (String) parse(completeText, position);
-				Long longx1 = (Long) parse(completeText, position);
-				Long longx2 = (Long) parse(completeText, position);
-				return LongPoint.newRangeQuery(stringx2, longx1, longx2);
+				String stringX2 = (String) parse(completeText, position);
+				Long longX1 = (Long) parse(completeText, position);
+				Long longX2 = (Long) parse(completeText, position);
+				assert stringX2 != null;
+				assert longX1 != null;
+				assert longX2 != null;
+				return LongPoint.newRangeQuery(stringX2, longX1, longX2);
 			case INT_POINT_RANGE_QUERY:
-				String stringx3 = (String) parse(completeText, position);
-				Integer intx1 = (Integer) parse(completeText, position);
-				Integer intx2 = (Integer) parse(completeText, position);
-				return IntPoint.newRangeQuery(stringx3, intx1, intx2);
+				String stringX3 = (String) parse(completeText, position);
+				Integer intX1 = (Integer) parse(completeText, position);
+				Integer intX2 = (Integer) parse(completeText, position);
+				assert stringX3 != null;
+				assert intX1 != null;
+				assert intX2 != null;
+				return IntPoint.newRangeQuery(stringX3, intX1, intX2);
 			case INT:
 				position.addAndGet(toParse.length());
 				return Integer.parseInt(toParse);
@@ -142,11 +161,13 @@ public class QueryParser {
 			case TERM:
 				String string3 = (String) parse(completeText, position);
 				String string4 = (String) parse(completeText, position);
+				assert string4 != null;
 				return new Term(string3, string4);
 			case TERM_POSITION:
 				Term term1 = (Term) parse(completeText, position);
-				Integer intx3 = (Integer) parse(completeText, position);
-				return new TermPosition(term1, intx3);
+				Integer intX3 = (Integer) parse(completeText, position);
+				assert intX3 != null;
+				return new TermPosition(term1, intX3);
 			case FLOAT:
 				position.addAndGet(toParse.length());
 				return Float.parseFloat(toParse);

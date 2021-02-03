@@ -8,17 +8,16 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.StringJoiner;
 import org.apache.lucene.document.Field;
-import org.jetbrains.annotations.Nullable;
 
 public class LLItem {
 
 	private final LLType type;
 	private final String name;
 	private final byte[] data;
-	@Nullable
+	// nullable
 	private final byte[] data2;
 
-	public LLItem(LLType type, String name, byte[] data, @Nullable byte[] data2) {
+	public LLItem(LLType type, String name, byte[] data, byte[] data2) {
 		this.type = type;
 		this.name = name;
 		this.data = data;

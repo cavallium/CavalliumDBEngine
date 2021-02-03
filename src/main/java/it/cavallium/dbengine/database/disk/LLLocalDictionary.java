@@ -224,7 +224,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.window(MULTI_GET_WINDOW)
 				.flatMap(keysWindowFlux -> keysWindowFlux.collectList()
 						.flatMapMany(keysWindow -> Mono
-								.<ArrayList<Entry<byte[], byte[]>>>fromCallable(() -> {
+								.fromCallable(() -> {
 									var handlesArray = new ColumnFamilyHandle[keysWindow.size()];
 									Arrays.fill(handlesArray, cfh);
 									var handles = ObjectArrayList.wrap(handlesArray, handlesArray.length);
@@ -240,7 +240,7 @@ public class LLLocalDictionary implements LLDictionary {
 									return mappedResults;
 								})
 								.subscribeOn(dbScheduler)
-								.<Entry<byte[], byte[]>>flatMapMany(Flux::fromIterable)
+								.flatMapMany(Flux::fromIterable)
 						)
 				)
 				.onErrorMap(IOException::new);
@@ -290,31 +290,6 @@ public class LLLocalDictionary implements LLDictionary {
 				})
 						.subscribeOn(dbScheduler))
 				.map(oldValue -> Map.entry(newEntry.getKey(), oldValue)));
-	}
-
-	@NotNull
-	private Flux<Entry<byte[], byte[]>> putEntryToWriteBatch(List<Entry<byte[], byte[]>> newEntries, boolean getOldValues,
-			CappedWriteBatch writeBatch) {
-		return Flux
-				.from(Flux
-						.defer(() -> {
-							if (getOldValues) {
-								return getMulti(null, Flux.fromIterable(newEntries).map(Entry::getKey));
-							} else {
-								return Flux.empty();
-							}
-						})
-						.concatWith(Mono
-								.<Entry<byte[], byte[]>>fromCallable(() -> {
-									synchronized (writeBatch) {
-										for (Entry<byte[], byte[]> newEntry : newEntries) {
-											writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
-										}
-									}
-									return null;
-								}).subscribeOn(dbScheduler)
-						)
-				);
 	}
 
 	@Override
@@ -408,7 +383,7 @@ public class LLLocalDictionary implements LLDictionary {
 						if (!currentGroupValues.isEmpty()) {
 							sink.next(currentGroupValues);
 						}
-					} finally {;
+					} finally {
 						sink.complete();
 					}
 				})
@@ -448,16 +423,14 @@ public class LLLocalDictionary implements LLDictionary {
 							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
 								break;
 							}
-							if (Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
-								currentGroupValues.add(key);
-							} else {
+							if (!Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
 								if (!currentGroupValues.isEmpty()) {
 									sink.next(currentGroupValues);
 								}
 								firstGroupKey = key;
 								currentGroupValues = new ArrayList<>();
-								currentGroupValues.add(key);
 							}
+							currentGroupValues.add(key);
 							rocksIterator.next();
 						}
 						if (!currentGroupValues.isEmpty()) {

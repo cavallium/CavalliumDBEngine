@@ -5,6 +5,7 @@ import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.search.IndexSearcher;
 
+@SuppressWarnings("unused")
 public class LuceneIndexSnapshot {
 	private final IndexCommit snapshot;
 

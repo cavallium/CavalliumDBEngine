@@ -74,10 +74,6 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						HashMap::new);
 	}
 
-	private Entry<byte[], byte[]> stripPrefix(Entry<byte[], byte[]> entry) {
-		return Map.entry(stripPrefix(entry.getKey()), entry.getValue());
-	}
-
 	@Override
 	public Mono<Map<T, U>> clearAndGetPrevious() {
 		return dictionary

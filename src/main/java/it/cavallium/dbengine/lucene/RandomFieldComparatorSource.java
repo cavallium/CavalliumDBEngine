@@ -14,7 +14,7 @@ public class RandomFieldComparatorSource extends FieldComparatorSource {
 	}
 
 	@Override
-	public FieldComparator<?> newComparator(String fieldname, int numHits, int sortPos, boolean reversed) {
+	public FieldComparator<?> newComparator(String fieldName, int numHits, int sortPos, boolean reversed) {
 		return new RandomFieldComparator(rand.iterator(), numHits);
 	}
 }

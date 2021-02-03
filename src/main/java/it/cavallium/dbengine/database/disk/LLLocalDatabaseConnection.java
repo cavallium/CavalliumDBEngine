@@ -37,7 +37,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	@Override
 	public Mono<LLLocalKeyValueDatabase> getDatabase(String name, List<Column> columns, boolean lowMemory) {
 		return Mono
-				.<LLLocalKeyValueDatabase>fromCallable(() -> new LLLocalKeyValueDatabase(name,
+				.fromCallable(() -> new LLLocalKeyValueDatabase(name,
 						basePath.resolve("database_" + name),
 						columns,
 						new LinkedList<>(),

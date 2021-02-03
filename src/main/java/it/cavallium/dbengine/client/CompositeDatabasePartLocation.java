@@ -3,6 +3,7 @@ package it.cavallium.dbengine.client;
 import java.util.Objects;
 import java.util.StringJoiner;
 
+@SuppressWarnings("unused")
 public class CompositeDatabasePartLocation {
 	private final CompositeDatabasePartType partType;
 	private final String partName;

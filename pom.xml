@@ -7,11 +7,12 @@
 
     <groupId>it.cavallium</groupId>
     <artifactId>dbengine</artifactId>
-    <version>2.0.1</version>
+    <version>3.0.${revision}</version>
 
     <packaging>jar</packaging>
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <revision>0-SNAPSHOT</revision>
     </properties>
     <repositories>
         <repository>

@@ -44,7 +44,7 @@ jobs:
         run: |
           echo "REVISION: $REVISION"
 
-          mvn --batch-mode deploy
+          mvn -B -Drevision=${REVISION} clean deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}

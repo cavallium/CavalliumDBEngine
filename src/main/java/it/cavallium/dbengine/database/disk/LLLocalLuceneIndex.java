@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.LuceneUtils;
 import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.PagedStreamSearcher;
@@ -25,8 +26,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.IndexCommit;
@@ -43,8 +42,6 @@ import org.apache.lucene.search.Sort;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.concurrency.executor.ScheduledTaskLifecycle;
-import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
@@ -66,9 +63,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 * There is only a single thread globally to not overwhelm the disk with
 	 * parallel commits or parallel refreshes.
 	 */
-	private static final ScheduledExecutorService scheduler
-			= Executors.newSingleThreadScheduledExecutor(new ShortNamedThreadFactory("Lucene"));
-	private static final Scheduler luceneScheduler = Schedulers.fromExecutorService(scheduler);
+	private static final Scheduler luceneScheduler = Schedulers.newBoundedElastic(1,
+			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+			"Lucene",
+			120,
+			true
+	);
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -124,7 +124,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private void registerScheduledFixedTask(Runnable task, Duration duration) {
-		scheduledTasksLifecycle.registerScheduledTask(scheduler.scheduleAtFixedRate(() -> {
+		scheduledTasksLifecycle.registerScheduledTask(luceneScheduler.schedulePeriodically(() -> {
 			scheduledTasksLifecycle.startScheduledTask();
 			try {
 				task.run();
@@ -358,21 +358,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@SuppressWarnings("Convert2MethodRef")
 	@Override
-	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, String queryString, int limit,
+	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, int limit,
 			@Nullable LLSort sort, LLScoreMode scoreMode, String keyFieldName) {
 
 		return acquireSearcherWrapper(snapshot)
 				.flatMap(indexSearcher -> Mono
 						.fromCallable(() -> {
-							Query query = QueryParser.parse(queryString);
+							Query luceneQuery = QueryParser.parse(query);
 							Sort luceneSort = LLUtils.toSort(sort);
 							org.apache.lucene.search.ScoreMode luceneScoreMode = LLUtils.toScoreMode(scoreMode);
-							return Tuples.of(query, Optional.ofNullable(luceneSort), luceneScoreMode);
+							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
 						.subscribeOn(luceneScheduler)
 						.flatMap(tuple -> Mono
 								.fromCallable(() -> {
-									Query query = tuple.getT1();
+									Query luceneQuery = tuple.getT1();
 									Sort luceneSort = tuple.getT2().orElse(null);
 									ScoreMode luceneScoreMode = tuple.getT3();
 
@@ -385,7 +385,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									luceneScheduler.schedule(() -> {
 										try {
 											streamSearcher.search(indexSearcher,
-													query,
+													luceneQuery,
 													limit,
 													luceneSort,
 													luceneScoreMode,
@@ -425,6 +425,37 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					scheduledTasksLifecycle.cancelAndWait();
 					indexWriter.close();
 					directory.close();
+					return null;
+				})
+				.subscribeOn(luceneScheduler);
+	}
+
+	@Override
+	public Mono<Void> flush() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					scheduledTasksLifecycle.startScheduledTask();
+					try {
+						indexWriter.commit();
+						indexWriter.flush();
+					} finally {
+						scheduledTasksLifecycle.endScheduledTask();
+					}
+					return null;
+				})
+				.subscribeOn(luceneScheduler);
+	}
+
+	@Override
+	public Mono<Void> refresh() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					scheduledTasksLifecycle.startScheduledTask();
+					try {
+						searcherManager.maybeRefreshBlocking();
+					} finally {
+						scheduledTasksLifecycle.endScheduledTask();
+					}
 					return null;
 				})
 				.subscribeOn(luceneScheduler);

@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.serializer.Query;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
@@ -152,6 +154,10 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		}
 	}
 
+	private Optional<LLSnapshot> resolveSnapshotOptional(LLSnapshot multiSnapshot, int instanceId) {
+		return Optional.ofNullable(resolveSnapshot(multiSnapshot, instanceId));
+	}
+
 	@Override
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
@@ -161,15 +167,15 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				.fromArray(luceneIndices)
 				.index()
 				.flatMap(tuple -> Mono
-						.fromCallable(() -> resolveSnapshot(snapshot, (int) (long) tuple.getT1()))
+						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
 						.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot)))
-				.flatMap(tuple -> tuple.getT1().moreLikeThis(tuple.getT2(), mltDocumentFields, limit, keyFieldName))
+				.flatMap(tuple -> tuple.getT1().moreLikeThis(tuple.getT2().orElse(null), mltDocumentFields, limit, keyFieldName))
 				.reduce(LLSearchResult.accumulator());
 	}
 
 	@Override
 	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			String query,
+			Query query,
 			int limit,
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode,
@@ -178,9 +184,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				.fromArray(luceneIndices)
 				.index()
 				.flatMap(tuple -> Mono
-						.fromCallable(() -> resolveSnapshot(snapshot, (int) (long) tuple.getT1()))
+						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
 						.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot)))
-				.flatMap(tuple -> tuple.getT1().search(tuple.getT2(), query, limit, sort, scoreMode, keyFieldName))
+				.flatMap(tuple -> tuple.getT1().search(tuple.getT2().orElse(null), query, limit, sort, scoreMode, keyFieldName))
 				.reduce(LLSearchResult.accumulator());
 	}
 
@@ -189,6 +195,22 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return Flux
 				.fromArray(luceneIndices)
 				.flatMap(LLLocalLuceneIndex::close)
+				.then();
+	}
+
+	@Override
+	public Mono<Void> flush() {
+		return Flux
+				.fromArray(luceneIndices)
+				.flatMap(LLLocalLuceneIndex::flush)
+				.then();
+	}
+
+	@Override
+	public Mono<Void> refresh() {
+		return Flux
+				.fromArray(luceneIndices)
+				.flatMap(LLLocalLuceneIndex::refresh)
 				.then();
 	}
 

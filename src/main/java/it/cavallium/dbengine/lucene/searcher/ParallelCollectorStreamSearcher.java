@@ -43,18 +43,18 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 				try {
 					Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
 					if (d.getFields().isEmpty()) {
-						System.err.println("The document docId:" + docId + " is empty.");
+						logger.error("The document docId: {} is empty.", docId);
 						var realFields = indexSearcher.doc(docId).getFields();
 						if (!realFields.isEmpty()) {
-							System.err.println("Present fields:");
+							logger.error("Present fields:");
 							for (IndexableField field : realFields) {
-								System.err.println(" - " + field.name());
+								logger.error(" - " + field.name());
 							}
 						}
 					} else {
 						var field = d.getField(keyFieldName);
 						if (field == null) {
-							System.err.println("Can't get key of document docId:" + docId);
+							logger.error("Can't get key of document docId:" + docId);
 						} else {
 							resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
 						}

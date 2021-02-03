@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.collections.Joiner;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
+import it.cavallium.dbengine.lucene.serializer.Query;
 import org.jetbrains.annotations.Nullable;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import reactor.core.publisher.Mono;
@@ -57,7 +58,7 @@ public class JoinedIndicizerWriter<KEY, DBTYPE, JOINEDTYPE> implements LuceneInd
 
 	@Override
 	public Mono<LLSearchResult> search(@Nullable CompositeSnapshot snapshot,
-			String query,
+			Query query,
 			int limit,
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode) {
@@ -66,7 +67,7 @@ public class JoinedIndicizerWriter<KEY, DBTYPE, JOINEDTYPE> implements LuceneInd
 	}
 
 	@Override
-	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, String query) {
+	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this.indicizerWriter.count(snapshot, query);
 	}
 

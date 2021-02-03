@@ -9,8 +9,12 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public interface LuceneStreamSearcher {
+
+	Logger logger = LoggerFactory.getLogger(LuceneStreamSearcher.class);
 
 	/**
 	 * Do a lucene query, receiving the single results using a consumer

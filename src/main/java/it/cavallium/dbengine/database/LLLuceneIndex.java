@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import it.cavallium.dbengine.lucene.serializer.Query;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -43,14 +44,14 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 * @return the collection has one or more flux
 	 */
 	Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			String query,
+			Query query,
 			int limit,
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode,
 			String keyFieldName);
 
-	default Mono<Long> count(@Nullable LLSnapshot snapshot, String queryString) {
-		return this.search(snapshot, queryString, 0, null, null, null)
+	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
+		return this.search(snapshot, query, 0, null, null, null)
 				.flatMap(LLSearchResult::totalHitsCount)
 				.single();
 	}
@@ -58,4 +59,14 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	boolean isLowMemoryMode();
 
 	Mono<Void> close();
+
+	/**
+	 * Flush writes to disk
+	 */
+	Mono<Void> flush();
+
+	/**
+	 * Refresh index searcher
+	 */
+	Mono<Void> refresh();
 }

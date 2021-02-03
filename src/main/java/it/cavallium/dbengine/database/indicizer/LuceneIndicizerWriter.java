@@ -5,6 +5,7 @@ import it.cavallium.dbengine.database.DatabaseMemoryMode;
 import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSort;
+import it.cavallium.dbengine.lucene.serializer.Query;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -34,12 +35,12 @@ public interface LuceneIndicizerWriter<T, U> {
 			int limit);
 
 	Mono<LLSearchResult> search(@Nullable CompositeSnapshot snapshot,
-			String query,
+			Query query,
 			int limit,
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode);
 
-	Mono<Long> count(@Nullable CompositeSnapshot snapshot, String query);
+	Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query);
 
 	Mono<Void> close();
 

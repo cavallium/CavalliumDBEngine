@@ -19,6 +19,8 @@ import org.apache.lucene.search.TermQuery;
 
 public class QueryParser {
 
+	static final boolean USE_PHRASE_QUERY = true;
+
 	public static Query parse(String text) throws ParseException {
 		try {
 			var builtQuery = (Query) parse(text, new AtomicInteger(0));
@@ -26,6 +28,12 @@ public class QueryParser {
 		} catch (Exception e) {
 			throw new ParseException(e);
 		}
+	}
+
+	public static Query parse(it.cavallium.dbengine.lucene.serializer.Query query) throws ParseException {
+		StringBuilder sb = new StringBuilder();
+		query.stringify(sb);
+		return parse(sb.toString());
 	}
 
 	private static Object parse(String completeText, AtomicInteger position) {

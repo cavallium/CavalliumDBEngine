@@ -38,7 +38,7 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 			float score = hit.score;
 			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
 			if (d.getFields().isEmpty()) {
-				System.err.println("The document docId:" + docId + ",score:" + score + " is empty.");
+				logger.error("The document docId: {}, score: {} is empty.", docId, score);
 				var realFields = indexSearcher.doc(docId).getFields();
 				if (!realFields.isEmpty()) {
 					System.err.println("Present fields:");
@@ -49,7 +49,7 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 			} else {
 				var field = d.getField(keyFieldName);
 				if (field == null) {
-					System.err.println("Can't get key of document docId:" + docId + ",score:" + score);
+					logger.error("Can't get key of document docId: {}, score: {}", docId, score);
 				} else {
 					resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
 				}

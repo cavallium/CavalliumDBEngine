@@ -41,9 +41,9 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 				logger.error("The document docId: {}, score: {} is empty.", docId, score);
 				var realFields = indexSearcher.doc(docId).getFields();
 				if (!realFields.isEmpty()) {
-					System.err.println("Present fields:");
+					logger.error("Present fields:");
 					for (IndexableField field : realFields) {
-						System.err.println(" - " + field.name());
+						logger.error(" - {}", field.name());
 					}
 				}
 			} else {

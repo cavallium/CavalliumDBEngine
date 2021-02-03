@@ -1,5 +1,6 @@
 CavalliumDB Engine
 ==================
+![Maven Package](https://github.com/Cavallium/CavalliumDBEngine/workflows/Maven%20Package/badge.svg)
 
 A very simple reactive wrapper for RocksDB and Lucene.
 

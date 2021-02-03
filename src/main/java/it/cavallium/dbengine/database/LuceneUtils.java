@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.database.analyzer.N4CharGramAnalyzer;
 import it.cavallium.dbengine.database.analyzer.N4CharGramEdgeAnalyzer;
 import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
@@ -10,6 +11,8 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
 import org.apache.lucene.analysis.en.KStemFilter;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
+import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
 
 public class LuceneUtils {
 	private static final Analyzer lucene4CharGramAnalyzerEdgeInstance = new N4CharGramEdgeAnalyzer();
@@ -56,5 +59,30 @@ public class LuceneUtils {
 		tokenStream = new ASCIIFoldingFilter(tokenStream);
 		tokenStream = new LowerCaseFilter(tokenStream);
 		return tokenStream;
+	}
+
+	/**
+	 * Merge streams together maintaining absolute order
+	 */
+	public static <T> Flux<T> mergeStream(Flux<Flux<T>> mappedMultiResults,
+			@Nullable MultiSort<T> sort,
+			@Nullable Integer limit) {
+		if (limit != null && limit == 0) {
+			return mappedMultiResults.flatMap(f -> f).ignoreElements().flux();
+		}
+		return mappedMultiResults.collectList().flatMapMany(mappedMultiResultsList -> {
+			Flux<T> mergedFlux;
+			if (sort == null) {
+				mergedFlux = Flux.merge(mappedMultiResultsList);
+			} else {
+				//noinspection unchecked
+				mergedFlux = Flux.mergeOrdered(32, sort.getResultSort(), mappedMultiResultsList.toArray(Flux[]::new));
+			}
+			if (limit == null) {
+				return mergedFlux;
+			} else {
+				return mergedFlux.take(limit);
+			}
+		});
 	}
 }

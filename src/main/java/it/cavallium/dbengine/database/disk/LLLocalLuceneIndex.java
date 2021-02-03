@@ -346,7 +346,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 																query,
 																limit,
 																null,
-																ScoreMode.COMPLETE,
+																ScoreMode.TOP_SCORES,
 																keyFieldName,
 																keyScore -> {
 																	EmitResult result = topKeysSink.tryEmitNext(keyScore);

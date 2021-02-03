@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.database.indicizer;
+package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLTerm;

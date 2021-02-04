@@ -11,7 +11,8 @@ import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.database.serialization.Codec;
 import it.cavallium.dbengine.database.serialization.CodecSerializer;
-import it.cavallium.dbengine.database.serialization.Codecs;
+import it.cavallium.dbengine.database.serialization.CodecsArray;
+import it.cavallium.dbengine.database.serialization.CodecsStandard;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -91,7 +92,7 @@ public class CodecsExample {
 
 	private static SubStageGetterSingle<CurrentCustomType> getNewSubStageGetter() {
 		var newCodec = new NewCustomTypeCodecV2();
-		var newCodecs = new Codecs<CurrentCustomType>();
+		var newCodecs = new CodecsStandard<CurrentCustomType>();
 		newCodecs.registerCodec(1, new NewCustomTypeCodecV1());
 		newCodecs.registerCodec(2, newCodec);
 		var newSerializer = new CodecSerializer<>(newCodecs, newCodec, 2, true);
@@ -100,7 +101,7 @@ public class CodecsExample {
 
 	private static SubStageGetterSingle<OldCustomType> getOldSubStageGetter() {
 		var oldCodec = new OldCustomTypeCodec();
-		var oldCodecs = new Codecs<OldCustomType>();
+		var oldCodecs = new CodecsArray<OldCustomType>();
 		oldCodecs.registerCodec(1, oldCodec);
 		var oldSerializer = new CodecSerializer<>(oldCodecs, oldCodec, 1, true);
 		return new SubStageGetterSingle<>(oldSerializer);

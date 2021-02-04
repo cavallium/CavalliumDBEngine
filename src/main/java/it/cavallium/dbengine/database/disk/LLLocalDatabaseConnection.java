@@ -3,7 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -51,6 +52,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	public Mono<LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
 			TextFieldsAnalyzer textFieldsAnalyzer,
+			TextFieldsSimilarity textFieldsSimilarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory) {
@@ -61,6 +63,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								name,
 								instancesCount,
 								textFieldsAnalyzer,
+								textFieldsSimilarity,
 								queryRefreshDebounceTime,
 								commitDebounceTime,
 								lowMemory
@@ -69,9 +72,11 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
 								name,
 								textFieldsAnalyzer,
+								textFieldsSimilarity,
 								queryRefreshDebounceTime,
 								commitDebounceTime,
-								lowMemory
+								lowMemory,
+								null
 						);
 					}
 				})

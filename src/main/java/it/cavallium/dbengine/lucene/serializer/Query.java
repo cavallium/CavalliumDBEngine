@@ -2,8 +2,8 @@ package it.cavallium.dbengine.lucene.serializer;
 
 import static it.cavallium.dbengine.lucene.serializer.QueryParser.USE_PHRASE_QUERY;
 
-import it.cavallium.dbengine.database.LuceneUtils;
-import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import java.io.IOException;
 import java.io.StringReader;
 import java.util.LinkedList;

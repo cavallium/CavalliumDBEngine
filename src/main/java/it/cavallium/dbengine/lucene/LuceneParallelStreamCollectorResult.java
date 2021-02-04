@@ -11,4 +11,5 @@ public class LuceneParallelStreamCollectorResult {
 	public long getTotalHitsCount() {
 		return totalHitsCount;
 	}
+
 }

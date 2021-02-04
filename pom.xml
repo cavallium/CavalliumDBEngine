@@ -168,7 +168,11 @@
             <artifactId>reactor-tools</artifactId>
             <version>3.4.2</version>
         </dependency>
-
+        <dependency>
+            <groupId>org.novasearch</groupId>
+            <artifactId>lucene-relevance</artifactId>
+            <version>8.0.0.0.5</version>
+        </dependency>
     </dependencies>
     <build>
         <testSourceDirectory>src/test/java</testSourceDirectory>

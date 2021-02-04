@@ -45,6 +45,10 @@ public class LLUtils {
 			return new Sort(new SortedNumericSortField(sort.getFieldName(), SortField.Type.LONG, sort.isReverse()));
 		} else if (sort.getType() == LLSortType.RANDOM) {
 			return new Sort(new RandomSortField());
+		} else if (sort.getType() == LLSortType.SCORE) {
+			return new Sort(SortField.FIELD_SCORE);
+		} else if (sort.getType() == LLSortType.DOC) {
+			return new Sort(SortField.FIELD_DOC);
 		}
 		return null;
 	}

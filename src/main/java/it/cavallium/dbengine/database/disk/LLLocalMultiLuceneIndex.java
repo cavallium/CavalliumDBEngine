@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
@@ -7,7 +9,8 @@ import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.serializer.Query;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -16,8 +19,13 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.lucene.search.CollectionStatistics;
+import org.apache.lucene.search.IndexSearcher;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.batch.ParallelUtils;
 import org.warp.commonutils.functional.IOBiConsumer;
@@ -34,12 +42,17 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 	private final LLLocalLuceneIndex[] luceneIndices;
 
+	private final AtomicLong nextActionId = new AtomicLong(0);
+	private final ConcurrentHashMap<Long, Cache<String, CollectionStatistics>[]> statistics = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<Long, AtomicInteger> completedStreams = new ConcurrentHashMap<>();
+
 	private final int maxQueueSize = 1000;
 
 	public LLLocalMultiLuceneIndex(Path lucene,
 			String name,
 			int instancesCount,
 			TextFieldsAnalyzer textFieldsAnalyzer,
+			TextFieldsSimilarity textFieldsSimilarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory) throws IOException {
@@ -50,6 +63,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 		LLLocalLuceneIndex[] luceneIndices = new LLLocalLuceneIndex[instancesCount];
 		for (int i = 0; i < instancesCount; i++) {
+			int finalI = i;
 			String instanceName;
 			if (i == 0) {
 				instanceName = name;
@@ -59,12 +73,73 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			luceneIndices[i] = new LLLocalLuceneIndex(lucene,
 					instanceName,
 					textFieldsAnalyzer,
+					textFieldsSimilarity,
 					queryRefreshDebounceTime,
 					commitDebounceTime,
-					lowMemory
+					lowMemory,
+					(indexSearcher, field, distributedPre, actionId) -> distributedCustomCollectionStatistics(finalI,
+							indexSearcher,
+							field,
+							distributedPre,
+							actionId
+					)
 			);
 		}
 		this.luceneIndices = luceneIndices;
+	}
+
+	private long newAction() {
+		var statistics = new Cache[luceneIndices.length];
+		for (int i = 0; i < luceneIndices.length; i++) {
+			statistics[i] = CacheBuilder.newBuilder().build();
+		}
+		long actionId = nextActionId.getAndIncrement();
+		//noinspection unchecked
+		this.statistics.put(actionId, statistics);
+		this.completedStreams.put(actionId, new AtomicInteger(0));
+		return actionId;
+	}
+
+	private void completedAction(long actionId) {
+		var completedStreamsCount = completedStreams.get(actionId);
+		if (completedStreamsCount != null) {
+			if (completedStreamsCount.incrementAndGet() >= luceneIndices.length) {
+				this.statistics.remove(actionId);
+				this.completedStreams.remove(actionId);
+			}
+		}
+	}
+
+	private CollectionStatistics distributedCustomCollectionStatistics(int luceneIndex,
+			IndexSearcher indexSearcher, String field, boolean distributedPre, long actionId) throws IOException {
+		if (distributedPre) {
+			try {
+				return statistics.get(actionId)[luceneIndex].get(field, () -> indexSearcher.collectionStatistics(field));
+			} catch (ExecutionException e) {
+				throw new IOException();
+			}
+		} else {
+			long maxDoc = 0;
+			long docCount = 0;
+			long sumTotalTermFreq = 0;
+			long sumDocFreq = 0;
+			for (int i = 0; i < luceneIndices.length; i++) {
+				CollectionStatistics iCollStats = statistics.get(actionId)[i].getIfPresent(field);
+				if (iCollStats != null) {
+					maxDoc += iCollStats.maxDoc();
+					docCount += iCollStats.docCount();
+					sumTotalTermFreq += iCollStats.sumTotalTermFreq();
+					sumDocFreq += iCollStats.sumDocFreq();
+				}
+			}
+
+			return new CollectionStatistics(field,
+					(int) Math.max(1, Math.min(maxDoc, Integer.MAX_VALUE)),
+					Math.max(1, docCount),
+					Math.max(1, sumTotalTermFreq),
+					Math.max(1, sumDocFreq)
+			);
+		}
 	}
 
 	private LLLocalLuceneIndex getLuceneIndex(LLTerm id) {
@@ -130,14 +205,61 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
 			int limit,
 			String keyFieldName) {
-		return Flux
-				.fromArray(luceneIndices)
-				.index()
-				.flatMap(tuple -> Mono
-						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
-						.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot)))
-				.flatMap(tuple -> tuple.getT1().moreLikeThis(tuple.getT2().orElse(null), mltDocumentFields, limit, keyFieldName))
-				.reduce(LLSearchResult.accumulator());
+		long actionId;
+		int scoreDivisor;
+		Flux<Tuple2<String, Set<String>>> mltDocumentFieldsShared;
+		Mono<Void> distributedPre;
+		if (luceneIndices.length > 1) {
+			actionId = newAction();
+			scoreDivisor = 20;
+			mltDocumentFieldsShared = mltDocumentFields.publish().refCount();
+			distributedPre = Flux
+					.fromArray(luceneIndices)
+					.index()
+					.flatMap(tuple -> Mono
+							.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
+							.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot))
+					)
+					.flatMap(tuple -> tuple
+							.getT1()
+							.distributedPreMoreLikeThis(tuple.getT2().orElse(null), mltDocumentFieldsShared, keyFieldName, actionId)
+					)
+					.then();
+		} else {
+			actionId = -1;
+			scoreDivisor = 1;
+			mltDocumentFieldsShared = mltDocumentFields;
+			distributedPre = Mono.empty();
+		}
+
+		return distributedPre.then(Flux
+						.fromArray(luceneIndices)
+						.index()
+						.flatMap(tuple -> Mono
+								.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
+								.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot)))
+						.flatMap(tuple -> tuple
+								.getT1()
+								.distributedMoreLikeThis(tuple.getT2().orElse(null),
+										mltDocumentFieldsShared,
+										limit,
+										keyFieldName,
+										actionId,
+										scoreDivisor
+								)
+						)
+						.reduce(LLSearchResult.accumulator())
+						.map(result -> {
+							if (actionId != -1) {
+								var resultsWithTermination = result
+										.results()
+										.map(flux -> flux.doOnTerminate(() -> completedAction(actionId)));
+								return new LLSearchResult(result.totalHitsCount(), resultsWithTermination);
+							} else {
+								return result;
+							}
+						})
+				);
 	}
 
 	@Override
@@ -147,14 +269,60 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode,
 			String keyFieldName) {
-		return Flux
-				.fromArray(luceneIndices)
-				.index()
-				.flatMap(tuple -> Mono
-						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
-						.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot)))
-				.flatMap(tuple -> tuple.getT1().search(tuple.getT2().orElse(null), query, limit, sort, scoreMode, keyFieldName))
-				.reduce(LLSearchResult.accumulator());
+		long actionId;
+		int scoreDivisor;
+		Mono<Void> distributedPre;
+		if (luceneIndices.length <= 1 || scoreMode == LLScoreMode.COMPLETE_NO_SCORES) {
+			actionId = -1;
+			scoreDivisor = 1;
+			distributedPre = Mono.empty();
+		} else {
+			actionId = newAction();
+			scoreDivisor = 20;
+			distributedPre = Flux
+					.fromArray(luceneIndices)
+					.index()
+					.flatMap(tuple -> Mono
+							.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
+							.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot))
+					)
+					.flatMap(tuple -> tuple
+							.getT1()
+							.distributedPreSearch(tuple.getT2().orElse(null), query, sort, scoreMode, keyFieldName, actionId)
+					)
+					.then();
+		}
+		return distributedPre
+				.then(Flux
+						.fromArray(luceneIndices)
+						.index()
+						.flatMap(tuple -> Mono
+								.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
+								.map(luceneSnapshot -> Tuples.of(tuple.getT2(), luceneSnapshot))
+						)
+						.flatMap(tuple -> tuple
+								.getT1()
+								.distributedSearch(tuple.getT2().orElse(null),
+										query,
+										limit,
+										sort,
+										scoreMode,
+										keyFieldName,
+										actionId,
+										scoreDivisor
+								))
+						.reduce(LLSearchResult.accumulator())
+						.map(result -> {
+							if (actionId != -1) {
+								var resultsWithTermination = result
+										.results()
+										.map(flux -> flux.doOnTerminate(() -> completedAction(actionId)));
+								return new LLSearchResult(result.totalHitsCount(), resultsWithTermination);
+							} else {
+								return result;
+							}
+						})
+				);
 	}
 
 	@Override

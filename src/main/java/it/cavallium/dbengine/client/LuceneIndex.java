@@ -7,7 +7,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.LuceneUtils;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.lucene.serializer.Query;
 import java.util.Map;

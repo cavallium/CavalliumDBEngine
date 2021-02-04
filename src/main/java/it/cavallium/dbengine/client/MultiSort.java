@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLSort;
 import java.util.Comparator;
 import java.util.function.ToIntFunction;
@@ -63,12 +64,16 @@ public class MultiSort<T> {
 		return new MultiSort<>(LLSort.newRandomSortField(), (a, b) -> 0);
 	}
 
+	public static MultiSort<LLKeyScore> topScoreRaw() {
+		return new MultiSort<>(LLSort.newSortScore(), Comparator.comparingDouble(LLKeyScore::getScore).reversed());
+	}
+
 	public static <T> MultiSort<SearchResultKey<T>> topScore() {
-		return new MultiSort<>(null, Comparator.<SearchResultKey<T>>comparingDouble(SearchResultKey::getScore).reversed());
+		return new MultiSort<>(LLSort.newSortScore(), Comparator.<SearchResultKey<T>>comparingDouble(SearchResultKey::getScore).reversed());
 	}
 
 	public static <T, U> MultiSort<SearchResultItem<T, U>> topScoreWithValues() {
-		return new MultiSort<>(null, Comparator.<SearchResultItem<T, U>>comparingDouble(SearchResultItem::getScore).reversed());
+		return new MultiSort<>(LLSort.newSortScore(), Comparator.<SearchResultItem<T, U>>comparingDouble(SearchResultItem::getScore).reversed());
 	}
 
 	public LLSort getQuerySort() {

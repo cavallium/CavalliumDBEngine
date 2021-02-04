@@ -15,6 +15,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 
+	private static final boolean ENABLE_PARALLEL_COLLECTOR = true;
 	private final SimpleStreamSearcher simpleStreamSearcher;
 	private final ParallelCollectorStreamSearcher parallelCollectorStreamSearcher;
 	private final PagedStreamSearcher pagedStreamSearcher;
@@ -38,10 +39,10 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit == 0) {
 			totalHitsConsumer.accept(countStreamSearcher.count(indexSearcher, query));
-		} else if (luceneSort == null) {
+		} else if (luceneSort == null && ENABLE_PARALLEL_COLLECTOR) {
 			parallelCollectorStreamSearcher.search(indexSearcher, query, limit, null, scoreMode, keyFieldName, consumer, totalHitsConsumer);
 		} else {
-			if (limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {
+			if (luceneSort != null && limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {
 				pagedStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, consumer, totalHitsConsumer);
 			} else {
 				simpleStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, consumer, totalHitsConsumer);

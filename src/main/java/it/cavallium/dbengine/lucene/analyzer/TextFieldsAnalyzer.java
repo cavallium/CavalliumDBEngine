@@ -1,8 +1,11 @@
-package it.cavallium.dbengine.database.analyzer;
+package it.cavallium.dbengine.lucene.analyzer;
 
 public enum TextFieldsAnalyzer {
-	PartialWordsEdge,
 	PartialWords,
+	PartialWordsEdge,
+	PartialString,
+	PartialStringEdge,
+	Standard,
 	WordSimple,
 	WordWithStopwordsStripping,
 	WordWithStemming,

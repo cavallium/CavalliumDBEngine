@@ -93,30 +93,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				this.handles.put(columns.get(i), handles.get(i));
 			}
 
-			/*
-			System.out.println("----Data----");
-			this.handles.forEach((Column column, ColumnFamilyHandle hnd) -> {
-				System.out.println("Column: " + column.getName());
-				if (!column.getName().contains("hash")) {
-					var val = new ArrayList<String>();
-					var iter = db.newIterator(hnd);
-					iter.seekToFirst();
-					while (iter.isValid()) {
-						val.add(Column.toString(iter.key()));
-						System.out.println("  " + Column.toString(iter.key()));
-						iter.next();
-					}
-				}
-			});
-			 */
-
-			/*
-			System.out.println("----Columns----");
-			this.handles.forEach((Column column, ColumnFamilyHandle hnd) -> {
-				System.out.println("Column: " + column.getName());
-			});
-			 */
-
 			flushDb(db, handles);
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);

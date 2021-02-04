@@ -1,7 +1,7 @@
-package it.cavallium.dbengine.database.analyzer;
+package it.cavallium.dbengine.lucene.analyzer;
 
 import it.cavallium.dbengine.database.EnglishItalianStopFilter;
-import it.cavallium.dbengine.database.LuceneUtils;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;

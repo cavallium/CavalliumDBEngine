@@ -2,5 +2,7 @@ package it.cavallium.dbengine.database;
 
 public enum LLSortType {
 	LONG,
-	RANDOM
+	RANDOM,
+	SCORE,
+	DOC
 }

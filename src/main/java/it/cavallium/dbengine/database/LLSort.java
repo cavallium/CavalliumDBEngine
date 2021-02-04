@@ -22,6 +22,14 @@ public class LLSort {
 		return new LLSort(null, LLSortType.RANDOM, false);
 	}
 
+	public static LLSort newSortScore() {
+		return new LLSort(null, LLSortType.SCORE, false);
+	}
+
+	public static LLSort newSortDoc() {
+		return new LLSort(null, LLSortType.DOC, false);
+	}
+
 	public String getFieldName() {
 		return fieldName;
 	}

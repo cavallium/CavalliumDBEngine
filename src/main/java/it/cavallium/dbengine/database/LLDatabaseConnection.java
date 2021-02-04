@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database;
 
-import it.cavallium.dbengine.database.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.time.Duration;
 import java.util.List;
 import reactor.core.publisher.Mono;
@@ -15,6 +16,7 @@ public interface LLDatabaseConnection {
 	Mono<? extends LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
 			TextFieldsAnalyzer textFieldsAnalyzer,
+			TextFieldsSimilarity scorer,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory);

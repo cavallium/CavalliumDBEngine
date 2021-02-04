@@ -30,7 +30,12 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
-		TopDocs topDocs = indexSearcher.search(query, limit, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
+		TopDocs topDocs;
+		if (luceneSort != null) {
+			topDocs = indexSearcher.search(query, limit, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
+		} else {
+			topDocs = indexSearcher.search(query, limit);
+		}
 		totalHitsConsumer.accept(topDocs.totalHits.value);
 		var hits = ObjectArrayList.wrap(topDocs.scoreDocs);
 		for (ScoreDoc hit : hits) {

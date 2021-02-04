@@ -25,6 +25,7 @@ public class LLSearchResult {
 		return (a, b) -> {
 			var mergedTotals = a.totalHitsCount.flatMap(aL -> b.totalHitsCount.map(bL -> aL + bL));
 			var mergedResults = Flux.merge(a.results, b.results);
+
 			return new LLSearchResult(mergedTotals, mergedResults);
 		};
 	}
@@ -35,6 +36,10 @@ public class LLSearchResult {
 
 	public Flux<Flux<LLKeyScore>> results() {
 		return this.results;
+	}
+
+	public Mono<Void> completion() {
+		return results.flatMap(r -> r).then();
 	}
 
 	public boolean equals(final Object o) {

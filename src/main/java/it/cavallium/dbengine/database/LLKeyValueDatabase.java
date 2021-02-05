@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
+import it.cavallium.dbengine.database.collections.DatabaseLong;
 import java.nio.charset.StandardCharsets;
 import reactor.core.publisher.Mono;
 
@@ -30,13 +31,13 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 				.map(DatabaseInt::new);
 	}
 
-	default Mono<DatabaseInt> getLong(String singletonListName, String name, long defaultValue) {
+	default Mono<DatabaseLong> getLong(String singletonListName, String name, long defaultValue) {
 		return this
 				.getSingleton(Column.special(singletonListName).getName().getBytes(StandardCharsets.US_ASCII),
 						name.getBytes(StandardCharsets.US_ASCII),
 						Longs.toByteArray(defaultValue)
 				)
-				.map(DatabaseInt::new);
+				.map(DatabaseLong::new);
 	}
 
 	Mono<Long> getProperty(String propertyName);

@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.client.MultiSort;
-import it.cavallium.dbengine.lucene.analyzer.N4CharGramAnalyzer;
-import it.cavallium.dbengine.lucene.analyzer.N4CharGramEdgeAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
+import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
@@ -27,10 +27,14 @@ import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import reactor.core.publisher.Flux;
 
 public class LuceneUtils {
-	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new N4CharGramEdgeAnalyzer(true);
-	private static final Analyzer lucene4GramStringAnalyzerEdgeInstance = new N4CharGramEdgeAnalyzer(false);
-	private static final Analyzer lucene4GramWordsAnalyzerInstance = new N4CharGramAnalyzer(true);
-	private static final Analyzer lucene4GramStringAnalyzerInstance = new N4CharGramAnalyzer(false);
+	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
+	private static final Analyzer lucene4GramStringAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(false, 4, 4);
+	private static final Analyzer lucene4GramWordsAnalyzerInstance = new NCharGramAnalyzer(true, 4, 4);
+	private static final Analyzer lucene4GramStringAnalyzerInstance = new NCharGramAnalyzer(false, 4, 4);
+	private static final Analyzer lucene3To5GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 3, 5);
+	private static final Analyzer lucene3To5GramStringAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(false, 3, 5);
+	private static final Analyzer lucene3To5GramWordsAnalyzerInstance = new NCharGramAnalyzer(true, 3, 5);
+	private static final Analyzer lucene3To5GramStringAnalyzerInstance = new NCharGramAnalyzer(false, 3, 5);
 	private static final Analyzer luceneStandardAnalyzerInstance = new StandardAnalyzer();
 	private static final Analyzer luceneWordAnalyzerStopWordsAndStemInstance = new WordAnalyzer(true, true);
 	private static final Analyzer luceneWordAnalyzerStopWordsInstance = new WordAnalyzer(true, false);
@@ -57,14 +61,22 @@ public class LuceneUtils {
 
 	public static Analyzer getAnalyzer(TextFieldsAnalyzer analyzer) {
 		switch (analyzer) {
-			case PartialWords:
+			case N4GramPartialWords:
 				return lucene4GramWordsAnalyzerInstance;
-			case PartialString:
+			case N4GramPartialString:
 				return lucene4GramStringAnalyzerInstance;
-			case PartialWordsEdge:
+			case N4GramPartialWordsEdge:
 				return lucene4GramWordsAnalyzerEdgeInstance;
-			case PartialStringEdge:
+			case N4GramPartialStringEdge:
 				return lucene4GramStringAnalyzerEdgeInstance;
+			case N3To5GramPartialWords:
+				return lucene3To5GramWordsAnalyzerInstance;
+			case N3To5GramPartialString:
+				return lucene3To5GramStringAnalyzerInstance;
+			case N3To5GramPartialWordsEdge:
+				return lucene3To5GramWordsAnalyzerEdgeInstance;
+			case N3To5GramPartialStringEdge:
+				return lucene3To5GramStringAnalyzerEdgeInstance;
 			case Standard:
 				return luceneStandardAnalyzerInstance;
 			case FullText:

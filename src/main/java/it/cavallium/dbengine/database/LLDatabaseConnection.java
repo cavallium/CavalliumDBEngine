@@ -16,7 +16,7 @@ public interface LLDatabaseConnection {
 	Mono<? extends LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
 			TextFieldsAnalyzer textFieldsAnalyzer,
-			TextFieldsSimilarity scorer,
+			TextFieldsSimilarity textFieldsSimilarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory);

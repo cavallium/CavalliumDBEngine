@@ -8,12 +8,16 @@ import org.apache.lucene.analysis.core.KeywordTokenizer;
 import org.apache.lucene.analysis.ngram.EdgeNGramTokenFilter;
 import org.apache.lucene.analysis.standard.StandardTokenizer;
 
-public class N4CharGramEdgeAnalyzer extends Analyzer {
+public class NCharGramEdgeAnalyzer extends Analyzer {
 
 	private final boolean words;
+	private final int minGram;
+	private final int maxGram;
 
-	public N4CharGramEdgeAnalyzer(boolean words) {
+	public NCharGramEdgeAnalyzer(boolean words, int minGram, int maxGram) {
 		this.words = words;
+		this.minGram = minGram;
+		this.maxGram = maxGram;
 	}
 
 	@Override
@@ -28,7 +32,7 @@ public class N4CharGramEdgeAnalyzer extends Analyzer {
 			tokenStream = tokenizer;
 		}
 		tokenStream = LuceneUtils.newCommonFilter(tokenStream, words);
-		tokenStream = new EdgeNGramTokenFilter(tokenStream, 3, 5, false);
+		tokenStream = new EdgeNGramTokenFilter(tokenStream, minGram, maxGram, false);
 
 		return new TokenStreamComponents(tokenizer, tokenStream);
 	}

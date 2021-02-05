@@ -34,7 +34,7 @@ public class IndicizationExample {
 								})
 						)
 						.then(index.refresh())
-						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.PartialString,"name", "Mario"), 1, null, LLScoreMode.COMPLETE, "id"))
+						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.NGramPartialString,"name", "Mario"), 1, null, LLScoreMode.COMPLETE, "id"))
 						.flatMap(results -> results
 								.results()
 								.flatMap(r -> r)
@@ -98,7 +98,7 @@ public class IndicizationExample {
 										})
 								))
 						.then(index.refresh())
-						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.PartialString,"name", "Mario"), 10, MultiSort.topScore()
+						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.NGramPartialString,"name", "Mario"), 10, MultiSort.topScore()
 								.getQuerySort(), LLScoreMode.COMPLETE, "id"))
 						.flatMap(results -> LuceneUtils.mergeStream(results
 								.results(), MultiSort.topScoreRaw(), 10)
@@ -153,7 +153,7 @@ public class IndicizationExample {
 				.then(new LLLocalDatabaseConnection(wrkspcPath, true).connect())
 				.flatMap(conn -> conn.getLuceneIndex("testindices",
 						10,
-						TextFieldsAnalyzer.PartialString,
+						TextFieldsAnalyzer.NGramPartialString,
 						TextFieldsSimilarity.NGramBM25Plus,
 						Duration.ofSeconds(5),
 						Duration.ofSeconds(5),

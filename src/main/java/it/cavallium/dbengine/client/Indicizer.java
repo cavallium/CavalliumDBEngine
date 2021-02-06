@@ -18,7 +18,7 @@ public abstract class Indicizer<T, U> {
 
 	public abstract @NotNull T getKey(String key);
 
-	public Flux<Tuple2<String, Set<String>>> getMoreLikeThisDocumentFields(U value) {
+	public Flux<Tuple2<String, Set<String>>> getMoreLikeThisDocumentFields(T key, U value) {
 		return Flux.empty();
 	}
 }

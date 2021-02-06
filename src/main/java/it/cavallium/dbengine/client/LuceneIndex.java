@@ -110,9 +110,11 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	 * @return the collection has one or more flux
 	 */
 	public Mono<SearchResultKeys<T>> moreLikeThis(@Nullable CompositeSnapshot snapshot,
+			T key,
 			U mltDocumentValue,
 			int limit) {
-		Flux<Tuple2<String, Set<String>>> mltDocumentFields = indicizer.getMoreLikeThisDocumentFields(mltDocumentValue);
+		Flux<Tuple2<String, Set<String>>> mltDocumentFields
+				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit, indicizer.getKeyFieldName())
 				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, MultiSort.topScore(), limit));
@@ -127,10 +129,12 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	 * @return the collection has one or more flux
 	 */
 	public Mono<SearchResult<T, U>> moreLikeThisWithValues(@Nullable CompositeSnapshot snapshot,
+			T key,
 			U mltDocumentValue,
 			int limit,
 			ValueGetter<T, U> valueGetter) {
-		Flux<Tuple2<String, Set<String>>> mltDocumentFields = indicizer.getMoreLikeThisDocumentFields(mltDocumentValue);
+		Flux<Tuple2<String, Set<String>>> mltDocumentFields
+				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit, indicizer.getKeyFieldName())
 				.map(llSearchResult ->

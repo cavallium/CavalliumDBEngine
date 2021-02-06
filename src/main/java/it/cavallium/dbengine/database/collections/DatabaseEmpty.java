@@ -35,6 +35,9 @@ public class DatabaseEmpty {
 
 	public static final class Nothing {
 
+		@SuppressWarnings("InstantiationOfUtilityClass")
+		public static Nothing INSTANCE = new Nothing();
+
 		private Nothing() {
 
 		}

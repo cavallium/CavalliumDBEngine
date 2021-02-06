@@ -2,6 +2,8 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import java.util.Optional;
+import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
@@ -38,6 +40,11 @@ public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
 	@Override
 	public Mono<Boolean> setAndGetStatus(U value) {
 		return serializedSingle.setAndGetStatus(serialize(value));
+	}
+
+	@Override
+	public Mono<Void> update(Function<Optional<U>, Optional<U>> updater) {
+		return serializedSingle.update(oldValue -> updater.apply(oldValue.map(this::deserialize)).map(this::serialize));
 	}
 
 	@Override

@@ -1,10 +1,12 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.concurrentlocks.ReadWriteUpdateLock;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -13,6 +15,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.locks.ReadWriteLock;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -28,6 +32,7 @@ import org.rocksdb.WriteOptions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
+import org.warp.commonutils.locks.Striped;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -43,6 +48,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int MULTI_GET_WINDOW = 500;
 	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
 
+	private static final int STRIPES = 65536;
 	private static final byte[] FIRST_KEY = new byte[]{};
 	private static final byte[] NO_DATA = new byte[0];
 	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
@@ -51,6 +57,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private final String databaseName;
 	private final Scheduler dbScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
+	private final Striped<ReadWriteUpdateLock> itemsLock = Striped.readWriteUpdateLock(STRIPES);
 
 	public LLLocalDictionary(@NotNull RocksDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
@@ -87,20 +94,46 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	private int getLockIndex(byte[] key) {
+		return Arrays.hashCode(key) % STRIPES;
+	}
+
+	private IntArrayList getLockIndices(List<byte[]> keys) {
+		var list = new IntArrayList(keys.size());
+		for (byte[] key : keys) {
+			list.add(getLockIndex(key));
+		}
+		return list;
+	}
+
+	private IntArrayList getLockIndicesEntries(List<Entry<byte[], byte[]>> keys) {
+		var list = new IntArrayList(keys.size());
+		for (Entry<byte[], byte[]> key : keys) {
+			list.add(getLockIndex(key.getKey()));
+		}
+		return list;
+	}
+
 	@Override
 	public Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) {
 		return Mono
 				.fromCallable(() -> {
-					logger.trace("Reading {}", key);
-					Holder<byte[]> data = new Holder<>();
-					if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
-						if (data.getValue() != null) {
-							return data.getValue();
+					var lock = itemsLock.getAt(getLockIndex(key)).readLock();
+					lock.lock();
+					try {
+						logger.trace("Reading {}", key);
+						Holder<byte[]> data = new Holder<>();
+						if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
+							if (data.getValue() != null) {
+								return data.getValue();
+							} else {
+								return db.get(cfh, resolveSnapshot(snapshot), key);
+							}
 						} else {
-							return db.get(cfh, resolveSnapshot(snapshot), key);
+							return null;
 						}
-					} else {
-						return null;
+					} finally {
+						lock.unlock();
 					}
 				})
 				.onErrorMap(IOException::new)
@@ -144,16 +177,22 @@ public class LLLocalDictionary implements LLDictionary {
 	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, byte[] key) {
 		return Mono
 				.fromCallable(() -> {
-					int size = RocksDB.NOT_FOUND;
-					Holder<byte[]> data = new Holder<>();
-					if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
-						if (data.getValue() != null) {
-							size = data.getValue().length;
-						} else {
-							size = db.get(cfh, resolveSnapshot(snapshot), key, NO_DATA);
+					var lock = itemsLock.getAt(getLockIndex(key)).readLock();
+					lock.lock();
+					try {
+						int size = RocksDB.NOT_FOUND;
+						Holder<byte[]> data = new Holder<>();
+						if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
+							if (data.getValue() != null) {
+								size = data.getValue().length;
+							} else {
+								size = db.get(cfh, resolveSnapshot(snapshot), key, NO_DATA);
+							}
 						}
+						return size != RocksDB.NOT_FOUND;
+					} finally {
+						lock.unlock();
 					}
-					return size != RocksDB.NOT_FOUND;
 				})
 				.onErrorMap(IOException::new)
 				.subscribeOn(dbScheduler);
@@ -164,9 +203,15 @@ public class LLLocalDictionary implements LLDictionary {
 		return getPrevValue(key, resultType)
 				.concatWith(Mono
 						.fromCallable(() -> {
-							logger.trace("Writing {}: {}", key, value);
-							db.put(cfh, key, value);
-							return null;
+							var lock = itemsLock.getAt(getLockIndex(key)).writeLock();
+							lock.lock();
+							try {
+								logger.trace("Writing {}: {}", key, value);
+								db.put(cfh, key, value);
+								return null;
+							} finally {
+								lock.unlock();
+							}
 						})
 						.onErrorMap(IOException::new)
 						.subscribeOn(dbScheduler)
@@ -175,12 +220,63 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
+	public Mono<Void> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> value) {
+		return Mono
+						.<Void>fromCallable(() -> {
+							var rwuLock = itemsLock.getAt(getLockIndex(key));
+							rwuLock.updateLock().lock();
+							try {
+								Optional<byte[]> prevData;
+								var prevDataHolder = new Holder<byte[]>();
+								if (db.keyMayExist(cfh, key, prevDataHolder)) {
+									if (prevDataHolder.getValue() != null) {
+										prevData = Optional.ofNullable(prevDataHolder.getValue());
+									} else {
+										prevData = Optional.ofNullable(db.get(cfh, key));
+									}
+								} else {
+									prevData = Optional.empty();
+								}
+
+								Optional<byte[]> newData = value.apply(prevData);
+								if (prevData.isPresent() && newData.isEmpty()) {
+									rwuLock.writeLock().lock();
+									try {
+										db.delete(cfh, key);
+									} finally {
+										rwuLock.writeLock().unlock();
+									}
+								} else if (newData.isPresent()
+										&& (prevData.isEmpty() || !Arrays.equals(prevData.get(), newData.get()))) {
+									rwuLock.writeLock().lock();
+									try {
+										db.put(cfh, key, newData.get());
+									} finally {
+										rwuLock.writeLock().unlock();
+									}
+								}
+								return null;
+							} finally {
+								rwuLock.updateLock().unlock();
+							}
+						})
+						.onErrorMap(IOException::new)
+						.subscribeOn(dbScheduler);
+	}
+
+	@Override
 	public Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType) {
 		return getPrevValue(key, resultType)
 				.concatWith(Mono
 						.fromCallable(() -> {
-							db.delete(cfh, key);
-							return null;
+							var lock = itemsLock.getAt(getLockIndex(key)).writeLock();
+							lock.lock();
+							try {
+								db.delete(cfh, key);
+								return null;
+							} finally {
+								lock.unlock();
+							}
 						})
 						.onErrorMap(IOException::new)
 						.subscribeOn(dbScheduler)
@@ -196,16 +292,22 @@ public class LLLocalDictionary implements LLDictionary {
 				case PREVIOUS_VALUE:
 					return Mono
 							.fromCallable(() -> {
-								logger.trace("Reading {}", key);
-								var data = new Holder<byte[]>();
-								if (db.keyMayExist(cfh, key, data)) {
-									if (data.getValue() != null) {
-										return data.getValue();
+								var lock = itemsLock.getAt(getLockIndex(key)).readLock();
+								lock.lock();
+								try {
+									logger.trace("Reading {}", key);
+									var data = new Holder<byte[]>();
+									if (db.keyMayExist(cfh, key, data)) {
+										if (data.getValue() != null) {
+											return data.getValue();
+										} else {
+											return db.get(cfh, key);
+										}
 									} else {
-										return db.get(cfh, key);
+										return null;
 									}
-								} else {
-									return null;
+								} finally {
+									lock.unlock();
 								}
 							})
 							.onErrorMap(IOException::new)
@@ -225,19 +327,29 @@ public class LLLocalDictionary implements LLDictionary {
 				.flatMap(keysWindowFlux -> keysWindowFlux.collectList()
 						.flatMapMany(keysWindow -> Mono
 								.fromCallable(() -> {
-									var handlesArray = new ColumnFamilyHandle[keysWindow.size()];
-									Arrays.fill(handlesArray, cfh);
-									var handles = ObjectArrayList.wrap(handlesArray, handlesArray.length);
-									var results = db.multiGetAsList(resolveSnapshot(snapshot), handles, keysWindow);
-									var mappedResults = new ArrayList<Entry<byte[], byte[]>>(results.size());
-									for (int i = 0; i < results.size(); i++) {
-										var val = results.get(i);
-										if (val != null) {
-											results.set(i, null);
-											mappedResults.add(Map.entry(keysWindow.get(i), val));
+									var locks = itemsLock.bulkGetAt(getLockIndices(keysWindow));
+									for (ReadWriteLock lock : locks) {
+										lock.readLock().lock();
+									}
+									try {
+										var handlesArray = new ColumnFamilyHandle[keysWindow.size()];
+										Arrays.fill(handlesArray, cfh);
+										var handles = ObjectArrayList.wrap(handlesArray, handlesArray.length);
+										var results = db.multiGetAsList(resolveSnapshot(snapshot), handles, keysWindow);
+										var mappedResults = new ArrayList<Entry<byte[], byte[]>>(results.size());
+										for (int i = 0; i < results.size(); i++) {
+											var val = results.get(i);
+											if (val != null) {
+												results.set(i, null);
+												mappedResults.add(Map.entry(keysWindow.get(i), val));
+											}
+										}
+										return mappedResults;
+									} finally {
+										for (ReadWriteLock lock : locks) {
+											lock.readLock().unlock();
 										}
 									}
-									return mappedResults;
 								})
 								.subscribeOn(dbScheduler)
 								.flatMapMany(Flux::fromIterable)
@@ -255,18 +367,28 @@ public class LLLocalDictionary implements LLDictionary {
 						.getMulti(null, Flux.fromIterable(entriesWindow).map(Entry::getKey))
 						.publishOn(dbScheduler)
 						.concatWith(Mono.fromCallable(() -> {
-							var batch = new CappedWriteBatch(db,
-									CAPPED_WRITE_BATCH_CAP,
-									RESERVED_WRITE_BATCH_SIZE,
-									MAX_WRITE_BATCH_SIZE,
-									BATCH_WRITE_OPTIONS
-							);
-							for (Entry<byte[], byte[]> entry : entriesWindow) {
-								batch.put(entry.getKey(), entry.getValue());
+							var locks = itemsLock.bulkGetAt(getLockIndicesEntries(entriesWindow));
+							for (ReadWriteLock lock : locks) {
+								lock.writeLock().lock();
 							}
-							batch.writeToDbAndClose();
-							batch.close();
-							return null;
+							try {
+								var batch = new CappedWriteBatch(db,
+										CAPPED_WRITE_BATCH_CAP,
+										RESERVED_WRITE_BATCH_SIZE,
+										MAX_WRITE_BATCH_SIZE,
+										BATCH_WRITE_OPTIONS
+								);
+								for (Entry<byte[], byte[]> entry : entriesWindow) {
+									batch.put(entry.getKey(), entry.getValue());
+								}
+								batch.writeToDbAndClose();
+								batch.close();
+								return null;
+							} finally {
+								for (ReadWriteLock lock : locks) {
+									lock.writeLock().unlock();
+								}
+							}
 						})));
 	}
 
@@ -476,6 +598,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.subscribeOn(dbScheduler);
 	}
 
+	//todo: replace implementation with a simple Flux.push
 	@Override
 	public Flux<Entry<byte[], byte[]>> setRange(LLRange range,
 			Flux<Entry<byte[], byte[]>> entries,

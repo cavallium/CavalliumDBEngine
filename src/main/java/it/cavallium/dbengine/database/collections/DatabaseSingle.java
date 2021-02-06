@@ -6,6 +6,8 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import java.util.Optional;
+import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
@@ -37,6 +39,13 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
 		return dictionary.put(key, serialize(value), LLDictionaryResultType.PREVIOUS_VALUE).map(this::deserialize);
+	}
+
+	@Override
+	public Mono<Void> update(Function<Optional<U>, Optional<U>> updater) {
+		return dictionary.update(key,
+				(oldValueSer) -> updater.apply(oldValueSer.map(this::deserialize)).map(this::serialize)
+		);
 	}
 
 	@Override

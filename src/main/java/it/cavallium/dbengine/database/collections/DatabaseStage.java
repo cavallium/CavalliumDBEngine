@@ -2,6 +2,8 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
@@ -22,6 +24,8 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 	default Mono<Boolean> setAndGetStatus(T value) {
 		return setAndGetPrevious(value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(false);
 	}
+
+	Mono<Void> update(Function<Optional<T>, Optional<T>> updater);
 
 	default Mono<Void> clear() {
 		return clearAndGetStatus().then();

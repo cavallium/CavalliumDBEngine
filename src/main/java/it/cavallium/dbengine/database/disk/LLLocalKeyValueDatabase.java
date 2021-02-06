@@ -55,7 +55,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 
-	@SuppressWarnings("CommentedOutCode")
 	public LLLocalKeyValueDatabase(String name, Path path, List<Column> columns, List<ColumnFamilyHandle> handles,
 			boolean crashIfWalError, boolean lowMemory) throws IOException {
 		Options options = openRocksDb(path, crashIfWalError, lowMemory);

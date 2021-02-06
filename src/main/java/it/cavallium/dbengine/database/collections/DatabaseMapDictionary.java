@@ -10,6 +10,8 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
+import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -104,6 +106,15 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<Void> putValue(T keySuffix, U value) {
 		return dictionary.put(toKey(serializeSuffix(keySuffix)), serialize(value), LLDictionaryResultType.VOID).then();
+	}
+
+	@Override
+	public Mono<Void> updateValue(T keySuffix, Function<Optional<U>, Optional<U>> updater) {
+		return dictionary
+				.update(toKey(serializeSuffix(keySuffix)),
+						oldSerialized -> updater.apply(oldSerialized.map(this::deserialize)).map(this::serialize)
+				)
+				.then();
 	}
 
 	@Override

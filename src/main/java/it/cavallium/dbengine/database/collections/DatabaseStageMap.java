@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBloc
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -26,6 +27,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	default Mono<Void> putValue(T key, U value) {
 		return at(null, key).single().flatMap(v -> v.set(value));
+	}
+
+	default Mono<Void> updateValue(T key, Function<Optional<U>, Optional<U>> updater) {
+		return at(null, key).single().flatMap(v -> v.update(updater));
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
@@ -102,6 +107,19 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return this
 				.setAllValuesAndGetPrevious(Flux.fromIterable(value.entrySet()))
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
+	}
+
+	@Override
+	default Mono<Void> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater) {
+		return this
+				.getAllValues(null)
+				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.single()
+				.map(v -> v.isEmpty() ? Optional.<Map<T, U>>empty() : Optional.of(v))
+				.map(updater)
+				.filter(Optional::isPresent)
+				.map(Optional::get)
+				.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())));
 	}
 
 	@Override

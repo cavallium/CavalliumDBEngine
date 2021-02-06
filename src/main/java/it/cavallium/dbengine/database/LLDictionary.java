@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database;
 
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
@@ -15,6 +16,8 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key);
 
 	Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType);
+
+	Mono<Void> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater);
 
 	Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType);
 

@@ -2,7 +2,7 @@ package it.cavallium.dbengine.client;
 
 public class SnapshotException extends RuntimeException {
 
-	public SnapshotException(Exception ex) {
+	public SnapshotException(Throwable ex) {
 		super(ex);
 	}
 

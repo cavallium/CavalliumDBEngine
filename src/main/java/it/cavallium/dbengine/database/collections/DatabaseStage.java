@@ -25,7 +25,7 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 		return setAndGetPrevious(value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(false);
 	}
 
-	Mono<Void> update(Function<Optional<T>, Optional<T>> updater);
+	Mono<Boolean> update(Function<Optional<T>, Optional<T>> updater);
 
 	default Mono<Void> clear() {
 		return clearAndGetStatus().then();

@@ -220,9 +220,9 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Void> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> value) {
+	public Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> value) {
 		return Mono
-						.<Void>fromCallable(() -> {
+						.fromCallable(() -> {
 							var rwuLock = itemsLock.getAt(getLockIndex(key));
 							rwuLock.updateLock().lock();
 							try {
@@ -238,10 +238,12 @@ public class LLLocalDictionary implements LLDictionary {
 									prevData = Optional.empty();
 								}
 
+								boolean changed = false;
 								Optional<byte[]> newData = value.apply(prevData);
 								if (prevData.isPresent() && newData.isEmpty()) {
 									rwuLock.writeLock().lock();
 									try {
+										changed = true;
 										db.delete(cfh, key);
 									} finally {
 										rwuLock.writeLock().unlock();
@@ -250,12 +252,13 @@ public class LLLocalDictionary implements LLDictionary {
 										&& (prevData.isEmpty() || !Arrays.equals(prevData.get(), newData.get()))) {
 									rwuLock.writeLock().lock();
 									try {
+										changed = true;
 										db.put(cfh, key, newData.get());
 									} finally {
 										rwuLock.writeLock().unlock();
 									}
 								}
-								return null;
+								return changed;
 							} finally {
 								rwuLock.updateLock().unlock();
 							}

@@ -11,6 +11,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -109,12 +110,11 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Void> updateValue(T keySuffix, Function<Optional<U>, Optional<U>> updater) {
-		return dictionary
-				.update(toKey(serializeSuffix(keySuffix)),
-						oldSerialized -> updater.apply(oldSerialized.map(this::deserialize)).map(this::serialize)
-				)
-				.then();
+	public Mono<Boolean> updateValue(T keySuffix, Function<Optional<U>, Optional<U>> updater) {
+		AtomicBoolean changed = new AtomicBoolean(false);
+		return dictionary.update(toKey(serializeSuffix(keySuffix)),
+				oldSerialized -> updater.apply(oldSerialized.map(this::deserialize)).map(this::serialize)
+		);
 	}
 
 	@Override

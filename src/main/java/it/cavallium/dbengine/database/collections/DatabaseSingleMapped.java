@@ -43,7 +43,7 @@ public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Mono<Void> update(Function<Optional<U>, Optional<U>> updater) {
+	public Mono<Boolean> update(Function<Optional<U>, Optional<U>> updater) {
 		return serializedSingle.update(oldValue -> updater.apply(oldValue.map(this::deserialize)).map(this::serialize));
 	}
 

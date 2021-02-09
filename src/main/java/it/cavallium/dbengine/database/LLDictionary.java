@@ -17,7 +17,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType);
 
-	Mono<Void> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater);
+	Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater);
 
 	Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType);
 

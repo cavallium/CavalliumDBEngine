@@ -29,7 +29,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return at(null, key).single().flatMap(v -> v.set(value));
 	}
 
-	default Mono<Void> updateValue(T key, Function<Optional<U>, Optional<U>> updater) {
+	default Mono<Boolean> updateValue(T key, Function<Optional<U>, Optional<U>> updater) {
 		return at(null, key).single().flatMap(v -> v.update(updater));
 	}
 
@@ -110,7 +110,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Void> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater) {
+	default Mono<Boolean> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater) {
 		return this
 				.getAllValues(null)
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
@@ -119,7 +119,9 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				.map(updater)
 				.filter(Optional::isPresent)
 				.map(Optional::get)
-				.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())));
+				.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
+				//todo: can be optimized by calculating the correct return value
+				.thenReturn(true);
 	}
 
 	@Override

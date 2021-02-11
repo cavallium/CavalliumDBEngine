@@ -95,7 +95,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private int getLockIndex(byte[] key) {
-		return Arrays.hashCode(key) % STRIPES;
+		return Math.abs(Arrays.hashCode(key) % STRIPES);
 	}
 
 	private IntArrayList getLockIndices(List<byte[]> keys) {

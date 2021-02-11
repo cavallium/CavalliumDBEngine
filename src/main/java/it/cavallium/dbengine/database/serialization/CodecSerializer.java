@@ -4,6 +4,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.Unpooled;
+import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
@@ -46,7 +47,7 @@ public class CodecSerializer<A> implements Serializer<A, byte[]> {
 			return serializer.deserialize(is);
 		} catch (IOException ex) {
 			// This shouldn't happen
-			throw new RuntimeException(ex);
+			throw new IOError(ex);
 		}
 	}
 
@@ -66,7 +67,15 @@ public class CodecSerializer<A> implements Serializer<A, byte[]> {
 			return bytes;
 		} catch (IOException ex) {
 			// This shouldn't happen
-			throw new RuntimeException(ex);
+			throw new IOError(ex);
+		}
+	}
+
+	public int getCodecHeadersBytes() {
+		if (microCodecs) {
+			return Byte.BYTES;
+		} else {
+			return Integer.BYTES;
 		}
 	}
 }

@@ -226,6 +226,7 @@ public class LLLocalDictionary implements LLDictionary {
 							var rwuLock = itemsLock.getAt(getLockIndex(key));
 							rwuLock.updateLock().lock();
 							try {
+								logger.trace("Reading {}", key);
 								Optional<byte[]> prevData;
 								var prevDataHolder = new Holder<byte[]>();
 								if (db.keyMayExist(cfh, key, prevDataHolder)) {
@@ -243,6 +244,7 @@ public class LLLocalDictionary implements LLDictionary {
 								if (prevData.isPresent() && newData.isEmpty()) {
 									rwuLock.writeLock().lock();
 									try {
+										logger.trace("Deleting {}", key);
 										changed = true;
 										db.delete(cfh, key);
 									} finally {
@@ -252,6 +254,7 @@ public class LLLocalDictionary implements LLDictionary {
 										&& (prevData.isEmpty() || !Arrays.equals(prevData.get(), newData.get()))) {
 									rwuLock.writeLock().lock();
 									try {
+										logger.trace("Writing {}: {}", key, newData.get());
 										changed = true;
 										db.put(cfh, key, newData.get());
 									} finally {

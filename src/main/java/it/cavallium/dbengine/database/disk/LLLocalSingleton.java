@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.LLSingleton;
+import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -8,10 +10,8 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
-import it.cavallium.dbengine.database.LLSingleton;
-import it.cavallium.dbengine.database.LLSnapshot;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
+import reactor.core.scheduler.Scheduler;
 
 public class LLLocalSingleton implements LLSingleton {
 
@@ -21,17 +21,20 @@ public class LLLocalSingleton implements LLSingleton {
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final byte[] name;
 	private final String databaseName;
+	private final Scheduler dbScheduler;
 
 	public LLLocalSingleton(RocksDB db, ColumnFamilyHandle singletonListColumn,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			String databaseName,
 			byte[] name,
+			Scheduler dbScheduler,
 			byte[] defaultValue) throws RocksDBException {
 		this.db = db;
 		this.cfh = singletonListColumn;
 		this.databaseName = databaseName;
 		this.snapshotResolver = snapshotResolver;
 		this.name = name;
+		this.dbScheduler = dbScheduler;
 		if (db.get(cfh, this.name) == null) {
 			db.put(cfh, this.name, defaultValue);
 		}
@@ -50,7 +53,7 @@ public class LLLocalSingleton implements LLSingleton {
 		return Mono
 				.fromCallable(() -> db.get(cfh, resolveSnapshot(snapshot), name))
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -61,7 +64,7 @@ public class LLLocalSingleton implements LLSingleton {
 					return null;
 				})
 				.onErrorMap(IOException::new)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override

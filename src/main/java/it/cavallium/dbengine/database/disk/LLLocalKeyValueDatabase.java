@@ -282,6 +282,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						LLLocalKeyValueDatabase.this.name,
 						name,
+						dbScheduler,
 						defaultValue
 				))
 				.onErrorMap(IOException::new)

@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.lucene.serializer;
 
+import java.util.Arrays;
 import java.util.Collection;
+import java.util.stream.Collectors;
 
 @SuppressWarnings("unused")
 public class BooleanQuery implements Query {
@@ -32,5 +34,10 @@ public class BooleanQuery implements Query {
 		}
 		StringifyUtils.writeHeader(data, QueryConstructorType.BOOLEAN_QUERY_INFO_LIST, listData);
 		StringifyUtils.writeHeader(output, QueryConstructorType.BOOLEAN_QUERY, data);
+	}
+
+	@Override
+	public String toString() {
+		return Arrays.stream(parts).map(Object::toString).collect(Collectors.joining(" || ", "((", ") Minimum should matches:" + minShouldMatch + ")"));
 	}
 }

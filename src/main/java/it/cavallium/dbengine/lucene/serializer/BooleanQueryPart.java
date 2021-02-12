@@ -17,4 +17,9 @@ public class BooleanQueryPart implements SerializedQueryObject {
 		occur.stringify(data);
 		StringifyUtils.writeHeader(output, QueryConstructorType.BOOLEAN_QUERY_INFO, data);
 	}
+
+	@Override
+	public String toString() {
+		return occur + ":" + query;
+	}
 }

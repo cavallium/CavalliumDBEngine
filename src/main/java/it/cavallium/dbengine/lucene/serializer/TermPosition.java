@@ -24,4 +24,9 @@ public class TermPosition implements Query {
 	public void stringify(StringBuilder output) {
 
 	}
+
+	@Override
+	public String toString() {
+		return "(" + term.field() + ":" + term.text() + " at " + position + ")";
+	}
 }

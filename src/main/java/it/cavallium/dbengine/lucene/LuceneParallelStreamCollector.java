@@ -50,7 +50,6 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 		doc += base;
 		totalHitsCounter.incrementAndGet();
 		if (!stopped.get()) {
-			assert (scorer == null) || scorer.docID() == doc;
 			if (!streamConsumer.consume(doc, scorer == null ? 0 : scorer.score())) {
 				stopped.set(true);
 			}

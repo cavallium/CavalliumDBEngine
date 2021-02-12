@@ -33,4 +33,9 @@ public class Occur implements SerializedQueryObject {
 				break;
 		}
 	}
+
+	@Override
+	public String toString() {
+		return occur.name();
+	}
 }

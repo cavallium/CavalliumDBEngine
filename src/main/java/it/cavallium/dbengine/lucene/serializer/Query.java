@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.serializer;
 
 import static it.cavallium.dbengine.lucene.serializer.QueryParser.USE_PHRASE_QUERY;
+import static it.cavallium.dbengine.lucene.serializer.QueryParser.USE_QUERY_BUILDER;
 
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -13,12 +14,22 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.PositionIncrementAttribute;
 import org.apache.lucene.analysis.tokenattributes.TermToBytesRefAttribute;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.util.QueryBuilder;
 
 public interface Query extends SerializedQueryObject {
 
-	static Query approximateSearch(TextFieldsAnalyzer yotsubaAnalyzer, String field, String text) {
+	static Query approximateSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
+		if (USE_QUERY_BUILDER) {
+			var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
+			var luceneQuery = qb.createMinShouldMatchQuery(field, text, 0.75f);
+			org.apache.lucene.search.SynonymQuery synonymQuery = (org.apache.lucene.search.SynonymQuery) luceneQuery;
+			return new SynonymQuery(field,
+					synonymQuery.getTerms().stream().map(TermQuery::new).toArray(TermQuery[]::new)
+			);
+		}
+
 		try {
-			var terms = getTerms(yotsubaAnalyzer, field, text);
+			var terms = getTerms(preferredAnalyzer, field, text);
 
 			List<BooleanQueryPart> booleanQueryParts = new LinkedList<>();
 			for (TermPosition term : terms) {
@@ -28,13 +39,22 @@ public interface Query extends SerializedQueryObject {
 			return new BooleanQuery(booleanQueryParts);
 		} catch (IOException e) {
 			e.printStackTrace();
-			return exactSearch(yotsubaAnalyzer, field, text);
+			return exactSearch(preferredAnalyzer, field, text);
 		}
 	}
 
-	static Query exactSearch(TextFieldsAnalyzer yotsubaAnalyzer, String field, String text) {
+	static Query exactSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
+		if (USE_QUERY_BUILDER) {
+			var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
+			var luceneQuery = qb.createPhraseQuery(field, text);
+			org.apache.lucene.search.SynonymQuery synonymQuery = (org.apache.lucene.search.SynonymQuery) luceneQuery;
+			return new SynonymQuery(field,
+					synonymQuery.getTerms().stream().map(TermQuery::new).toArray(TermQuery[]::new)
+			);
+		}
+
 		try {
-			var terms = getTerms(yotsubaAnalyzer, field, text);
+			var terms = getTerms(preferredAnalyzer, field, text);
 
 			if (USE_PHRASE_QUERY) {
 				return new PhraseQuery(terms.toArray(TermPosition[]::new));
@@ -51,8 +71,8 @@ public interface Query extends SerializedQueryObject {
 		}
 	}
 
-	private static List<TermPosition> getTerms(TextFieldsAnalyzer yotsubaAnalyzer, String field, String text) throws IOException {
-		Analyzer analyzer = LuceneUtils.getAnalyzer(yotsubaAnalyzer);
+	private static List<TermPosition> getTerms(TextFieldsAnalyzer preferredAnalyzer, String field, String text) throws IOException {
+		Analyzer analyzer = LuceneUtils.getAnalyzer(preferredAnalyzer);
 		TokenStream ts = analyzer.tokenStream(field, new StringReader(text));
 		return getTerms(ts, field);
 	}

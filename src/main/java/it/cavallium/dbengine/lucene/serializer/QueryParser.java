@@ -15,11 +15,13 @@ import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.SynonymQuery;
 import org.apache.lucene.search.TermQuery;
 
 public class QueryParser {
 
 	static final boolean USE_PHRASE_QUERY = true;
+	static final boolean USE_QUERY_BUILDER = true;
 
 	public static Query parse(String text) throws ParseException {
 		try {
@@ -69,10 +71,6 @@ public class QueryParser {
 
 		String toParse = text.substring(index, index + len);
 		switch (type) {
-			case TERM_QUERY:
-				Term term = (Term) parse(completeText, position);
-				assert term != null;
-				return new TermQuery(term);
 			case BOOST_QUERY:
 				Query query = (Query) parse(completeText, position);
 				Float numb = (Float) parse(completeText, position);
@@ -101,6 +99,18 @@ public class QueryParser {
 					}
 				}
 				return pqB.build();
+			case SYNONYM_QUERY:
+				var fieldName = (String) parse(completeText, position);
+				var pqB2 = new SynonymQuery.Builder(fieldName);
+				TermQuery[] pqTerms2
+						= (TermQuery[]) parse(completeText, position);
+				assert pqTerms2 != null;
+				for (TermQuery pqTerm : pqTerms2) {
+					if (pqTerm != null) {
+						pqB2.addTerm(pqTerm.getTerm());
+					}
+				}
+				return pqB2.build();
 			case BOOLEAN_QUERY:
 				var bqB = new BooleanQuery.Builder();
 				//noinspection ConstantConditions
@@ -168,6 +178,10 @@ public class QueryParser {
 				Integer intX3 = (Integer) parse(completeText, position);
 				assert intX3 != null;
 				return new TermPosition(term1, intX3);
+			case TERM_QUERY:
+				Term term2 = (Term) parse(completeText, position);
+				assert term2 != null;
+				return new TermQuery(term2);
 			case FLOAT:
 				position.addAndGet(toParse.length());
 				return Float.parseFloat(toParse);
@@ -200,7 +214,7 @@ public class QueryParser {
 					result1[i] = (TermPosition) parse(completeText, position);
 				}
 				return result1;
-			case BOOLEAN_QUERY_INFO_LIST:
+			case TERM_QUERY_LIST:
 				int termsCount2;
 				StringBuilder termsCountBuilder2 = new StringBuilder();
 				var it2 = toParse.chars().iterator();
@@ -215,11 +229,31 @@ public class QueryParser {
 				}
 				termsCount2 = Integer.parseInt(termsCountBuilder2.toString());
 
-				var result2 = new BooleanQueryInfo[termsCount2];
+				var result2 = new TermQuery[termsCount2];
 				for (int i = 0; i < termsCount2; i++) {
-					result2[i] = (BooleanQueryInfo) parse(completeText, position);
+					result2[i] = (TermQuery) parse(completeText, position);
 				}
 				return result2;
+			case BOOLEAN_QUERY_INFO_LIST:
+				int termsCount3;
+				StringBuilder termsCountBuilder3 = new StringBuilder();
+				var it3 = toParse.chars().iterator();
+				while (it3.hasNext()) {
+					char character = (char) it3.nextInt();
+					position.incrementAndGet();
+					if (character == '|') {
+						break;
+					} else {
+						termsCountBuilder3.append(character);
+					}
+				}
+				termsCount3 = Integer.parseInt(termsCountBuilder3.toString());
+
+				var result3 = new BooleanQueryInfo[termsCount3];
+				for (int i = 0; i < termsCount3; i++) {
+					result3[i] = (BooleanQueryInfo) parse(completeText, position);
+				}
+				return result3;
 			case OCCUR_MUST:
 				return BooleanClause.Occur.MUST;
 			case OCCUR_FILTER:
@@ -231,7 +265,7 @@ public class QueryParser {
 			case MATCH_ALL_DOCS_QUERY:
 				return new MatchAllDocsQuery();
 			default:
-				throw new UnsupportedOperationException("Unknown query constructor type");
+				throw new UnsupportedOperationException("Unknown query constructor type: " + type);
 		}
 	}
 

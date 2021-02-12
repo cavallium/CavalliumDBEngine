@@ -3,25 +3,28 @@ package it.cavallium.dbengine.lucene.serializer;
 import java.util.Arrays;
 import java.util.stream.Collectors;
 
-public class PhraseQuery implements Query {
+public class SynonymQuery implements Query {
 
+	private final String field;
 	// some terms can be null
-	private final TermPosition[] parts;
+	private final TermQuery[] parts;
 
-	public PhraseQuery(TermPosition... parts) {
+	public SynonymQuery(String field, TermQuery... parts) {
+		this.field = field;
 		this.parts = parts;
 	}
 
 	@Override
 	public void stringify(StringBuilder output) {
 		StringBuilder data = new StringBuilder();
+		StringifyUtils.stringifyString(data, field);
 		StringBuilder listData = new StringBuilder();
 		listData.append(parts.length).append('|');
-		for (TermPosition part : parts) {
-			StringifyUtils.stringifyTermPosition(listData, part);
+		for (TermQuery part : parts) {
+			StringifyUtils.stringifyTermQuery(listData, part);
 		}
-		StringifyUtils.writeHeader(data, QueryConstructorType.TERM_POSITION_LIST, listData);
-		StringifyUtils.writeHeader(output, QueryConstructorType.PHRASE_QUERY, data);
+		StringifyUtils.writeHeader(data, QueryConstructorType.TERM_QUERY_LIST, listData);
+		StringifyUtils.writeHeader(output, QueryConstructorType.SYNONYM_QUERY, data);
 	}
 
 	@Override

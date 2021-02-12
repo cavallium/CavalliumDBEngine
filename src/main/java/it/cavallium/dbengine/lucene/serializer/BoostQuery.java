@@ -17,4 +17,9 @@ public class BoostQuery implements Query {
 		StringifyUtils.stringifyFloat(data, boostValue);
 		StringifyUtils.writeHeader(output, QueryConstructorType.BOOST_QUERY, data);
 	}
+
+	@Override
+	public String toString() {
+		return "(" + query + " *" + boostValue + ")";
+	}
 }

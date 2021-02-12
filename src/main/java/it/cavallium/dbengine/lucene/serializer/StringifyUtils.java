@@ -35,6 +35,12 @@ public class StringifyUtils {
 		writeHeader(output, QueryConstructorType.TERM, data);
 	}
 
+	public static void stringifyTermQuery(StringBuilder output, TermQuery value) {
+		var data = new StringBuilder();
+		stringifyTerm(data, value.getTerm());
+		writeHeader(output, QueryConstructorType.TERM_QUERY, data);
+	}
+
 	public static void stringifyTermPosition(StringBuilder output, TermPosition value) {
 		var data = new StringBuilder();
 		stringifyTerm(data, value.getTerm());

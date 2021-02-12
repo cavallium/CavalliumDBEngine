@@ -94,7 +94,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			ValueGetter<T, U> valueGetter) {
 		var mappedKeys = llSearchResult
 				.results()
-				.map(flux -> flux.flatMap(item -> {
+				.map(flux -> flux.flatMapSequential(item -> {
 					var key = indicizer.getKey(item.getKey());
 					return valueGetter.get(key).map(value -> new SearchResultItem<>(key, value, item.getScore()));
 				}));

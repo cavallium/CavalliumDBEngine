@@ -2,8 +2,9 @@ package it.cavallium.dbengine.client;
 
 import java.util.Objects;
 import java.util.StringJoiner;
+import org.jetbrains.annotations.NotNull;
 
-public class SearchResultItem<T, U> {
+public class SearchResultItem<T, U> implements Comparable<SearchResultItem<T, U>> {
 	private final T key;
 	private final U value;
 	private final float score;
@@ -50,5 +51,10 @@ public class SearchResultItem<T, U> {
 				.add("value=" + value)
 				.add("score=" + score)
 				.toString();
+	}
+
+	@Override
+	public int compareTo(@NotNull SearchResultItem<T, U> o) {
+		return Float.compare(o.score, this.score);
 	}
 }

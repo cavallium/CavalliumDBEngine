@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
+import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingle;
 import it.cavallium.dbengine.database.collections.SubStageGetterSingleBytes;
@@ -36,7 +37,7 @@ public class CodecsExample {
 	private static void testConversionSpeed() {
 		SpeedExample.test("No-Op Conversion",
 				tempDb(true)
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> Tuples.of(DatabaseMapDictionaryDeep.simple(dict,
 								SerializerFixedBinaryLength.longSerializer(),
 								new SubStageGetterSingleBytes()
@@ -59,7 +60,7 @@ public class CodecsExample {
 		).then(
 				SpeedExample.test("Conversion",
 						tempDb(true)
-								.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+								.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 								.map(tuple -> tuple.mapT2(dict -> Tuples.of(DatabaseMapDictionaryDeep.simple(dict,
 										SerializerFixedBinaryLength.longSerializer(),
 										getOldSubStageGetter()
@@ -109,7 +110,7 @@ public class CodecsExample {
 
 	private static Mono<Void> readNew() {
 		return tempDb(false)
-				.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+				.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 				.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict,
 						SerializerFixedBinaryLength.longSerializer(),
 						getNewSubStageGetter()
@@ -129,7 +130,7 @@ public class CodecsExample {
 	private static Mono<Void> writeOld() {
 
 		return tempDb(true)
-				.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+				.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 				.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict,
 						SerializerFixedBinaryLength.longSerializer(),
 						getOldSubStageGetter()

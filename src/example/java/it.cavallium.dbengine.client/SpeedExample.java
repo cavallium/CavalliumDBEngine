@@ -26,6 +26,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
@@ -48,6 +49,8 @@ public class SpeedExample {
 				.then(testPutMulti())
 				.then(testPutValue(4))
 				.then(testPutValue(16 * 1024))
+				.then(testUpdateValue(4))
+				.then(testUpdateValue(16 * 1024))
 				.then(testAtPut())
 				.then(test2LevelPut())
 				.then(test3LevelPut())
@@ -248,6 +251,35 @@ public class SpeedExample {
 										System.out.println("Setting new value at key " + Arrays.toString(itemKey) + ": " + Arrays.toString(newValue));
 								})
 								.then(tuple.getT2().putValue(itemKey, newValue))
+						))
+						.then(),
+				numRepeats,
+				tuple -> tuple.getT1().close());
+	}
+
+	private static Mono<Void> testUpdateValue(int valSize) {
+		var ssg = new SubStageGetterSingleBytes();
+		var ser = SerializerFixedBinaryLength.noop(4);
+		var itemKey = new byte[]{0, 1, 2, 3};
+		var newValue1 = new byte[valSize];
+		var newValue2 = new byte[valSize];
+		for (int i = 0; i < valSize; i++) {
+			newValue1[i] = (byte) ((i * 13) % 256);
+			newValue2[i] = (byte) ((i * 11) % 256);
+		};
+		return test("MapDictionaryDeep::updateValue (same key, alternating value, " + valSize + " bytes, " + batchSize + " times)",
+				tempDb()
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.ALLOW).map(dict -> Tuples.of(db, dict)))
+						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
+				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
+						.defer(() -> tuple.getT2().updateValue(itemKey, (old) -> {
+									if (old.isPresent()) {
+										if (Arrays.equals(old.get(), newValue1)) {
+											return Optional.of(newValue2);
+										}
+									}
+									return Optional.of(newValue1);
+								})
 						))
 						.then(),
 				numRepeats,

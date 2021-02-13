@@ -125,8 +125,8 @@ public class LLLocalDictionary implements LLDictionary {
 					long stamp;
 					if (updateMode == UpdateMode.ALLOW) {
 						lock = itemsLock.getAt(getLockIndex(key));
-						//noinspection BlockingMethodInNonBlockingContext
-						stamp = lock.readLockInterruptibly();
+						
+						stamp = lock.readLock();
 					} else {
 						lock = null;
 						stamp = 0;
@@ -194,8 +194,8 @@ public class LLLocalDictionary implements LLDictionary {
 					long stamp;
 					if (updateMode == UpdateMode.ALLOW) {
 						lock = itemsLock.getAt(getLockIndex(key));
-						//noinspection BlockingMethodInNonBlockingContext
-						stamp = lock.readLockInterruptibly();
+						
+						stamp = lock.readLock();
 					} else {
 						lock = null;
 						stamp = 0;
@@ -230,8 +230,8 @@ public class LLLocalDictionary implements LLDictionary {
 							long stamp;
 							if (updateMode == UpdateMode.ALLOW) {
 								lock = itemsLock.getAt(getLockIndex(key));
-								//noinspection BlockingMethodInNonBlockingContext
-								stamp = lock.writeLockInterruptibly();
+								
+								stamp = lock.writeLock();
 							} else {
 								lock = null;
 								stamp = 0;
@@ -261,8 +261,8 @@ public class LLLocalDictionary implements LLDictionary {
 							long stamp;
 							if (updateMode == UpdateMode.ALLOW) {
 								lock = itemsLock.getAt(getLockIndex(key));
-								//noinspection BlockingMethodInNonBlockingContext
-								stamp = lock.readLockInterruptibly();
+								
+								stamp = lock.readLock();
 							} else {
 								lock = null;
 								stamp = 0;
@@ -270,6 +270,7 @@ public class LLLocalDictionary implements LLDictionary {
 							try {
 								logger.trace("Reading {}", key);
 								while (true) {
+									boolean changed = false;
 									Optional<byte[]> prevData;
 									var prevDataHolder = new Holder<byte[]>();
 									if (db.keyMayExist(cfh, key, prevDataHolder)) {
@@ -282,15 +283,16 @@ public class LLLocalDictionary implements LLDictionary {
 										prevData = Optional.empty();
 									}
 
-									boolean changed = false;
 									Optional<byte[]> newData = value.apply(prevData);
 									if (prevData.isPresent() && newData.isEmpty()) {
 										if (updateMode == UpdateMode.ALLOW) {
 											var ws = lock.tryConvertToWriteLock(stamp);
-											if (ws == 0) {
+											if (ws != 0) {
+												stamp = ws;
+											} else {
 												lock.unlockRead(stamp);
-												//noinspection BlockingMethodInNonBlockingContext
-												stamp = lock.writeLockInterruptibly();
+
+												stamp = lock.writeLock();
 												continue;
 											}
 										}
@@ -301,10 +303,12 @@ public class LLLocalDictionary implements LLDictionary {
 											&& (prevData.isEmpty() || !Arrays.equals(prevData.get(), newData.get()))) {
 										if (updateMode == UpdateMode.ALLOW) {
 											var ws = lock.tryConvertToWriteLock(stamp);
-											if (ws == 0) {
+											if (ws != 0) {
+												stamp = ws;
+											} else {
 												lock.unlockRead(stamp);
-												//noinspection BlockingMethodInNonBlockingContext
-												stamp = lock.writeLockInterruptibly();
+
+												stamp = lock.writeLock();
 												continue;
 											}
 										}
@@ -333,8 +337,8 @@ public class LLLocalDictionary implements LLDictionary {
 							long stamp;
 							if (updateMode == UpdateMode.ALLOW) {
 								lock = itemsLock.getAt(getLockIndex(key));
-								//noinspection BlockingMethodInNonBlockingContext
-								stamp = lock.writeLockInterruptibly();
+								
+								stamp = lock.writeLock();
 							} else {
 								lock = null;
 								stamp = 0;
@@ -366,8 +370,8 @@ public class LLLocalDictionary implements LLDictionary {
 								long stamp;
 								if (updateMode == UpdateMode.ALLOW) {
 									lock = itemsLock.getAt(getLockIndex(key));
-									//noinspection BlockingMethodInNonBlockingContext
-									stamp = lock.readLockInterruptibly();
+									
+									stamp = lock.readLock();
 								} else {
 									lock = null;
 									stamp = 0;
@@ -413,8 +417,8 @@ public class LLLocalDictionary implements LLDictionary {
 										locks = itemsLock.bulkGetAt(getLockIndices(keysWindow));
 										stamps = new ArrayList<>();
 										for (var lock : locks) {
-											//noinspection BlockingMethodInNonBlockingContext
-											stamps.add(lock.readLockInterruptibly());
+											
+											stamps.add(lock.readLock());
 										}
 									} else {
 										locks = null;
@@ -466,7 +470,7 @@ public class LLLocalDictionary implements LLDictionary {
 								locks = itemsLock.bulkGetAt(getLockIndicesEntries(entriesWindow));
 								stamps = new ArrayList<>();
 								for (var lock : locks) {
-									stamps.add(lock.writeLockInterruptibly());
+									stamps.add(lock.writeLock());
 								}
 							} else {
 								locks = null;

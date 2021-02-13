@@ -5,6 +5,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.UpdateMode;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
@@ -47,7 +48,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int MULTI_GET_WINDOW = 500;
 	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
 
-	private static final int STRIPES = 512;
+	private static final int STRIPES = 65536;
 	private static final byte[] FIRST_KEY = new byte[]{};
 	private static final byte[] NO_DATA = new byte[0];
 	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
@@ -57,12 +58,14 @@ public class LLLocalDictionary implements LLDictionary {
 	private final Scheduler dbScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final Striped<StampedLock> itemsLock = Striped.readWriteStampedLock(STRIPES);
+	private final UpdateMode updateMode;
 
 	public LLLocalDictionary(@NotNull RocksDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
 			Scheduler dbScheduler,
-			Function<LLSnapshot, Snapshot> snapshotResolver) {
+			Function<LLSnapshot, Snapshot> snapshotResolver,
+			UpdateMode updateMode) {
 		Objects.requireNonNull(db);
 		this.db = db;
 		Objects.requireNonNull(columnFamilyHandle);
@@ -70,6 +73,7 @@ public class LLLocalDictionary implements LLDictionary {
 		this.databaseName = databaseName;
 		this.dbScheduler = dbScheduler;
 		this.snapshotResolver = snapshotResolver;
+		this.updateMode = updateMode;
 	}
 
 	@Override
@@ -117,9 +121,16 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) {
 		return Mono
 				.fromCallable(() -> {
-					var lock = itemsLock.getAt(getLockIndex(key));
-					//noinspection BlockingMethodInNonBlockingContext
-					var stamp = lock.readLockInterruptibly();
+					StampedLock lock;
+					long stamp;
+					if (updateMode == UpdateMode.ALLOW) {
+						lock = itemsLock.getAt(getLockIndex(key));
+						//noinspection BlockingMethodInNonBlockingContext
+						stamp = lock.readLockInterruptibly();
+					} else {
+						lock = null;
+						stamp = 0;
+					}
 					try {
 						logger.trace("Reading {}", key);
 						Holder<byte[]> data = new Holder<>();
@@ -133,7 +144,9 @@ public class LLLocalDictionary implements LLDictionary {
 							return null;
 						}
 					} finally {
-						lock.unlockRead(stamp);
+						if (updateMode == UpdateMode.ALLOW) {
+							lock.unlockRead(stamp);
+						}
 					}
 				})
 				.onErrorMap(IOException::new)
@@ -177,9 +190,16 @@ public class LLLocalDictionary implements LLDictionary {
 	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, byte[] key) {
 		return Mono
 				.fromCallable(() -> {
-					var lock = itemsLock.getAt(getLockIndex(key));
-					//noinspection BlockingMethodInNonBlockingContext
-					var stamp = lock.readLockInterruptibly();
+					StampedLock lock;
+					long stamp;
+					if (updateMode == UpdateMode.ALLOW) {
+						lock = itemsLock.getAt(getLockIndex(key));
+						//noinspection BlockingMethodInNonBlockingContext
+						stamp = lock.readLockInterruptibly();
+					} else {
+						lock = null;
+						stamp = 0;
+					}
 					try {
 						int size = RocksDB.NOT_FOUND;
 						Holder<byte[]> data = new Holder<>();
@@ -192,7 +212,9 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						return size != RocksDB.NOT_FOUND;
 					} finally {
-						lock.unlockRead(stamp);
+						if (updateMode == UpdateMode.ALLOW) {
+							lock.unlockRead(stamp);
+						}
 					}
 				})
 				.onErrorMap(IOException::new)
@@ -204,15 +226,24 @@ public class LLLocalDictionary implements LLDictionary {
 		return getPrevValue(key, resultType)
 				.concatWith(Mono
 						.fromCallable(() -> {
-							var lock = itemsLock.getAt(getLockIndex(key));
-							//noinspection BlockingMethodInNonBlockingContext
-							var stamp = lock.writeLockInterruptibly();
+							StampedLock lock;
+							long stamp;
+							if (updateMode == UpdateMode.ALLOW) {
+								lock = itemsLock.getAt(getLockIndex(key));
+								//noinspection BlockingMethodInNonBlockingContext
+								stamp = lock.writeLockInterruptibly();
+							} else {
+								lock = null;
+								stamp = 0;
+							}
 							try {
 								logger.trace("Writing {}: {}", key, value);
 								db.put(cfh, key, value);
 								return null;
 							} finally {
-								lock.unlockWrite(stamp);
+								if (updateMode == UpdateMode.ALLOW) {
+									lock.unlockWrite(stamp);
+								}
 							}
 						})
 						.onErrorMap(IOException::new)
@@ -225,9 +256,17 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> value) {
 		return Mono
 						.fromCallable(() -> {
-							var lock = itemsLock.getAt(getLockIndex(key));
-							//noinspection BlockingMethodInNonBlockingContext
-							long stamp = lock.readLockInterruptibly();
+							if (updateMode == UpdateMode.DISALLOW) throw new UnsupportedOperationException("update() is disallowed");
+							StampedLock lock;
+							long stamp;
+							if (updateMode == UpdateMode.ALLOW) {
+								lock = itemsLock.getAt(getLockIndex(key));
+								//noinspection BlockingMethodInNonBlockingContext
+								stamp = lock.readLockInterruptibly();
+							} else {
+								lock = null;
+								stamp = 0;
+							}
 							try {
 								logger.trace("Reading {}", key);
 								while (true) {
@@ -246,24 +285,28 @@ public class LLLocalDictionary implements LLDictionary {
 									boolean changed = false;
 									Optional<byte[]> newData = value.apply(prevData);
 									if (prevData.isPresent() && newData.isEmpty()) {
-										var ws = lock.tryConvertToWriteLock(stamp);
-										if (ws == 0) {
-											lock.unlockRead(stamp);
-											//noinspection BlockingMethodInNonBlockingContext
-											stamp = lock.writeLockInterruptibly();
-											continue;
+										if (updateMode == UpdateMode.ALLOW) {
+											var ws = lock.tryConvertToWriteLock(stamp);
+											if (ws == 0) {
+												lock.unlockRead(stamp);
+												//noinspection BlockingMethodInNonBlockingContext
+												stamp = lock.writeLockInterruptibly();
+												continue;
+											}
 										}
 										logger.trace("Deleting {}", key);
 										changed = true;
 										db.delete(cfh, key);
 									} else if (newData.isPresent()
 											&& (prevData.isEmpty() || !Arrays.equals(prevData.get(), newData.get()))) {
-										var ws = lock.tryConvertToWriteLock(stamp);
-										if (ws == 0) {
-											lock.unlockRead(stamp);
-											//noinspection BlockingMethodInNonBlockingContext
-											stamp = lock.writeLockInterruptibly();
-											continue;
+										if (updateMode == UpdateMode.ALLOW) {
+											var ws = lock.tryConvertToWriteLock(stamp);
+											if (ws == 0) {
+												lock.unlockRead(stamp);
+												//noinspection BlockingMethodInNonBlockingContext
+												stamp = lock.writeLockInterruptibly();
+												continue;
+											}
 										}
 										logger.trace("Writing {}: {}", key, newData.get());
 										changed = true;
@@ -272,7 +315,9 @@ public class LLLocalDictionary implements LLDictionary {
 									return changed;
 								}
 							} finally {
-								lock.unlock(stamp);
+								if (updateMode == UpdateMode.ALLOW) {
+									lock.unlock(stamp);
+								}
 							}
 						})
 						.onErrorMap(IOException::new)
@@ -284,14 +329,23 @@ public class LLLocalDictionary implements LLDictionary {
 		return getPrevValue(key, resultType)
 				.concatWith(Mono
 						.fromCallable(() -> {
-							var lock = itemsLock.getAt(getLockIndex(key));
-							//noinspection BlockingMethodInNonBlockingContext
-							long stamp = lock.writeLockInterruptibly();
+							StampedLock lock;
+							long stamp;
+							if (updateMode == UpdateMode.ALLOW) {
+								lock = itemsLock.getAt(getLockIndex(key));
+								//noinspection BlockingMethodInNonBlockingContext
+								stamp = lock.writeLockInterruptibly();
+							} else {
+								lock = null;
+								stamp = 0;
+							}
 							try {
 								db.delete(cfh, key);
 								return null;
 							} finally {
-								lock.unlockWrite(stamp);
+								if (updateMode == UpdateMode.ALLOW) {
+									lock.unlockWrite(stamp);
+								}
 							}
 						})
 						.onErrorMap(IOException::new)
@@ -308,9 +362,16 @@ public class LLLocalDictionary implements LLDictionary {
 				case PREVIOUS_VALUE:
 					return Mono
 							.fromCallable(() -> {
-								var lock = itemsLock.getAt(getLockIndex(key));
-								//noinspection BlockingMethodInNonBlockingContext
-								long stamp = lock.readLockInterruptibly();
+								StampedLock lock;
+								long stamp;
+								if (updateMode == UpdateMode.ALLOW) {
+									lock = itemsLock.getAt(getLockIndex(key));
+									//noinspection BlockingMethodInNonBlockingContext
+									stamp = lock.readLockInterruptibly();
+								} else {
+									lock = null;
+									stamp = 0;
+								}
 								try {
 									logger.trace("Reading {}", key);
 									var data = new Holder<byte[]>();
@@ -324,7 +385,9 @@ public class LLLocalDictionary implements LLDictionary {
 										return null;
 									}
 								} finally {
-									lock.unlockRead(stamp);
+									if (updateMode == UpdateMode.ALLOW) {
+										lock.unlockRead(stamp);
+									}
 								}
 							})
 							.onErrorMap(IOException::new)
@@ -344,11 +407,18 @@ public class LLLocalDictionary implements LLDictionary {
 				.flatMap(keysWindowFlux -> keysWindowFlux.collectList()
 						.flatMapMany(keysWindow -> Mono
 								.fromCallable(() -> {
-									var locks = itemsLock.bulkGetAt(getLockIndices(keysWindow));
-									ArrayList<Long> stamps = new ArrayList<>();
-									for (var lock : locks) {
-										//noinspection BlockingMethodInNonBlockingContext
-										stamps.add(lock.readLockInterruptibly());
+									Iterable<StampedLock> locks;
+									ArrayList<Long> stamps;
+									if (updateMode == UpdateMode.ALLOW) {
+										locks = itemsLock.bulkGetAt(getLockIndices(keysWindow));
+										stamps = new ArrayList<>();
+										for (var lock : locks) {
+											//noinspection BlockingMethodInNonBlockingContext
+											stamps.add(lock.readLockInterruptibly());
+										}
+									} else {
+										locks = null;
+										stamps = null;
 									}
 									try {
 										var handlesArray = new ColumnFamilyHandle[keysWindow.size()];
@@ -365,10 +435,12 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										return mappedResults;
 									} finally {
-										int index = 0;
-										for (var lock : locks) {
-											lock.unlockRead(stamps.get(index));
-											index++;
+										if (updateMode == UpdateMode.ALLOW) {
+											int index = 0;
+											for (var lock : locks) {
+												lock.unlockRead(stamps.get(index));
+												index++;
+											}
 										}
 									}
 								})
@@ -388,14 +460,17 @@ public class LLLocalDictionary implements LLDictionary {
 						.getMulti(null, Flux.fromIterable(entriesWindow).map(Entry::getKey))
 						.publishOn(dbScheduler)
 						.concatWith(Mono.fromCallable(() -> {
-							var locks = itemsLock.bulkGetAt(getLockIndicesEntries(entriesWindow));
-							int i = 0;
-							for (StampedLock lock : locks) {
-								i++;
-							}
-							ArrayList<Long> stamps = new ArrayList<>();
-							for (var lock : locks) {
-								stamps.add(lock.writeLockInterruptibly());
+							Iterable<StampedLock> locks;
+							ArrayList<Long> stamps;
+							if (updateMode == UpdateMode.ALLOW) {
+								locks = itemsLock.bulkGetAt(getLockIndicesEntries(entriesWindow));
+								stamps = new ArrayList<>();
+								for (var lock : locks) {
+									stamps.add(lock.writeLockInterruptibly());
+								}
+							} else {
+								locks = null;
+								stamps = null;
 							}
 							try {
 								var batch = new CappedWriteBatch(db,
@@ -411,10 +486,12 @@ public class LLLocalDictionary implements LLDictionary {
 								batch.close();
 								return null;
 							} finally {
-								int index = 0;
-								for (var lock : locks) {
-									lock.unlockWrite(stamps.get(index));
-									index++;
+								if (updateMode == UpdateMode.ALLOW) {
+									int index = 0;
+									for (var lock : locks) {
+										lock.unlockWrite(stamps.get(index));
+										index++;
+									}
 								}
 							}
 						})));

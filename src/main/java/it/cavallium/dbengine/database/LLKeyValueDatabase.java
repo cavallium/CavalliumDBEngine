@@ -11,15 +11,15 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue);
 
-	Mono<? extends LLDictionary> getDictionary(byte[] columnName);
+	Mono<? extends LLDictionary> getDictionary(byte[] columnName, UpdateMode updateMode);
 
 	@Deprecated
-	default Mono<? extends LLDictionary> getDeprecatedSet(String name) {
-		return getDictionary(Column.deprecatedSet(name).getName().getBytes(StandardCharsets.US_ASCII));
+	default Mono<? extends LLDictionary> getDeprecatedSet(String name, UpdateMode updateMode) {
+		return getDictionary(Column.deprecatedSet(name).getName().getBytes(StandardCharsets.US_ASCII), updateMode);
 	}
 
-	default Mono<? extends LLDictionary> getDictionary(String name) {
-		return getDictionary(Column.dictionary(name).getName().getBytes(StandardCharsets.US_ASCII));
+	default Mono<? extends LLDictionary> getDictionary(String name, UpdateMode updateMode) {
+		return getDictionary(Column.dictionary(name).getName().getBytes(StandardCharsets.US_ASCII), updateMode);
 	}
 
 	default Mono<DatabaseInt> getInteger(String singletonListName, String name, int defaultValue) {

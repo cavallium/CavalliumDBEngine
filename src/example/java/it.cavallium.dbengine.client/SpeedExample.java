@@ -45,7 +45,8 @@ public class SpeedExample {
 		rangeTestPutMultiSame()
 				.then(rangeTestPutMultiProgressive())
 				.then(testPutMulti())
-				.then(testPutValue())
+				.then(testPutValue(4))
+				.then(testPutValue(16 * 1024))
 				.then(testAtPut())
 				.then(test2LevelPut())
 				.then(test3LevelPut())
@@ -227,12 +228,15 @@ public class SpeedExample {
 				tuple -> tuple.getT1().close());
 	}
 
-	private static Mono<Void> testPutValue() {
+	private static Mono<Void> testPutValue(int valSize) {
 		var ssg = new SubStageGetterSingleBytes();
 		var ser = SerializerFixedBinaryLength.noop(4);
 		var itemKey = new byte[]{0, 1, 2, 3};
-		var newValue = new byte[]{4, 5, 6, 7};
-		return test("MapDictionaryDeep::putValue (same key, same value, " + batchSize + " times)",
+		var newValue = new byte[valSize];
+		for (int i = 0; i < valSize; i++) {
+			newValue[i] = (byte) ((i * 13) % 256);
+		};
+		return test("MapDictionaryDeep::putValue (same key, same value, " + valSize + " bytes, " + batchSize + " times)",
 				tempDb()
 						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
@@ -399,7 +403,7 @@ public class SpeedExample {
 	}
 
 	public static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
-		var wrkspcPath = Path.of("/tmp/tempdb/");
+		var wrkspcPath = Path.of("/home/ubuntu/.cache/tempdb/");
 		return Mono
 				.fromCallable(() -> {
 					if (Files.exists(wrkspcPath)) {

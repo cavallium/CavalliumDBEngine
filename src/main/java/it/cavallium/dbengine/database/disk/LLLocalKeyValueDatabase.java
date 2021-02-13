@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.UpdateMode;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -290,13 +291,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<LLLocalDictionary> getDictionary(byte[] columnName) {
+	public Mono<LLLocalDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
 		return Mono
 				.fromCallable(() -> new LLLocalDictionary(db,
 						handles.get(Column.special(Column.toString(columnName))),
 						name,
 						dbScheduler,
-						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber())
+						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
+						updateMode
 				))
 				.subscribeOn(dbScheduler);
 	}

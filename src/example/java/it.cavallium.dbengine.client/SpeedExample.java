@@ -4,6 +4,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
+import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
@@ -62,7 +63,7 @@ public class SpeedExample {
 		var ssg = new SubStageGetterMap<byte[], byte[]>(k2ser, vser);
 		return test("2 level put",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.deepTail(dict,
 								k1ser,
 								ssg.getKeyBinaryLength(),
@@ -102,7 +103,7 @@ public class SpeedExample {
 		var ssg2 = new SubStageGetterMapDeep<>(ssg3, k2ser, ssg3.getKeyBinaryLength());
 		return test("3 level put",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> {
 							return DatabaseMapDictionaryDeep
 									.deepTail(dict, k1ser, ssg2.getKeyBinaryLength(), ssg2);
@@ -144,7 +145,7 @@ public class SpeedExample {
 		var ssg2 = new SubStageGetterMapDeep<>(ssg3, k2ser, ssg3.getKeyBinaryLength());
 		return test("4 level put",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep
 								.deepTail(dict, k1ser, ssg2.getKeyBinaryLength(), ssg2))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> {
@@ -182,7 +183,7 @@ public class SpeedExample {
 		var newValue = new byte[]{4, 5, 6, 7};
 		return test("MapDictionaryDeep::at::put (same key, same value, " + batchSize + " times)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -209,7 +210,7 @@ public class SpeedExample {
 		var newValue = new byte[]{4, 5, 6, 7};
 		return test("MapDictionaryDeep::putValueAndGetPrevious (same key, same value, " + batchSize + " times)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -238,7 +239,7 @@ public class SpeedExample {
 		};
 		return test("MapDictionaryDeep::putValue (same key, same value, " + valSize + " bytes, " + batchSize + " times)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -263,7 +264,7 @@ public class SpeedExample {
 		var putMultiFlux = Flux.fromIterable(keysToPut.entrySet());
 		return test("MapDictionaryDeep::putMulti (batch of " + batchSize + " entries)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionaryDeep.simple(dict, ser, ssg))),
 				tuple -> Mono.defer(() -> tuple.getT2().putMulti(putMultiFlux)),
 				numRepeats,
@@ -282,7 +283,7 @@ public class SpeedExample {
 		var newValue = new byte[]{4, 5, 6, 7};
 		return test("MapDictionary::at::put (same key, same value, " + batchSize + " times)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -309,7 +310,7 @@ public class SpeedExample {
 		var newValue = new byte[]{4, 5, 6, 7};
 		return test("MapDictionary::putValueAndGetPrevious (same key, same value, " + batchSize + " times)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -335,7 +336,7 @@ public class SpeedExample {
 		var newValue = new byte[]{4, 5, 6, 7};
 		return test("MapDictionary::putValue (same key, same value, " + batchSize + " times)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
 				tuple -> Flux.range(0, batchSize).flatMap(n -> Mono
 						.defer(() -> Mono
@@ -359,7 +360,7 @@ public class SpeedExample {
 		}
 		return test("MapDictionary::putMulti (same keys, batch of " + batchSize + " entries)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
 				tuple -> Mono
 						.defer(() -> tuple.getT2().putMulti(Flux.fromIterable(keysToPut.entrySet()))
@@ -379,7 +380,7 @@ public class SpeedExample {
 		AtomicInteger ai = new AtomicInteger(0);
 		return test("MapDictionary::putMulti (progressive keys, batch of " + batchSize + " entries)",
 				tempDb()
-						.flatMap(db -> db.getDictionary("testmap").map(dict -> Tuples.of(db, dict)))
+						.flatMap(db -> db.getDictionary("testmap", UpdateMode.DISALLOW).map(dict -> Tuples.of(db, dict)))
 						.map(tuple -> tuple.mapT2(dict -> DatabaseMapDictionary.simple(dict, ser, vser))),
 				tuple -> Mono
 						.defer(() -> {

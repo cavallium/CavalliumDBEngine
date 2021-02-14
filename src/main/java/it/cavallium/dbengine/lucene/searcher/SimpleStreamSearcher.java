@@ -1,13 +1,11 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -27,6 +25,7 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
@@ -41,24 +40,14 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 		for (ScoreDoc hit : hits) {
 			int docId = hit.doc;
 			float score = hit.score;
-			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
-			if (d.getFields().isEmpty()) {
-				logger.error("The document docId: {}, score: {} is empty.", docId, score);
-				var realFields = indexSearcher.doc(docId).getFields();
-				if (!realFields.isEmpty()) {
-					logger.error("Present fields:");
-					for (IndexableField field : realFields) {
-						logger.error(" - {}", field.name());
-					}
-				}
-			} else {
-				var field = d.getField(keyFieldName);
-				if (field == null) {
-					logger.error("Can't get key of document docId: {}, score: {}", docId, score);
-				} else {
-					resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
-				}
-			}
+			LuceneUtils.collectTopDoc(logger,
+					docId,
+					score,
+					minCompetitiveScore,
+					indexSearcher,
+					keyFieldName,
+					resultsConsumer
+			);
 		}
 	}
 }

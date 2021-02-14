@@ -1,12 +1,19 @@
 package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.client.MultiSort;
+import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.LLSort;
+import it.cavallium.dbengine.database.LLSortType;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
+import java.io.IOException;
+import java.util.Set;
+import java.util.function.Consumer;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
@@ -14,7 +21,10 @@ import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
 import org.apache.lucene.analysis.en.KStemFilter;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.misc.SweetSpotSimilarity;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.Similarity;
@@ -24,6 +34,7 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
+import org.slf4j.Logger;
 import reactor.core.publisher.Flux;
 
 public class LuceneUtils {
@@ -178,5 +189,40 @@ public class LuceneUtils {
 				return mergedFlux.take(limit);
 			}
 		});
+	}
+
+	public static void checkScoringArgumentsValidity(LLSort sort, LLScoreMode scoreMode) {
+		if ((sort == null || sort.getType() != LLSortType.SCORE) && scoreMode != LLScoreMode.COMPLETE_NO_SCORES) {
+			throw new IllegalArgumentException("You must sort by score if the scores are enabled");
+		}
+	}
+
+	public static void collectTopDoc(Logger logger,
+			int docId,
+			float score,
+			Float minCompetitiveScore,
+			IndexSearcher indexSearcher,
+			String keyFieldName,
+			Consumer<LLKeyScore> resultsConsumer) throws IOException {
+		if (minCompetitiveScore == null || score >= minCompetitiveScore) {
+			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
+			if (d.getFields().isEmpty()) {
+				logger.error("The document docId: {}, score: {} is empty.", docId, score);
+				var realFields = indexSearcher.doc(docId).getFields();
+				if (!realFields.isEmpty()) {
+					logger.error("Present fields:");
+					for (IndexableField field : realFields) {
+						logger.error(" - {}", field.name());
+					}
+				}
+			} else {
+				var field = d.getField(keyFieldName);
+				if (field == null) {
+					logger.error("Can't get key of document docId: {}, score: {}", docId, score);
+				} else {
+					resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
+				}
+			}
+		}
 	}
 }

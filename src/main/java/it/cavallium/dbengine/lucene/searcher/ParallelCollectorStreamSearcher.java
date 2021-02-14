@@ -27,6 +27,7 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
@@ -36,7 +37,7 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 
 		AtomicInteger currentCount = new AtomicInteger();
 
-		LuceneParallelStreamCollectorResult result = indexSearcher.search(query, LuceneParallelStreamCollectorManager.fromConsumer(scoreMode, (docId, score) -> {
+		LuceneParallelStreamCollectorResult result = indexSearcher.search(query, LuceneParallelStreamCollectorManager.fromConsumer(scoreMode, minCompetitiveScore, (docId, score) -> {
 			if (currentCount.getAndIncrement() >= limit) {
 				return false;
 			} else {

@@ -4,6 +4,7 @@ import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -34,7 +35,14 @@ public class IndicizationExample {
 								})
 						)
 						.then(index.refresh())
-						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.N4GramPartialString,"name", "Mario"), 1, null, LLScoreMode.COMPLETE, "id"))
+						.then(index.search(null,
+								Query.exactSearch(TextFieldsAnalyzer.N4GramPartialString, "name", "Mario"),
+								1,
+								LLSort.newSortScore(),
+								LLScoreMode.COMPLETE,
+								null,
+								"id"
+						))
 						.flatMap(results -> results
 								.results()
 								.flatMap(r -> r)
@@ -99,7 +107,7 @@ public class IndicizationExample {
 								))
 						.then(index.refresh())
 						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.N4GramPartialString,"name", "Mario"), 10, MultiSort.topScore()
-								.getQuerySort(), LLScoreMode.COMPLETE, "id"))
+								.getQuerySort(), LLScoreMode.COMPLETE, null, "id"))
 						.flatMap(results -> LuceneUtils.mergeStream(results
 								.results(), MultiSort.topScoreRaw(), 10)
 								.doOnNext(value -> System.out.println("Value: " + value))

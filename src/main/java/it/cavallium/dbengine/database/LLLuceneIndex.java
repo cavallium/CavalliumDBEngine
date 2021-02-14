@@ -34,6 +34,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
 			int limit,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName);
 
 	/**
@@ -48,10 +49,11 @@ public interface LLLuceneIndex extends LLSnapshottable {
 			int limit,
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName);
 
 	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
-		return this.search(snapshot, query, 0, null, null, null)
+		return this.search(snapshot, query, 0, null, null, null, null)
 				.flatMap(LLSearchResult::totalHitsCount)
 				.single();
 	}

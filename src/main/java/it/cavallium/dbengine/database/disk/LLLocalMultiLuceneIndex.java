@@ -204,6 +204,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
 			int limit,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName) {
 		long actionId;
 		int scoreDivisor;
@@ -222,7 +223,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					)
 					.flatMap(tuple -> tuple
 							.getT1()
-							.distributedPreMoreLikeThis(tuple.getT2().orElse(null), mltDocumentFieldsShared, keyFieldName, actionId)
+							.distributedPreMoreLikeThis(tuple.getT2().orElse(null),
+									mltDocumentFieldsShared,
+									minCompetitiveScore,
+									keyFieldName,
+									actionId
+							)
 					)
 					.then();
 		} else {
@@ -243,6 +249,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								.distributedMoreLikeThis(tuple.getT2().orElse(null),
 										mltDocumentFieldsShared,
 										limit,
+										minCompetitiveScore,
 										keyFieldName,
 										actionId,
 										scoreDivisor
@@ -268,6 +275,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			int limit,
 			@Nullable LLSort sort,
 			LLScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName) {
 		long actionId;
 		int scoreDivisor;
@@ -288,7 +296,14 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					)
 					.flatMap(tuple -> tuple
 							.getT1()
-							.distributedPreSearch(tuple.getT2().orElse(null), query, sort, scoreMode, keyFieldName, actionId)
+							.distributedPreSearch(tuple.getT2().orElse(null),
+									query,
+									sort,
+									scoreMode,
+									minCompetitiveScore,
+									keyFieldName,
+									actionId
+							)
 					)
 					.then();
 		}
@@ -307,6 +322,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 										limit,
 										sort,
 										scoreMode,
+										minCompetitiveScore,
 										keyFieldName,
 										actionId,
 										scoreDivisor

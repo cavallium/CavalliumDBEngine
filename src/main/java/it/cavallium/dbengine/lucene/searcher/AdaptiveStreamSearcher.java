@@ -34,18 +34,46 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> consumer,
 			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit == 0) {
 			totalHitsConsumer.accept(countStreamSearcher.count(indexSearcher, query));
 		} else if (luceneSort == null && ENABLE_PARALLEL_COLLECTOR) {
-			parallelCollectorStreamSearcher.search(indexSearcher, query, limit, null, scoreMode, keyFieldName, consumer, totalHitsConsumer);
+			parallelCollectorStreamSearcher.search(indexSearcher,
+					query,
+					limit,
+					null,
+					scoreMode,
+					minCompetitiveScore,
+					keyFieldName,
+					consumer,
+					totalHitsConsumer
+			);
 		} else {
 			if (luceneSort != null && limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {
-				pagedStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, consumer, totalHitsConsumer);
+				pagedStreamSearcher.search(indexSearcher,
+						query,
+						limit,
+						luceneSort,
+						scoreMode,
+						minCompetitiveScore,
+						keyFieldName,
+						consumer,
+						totalHitsConsumer
+				);
 			} else {
-				simpleStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, consumer, totalHitsConsumer);
+				simpleStreamSearcher.search(indexSearcher,
+						query,
+						limit,
+						luceneSort,
+						scoreMode,
+						minCompetitiveScore,
+						keyFieldName,
+						consumer,
+						totalHitsConsumer
+				);
 			}
 		}
 	}

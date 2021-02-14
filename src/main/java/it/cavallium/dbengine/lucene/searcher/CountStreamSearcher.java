@@ -21,6 +21,7 @@ public class CountStreamSearcher implements LuceneStreamSearcher {
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {

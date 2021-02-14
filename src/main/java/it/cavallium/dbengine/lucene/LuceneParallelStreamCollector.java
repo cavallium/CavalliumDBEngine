@@ -8,11 +8,14 @@ import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
+import org.jetbrains.annotations.Nullable;
 
 public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 
 	private final int base;
 	private final ScoreMode scoreMode;
+	@Nullable
+	private final Float minCompetitiveScore;
 	private final LuceneParallelStreamConsumer streamConsumer;
 	private final AtomicBoolean stopped;
 	private final AtomicLong totalHitsCounter;
@@ -20,11 +23,13 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 
 	public LuceneParallelStreamCollector(int base,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			LuceneParallelStreamConsumer streamConsumer,
 			AtomicBoolean stopped,
 			AtomicLong totalHitsCounter) {
 		this.base = base;
 		this.scoreMode = scoreMode;
+		this.minCompetitiveScore = minCompetitiveScore;
 		this.streamConsumer = streamConsumer;
 		this.stopped = stopped;
 		this.totalHitsCounter = totalHitsCounter;
@@ -34,6 +39,7 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 	public final LeafCollector getLeafCollector(LeafReaderContext context) {
 		return new LuceneParallelStreamCollector(context.docBase,
 				scoreMode,
+				minCompetitiveScore,
 				streamConsumer,
 				stopped,
 				totalHitsCounter
@@ -41,8 +47,11 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 	}
 
 	@Override
-	public void setScorer(Scorable scorer) {
+	public void setScorer(Scorable scorer) throws IOException {
 		this.scorer = scorer;
+		if (minCompetitiveScore != null && !minCompetitiveScore.isNaN() && !minCompetitiveScore.isInfinite()) {
+			scorer.setMinCompetitiveScore(minCompetitiveScore);
+		}
 	}
 
 	@Override

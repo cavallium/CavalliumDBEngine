@@ -1,12 +1,10 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
-import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -34,12 +32,22 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit < MAX_ITEMS_PER_PAGE) {
 			// Use a normal search method because the limit is low
-			baseStreamSearcher.search(indexSearcher, query, limit, luceneSort, scoreMode, keyFieldName, resultsConsumer, totalHitsConsumer);
+			baseStreamSearcher.search(indexSearcher,
+					query,
+					limit,
+					luceneSort,
+					scoreMode,
+					minCompetitiveScore,
+					keyFieldName,
+					resultsConsumer,
+					totalHitsConsumer
+			);
 			return;
 		}
 		IntWrapper currentAllowedResults = new IntWrapper(limit);
@@ -49,7 +57,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 		totalHitsConsumer.accept(lastTopDocs.totalHits.value);
 		if (lastTopDocs.scoreDocs.length > 0) {
 			ScoreDoc lastScoreDoc = getLastItem(lastTopDocs.scoreDocs);
-			consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, keyFieldName, resultsConsumer);
+			consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, minCompetitiveScore, keyFieldName, resultsConsumer);
 
 			// Run the searches for each page until the end
 			boolean finished = currentAllowedResults.var <= 0;
@@ -57,7 +65,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 				lastTopDocs = indexSearcher.searchAfter(lastScoreDoc, query, MAX_ITEMS_PER_PAGE, luceneSort, scoreMode != ScoreMode.COMPLETE_NO_SCORES);
 				if (lastTopDocs.scoreDocs.length > 0) {
 					lastScoreDoc = getLastItem(lastTopDocs.scoreDocs);
-					consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, keyFieldName, resultsConsumer);
+					consumeHits(currentAllowedResults, lastTopDocs.scoreDocs, indexSearcher, minCompetitiveScore, keyFieldName, resultsConsumer);
 				}
 				if (lastTopDocs.scoreDocs.length < MAX_ITEMS_PER_PAGE || currentAllowedResults.var <= 0) {
 					finished = true;
@@ -69,6 +77,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 	private void consumeHits(IntWrapper currentAllowedResults,
 			ScoreDoc[] hits,
 			IndexSearcher indexSearcher,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer) throws IOException {
 		for (ScoreDoc hit : hits) {
@@ -76,24 +85,14 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 			float score = hit.score;
 
 			if (currentAllowedResults.var-- > 0) {
-				Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
-				if (d.getFields().isEmpty()) {
-					logger.error("The document docId: {}, score: {} is empty.", docId, score);
-					var realFields = indexSearcher.doc(docId).getFields();
-					if (!realFields.isEmpty()) {
-						logger.error("Present fields:");
-						for (IndexableField field : realFields) {
-							logger.error(" - {}", field.name());
-						}
-					}
-				} else {
-					var field = d.getField(keyFieldName);
-					if (field == null) {
-						logger.error("Can't get key of document docId: {}, score: {}", docId, score);
-					} else {
-						resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
-					}
-				}
+				LuceneUtils.collectTopDoc(logger,
+						docId,
+						score,
+						minCompetitiveScore,
+						indexSearcher,
+						keyFieldName,
+						resultsConsumer
+				);
 			} else {
 				break;
 			}

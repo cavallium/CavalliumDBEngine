@@ -23,6 +23,7 @@ public interface LuceneStreamSearcher {
 	 * @param limit the maximum number of results
 	 * @param luceneSort the sorting method used for the search
 	 * @param scoreMode score mode
+	 * @param minCompetitiveScore minimum score accepted
 	 * @param keyFieldName the name of the key field
 	 * @param resultsConsumer the consumer of results
 	 * @param totalHitsConsumer the consumer of total count of results
@@ -33,6 +34,7 @@ public interface LuceneStreamSearcher {
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException;

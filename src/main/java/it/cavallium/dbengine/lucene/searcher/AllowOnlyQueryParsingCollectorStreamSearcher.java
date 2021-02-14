@@ -3,7 +3,6 @@ package it.cavallium.dbengine.lucene.searcher;
 import it.cavallium.dbengine.database.LLKeyScore;
 import java.io.IOException;
 import java.util.Collection;
-import java.util.concurrent.CompletionException;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.apache.lucene.index.LeafReaderContext;
@@ -24,7 +23,7 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 
 	public void search(IndexSearcher indexSearcher,
 			Query query) throws IOException {
-		search(indexSearcher, query, 0, null, null, null, null, null);
+		search(indexSearcher, query, 0, null, null, null, null, null, null);
 	}
 
 	@Override
@@ -33,6 +32,7 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Consumer<LLKeyScore> resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
@@ -44,6 +44,9 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 		}
 		if (scoreMode != null) {
 			throw new IllegalArgumentException("Score mode not allowed");
+		}
+		if (minCompetitiveScore != null) {
+			throw new IllegalArgumentException("Minimum competitive score not allowed");
 		}
 		if (keyFieldName != null) {
 			throw new IllegalArgumentException("Key field name not allowed");
@@ -62,12 +65,8 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 					public LeafCollector getLeafCollector(LeafReaderContext context) {
 						return new LeafCollector() {
 							@Override
-							public void setScorer(Scorable scorer) {
-								try {
-									scorer.setMinCompetitiveScore(Float.MAX_VALUE);
-								} catch (IOException e) {
-									throw new CompletionException(e);
-								}
+							public void setScorer(Scorable scorer) throws IOException {
+								scorer.setMinCompetitiveScore(Float.MAX_VALUE);
 							}
 
 							@Override

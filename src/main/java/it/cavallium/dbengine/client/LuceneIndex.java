@@ -120,11 +120,13 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	public Mono<SearchResultKeys<T>> moreLikeThis(@Nullable CompositeSnapshot snapshot,
 			T key,
 			U mltDocumentValue,
-			int limit) {
+			int limit,
+			@Nullable Float minCompetitiveScore) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit, indicizer.getKeyFieldName())
+				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit,
+						minCompetitiveScore, indicizer.getKeyFieldName())
 				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, null, LLScoreMode.TOP_SCORES, limit));
 
 	}
@@ -140,11 +142,13 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			T key,
 			U mltDocumentValue,
 			int limit,
+			@Nullable Float minCompetitiveScore,
 			ValueGetter<T, U> valueGetter) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit, indicizer.getKeyFieldName())
+				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit,
+						minCompetitiveScore, indicizer.getKeyFieldName())
 				.map(llSearchResult ->
 						this.transformLuceneResultWithValues(llSearchResult, null, LLScoreMode.TOP_SCORES, limit, valueGetter));
 	}
@@ -160,10 +164,12 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			Query query,
 			int limit,
 			@Nullable MultiSort<SearchResultKey<T>> sort,
-			LLScoreMode scoreMode) {
+			LLScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore) {
 		LLSort querySort = sort != null ? sort.getQuerySort() : null;
 		return luceneIndex
-				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, indicizer.getKeyFieldName())
+				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, minCompetitiveScore,
+						indicizer.getKeyFieldName())
 				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, sort, scoreMode, limit));
 	}
 
@@ -179,15 +185,17 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			int limit,
 			@Nullable MultiSort<SearchResultItem<T, U>> sort,
 			LLScoreMode scoreMode,
+			@Nullable Float minCompetitiveScore,
 			ValueGetter<T, U> valueGetter) {
 		LLSort querySort = sort != null ? sort.getQuerySort() : null;
 		return luceneIndex
-				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, indicizer.getKeyFieldName())
+				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, minCompetitiveScore,
+						indicizer.getKeyFieldName())
 				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult, sort, scoreMode, limit, valueGetter));
 	}
 
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this.search(snapshot, query, 0, null, null)
+		return this.search(snapshot, query, 0, null, null, null)
 				.flatMap(SearchResultKeys::totalHitsCount)
 				.single();
 	}

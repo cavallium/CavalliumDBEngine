@@ -71,7 +71,6 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 
 							@Override
 							public void collect(int doc) {
-								System.out.println(doc);
 							}
 						};
 					}

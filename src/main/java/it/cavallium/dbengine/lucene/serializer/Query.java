@@ -81,7 +81,6 @@ public interface Query extends SerializedQueryObject {
 			var queryParts = new ArrayList<BooleanQueryPart>();
 			for (BooleanClause booleanClause : booleanQuery) {
 				org.apache.lucene.search.Query queryPartQuery = booleanClause.getQuery();
-				System.out.println(queryPartQuery);
 
 				Occur occur;
 				switch (booleanClause.getOccur()) {

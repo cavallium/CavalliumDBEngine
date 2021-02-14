@@ -48,7 +48,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int MULTI_GET_WINDOW = 500;
 	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
 
-	private static final int STRIPES = 65536;
+	private static final int STRIPES = 512;
 	private static final byte[] FIRST_KEY = new byte[]{};
 	private static final byte[] NO_DATA = new byte[0];
 	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();

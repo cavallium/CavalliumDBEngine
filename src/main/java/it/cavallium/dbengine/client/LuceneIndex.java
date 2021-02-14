@@ -80,16 +80,21 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 
 	private SearchResultKeys<T> transformLuceneResult(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultKey<T>> sort,
+			LLScoreMode scoreMode,
 			@Nullable Integer limit) {
 		var mappedKeys = llSearchResult
 				.results()
 				.map(flux -> flux.map(item -> new SearchResultKey<>(indicizer.getKey(item.getKey()), item.getScore())));
+		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
+			sort = MultiSort.topScore();
+		}
 		var sortedKeys = LuceneUtils.mergeStream(mappedKeys, sort, limit);
 		return new SearchResultKeys<>(llSearchResult.totalHitsCount(), sortedKeys);
 	}
 
 	private SearchResult<T, U> transformLuceneResultWithValues(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultItem<T, U>> sort,
+			LLScoreMode scoreMode,
 			@Nullable Integer limit,
 			ValueGetter<T, U> valueGetter) {
 		var mappedKeys = llSearchResult
@@ -98,6 +103,9 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 					var key = indicizer.getKey(item.getKey());
 					return valueGetter.get(key).map(value -> new SearchResultItem<>(key, value, item.getScore()));
 				}));
+		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
+			sort = MultiSort.topScoreWithValues();
+		}
 		var sortedKeys = LuceneUtils.mergeStream(mappedKeys, sort, limit);
 		return new SearchResult<>(llSearchResult.totalHitsCount(), sortedKeys);
 	}
@@ -117,7 +125,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit, indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, MultiSort.topScore(), limit));
+				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, null, LLScoreMode.TOP_SCORES, limit));
 
 	}
 
@@ -138,7 +146,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit, indicizer.getKeyFieldName())
 				.map(llSearchResult ->
-						this.transformLuceneResultWithValues(llSearchResult, MultiSort.topScoreWithValues(), limit, valueGetter));
+						this.transformLuceneResultWithValues(llSearchResult, null, LLScoreMode.TOP_SCORES, limit, valueGetter));
 	}
 
 	/**
@@ -156,7 +164,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		LLSort querySort = sort != null ? sort.getQuerySort() : null;
 		return luceneIndex
 				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, sort, limit));
+				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, sort, scoreMode, limit));
 	}
 
 	/**
@@ -175,7 +183,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		LLSort querySort = sort != null ? sort.getQuerySort() : null;
 		return luceneIndex
 				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult, sort, limit, valueGetter));
+				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult, sort, scoreMode, limit, valueGetter));
 	}
 
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {

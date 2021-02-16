@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.serializer;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Objects;
 import java.util.PrimitiveIterator;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.lucene.document.IntPoint;
@@ -98,6 +99,8 @@ public class QueryParser {
 						pqB.add(pqTerm.getTerm(), pqTerm.getPosition());
 					}
 				}
+				Integer slops = Objects.requireNonNull((Integer) parse(completeText, position));
+				pqB.setSlop(slops);
 				return pqB.build();
 			case SYNONYM_QUERY:
 				var fieldName = (String) parse(completeText, position);

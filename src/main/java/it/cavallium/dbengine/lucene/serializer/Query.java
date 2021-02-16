@@ -103,6 +103,19 @@ public interface Query extends SerializedQueryObject {
 			}
 			return new BooleanQuery(queryParts).setMinShouldMatch(booleanQuery.getMinimumNumberShouldMatch());
 		}
+		if (luceneQuery instanceof org.apache.lucene.search.PhraseQuery) {
+			var phraseQuery = (org.apache.lucene.search.PhraseQuery) luceneQuery;
+			int slop = phraseQuery.getSlop();
+			var terms = phraseQuery.getTerms();
+			var positions = phraseQuery.getPositions();
+			TermPosition[] termPositions = new TermPosition[terms.length];
+			for (int i = 0; i < terms.length; i++) {
+				var term = terms[i];
+				var position = positions[i];
+				termPositions[i] = new TermPosition(term, position);
+			}
+			return new PhraseQuery(termPositions).setSlop(slop);
+		}
 		org.apache.lucene.search.SynonymQuery synonymQuery = (org.apache.lucene.search.SynonymQuery) luceneQuery;
 		return new SynonymQuery(field,
 				synonymQuery.getTerms().stream().map(TermQuery::new).toArray(TermQuery[]::new)

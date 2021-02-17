@@ -440,7 +440,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 											}).subscribeOn(luceneBlockingScheduler)
 									).then()
 									.materialize()
-									.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
+									.flatMap(signal -> {
+										if (signal.isOnComplete() || signal.isOnError()) {
+											return releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(signal);
+										} else {
+											return Mono.just(signal);
+										}
+									})
 									.dematerialize()
 							);
 				});
@@ -535,7 +541,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 								}).subscribeOn(luceneBlockingScheduler)
 						)
 						.materialize()
-						.flatMap(value -> releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(value))
+						.flatMap(signal -> {
+							if (signal.isOnComplete() || signal.isOnError()) {
+								return releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(signal);
+							} else {
+								return Mono.just(signal);
+							}
+						})
 						.dematerialize()
 				);
 	}

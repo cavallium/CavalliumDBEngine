@@ -195,7 +195,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	}
 
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this.search(snapshot, query, 0, null, null, null)
+		return this.search(snapshot, query, 0, null, LLScoreMode.COMPLETE_NO_SCORES, null)
 				.flatMap(SearchResultKeys::totalHitsCount)
 				.single();
 	}

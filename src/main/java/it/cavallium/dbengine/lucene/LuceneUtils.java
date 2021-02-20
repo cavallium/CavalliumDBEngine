@@ -34,7 +34,7 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
-import org.slf4j.Logger;
+import org.warp.commonutils.log.Logger;
 import reactor.core.publisher.Flux;
 
 public class LuceneUtils {

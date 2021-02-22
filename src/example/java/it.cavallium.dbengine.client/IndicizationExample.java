@@ -109,7 +109,7 @@ public class IndicizationExample {
 						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.N4GramPartialString,"name", "Mario"), 10, MultiSort.topScore()
 								.getQuerySort(), LLScoreMode.COMPLETE, null, "id"))
 						.flatMap(results -> LuceneUtils.mergeStream(results
-								.results(), MultiSort.topScoreRaw(), 10)
+								.results(), MultiSort.topScoreRaw(), 10L)
 								.doOnNext(value -> System.out.println("Value: " + value))
 								.then(results.totalHitsCount())
 						)

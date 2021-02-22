@@ -33,6 +33,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.commons.math3.exception.NumberIsTooLargeException;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -338,7 +339,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			int limit,
+			long limit,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName) {
 		return moreLikeThis(snapshot, mltDocumentFieldsFlux, limit, minCompetitiveScore, keyFieldName, false, 0, 1);
@@ -346,7 +347,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	public Mono<LLSearchResult> distributedMoreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			int limit,
+			long limit,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			long actionId,
@@ -365,7 +366,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@SuppressWarnings({"Convert2MethodRef", "unchecked", "rawtypes"})
 	private Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			int limit,
+			long limit,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			boolean doDistributedPre,
@@ -408,9 +409,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 															allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, query);
 															totalHitsCountSink.tryEmitValue(0L);
 														} else {
+															if (limit > Integer.MAX_VALUE) {
+																throw new NumberIsTooLargeException(limit, Integer.MAX_VALUE, true);
+															}
 															streamSearcher.search(indexSearcher,
 																	query,
-																	limit,
+																	(int) limit,
 																	null,
 																	ScoreMode.TOP_SCORES,
 																	minCompetitiveScore,
@@ -458,13 +462,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, int limit,
+	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, long limit,
 			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName) {
 		return search(snapshot, query, limit, sort, scoreMode, minCompetitiveScore,
 				keyFieldName, false, 0, 1);
 	}
 
-	public Mono<LLSearchResult> distributedSearch(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, int limit,
+	public Mono<LLSearchResult> distributedSearch(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, long limit,
 			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName, long actionId, int scoreDivisor) {
 		return search(snapshot, query, limit, sort, scoreMode, minCompetitiveScore,
 				keyFieldName, false, actionId, scoreDivisor);
@@ -480,7 +484,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@SuppressWarnings("Convert2MethodRef")
 	private Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			it.cavallium.dbengine.lucene.serializer.Query query, int limit,
+			it.cavallium.dbengine.lucene.serializer.Query query, long limit,
 			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName,
 			boolean doDistributedPre, long actionId, int scoreDivisor) {
 		return acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
@@ -511,9 +515,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 												allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
 												totalHitsCountSink.tryEmitValue(0L);
 											} else {
+												if (limit > Integer.MAX_VALUE) {
+													throw new NumberIsTooLargeException(limit, Integer.MAX_VALUE, true);
+												}
 												streamSearcher.search(indexSearcher,
 														luceneQuery,
-														limit,
+														(int) limit,
 														luceneSort,
 														luceneScoreMode,
 														minCompetitiveScore,

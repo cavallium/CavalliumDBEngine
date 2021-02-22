@@ -171,7 +171,7 @@ public class LuceneUtils {
 	 */
 	public static <T> Flux<T> mergeStream(Flux<Flux<T>> mappedMultiResults,
 			@Nullable MultiSort<T> sort,
-			@Nullable Integer limit) {
+			@Nullable Long limit) {
 		if (limit != null && limit == 0) {
 			return mappedMultiResults.flatMap(f -> f).ignoreElements().flux();
 		}
@@ -183,10 +183,10 @@ public class LuceneUtils {
 				//noinspection unchecked
 				mergedFlux = Flux.mergeOrdered(32, sort.getResultSort(), mappedMultiResultsList.toArray(Flux[]::new));
 			}
-			if (limit == null) {
+			if (limit == null || limit == Long.MAX_VALUE) {
 				return mergedFlux;
 			} else {
-				return mergedFlux.take(limit);
+				return mergedFlux.limitRequest(limit);
 			}
 		});
 	}

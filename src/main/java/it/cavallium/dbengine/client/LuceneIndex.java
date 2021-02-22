@@ -95,7 +95,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	private SearchResult<T, U> transformLuceneResultWithValues(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultItem<T, U>> sort,
 			LLScoreMode scoreMode,
-			@Nullable Integer limit,
+			@Nullable Long limit,
 			ValueGetter<T, U> valueGetter) {
 		var mappedKeys = llSearchResult
 				.results()
@@ -182,7 +182,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	 */
 	public Mono<SearchResult<T, U>> searchWithValues(@Nullable CompositeSnapshot snapshot,
 			Query query,
-			int limit,
+			long limit,
 			@Nullable MultiSort<SearchResultItem<T, U>> sort,
 			LLScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,

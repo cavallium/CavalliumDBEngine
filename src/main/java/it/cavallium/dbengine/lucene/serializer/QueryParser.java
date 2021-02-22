@@ -12,6 +12,7 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
+import org.apache.lucene.search.DocValuesFieldExistsQuery;
 import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.PhraseQuery;
@@ -185,6 +186,10 @@ public class QueryParser {
 				Term term2 = (Term) parse(completeText, position);
 				assert term2 != null;
 				return new TermQuery(term2);
+			case DOC_VALUES_FIELD_EXISTS_QUERY:
+				String fieldKey = (String) parse(completeText, position);
+				assert fieldKey != null;
+				return new DocValuesFieldExistsQuery(fieldKey);
 			case FLOAT:
 				position.addAndGet(toParse.length());
 				return Float.parseFloat(toParse);

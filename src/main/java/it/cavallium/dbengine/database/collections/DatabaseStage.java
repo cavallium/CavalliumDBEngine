@@ -41,9 +41,14 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 		return Mono.empty();
 	}
 
-	Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast);
+	/**
+	 * Count all the elements.
+	 * If it's a nested collection the count will include all the children recursively
+	 * @param fast true to return an approximate value
+	 */
+	Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast);
 
 	default Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return size(snapshot, false).map(size -> size <= 0);
+		return leavesCount(snapshot, false).map(size -> size <= 0);
 	}
 }

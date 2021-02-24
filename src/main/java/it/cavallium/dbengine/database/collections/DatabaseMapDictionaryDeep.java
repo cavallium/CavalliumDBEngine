@@ -174,6 +174,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return LLRange.of(first, end);
 	}
 
+	@Override
+	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
+		return dictionary.sizeRange(resolveSnapshot(snapshot), range, fast);
+	}
+
 	@SuppressWarnings("ReactiveStreamsUnusedPublisher")
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {

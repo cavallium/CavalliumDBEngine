@@ -54,7 +54,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
+	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary
 				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key))
 				.map(empty -> empty ? 0L : 1L);

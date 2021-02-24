@@ -302,7 +302,7 @@ public class SpeedExample {
 				numRepeats,
 				tuple -> Mono
 						.fromRunnable(() -> System.out.println("Calculating size"))
-						.then(tuple.getT2().size(null, false))
+						.then(tuple.getT2().leavesCount(null, false))
 						.doOnNext(s -> System.out.println("Size after: " + s))
 						.then(tuple.getT1().close())
 		);
@@ -400,7 +400,7 @@ public class SpeedExample {
 				numRepeats,
 				tuple -> Mono
 						.fromRunnable(() -> System.out.println("Calculating size"))
-						.then(tuple.getT2().size(null, false))
+						.then(tuple.getT2().leavesCount(null, false))
 						.doOnNext(s -> System.out.println("Size after: " + s))
 						.then(tuple.getT1().close())
 		);
@@ -429,7 +429,7 @@ public class SpeedExample {
 				numRepeats,
 				tuple -> Mono
 						.fromRunnable(() -> System.out.println("Calculating size"))
-						.then(tuple.getT2().size(null, false))
+						.then(tuple.getT2().leavesCount(null, false))
 						.doOnNext(s -> System.out.println("Size after: " + s))
 						.then(tuple.getT1().close())
 		);

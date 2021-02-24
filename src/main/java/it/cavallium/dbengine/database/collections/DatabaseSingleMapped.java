@@ -68,8 +68,8 @@ public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return serializedSingle.size(snapshot, fast);
+	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
+		return serializedSingle.leavesCount(snapshot, fast);
 	}
 
 	@Override

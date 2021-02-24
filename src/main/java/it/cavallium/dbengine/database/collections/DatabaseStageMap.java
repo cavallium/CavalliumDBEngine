@@ -136,7 +136,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
+	default Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return getAllStages(snapshot).count();
 	}
 

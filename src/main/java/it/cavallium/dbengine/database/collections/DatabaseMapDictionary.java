@@ -87,7 +87,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Long> size(@Nullable CompositeSnapshot snapshot, boolean fast) {
+	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary.sizeRange(resolveSnapshot(snapshot), range, fast);
 	}
 

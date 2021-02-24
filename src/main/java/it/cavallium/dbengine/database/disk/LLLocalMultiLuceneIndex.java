@@ -319,7 +319,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								.getT1()
 								.distributedSearch(tuple.getT2().orElse(null),
 										query,
-										Integer.MAX_VALUE,
+										limit,
 										sort,
 										scoreMode,
 										minCompetitiveScore,

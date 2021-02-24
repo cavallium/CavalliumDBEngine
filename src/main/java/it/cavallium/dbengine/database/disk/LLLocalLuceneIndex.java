@@ -515,12 +515,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 												allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
 												totalHitsCountSink.tryEmitValue(0L);
 											} else {
-												if (limit > Integer.MAX_VALUE) {
-													throw new NumberIsTooLargeException(limit, Integer.MAX_VALUE, true);
-												}
+												int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
 												streamSearcher.search(indexSearcher,
 														luceneQuery,
-														(int) limit,
+														boundedLimit,
 														luceneSort,
 														luceneScoreMode,
 														minCompetitiveScore,

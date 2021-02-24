@@ -527,13 +527,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 														keyFieldName,
 														keyScore -> {
 															EmitResult result = topKeysSink.tryEmitNext(fixKeyScore(keyScore, scoreDivisor));
-															if (result.isFailure() && result != EmitResult.FAIL_CANCELLED) {
+															if (result.isFailure() && result != EmitResult.FAIL_CANCELLED && result != EmitResult.FAIL_ZERO_SUBSCRIBER) {
 																throw new EmissionException(result);
 															}
 														},
 														totalHitsCount -> {
 															EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
-															if (result.isFailure() && result != EmitResult.FAIL_CANCELLED) {
+															if (result.isFailure() && result != EmitResult.FAIL_CANCELLED && result != EmitResult.FAIL_ZERO_SUBSCRIBER) {
 																throw new EmissionException(result);
 															}
 														}

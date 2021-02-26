@@ -55,8 +55,9 @@ public abstract class BoundedRocksFluxIterable<T> extends BlockingFluxIterable<T
 		if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
 			return null;
 		}
+		var transformedEntry = this.transformEntry(key);
 		rocksIterator.next();
-		return this.transformEntry(key);
+		return transformedEntry;
 	}
 
 	protected abstract ReadOptions getReadOptions();

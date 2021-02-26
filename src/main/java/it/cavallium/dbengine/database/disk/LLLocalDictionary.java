@@ -38,6 +38,7 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 @NotAtomic
 public class LLLocalDictionary implements LLDictionary {
@@ -572,7 +573,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<List<Entry<byte[],byte[]>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return new BoundedGroupedRocksFluxIterable<Entry<byte[], byte[]>>(dbScheduler, db, cfh, range, prefixLength) {
+		return new BoundedGroupedRocksFluxIterable<Entry<byte[], byte[]>>(Schedulers.boundedElastic(), db, cfh, range, prefixLength) {
 
 			@Override
 			protected ReadOptions getReadOptions() {
@@ -599,7 +600,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<List<byte[]>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return new BoundedGroupedRocksFluxIterable<byte[]>(dbScheduler, db, cfh, range, prefixLength) {
+		return new BoundedGroupedRocksFluxIterable<byte[]>(Schedulers.boundedElastic(), db, cfh, range, prefixLength) {
 
 			@Override
 			protected ReadOptions getReadOptions() {

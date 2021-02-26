@@ -8,7 +8,6 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksIterator;
-import reactor.core.scheduler.Scheduler;
 
 public abstract class BoundedGroupedRocksFluxIterable<T> extends BlockingFluxIterable<List<T>> {
 
@@ -20,12 +19,11 @@ public abstract class BoundedGroupedRocksFluxIterable<T> extends BlockingFluxIte
 	protected RocksIterator rocksIterator;
 	protected ReadOptions readOptions;
 
-	public BoundedGroupedRocksFluxIterable(Scheduler scheduler,
-			RocksDB db,
+	public BoundedGroupedRocksFluxIterable(RocksDB db,
 			ColumnFamilyHandle cfh,
 			LLRange range,
 			int prefixLength) {
-		super(scheduler);
+		super("bounded-grouped-rocksdb");
 		this.db = db;
 		this.cfh = cfh;
 		this.range = range;

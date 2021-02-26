@@ -6,7 +6,6 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksIterator;
-import reactor.core.scheduler.Scheduler;
 
 public abstract class BoundedRocksFluxIterable<T> extends BlockingFluxIterable<T> {
 
@@ -17,11 +16,10 @@ public abstract class BoundedRocksFluxIterable<T> extends BlockingFluxIterable<T
 	protected RocksIterator rocksIterator;
 	protected ReadOptions readOptions;
 
-	public BoundedRocksFluxIterable(Scheduler scheduler,
-			RocksDB db,
+	public BoundedRocksFluxIterable(RocksDB db,
 			ColumnFamilyHandle cfh,
 			LLRange range) {
-		super(scheduler);
+		super("bounded-rocksdb");
 		this.db = db;
 		this.cfh = cfh;
 		this.range = range;

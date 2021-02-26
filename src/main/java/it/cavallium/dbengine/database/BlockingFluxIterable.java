@@ -4,24 +4,27 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
 
 public abstract class BlockingFluxIterable<T> {
 
-	private final Scheduler scheduler;
+	private static final Logger logger = LoggerFactory.getLogger(BlockingFluxIterable.class);
+	private final String name;
+	private AtomicBoolean alreadyInitialized = new AtomicBoolean(false);
+	private AtomicLong requests = new AtomicLong(0);
+	private Semaphore availableRequests = new Semaphore(0);
+	private AtomicBoolean cancelled = new AtomicBoolean(false);
 
-	public BlockingFluxIterable(Scheduler scheduler) {
-		this.scheduler = scheduler;
+	public BlockingFluxIterable(String name) {
+		this.name = name;
 	}
 
 	public Flux<T> generate() {
+		logger.trace("Generating iterable flux {}", this.name);
 		return Flux
 				.<T>create(sink -> {
-					AtomicBoolean alreadyInitialized = new AtomicBoolean(false);
-					AtomicLong requests = new AtomicLong(0);
-					Semaphore availableRequests = new Semaphore(0);
-					AtomicBoolean cancelled = new AtomicBoolean(false);
 					sink.onRequest(n -> {
 						requests.addAndGet(n);
 						availableRequests.release();
@@ -31,14 +34,15 @@ public abstract class BlockingFluxIterable<T> {
 						availableRequests.release();
 					});
 
-					scheduler.schedule(() -> {
+					new Thread(() -> {
+						logger.trace("Starting iterable flux {}", this.name);
 						try {
 							try {
 								loop:
 								while (true) {
 									availableRequests.acquireUninterruptibly();
 									var remainingRequests = requests.getAndSet(0);
-									if (remainingRequests == 0 || cancelled.get()) {
+									if (cancelled.get()) {
 										break;
 									}
 
@@ -64,7 +68,7 @@ public abstract class BlockingFluxIterable<T> {
 						} finally {
 							sink.complete();
 						}
-					});
+					}, "blocking-flux-iterable").start();
 				});
 	}
 
@@ -74,4 +78,8 @@ public abstract class BlockingFluxIterable<T> {
 
 	@Nullable
 	public abstract T onNext() throws InterruptedException;
+
+	protected boolean isCancelled() {
+		return cancelled.get();
+	}
 }

@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.BoundedGroupedRocksFluxIterable;
+import it.cavallium.dbengine.database.BoundedRocksFluxIterable;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
@@ -29,10 +31,10 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteOptions;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import org.warp.commonutils.locks.Striped;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -555,70 +557,33 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<Entry<byte[],byte[]>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
-		return Flux
-				.<Entry<byte[], byte[]>>push(sink -> {
-					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
-						byte[] key;
-						while (rocksIterator.isValid()) {
-							key = rocksIterator.key();
-							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-								break;
-							}
-							sink.next(Map.entry(key, rocksIterator.value()));
-							rocksIterator.next();
-						}
-					} finally {
-						sink.complete();
-					}
-				})
-				.subscribeOn(dbScheduler);
+		return new BoundedRocksFluxIterable<Entry<byte[], byte[]>>(dbScheduler, db, cfh, range) {
+
+			@Override
+			protected ReadOptions getReadOptions() {
+				return resolveSnapshot(snapshot);
+			}
+
+			@Override
+			protected Entry<byte[], byte[]> transformEntry(byte[] key) {
+				return Map.entry(key, this.getValue());
+			}
+		}.generate();
 	}
 
 	private Flux<List<Entry<byte[],byte[]>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return Flux
-				.<List<Entry<byte[], byte[]>>>push(sink -> {
-					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
-						byte[] firstGroupKey = null;
-						List<Entry<byte[], byte[]>> currentGroupValues = new ArrayList<>();
+		return new BoundedGroupedRocksFluxIterable<Entry<byte[], byte[]>>(dbScheduler, db, cfh, range, prefixLength) {
 
-						byte[] key;
-						while (rocksIterator.isValid()) {
-							key = rocksIterator.key();
-							if (firstGroupKey == null) { // Fix first value
-								firstGroupKey = key;
-							}
-							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-								break;
-							}
-							if (Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
-								currentGroupValues.add(Map.entry(key, rocksIterator.value()));
-							} else {
-								if (!currentGroupValues.isEmpty()) {
-									sink.next(currentGroupValues);
-								}
-								firstGroupKey = key;
-								currentGroupValues = new ArrayList<>();
-							}
-							rocksIterator.next();
-						}
-						if (!currentGroupValues.isEmpty()) {
-							sink.next(currentGroupValues);
-						}
-					} finally {
-						sink.complete();
-					}
-				})
-				.subscribeOn(dbScheduler);
+			@Override
+			protected ReadOptions getReadOptions() {
+				return resolveSnapshot(snapshot);
+			}
+
+			@Override
+			protected Entry<byte[], byte[]> transformEntry(byte[] key) {
+				return Map.entry(key, this.getValue());
+			}
+		}.generate();
 	}
 
 	@Override
@@ -634,44 +599,18 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<List<byte[]>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return Flux
-				.<List<byte[]>>push(sink -> {
-					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
-						byte[] firstGroupKey = null;
-						List<byte[]> currentGroupValues = new ArrayList<>();
+		return new BoundedGroupedRocksFluxIterable<byte[]>(dbScheduler, db, cfh, range, prefixLength) {
 
-						byte[] key;
-						while (rocksIterator.isValid()) {
-							key = rocksIterator.key();
-							if (firstGroupKey == null) { // Fix first value
-								firstGroupKey = key;
-							}
-							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-								break;
-							}
-							if (!Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
-								if (!currentGroupValues.isEmpty()) {
-									sink.next(currentGroupValues);
-								}
-								firstGroupKey = key;
-								currentGroupValues = new ArrayList<>();
-							}
-							currentGroupValues.add(key);
-							rocksIterator.next();
-						}
-						if (!currentGroupValues.isEmpty()) {
-							sink.next(currentGroupValues);
-						}
-					} finally {
-						sink.complete();
-					}
-				})
-				.subscribeOn(dbScheduler);
+			@Override
+			protected ReadOptions getReadOptions() {
+				return resolveSnapshot(snapshot);
+			}
+
+			@Override
+			protected byte[] transformEntry(byte[] key) {
+				return key;
+			}
+		}.generate();
 	}
 
 	private Flux<byte[]> getRangeKeysSingle(LLSnapshot snapshot, byte[] key) {
@@ -683,28 +622,18 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<byte[]> getRangeKeysMulti(LLSnapshot snapshot, LLRange range) {
-		return Flux
-				.<byte[]>push(sink -> {
-					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
-						byte[] key;
-						while (rocksIterator.isValid()) {
-							key = rocksIterator.key();
-							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-								break;
-							}
-							sink.next(key);
-							rocksIterator.next();
-						}
-					} finally {
-						sink.complete();
-					}
-				})
-				.subscribeOn(dbScheduler);
+		return new BoundedRocksFluxIterable<byte[]>(dbScheduler, db, cfh, range) {
+
+			@Override
+			protected ReadOptions getReadOptions() {
+				return resolveSnapshot(snapshot);
+			}
+
+			@Override
+			protected byte[] transformEntry(byte[] key) {
+				return key;
+			}
+		}.generate();
 	}
 
 	//todo: replace implementation with a simple Flux.push

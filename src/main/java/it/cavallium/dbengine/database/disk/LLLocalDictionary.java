@@ -568,7 +568,7 @@ public class LLLocalDictionary implements LLDictionary {
 			protected Entry<byte[], byte[]> transformEntry(byte[] key) {
 				return Map.entry(key, this.getValue());
 			}
-		}.generate();
+		}.generateNonblocking(dbScheduler, 128);
 	}
 
 	private Flux<List<Entry<byte[],byte[]>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
@@ -583,7 +583,7 @@ public class LLLocalDictionary implements LLDictionary {
 			protected Entry<byte[], byte[]> transformEntry(byte[] key) {
 				return Map.entry(key, this.getValue());
 			}
-		}.generate();
+		}.generateNonblocking(dbScheduler, 128);
 	}
 
 	@Override
@@ -610,7 +610,7 @@ public class LLLocalDictionary implements LLDictionary {
 			protected byte[] transformEntry(byte[] key) {
 				return key;
 			}
-		}.generate();
+		}.generateNonblocking(dbScheduler, 128);
 	}
 
 	private Flux<byte[]> getRangeKeysSingle(LLSnapshot snapshot, byte[] key) {
@@ -633,7 +633,7 @@ public class LLLocalDictionary implements LLDictionary {
 			protected byte[] transformEntry(byte[] key) {
 				return key;
 			}
-		}.generate();
+		}.generateNonblocking(dbScheduler, 128);
 	}
 
 	//todo: replace implementation with a simple Flux.push

@@ -83,6 +83,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			120,
 			true
 	);
+	/**
+	 * Lucene query scheduler.
+	 */
+	private final Scheduler luceneQueryScheduler = Schedulers.newBoundedElastic(Runtime
+			.getRuntime()
+			.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "LuceneQuery", 120, true);
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -408,7 +414,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										//noinspection BlockingMethodInNonBlockingContext
 										return mlt.like((Map) mltDocumentFields);
 									})
-									.subscribeOn(luceneBlockingScheduler)
+									.subscribeOn(luceneQueryScheduler)
 									.flatMap(mltQuery -> Mono
 											.fromCallable(() -> {
 													Query luceneQuery;
@@ -431,7 +437,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 															new Sort(SortField.FIELD_SCORE),
 															ScoreMode.TOP_SCORES
 													);
-											}).subscribeOn(luceneBlockingScheduler)
+											}).subscribeOn(luceneQueryScheduler)
 									)
 									.materialize()
 									.flatMap(signal -> {
@@ -485,7 +491,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							org.apache.lucene.search.ScoreMode luceneScoreMode = LLUtils.toScoreMode(scoreMode);
 							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
-						.subscribeOn(luceneBlockingScheduler)
+						.subscribeOn(luceneQueryScheduler)
 						.flatMap(tuple -> Mono
 								.fromCallable(() -> {
 									Query luceneQuery = tuple.getT1();
@@ -502,7 +508,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 											luceneSort,
 											luceneScoreMode
 									);
-								}).subscribeOn(luceneBlockingScheduler)
+								}).subscribeOn(luceneQueryScheduler)
 						)
 						.materialize()
 						.flatMap(signal -> {

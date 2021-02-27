@@ -3,19 +3,19 @@ package it.cavallium.dbengine.lucene.serializer;
 import it.cavallium.dbengine.database.LLTerm;
 import org.apache.lucene.index.Term;
 
-public class TermQuery implements Query {
+public class WildcardQuery implements Query {
 
 	private final Term term;
 
-	public TermQuery(Term term) {
+	public WildcardQuery(Term term) {
 		this.term = term;
 	}
 
-	public TermQuery(LLTerm term) {
+	public WildcardQuery(LLTerm term) {
 		this.term = new Term(term.getKey(), term.getValue());
 	}
 
-	public TermQuery(String name, String val) {
+	public WildcardQuery(String name, String val) {
 		this.term = new Term(name, val);
 	}
 
@@ -27,7 +27,7 @@ public class TermQuery implements Query {
 	public void stringify(StringBuilder output) {
 		StringBuilder data = new StringBuilder();
 		StringifyUtils.stringifyTerm(data, term);
-		StringifyUtils.writeHeader(output, QueryConstructorType.TERM_QUERY, data);
+		StringifyUtils.writeHeader(output, QueryConstructorType.WILDCARD_QUERY, data);
 	}
 
 	@Override

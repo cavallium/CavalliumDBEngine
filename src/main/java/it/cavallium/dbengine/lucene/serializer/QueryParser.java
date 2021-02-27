@@ -20,6 +20,7 @@ import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SynonymQuery;
 import org.apache.lucene.search.TermQuery;
+import org.apache.lucene.search.WildcardQuery;
 
 public class QueryParser {
 
@@ -191,6 +192,10 @@ public class QueryParser {
 				Term term2 = (Term) parse(completeText, position);
 				assert term2 != null;
 				return new TermQuery(term2);
+			case WILDCARD_QUERY:
+				Term term3 = (Term) parse(completeText, position);
+				assert term3 != null;
+				return new WildcardQuery(term3);
 			case DOC_VALUES_FIELD_EXISTS_QUERY:
 				String fieldKey = (String) parse(completeText, position);
 				assert fieldKey != null;

@@ -12,6 +12,7 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.DocValuesFieldExistsQuery;
 import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
@@ -79,6 +80,10 @@ public class QueryParser {
 				assert query != null;
 				assert numb != null;
 				return new BoostQuery(query, numb);
+			case CONSTANT_SCORE_QUERY:
+				Query queryC = (Query) parse(completeText, position);
+				assert queryC != null;
+				return new ConstantScoreQuery(queryC);
 			case FUZZY_QUERY:
 				Term fqTerm = (Term) parse(completeText, position);
 				Integer numb1 = (Integer) parse(completeText, position);

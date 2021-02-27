@@ -25,7 +25,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<Void> deleteAll();
 
 	/**
-	 *
+	 * @param additionalQuery An additional query that will be used with the moreLikeThis query: "mltQuery AND additionalQuery"
 	 * @param limit the limit is valid for each lucene instance.
 	 *               If you have 15 instances, the number of elements returned
 	 *               can be at most <code>limit * 15</code>
@@ -33,6 +33,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 */
 	Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
+			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName);

@@ -120,12 +120,13 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	public Mono<SearchResultKeys<T>> moreLikeThis(@Nullable CompositeSnapshot snapshot,
 			T key,
 			U mltDocumentValue,
+			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit,
+				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, additionalQuery, limit,
 						minCompetitiveScore, indicizer.getKeyFieldName())
 				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, null, LLScoreMode.TOP_SCORES, limit));
 
@@ -141,13 +142,14 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	public Mono<SearchResult<T, U>> moreLikeThisWithValues(@Nullable CompositeSnapshot snapshot,
 			T key,
 			U mltDocumentValue,
+			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
 			ValueGetter<T, U> valueGetter) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, limit,
+				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, additionalQuery, limit,
 						minCompetitiveScore, indicizer.getKeyFieldName())
 				.map(llSearchResult ->
 						this.transformLuceneResultWithValues(llSearchResult, null, LLScoreMode.TOP_SCORES, limit, valueGetter));

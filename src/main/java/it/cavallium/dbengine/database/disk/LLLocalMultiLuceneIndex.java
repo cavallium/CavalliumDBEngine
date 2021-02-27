@@ -203,6 +203,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
+			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName) {
@@ -225,6 +226,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							.getT1()
 							.distributedPreMoreLikeThis(tuple.getT2().orElse(null),
 									mltDocumentFieldsShared,
+									additionalQuery,
 									minCompetitiveScore,
 									keyFieldName,
 									actionId
@@ -248,6 +250,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								.getT1()
 								.distributedMoreLikeThis(tuple.getT2().orElse(null),
 										mltDocumentFieldsShared,
+										additionalQuery,
 										limit,
 										minCompetitiveScore,
 										keyFieldName,

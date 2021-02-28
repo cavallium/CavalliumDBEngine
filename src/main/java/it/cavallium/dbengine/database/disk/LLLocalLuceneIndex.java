@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.lucene.LuceneUtils.checkScoringArgumentsValidity;
 
+import com.google.common.base.Suppliers;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -32,6 +33,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -79,16 +81,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private static final Scheduler luceneBlockingScheduler = Schedulers.newBoundedElastic(1,
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			"Lucene",
+			"lucene",
 			120,
 			true
 	);
+	private static final Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() ->
+			Schedulers.newSingle("lucene-low-memory"))::get;
 	/**
 	 * Lucene query scheduler.
 	 */
-	private final Scheduler luceneQueryScheduler = Schedulers.newBoundedElastic(Runtime
-			.getRuntime()
-			.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "LuceneQuery", 120, true);
+	private final Scheduler luceneQueryScheduler;
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -141,6 +143,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
 		this.searcherManager = new SearcherManager(indexWriter, false, false, null);
+		if (lowMemory) {
+			this.luceneQueryScheduler = lowMemorySupplier.get();
+		} else {
+			this.luceneQueryScheduler = Schedulers.newBoundedElastic(Runtime
+					.getRuntime()
+					.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "lucene-query", 60, true);
+		}
 
 		// Create scheduled tasks lifecycle manager
 		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();

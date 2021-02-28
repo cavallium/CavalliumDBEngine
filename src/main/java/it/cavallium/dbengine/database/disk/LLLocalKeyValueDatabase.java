@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.disk;
 
-import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -23,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.ColumnFamilyDescriptor;
@@ -49,7 +49,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
-	private static Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() -> Schedulers.newSingle("db-low-memory"));
+	private static final Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() ->
+			Schedulers.newSingle("db-low-memory"))::get;
 
 	private final Scheduler dbScheduler;
 	private final Path dbPath;
@@ -204,7 +205,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			;
 		}
 
-		final org.rocksdb.BloomFilter bloomFilter = new BloomFilter(10, false);
+		final BloomFilter bloomFilter = new BloomFilter(10, false);
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		tableOptions.setFilterPolicy(bloomFilter);
 		options.setTableFormatConfig(tableOptions);

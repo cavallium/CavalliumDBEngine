@@ -37,6 +37,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 			long limit,
 			@Nullable Float minCompetitiveScore,
 			boolean enableScoring,
+			boolean sortByScore,
 			String keyFieldName);
 
 	/**

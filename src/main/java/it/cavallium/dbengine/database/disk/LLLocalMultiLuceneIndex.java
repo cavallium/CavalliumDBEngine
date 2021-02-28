@@ -207,6 +207,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			long limit,
 			@Nullable Float minCompetitiveScore,
 			boolean enableScoring,
+			boolean sortByScore,
 			String keyFieldName) {
 		long actionId;
 		int scoreDivisor;
@@ -230,6 +231,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 									additionalQuery,
 									minCompetitiveScore,
 									enableScoring,
+									sortByScore,
 									keyFieldName,
 									actionId
 							)
@@ -256,6 +258,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 										limit,
 										minCompetitiveScore,
 										enableScoring,
+										sortByScore,
 										keyFieldName,
 										actionId,
 										scoreDivisor

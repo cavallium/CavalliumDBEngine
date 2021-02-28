@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -47,6 +49,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
+	private static Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() -> Schedulers.newSingle("db-low-memory"));
 
 	private final Scheduler dbScheduler;
 	private final Path dbPath;
@@ -75,12 +78,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			Path dbPath = Paths.get(dbPathString);
 			this.dbPath = dbPath;
 			this.name = name;
-			this.dbScheduler = Schedulers.newBoundedElastic(Runtime.getRuntime().availableProcessors(),
-					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-					"db-" + name,
-					60,
-					true
-			);
+			if (lowMemory) {
+				this.dbScheduler = lowMemorySupplier.get();
+			} else {
+				this.dbScheduler = Schedulers.newBoundedElastic(Runtime.getRuntime().availableProcessors(),
+						Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+						"db-" + name,
+						60,
+						true
+				);
+			}
 
 			createIfNotExists(descriptors, options, dbPath, dbPathString);
 			// Create all column families that don't exist

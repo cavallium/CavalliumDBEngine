@@ -314,11 +314,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.deleteAll();
 			//noinspection BlockingMethodInNonBlockingContext
-			indexWriter.commit();
-			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.forceMergeDeletes(true);
-			//noinspection BlockingMethodInNonBlockingContext
-			indexWriter.flush();
 			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.commit();
 			return null;
@@ -680,8 +676,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					try {
 						//noinspection BlockingMethodInNonBlockingContext
 						indexWriter.commit();
-						//noinspection BlockingMethodInNonBlockingContext
-						indexWriter.flush();
 					} finally {
 						scheduledTasksLifecycle.endScheduledTask();
 					}

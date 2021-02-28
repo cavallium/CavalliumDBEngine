@@ -36,6 +36,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
+			boolean enableScoring,
 			String keyFieldName);
 
 	/**

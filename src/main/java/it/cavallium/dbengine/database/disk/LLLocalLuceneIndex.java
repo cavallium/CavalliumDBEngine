@@ -366,8 +366,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
+			boolean enableScoring,
 			String keyFieldName) {
-		return moreLikeThis(snapshot, mltDocumentFieldsFlux, additionalQuery, limit, minCompetitiveScore, keyFieldName, false, 0, 1);
+		return moreLikeThis(snapshot, mltDocumentFieldsFlux, additionalQuery, limit, minCompetitiveScore, enableScoring, keyFieldName, false, 0, 1);
 	}
 
 	public Mono<LLSearchResult> distributedMoreLikeThis(@Nullable LLSnapshot snapshot,
@@ -375,18 +376,20 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
+			boolean enableScoring,
 			String keyFieldName,
 			long actionId,
 			int scoreDivisor) {
-		return moreLikeThis(snapshot, mltDocumentFieldsFlux, additionalQuery, limit, minCompetitiveScore, keyFieldName, false, actionId, scoreDivisor);
+		return moreLikeThis(snapshot, mltDocumentFieldsFlux, additionalQuery, limit, minCompetitiveScore, enableScoring, keyFieldName, false, actionId, scoreDivisor);
 	}
 
 	public Mono<Void> distributedPreMoreLikeThis(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			@Nullable Float minCompetitiveScore,
+			boolean enableScoring,
 			String keyFieldName, long actionId) {
-		return moreLikeThis(snapshot, mltDocumentFieldsFlux, additionalQuery, -1, minCompetitiveScore, keyFieldName, true, actionId, 1)
+		return moreLikeThis(snapshot, mltDocumentFieldsFlux, additionalQuery, -1, minCompetitiveScore, enableScoring, keyFieldName, true, actionId, 1)
 				.flatMap(LLSearchResult::completion);
 	}
 
@@ -396,6 +399,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
+			boolean enableScoring,
 			String keyFieldName,
 			boolean doDistributedPre,
 			long actionId,
@@ -422,7 +426,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 								mlt.setMinTermFreq(1);
 								mlt.setMinDocFreq(3);
 								mlt.setMaxDocFreqPct(20);
-								mlt.setBoost(true);
+								mlt.setBoost(enableScoring);
 								mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
 								var similarity = getSimilarity();
 								if (similarity instanceof TFIDFSimilarity) {
@@ -451,8 +455,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										keyFieldName,
 										scoreDivisor,
 										luceneQuery,
-										new Sort(SortField.FIELD_SCORE),
-										ScoreMode.TOP_SCORES
+										enableScoring ? new Sort(SortField.FIELD_SCORE) : null,
+										enableScoring ? ScoreMode.TOP_SCORES : ScoreMode.COMPLETE_NO_SCORES
 								);
 							})
 							.subscribeOn(luceneQueryScheduler)

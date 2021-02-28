@@ -206,6 +206,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
 			long limit,
 			@Nullable Float minCompetitiveScore,
+			boolean enableScoring,
 			String keyFieldName) {
 		long actionId;
 		int scoreDivisor;
@@ -228,6 +229,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 									mltDocumentFieldsShared,
 									additionalQuery,
 									minCompetitiveScore,
+									enableScoring,
 									keyFieldName,
 									actionId
 							)
@@ -253,6 +255,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 										additionalQuery,
 										limit,
 										minCompetitiveScore,
+										enableScoring,
 										keyFieldName,
 										actionId,
 										scoreDivisor

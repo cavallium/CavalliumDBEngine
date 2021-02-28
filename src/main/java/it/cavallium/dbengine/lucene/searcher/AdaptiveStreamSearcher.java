@@ -8,6 +8,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SortField;
 import org.jetbrains.annotations.Nullable;
 
 /**
@@ -76,5 +77,15 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 				);
 			}
 		}
+	}
+
+	private static boolean isScoreSort(Sort luceneSort) {
+		if (luceneSort == null) return false;
+		for (SortField sortField : luceneSort.getSort()) {
+			if (sortField != SortField.FIELD_SCORE) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

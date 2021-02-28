@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database;
 
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -10,6 +12,8 @@ import org.apache.lucene.analysis.TokenStream;
 public class EnglishItalianStopFilter extends StopFilter {
 
 	private static final CharArraySet stopWords;
+
+	private static final Set<String> stopWordsString;
 
 	/**
 	 * Constructs a filter which removes words from the input TokenStream that are named in the Set.
@@ -997,9 +1001,20 @@ public class EnglishItalianStopFilter extends StopFilter {
 				"vostro",
 				"è"
 		);
+		var stopWordsString2 = new HashSet<>(englishStopWords);
+		stopWordsString2.addAll(italianStopWords);
+		stopWordsString = Collections.unmodifiableSet(stopWordsString2);
 		stopWords = CharArraySet.copy(Stream
 				.concat(englishStopWords.stream(), oldItalianStopWords.stream())
 				.map(String::toCharArray)
 				.collect(Collectors.toSet()));
+	}
+
+	public static CharArraySet getStopWords() {
+		return stopWords;
+	}
+
+	public static Set<String> getStopWordsString() {
+		return stopWordsString;
 	}
 }

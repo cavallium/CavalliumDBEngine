@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.lucene.LuceneUtils.checkScoringArgumentsValidity;
 
 import com.google.common.base.Suppliers;
+import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -50,6 +51,7 @@ import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.similarities.Similarity;
+import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.jetbrains.annotations.NotNull;
@@ -146,9 +148,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		if (lowMemory) {
 			this.luceneQueryScheduler = lowMemorySupplier.get();
 		} else {
-			this.luceneQueryScheduler = Schedulers.newBoundedElastic(Runtime
-					.getRuntime()
-					.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "lucene-query", 60, true);
+			this.luceneQueryScheduler = Schedulers.newBoundedElastic(Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE,
+					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+					"lucene-query",
+					60,
+					true
+			);
 		}
 
 		// Create scheduled tasks lifecycle manager
@@ -409,55 +414,56 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						return Mono.just(LLSearchResult.empty());
 					}
 
-					return acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
-							.flatMap(indexSearcher -> Mono
-									.fromCallable(() -> {
-										var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
-										mlt.setAnalyzer(indexWriter.getAnalyzer());
-										mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-										mlt.setMinTermFreq(1);
-										//mlt.setMinDocFreq(1);
-										mlt.setBoost(true);
+					return acquireSearcherWrapper(snapshot, doDistributedPre, actionId).flatMap(indexSearcher -> Mono
+							.fromCallable(() -> {
+								var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
+								mlt.setAnalyzer(indexWriter.getAnalyzer());
+								mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+								mlt.setMinTermFreq(1);
+								mlt.setMinDocFreq(3);
+								mlt.setMaxDocFreqPct(20);
+								mlt.setBoost(true);
+								mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
+								var similarity = getSimilarity();
+								if (similarity instanceof TFIDFSimilarity) {
+									mlt.setSimilarity((TFIDFSimilarity) similarity);
+								} else {
+									logger.trace("Using an unsupported similarity algorithm for MoreLikeThis: {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
+								}
 
-										// Get the reference doc and apply it to MoreLikeThis, to generate the query
-										//noinspection BlockingMethodInNonBlockingContext
-										return mlt.like((Map) mltDocumentFields);
-									})
-									.subscribeOn(luceneQueryScheduler)
-									.flatMap(mltQuery -> Mono
-											.fromCallable(() -> {
-													Query luceneQuery;
-													if (luceneAdditionalQuery != null) {
-														luceneQuery = new BooleanQuery.Builder()
-																.add(mltQuery, Occur.MUST)
-																.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
-																.build();
-													} else {
-														luceneQuery = mltQuery;
-													}
+								// Get the reference doc and apply it to MoreLikeThis, to generate the query
+								//noinspection BlockingMethodInNonBlockingContext
+								var mltQuery = mlt.like((Map) mltDocumentFields);
+								Query luceneQuery;
+								if (luceneAdditionalQuery != null) {
+									luceneQuery = new BooleanQuery.Builder()
+											.add(mltQuery, Occur.MUST)
+											.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
+											.build();
+								} else {
+									luceneQuery = mltQuery;
+								}
 
-													return luceneSearch(doDistributedPre,
-															indexSearcher,
-															limit,
-															minCompetitiveScore,
-															keyFieldName,
-															scoreDivisor,
-															luceneQuery,
-															new Sort(SortField.FIELD_SCORE),
-															ScoreMode.TOP_SCORES
-													);
-											}).subscribeOn(luceneQueryScheduler)
-									)
-									.materialize()
-									.flatMap(signal -> {
-										if (signal.isOnComplete() || signal.isOnError()) {
-											return releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(signal);
-										} else {
-											return Mono.just(signal);
-										}
-									})
-									.<LLSearchResult>dematerialize()
-							);
+								return luceneSearch(doDistributedPre,
+										indexSearcher,
+										limit,
+										minCompetitiveScore,
+										keyFieldName,
+										scoreDivisor,
+										luceneQuery,
+										new Sort(SortField.FIELD_SCORE),
+										ScoreMode.TOP_SCORES
+								);
+							})
+							.subscribeOn(luceneQueryScheduler)
+							.materialize()
+							.flatMap(signal -> {
+								if (signal.isOnComplete() || signal.isOnError()) {
+									return releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(signal);
+								} else {
+									return Mono.just(signal);
+								}
+							}).<LLSearchResult>dematerialize());
 				});
 	}
 

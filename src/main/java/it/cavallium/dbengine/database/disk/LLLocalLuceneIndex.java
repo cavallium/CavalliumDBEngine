@@ -82,7 +82,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			true
 	);
 	private static final Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() ->
-			Schedulers.newSingle("lucene-low-memory"))::get;
+			Schedulers.newBoundedElastic(1, Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "lucene-low-memory", Integer.MAX_VALUE))::get;
 	/**
 	 * Lucene query scheduler.
 	 */

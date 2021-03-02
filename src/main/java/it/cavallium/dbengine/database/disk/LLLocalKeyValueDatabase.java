@@ -50,7 +50,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 	private static final Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() ->
-			Schedulers.newSingle("db-low-memory"))::get;
+			Schedulers.newBoundedElastic(1, Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "db-low-memory", Integer.MAX_VALUE))::get;
 
 	private final Scheduler dbScheduler;
 	private final Path dbPath;

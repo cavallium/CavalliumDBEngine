@@ -1,8 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.database.LLKeyScore;
 import java.io.IOException;
-import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -37,7 +35,7 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
-			Consumer<LLKeyScore> consumer,
+			ResultItemConsumer consumer,
 			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit == 0) {
 			totalHitsConsumer.accept(countStreamSearcher.count(indexSearcher, query));

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -61,7 +62,7 @@ public class LuceneParallelStreamCollector implements Collector, LeafCollector {
 		if (!stopped.get()) {
 			var score = scorer == null ? 0 : scorer.score();
 			if (minCompetitiveScore == null || score >= minCompetitiveScore) {
-				if (!streamConsumer.consume(doc, score)) {
+				if (streamConsumer.consume(doc, score) == HandleResult.HALT) {
 					stopped.set(true);
 				}
 			}

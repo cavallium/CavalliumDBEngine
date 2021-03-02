@@ -7,10 +7,11 @@ import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
+import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
+import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.ResultItemConsumer;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.IOException;
 import java.util.Set;
-import java.util.function.Consumer;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
@@ -188,13 +189,13 @@ public class LuceneUtils {
 		});
 	}
 
-	public static void collectTopDoc(Logger logger,
+	public static HandleResult collectTopDoc(Logger logger,
 			int docId,
 			float score,
 			Float minCompetitiveScore,
 			IndexSearcher indexSearcher,
 			String keyFieldName,
-			Consumer<LLKeyScore> resultsConsumer) throws IOException {
+			ResultItemConsumer resultsConsumer) throws IOException {
 		if (minCompetitiveScore == null || score >= minCompetitiveScore) {
 			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
 			if (d.getFields().isEmpty()) {
@@ -211,9 +212,12 @@ public class LuceneUtils {
 				if (field == null) {
 					logger.error("Can't get key of document docId: {}, score: {}", docId, score);
 				} else {
-					resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
+					if (resultsConsumer.accept(new LLKeyScore(field.stringValue(), score)) == HandleResult.HALT) {
+						return HandleResult.HALT;
+					}
 				}
 			}
 		}
+		return HandleResult.CONTINUE;
 	}
 }

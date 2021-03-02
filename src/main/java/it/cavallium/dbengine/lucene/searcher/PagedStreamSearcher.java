@@ -1,9 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
-import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -34,7 +32,7 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
-			Consumer<LLKeyScore> resultsConsumer,
+			ResultItemConsumer resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
 		if (limit < MAX_ITEMS_PER_PAGE) {
 			// Use a normal search method because the limit is low
@@ -74,29 +72,32 @@ public class PagedStreamSearcher implements LuceneStreamSearcher {
 		}
 	}
 
-	private void consumeHits(IntWrapper currentAllowedResults,
+	private HandleResult consumeHits(IntWrapper currentAllowedResults,
 			ScoreDoc[] hits,
 			IndexSearcher indexSearcher,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
-			Consumer<LLKeyScore> resultsConsumer) throws IOException {
+			ResultItemConsumer resultsConsumer) throws IOException {
 		for (ScoreDoc hit : hits) {
 			int docId = hit.doc;
 			float score = hit.score;
 
 			if (currentAllowedResults.var-- > 0) {
-				LuceneUtils.collectTopDoc(logger,
+				if (LuceneUtils.collectTopDoc(logger,
 						docId,
 						score,
 						minCompetitiveScore,
 						indexSearcher,
 						keyFieldName,
 						resultsConsumer
-				);
+				) == HandleResult.HALT) {
+					return HandleResult.HALT;
+				}
 			} else {
 				break;
 			}
 		}
+		return HandleResult.CONTINUE;
 	}
 
 	private static ScoreDoc getLastItem(ScoreDoc[] scoreDocs) {

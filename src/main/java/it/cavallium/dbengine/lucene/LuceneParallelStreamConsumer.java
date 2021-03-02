@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import java.io.IOException;
 
 public interface LuceneParallelStreamConsumer {
@@ -7,7 +8,6 @@ public interface LuceneParallelStreamConsumer {
 	/**
 	 * @param docId document id
 	 * @param score score of document
-	 * @return true to continue, false to stop the execution
 	 */
-	boolean consume(int docId, float score) throws IOException;
+	HandleResult consume(int docId, float score) throws IOException;
 }

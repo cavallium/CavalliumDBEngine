@@ -1,10 +1,8 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
-import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -27,7 +25,7 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
-			Consumer<LLKeyScore> resultsConsumer,
+			ResultItemConsumer resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
 		TopDocs topDocs;
 		if (luceneSort != null) {
@@ -40,14 +38,16 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 		for (ScoreDoc hit : hits) {
 			int docId = hit.doc;
 			float score = hit.score;
-			LuceneUtils.collectTopDoc(logger,
+			if (LuceneUtils.collectTopDoc(logger,
 					docId,
 					score,
 					minCompetitiveScore,
 					indexSearcher,
 					keyFieldName,
 					resultsConsumer
-			);
+			) == HandleResult.HALT) {
+				return;
+			}
 		}
 	}
 }

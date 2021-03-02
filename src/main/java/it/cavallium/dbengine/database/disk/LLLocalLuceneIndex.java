@@ -19,6 +19,7 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -26,6 +27,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Random;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
@@ -550,13 +552,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.unicast()
 				.onBackpressureBuffer();
 
-		var searchFlux = Flux.<Void>push(sink -> {
+		var searchFlux = Mono.<Void>create(sink -> {
 			try {
+				var opId = new Random().nextInt();
 				if (doDistributedPre) {
 					allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
 					totalHitsCountSink.tryEmitValue(0L);
 				} else {
 					int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
+					logger.warn(opId + " start");
 					streamSearcher.search(indexSearcher,
 							luceneQuery,
 							boundedLimit,
@@ -565,12 +569,17 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							minCompetitiveScore,
 							keyFieldName,
 							keyScore -> {
+								logger.warn(opId + " item");
 								EmitResult result = topKeysSink.tryEmitNext(fixKeyScore(keyScore, scoreDivisor));
-								if (result.isFailure()) {
+								if (result.isSuccess()) {
+									return HandleResult.CONTINUE;
+								} else {
 									if (result == EmitResult.FAIL_CANCELLED) {
 										logger.debug("Fail to emit next value: cancelled");
+										return HandleResult.HALT;
 									} else if (result == EmitResult.FAIL_TERMINATED) {
 										logger.debug("Fail to emit next value: terminated");
+										return HandleResult.HALT;
 									} else if (result == EmitResult.FAIL_ZERO_SUBSCRIBER) {
 										logger.error("Fail to emit next value: zero subscriber. You must subscribe to results before total hits if you specified a limit > 0!");
 										sink.error(new EmissionException(result));
@@ -581,6 +590,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 								}
 							},
 							totalHitsCount -> {
+								logger.warn(opId + " total-hits-count");
 								EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
 								if (result.isFailure()) {
 									if (result == EmitResult.FAIL_CANCELLED) {
@@ -597,14 +607,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							}
 					);
 				}
+				logger.warn(opId + " complete");
 				topKeysSink.tryEmitComplete();
-				sink.complete();
+				sink.success();
 			} catch (IOException e) {
 				topKeysSink.tryEmitError(e);
 				totalHitsCountSink.tryEmitError(e);
 				sink.error(e);
 			}
-		}).share();
+		}).subscribeOn(luceneQueryScheduler).cache();
 
 		return new LLSearchResult(
 				Mono.<Long>firstWithValue(searchFlux.then(Mono.empty()), totalHitsCountSink.asMono()),

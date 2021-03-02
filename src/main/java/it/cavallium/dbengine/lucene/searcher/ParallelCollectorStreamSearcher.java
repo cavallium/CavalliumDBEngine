@@ -6,7 +6,6 @@ import it.cavallium.dbengine.lucene.LuceneParallelStreamCollectorResult;
 import java.io.IOException;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
@@ -29,7 +28,7 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
-			Consumer<LLKeyScore> resultsConsumer,
+			ResultItemConsumer resultsConsumer,
 			LongConsumer totalHitsConsumer) throws IOException {
 		if (luceneSort != null) {
 			throw new IllegalArgumentException("ParallelCollectorStreamSearcher doesn't support sorted searches");
@@ -39,7 +38,7 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 
 		LuceneParallelStreamCollectorResult result = indexSearcher.search(query, LuceneParallelStreamCollectorManager.fromConsumer(scoreMode, minCompetitiveScore, (docId, score) -> {
 			if (currentCount.getAndIncrement() >= limit) {
-				return false;
+				return HandleResult.HALT;
 			} else {
 				Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
 				if (d.getFields().isEmpty()) {
@@ -56,10 +55,12 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 					if (field == null) {
 						logger.error("Can't get key of document docId: {}", docId);
 					} else {
-						resultsConsumer.accept(new LLKeyScore(field.stringValue(), score));
+						if (resultsConsumer.accept(new LLKeyScore(field.stringValue(), score)) == HandleResult.HALT) {
+							return HandleResult.HALT;
+						}
 					}
 				}
-				return true;
+				return HandleResult.CONTINUE;
 			}
 		}));
 		//todo: check the accuracy of our hits counter!

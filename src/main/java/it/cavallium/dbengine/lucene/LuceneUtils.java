@@ -2,9 +2,6 @@ package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLScoreMode;
-import it.cavallium.dbengine.database.LLSort;
-import it.cavallium.dbengine.database.LLSortType;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -189,12 +186,6 @@ public class LuceneUtils {
 				return mergedFlux.limitRequest(limit);
 			}
 		});
-	}
-
-	public static void checkScoringArgumentsValidity(LLSort sort, LLScoreMode scoreMode) {
-		if ((sort == null || sort.getType() != LLSortType.SCORE) && scoreMode != LLScoreMode.COMPLETE_NO_SCORES) {
-			throw new IllegalArgumentException("You must sort by score if the scores are enabled");
-		}
 	}
 
 	public static void collectTopDoc(Logger logger,

@@ -1,15 +1,15 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.query.ClientQueryParams;
+import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLSnapshottable;
-import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
-import it.cavallium.dbengine.lucene.serializer.Query;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -112,96 +112,95 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 
 	/**
 	 *
-	 * @param limit the limit is valid for each lucene instance.
+	 * @param queryParams the limit is valid for each lucene instance.
 	 *               If you have 15 instances, the number of elements returned
 	 *               can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	public Mono<SearchResultKeys<T>> moreLikeThis(@Nullable CompositeSnapshot snapshot,
+	public Mono<SearchResultKeys<T>> moreLikeThis(
+			ClientQueryParams<SearchResultKey<T>> queryParams,
 			T key,
-			U mltDocumentValue,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore) {
+			U mltDocumentValue) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, additionalQuery, limit,
-						minCompetitiveScore, enableScoring, sortByScore, indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, null, LLScoreMode.TOP_SCORES, limit));
+				.moreLikeThis(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName(), mltDocumentFields)
+				.map(llSearchResult -> this.transformLuceneResult(llSearchResult,
+						queryParams.getSort(),
+						queryParams.getScoreMode(),
+						queryParams.getLimit()
+				));
 
 	}
 
 	/**
 	 *
-	 * @param limit the limit is valid for each lucene instance.
+	 * @param queryParams the limit is valid for each lucene instance.
 	 *               If you have 15 instances, the number of elements returned
 	 *               can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	public Mono<SearchResult<T, U>> moreLikeThisWithValues(@Nullable CompositeSnapshot snapshot,
+	public Mono<SearchResult<T, U>> moreLikeThisWithValues(
+			ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
 			ValueGetter<T, U> valueGetter) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(snapshot), mltDocumentFields, additionalQuery, limit,
-						minCompetitiveScore, enableScoring, sortByScore, indicizer.getKeyFieldName())
-				.map(llSearchResult ->
-						this.transformLuceneResultWithValues(llSearchResult, null, LLScoreMode.TOP_SCORES, limit, valueGetter));
+				.moreLikeThis(resolveSnapshot(queryParams.getSnapshot()),
+						queryParams.toQueryParams(),
+						indicizer.getKeyFieldName(),
+						mltDocumentFields
+				)
+				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
+						queryParams.getSort(),
+						queryParams.getScoreMode(),
+						queryParams.getLimit(),
+						valueGetter
+				));
 	}
 
 	/**
 	 *
-	 * @param limit the limit is valid for each lucene instance.
+	 * @param queryParams the limit is valid for each lucene instance.
 	 *               If you have 15 instances, the number of elements returned
 	 *               can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	public Mono<SearchResultKeys<T>> search(@Nullable CompositeSnapshot snapshot,
-			Query query,
-			long limit,
-			@Nullable MultiSort<SearchResultKey<T>> sort,
-			LLScoreMode scoreMode,
-			@Nullable Float minCompetitiveScore) {
-		LLSort querySort = sort != null ? sort.getQuerySort() : null;
+	public Mono<SearchResultKeys<T>> search(
+			ClientQueryParams<SearchResultKey<T>> queryParams) {
 		return luceneIndex
-				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, minCompetitiveScore,
-						indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResult(llSearchResult, sort, scoreMode, limit));
+				.search(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
+				.map(llSearchResult -> this.transformLuceneResult(llSearchResult,
+						queryParams.getSort(),
+						queryParams.getScoreMode(),
+						queryParams.getLimit()
+				));
 	}
 
 	/**
 	 *
-	 * @param limit the limit is valid for each lucene instance.
+	 * @param queryParams the limit is valid for each lucene instance.
 	 *               If you have 15 instances, the number of elements returned
 	 *               can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	public Mono<SearchResult<T, U>> searchWithValues(@Nullable CompositeSnapshot snapshot,
-			Query query,
-			long limit,
-			@Nullable MultiSort<SearchResultItem<T, U>> sort,
-			LLScoreMode scoreMode,
-			@Nullable Float minCompetitiveScore,
+	public Mono<SearchResult<T, U>> searchWithValues(
+			ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueGetter<T, U> valueGetter) {
-		LLSort querySort = sort != null ? sort.getQuerySort() : null;
 		return luceneIndex
-				.search(resolveSnapshot(snapshot), query, limit, querySort, scoreMode, minCompetitiveScore,
-						indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult, sort, scoreMode, limit, valueGetter));
+				.search(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
+				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
+						queryParams.getSort(),
+						queryParams.getScoreMode(),
+						queryParams.getLimit(),
+						valueGetter
+				));
 	}
 
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this.search(snapshot, query, 0, null, LLScoreMode.COMPLETE_NO_SCORES, null)
+		return this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
 				.flatMap(SearchResultKeys::totalHitsCount)
 				.single();
 	}

@@ -1,8 +1,18 @@
-package it.cavallium.dbengine.lucene.serializer;
+package it.cavallium.dbengine.client.query;
 
-import static it.cavallium.dbengine.lucene.serializer.QueryParser.USE_PHRASE_QUERY;
-import static it.cavallium.dbengine.lucene.serializer.QueryParser.USE_QUERY_BUILDER;
-
+import it.cavallium.dbengine.client.query.current.data.BooleanQuery;
+import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
+import it.cavallium.dbengine.client.query.current.data.Occur;
+import it.cavallium.dbengine.client.query.current.data.OccurFilter;
+import it.cavallium.dbengine.client.query.current.data.OccurMust;
+import it.cavallium.dbengine.client.query.current.data.OccurMustNot;
+import it.cavallium.dbengine.client.query.current.data.OccurShould;
+import it.cavallium.dbengine.client.query.current.data.PhraseQuery;
+import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.client.query.current.data.SynonymQuery;
+import it.cavallium.dbengine.client.query.current.data.TermAndBoost;
+import it.cavallium.dbengine.client.query.current.data.TermPosition;
+import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import java.io.IOException;
@@ -19,62 +29,27 @@ import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.util.QueryBuilder;
 import org.jetbrains.annotations.NotNull;
 
-public interface Query extends SerializedQueryObject {
+public class QueryUtils {
 
-	static Query approximateSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
-		if (USE_QUERY_BUILDER) {
-			var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
-			var luceneQuery = qb.createMinShouldMatchQuery(field, text, 0.75f);
-			return transformQuery(field, luceneQuery);
-		}
-
-		try {
-			var terms = getTerms(preferredAnalyzer, field, text);
-
-			List<BooleanQueryPart> booleanQueryParts = new LinkedList<>();
-			for (TermPosition term : terms) {
-				booleanQueryParts.add(new BooleanQueryPart(new TermQuery(term.getTerm()), Occur.MUST));
-				booleanQueryParts.add(new BooleanQueryPart(new PhraseQuery(terms.toArray(TermPosition[]::new)), Occur.SHOULD));
-			}
-			return new BooleanQuery(booleanQueryParts);
-		} catch (IOException e) {
-			e.printStackTrace();
-			return exactSearch(preferredAnalyzer, field, text);
-		}
+	public static Query approximateSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
+		var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
+		var luceneQuery = qb.createMinShouldMatchQuery(field, text, 0.75f);
+		return transformQuery(field, luceneQuery);
 	}
 
-	static Query exactSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
-		if (USE_QUERY_BUILDER) {
-			var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
-			var luceneQuery = qb.createPhraseQuery(field, text);
-			return transformQuery(field, luceneQuery);
-		}
-
-		try {
-			var terms = getTerms(preferredAnalyzer, field, text);
-
-			if (USE_PHRASE_QUERY) {
-				return new PhraseQuery(terms.toArray(TermPosition[]::new));
-			} else {
-				List<BooleanQueryPart> booleanQueryParts = new LinkedList<>();
-				for (TermPosition term : terms) {
-					booleanQueryParts.add(new BooleanQueryPart(new TermQuery(term.getTerm()), Occur.MUST));
-				}
-				booleanQueryParts.add(new BooleanQueryPart(new PhraseQuery(terms.toArray(TermPosition[]::new)), Occur.FILTER));
-				return new BooleanQuery(booleanQueryParts);
-			}
-		} catch (IOException exception) {
-			throw new RuntimeException(exception);
-		}
+	public static Query exactSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
+		var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
+		var luceneQuery = qb.createPhraseQuery(field, text);
+		return transformQuery(field, luceneQuery);
 	}
 
 	@NotNull
 	private static Query transformQuery(String field, org.apache.lucene.search.Query luceneQuery) {
 		if (luceneQuery == null) {
-			return new TermQuery(field, "");
+			return TermQuery.of(it.cavallium.dbengine.client.query.current.data.Term.of(field, ""));
 		}
 		if (luceneQuery instanceof org.apache.lucene.search.TermQuery) {
-			return new TermQuery(((org.apache.lucene.search.TermQuery) luceneQuery).getTerm());
+			return TermQuery.of(QueryParser.toQueryTerm(((org.apache.lucene.search.TermQuery) luceneQuery).getTerm()));
 		}
 		if (luceneQuery instanceof org.apache.lucene.search.BooleanQuery) {
 			var booleanQuery = (org.apache.lucene.search.BooleanQuery) luceneQuery;
@@ -85,23 +60,23 @@ public interface Query extends SerializedQueryObject {
 				Occur occur;
 				switch (booleanClause.getOccur()) {
 					case MUST:
-						occur = Occur.MUST;
+						occur = OccurMust.of();
 						break;
 					case FILTER:
-						occur = Occur.FILTER;
+						occur = OccurFilter.of();
 						break;
 					case SHOULD:
-						occur = Occur.SHOULD;
+						occur = OccurShould.of();
 						break;
 					case MUST_NOT:
-						occur = Occur.MUST_NOT;
+						occur = OccurMustNot.of();
 						break;
 					default:
 						throw new IllegalArgumentException();
 				}
-				queryParts.add(new BooleanQueryPart(transformQuery(field, queryPartQuery), occur));
+				queryParts.add(BooleanQueryPart.of(transformQuery(field, queryPartQuery), occur));
 			}
-			return new BooleanQuery(queryParts).setMinShouldMatch(booleanQuery.getMinimumNumberShouldMatch());
+			return BooleanQuery.of(queryParts.toArray(BooleanQueryPart[]::new), booleanQuery.getMinimumNumberShouldMatch());
 		}
 		if (luceneQuery instanceof org.apache.lucene.search.PhraseQuery) {
 			var phraseQuery = (org.apache.lucene.search.PhraseQuery) luceneQuery;
@@ -112,13 +87,17 @@ public interface Query extends SerializedQueryObject {
 			for (int i = 0; i < terms.length; i++) {
 				var term = terms[i];
 				var position = positions[i];
-				termPositions[i] = new TermPosition(term, position);
+				termPositions[i] = TermPosition.of(QueryParser.toQueryTerm(term), position);
 			}
-			return new PhraseQuery(termPositions).setSlop(slop);
+			return PhraseQuery.of(termPositions, slop);
 		}
 		org.apache.lucene.search.SynonymQuery synonymQuery = (org.apache.lucene.search.SynonymQuery) luceneQuery;
-		return new SynonymQuery(field,
-				synonymQuery.getTerms().stream().map(TermQuery::new).toArray(TermQuery[]::new)
+		return SynonymQuery.of(field,
+				synonymQuery
+						.getTerms()
+						.stream()
+						.map(term -> TermAndBoost.of(QueryParser.toQueryTerm(term), 1))
+						.toArray(TermAndBoost[]::new)
 		);
 	}
 
@@ -138,7 +117,7 @@ public interface Query extends SerializedQueryObject {
 			while (ts.incrementToken()) {
 				var tokenPositionIncrement = positionIncrementTermAttr.getPositionIncrement();
 				termPosition += tokenPositionIncrement;
-				terms.add(new TermPosition(new Term(field, charTermAttr.getBytesRef()), termPosition));
+				terms.add(TermPosition.of(QueryParser.toQueryTerm(new Term(field, charTermAttr.getBytesRef())), termPosition));
 			}
 			ts.end();   // Perform end-of-stream operations, e.g. set the final offset.
 		}

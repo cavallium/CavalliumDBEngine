@@ -1,17 +1,15 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.lucene.LuceneUtils.checkScoringArgumentsValidity;
-
 import com.google.common.base.Suppliers;
+import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLSearchCollectionStatisticsGetter;
 import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -21,8 +19,6 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
-import it.cavallium.dbengine.lucene.serializer.ParseException;
-import it.cavallium.dbengine.lucene.serializer.QueryParser;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -49,12 +45,10 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
@@ -104,7 +98,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private final AtomicLong lastSnapshotSeqNo = new AtomicLong(0);
 	/**
-	 * Snapshot seq no to index commit point
+	 * LLSnapshot seq no to index commit point
 	 */
 	private final ConcurrentHashMap<Long, LuceneIndexSnapshot> snapshots = new ConcurrentHashMap<>();
 	private final boolean lowMemory;
@@ -229,7 +223,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
 			if (indexSnapshot == null) {
-				throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
+				throw new IOException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
 			}
 
 			//noinspection BlockingMethodInNonBlockingContext
@@ -358,21 +352,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
-			String keyFieldName) {
+			QueryParams queryParams,
+			String keyFieldName,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
 		return moreLikeThis(snapshot,
-				mltDocumentFieldsFlux,
-				additionalQuery,
-				limit,
-				minCompetitiveScore,
-				enableScoring,
-				sortByScore,
+				queryParams,
 				keyFieldName,
+				mltDocumentFieldsFlux,
 				false,
 				0,
 				1
@@ -380,23 +366,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	public Mono<LLSearchResult> distributedMoreLikeThis(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
+			QueryParams queryParams,
 			String keyFieldName,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			long actionId,
 			int scoreDivisor) {
 		return moreLikeThis(snapshot,
-				mltDocumentFieldsFlux,
-				additionalQuery,
-				limit,
-				minCompetitiveScore,
-				enableScoring,
-				sortByScore,
+				queryParams,
 				keyFieldName,
+				mltDocumentFieldsFlux,
 				false,
 				actionId,
 				scoreDivisor
@@ -404,20 +382,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	public Mono<Void> distributedPreMoreLikeThis(@Nullable LLSnapshot snapshot,
+			QueryParams queryParams,
+			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
-			String keyFieldName, long actionId) {
+			 long actionId) {
 		return moreLikeThis(snapshot,
-				mltDocumentFieldsFlux,
-				additionalQuery,
-				-1,
-				minCompetitiveScore,
-				enableScoring,
-				sortByScore,
+				queryParams,
 				keyFieldName,
+				mltDocumentFieldsFlux,
 				true,
 				actionId,
 				1
@@ -427,20 +399,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	private Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
+			QueryParams queryParams,
 			String keyFieldName,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			boolean doDistributedPre,
 			long actionId,
 			int scoreDivisor) {
 		Query luceneAdditionalQuery;
 		try {
-			luceneAdditionalQuery = additionalQuery != null ? QueryParser.parse(additionalQuery) : null;
-		} catch (ParseException e) {
+			luceneAdditionalQuery = QueryParser.toQuery(queryParams.getQuery());
+		} catch (Exception e) {
 			return Mono.error(e);
 		}
 		return mltDocumentFieldsFlux
@@ -459,7 +427,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 								mlt.setMinTermFreq(1);
 								mlt.setMinDocFreq(3);
 								mlt.setMaxDocFreqPct(20);
-								mlt.setBoost(enableScoring);
+								mlt.setBoost(QueryParser.isScoringEnabled(queryParams));
 								mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
 								var similarity = getSimilarity();
 								if (similarity instanceof TFIDFSimilarity) {
@@ -483,15 +451,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 								return luceneSearch(doDistributedPre,
 										indexSearcher,
-										limit,
-										minCompetitiveScore,
+										queryParams.getLimit(),
+										queryParams.getMinCompetitiveScore().getNullable(),
 										keyFieldName,
 										scoreDivisor,
 										luceneQuery,
-										(enableScoring && sortByScore) ? new Sort(SortField.FIELD_SCORE) : null,
-										(enableScoring && minCompetitiveScore != null) ?
-												ScoreMode.TOP_SCORES :
-												(enableScoring ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES)
+										QueryParser.toSort(queryParams.getSort()),
+										QueryParser.toScoreMode(queryParams.getScoreMode())
 								);
 							})
 							.subscribeOn(luceneQueryScheduler)
@@ -511,38 +477,30 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, long limit,
-			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName) {
-		return search(snapshot, query, limit, sort, scoreMode, minCompetitiveScore,
-				keyFieldName, false, 0, 1);
+	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName) {
+		return search(snapshot, queryParams, keyFieldName, false, 0, 1);
 	}
 
-	public Mono<LLSearchResult> distributedSearch(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query, long limit,
-			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName, long actionId, int scoreDivisor) {
-		return search(snapshot, query, limit, sort, scoreMode, minCompetitiveScore,
-				keyFieldName, false, actionId, scoreDivisor);
+	public Mono<LLSearchResult> distributedSearch(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName, long actionId, int scoreDivisor) {
+		return search(snapshot, queryParams, keyFieldName, false, actionId, scoreDivisor);
 	}
 
-	public Mono<Void> distributedPreSearch(@Nullable LLSnapshot snapshot, it.cavallium.dbengine.lucene.serializer.Query query,
-			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName, long actionId) {
+	public Mono<Void> distributedPreSearch(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName, long actionId) {
 		return this
-				.search(snapshot, query, -1, sort, scoreMode,
-						minCompetitiveScore, keyFieldName, true, actionId, 1)
+				.search(snapshot, queryParams, keyFieldName, true, actionId, 1)
 				.flatMap(LLSearchResult::completion);
 	}
 
 	private Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			it.cavallium.dbengine.lucene.serializer.Query query, long limit,
-			@Nullable LLSort sort, @NotNull LLScoreMode scoreMode, @Nullable Float minCompetitiveScore, String keyFieldName,
+			QueryParams queryParams, String keyFieldName,
 			boolean doDistributedPre, long actionId, int scoreDivisor) {
 		return acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
 				.flatMap(indexSearcher -> Mono
 						.fromCallable(() -> {
-							Objects.requireNonNull(scoreMode, "ScoreMode must not be null");
-							checkScoringArgumentsValidity(sort, scoreMode);
-							Query luceneQuery = QueryParser.parse(query);
-							Sort luceneSort = LLUtils.toSort(sort);
-							org.apache.lucene.search.ScoreMode luceneScoreMode = LLUtils.toScoreMode(scoreMode);
+							Objects.requireNonNull(queryParams.getScoreMode(), "ScoreMode must not be null");
+							Query luceneQuery = QueryParser.toQuery(queryParams.getQuery());
+							Sort luceneSort = QueryParser.toSort(queryParams.getSort());
+							org.apache.lucene.search.ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.getScoreMode());
 							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
 						.subscribeOn(luceneQueryScheduler)
@@ -554,8 +512,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 									return luceneSearch(doDistributedPre,
 											indexSearcher,
-											limit,
-											minCompetitiveScore,
+											queryParams.getLimit(),
+											queryParams.getMinCompetitiveScore().getNullable(),
 											keyFieldName,
 											scoreDivisor,
 											luceneQuery,

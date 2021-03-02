@@ -1,17 +1,20 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.query.current.data.NumericSort;
+import it.cavallium.dbengine.client.query.current.data.RandomSort;
+import it.cavallium.dbengine.client.query.current.data.ScoreSort;
+import it.cavallium.dbengine.client.query.current.data.Sort;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLSort;
 import java.util.Comparator;
 import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
 
 public class MultiSort<T> {
 
-	private final LLSort querySort;
+	private final Sort querySort;
 	private final Comparator<T> resultSort;
 
-	public MultiSort(LLSort querySort, Comparator<T> resultSort) {
+	public MultiSort(Sort querySort, Comparator<T> resultSort) {
 		this.querySort = querySort;
 		this.resultSort = resultSort;
 	}
@@ -26,7 +29,7 @@ public class MultiSort<T> {
 	 */
 	public static <T> MultiSort<T> sortedNumericInt(String fieldName, ToIntFunction<T> toIntFunction, boolean reverse) {
 		// Create lucene sort
-		LLSort querySort = LLSort.newSortedNumericSortField(fieldName, reverse);
+		Sort querySort = NumericSort.of(fieldName, reverse);
 
 		// Create result sort
 		Comparator<T> resultSort = Comparator.comparingInt(toIntFunction);
@@ -48,7 +51,7 @@ public class MultiSort<T> {
 	 */
 	public static <T> MultiSort<T> sortedNumericLong(String fieldName, ToLongFunction<T> toLongFunction, boolean reverse) {
 		// Create lucene sort
-		LLSort querySort = LLSort.newSortedNumericSortField(fieldName, reverse);
+		Sort querySort = NumericSort.of(fieldName, reverse);
 
 		// Create result sort
 		Comparator<T> resultSort = Comparator.comparingLong(toLongFunction);
@@ -61,22 +64,22 @@ public class MultiSort<T> {
 	}
 
 	public static <T> MultiSort<T> randomSortField() {
-		return new MultiSort<>(LLSort.newRandomSortField(), (a, b) -> 0);
+		return new MultiSort<>(RandomSort.of(), (a, b) -> 0);
 	}
 
 	public static MultiSort<LLKeyScore> topScoreRaw() {
-		return new MultiSort<>(LLSort.newSortScore(), Comparator.comparingDouble(LLKeyScore::getScore).reversed());
+		return new MultiSort<>(ScoreSort.of(), Comparator.comparingDouble(LLKeyScore::getScore).reversed());
 	}
 
 	public static <T> MultiSort<SearchResultKey<T>> topScore() {
-		return new MultiSort<>(LLSort.newSortScore(), Comparator.<SearchResultKey<T>>comparingDouble(SearchResultKey::getScore).reversed());
+		return new MultiSort<>(ScoreSort.of(), Comparator.<SearchResultKey<T>>comparingDouble(SearchResultKey::getScore).reversed());
 	}
 
 	public static <T, U> MultiSort<SearchResultItem<T, U>> topScoreWithValues() {
-		return new MultiSort<>(LLSort.newSortScore(), Comparator.<SearchResultItem<T, U>>comparingDouble(SearchResultItem::getScore).reversed());
+		return new MultiSort<>(ScoreSort.of(), Comparator.<SearchResultItem<T, U>>comparingDouble(SearchResultItem::getScore).reversed());
 	}
 
-	public LLSort getQuerySort() {
+	public Sort getQuerySort() {
 		return querySort;
 	}
 

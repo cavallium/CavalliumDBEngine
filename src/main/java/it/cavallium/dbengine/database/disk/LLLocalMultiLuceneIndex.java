@@ -2,16 +2,14 @@ package it.cavallium.dbengine.database.disk;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
-import it.cavallium.dbengine.lucene.serializer.Query;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.io.IOException;
@@ -202,13 +200,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
-			String keyFieldName) {
+			QueryParams queryParams,
+			String keyFieldName,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
 		long actionId;
 		int scoreDivisor;
 		Flux<Tuple2<String, Set<String>>> mltDocumentFieldsShared;
@@ -227,12 +221,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					.flatMap(tuple -> tuple
 							.getT1()
 							.distributedPreMoreLikeThis(tuple.getT2().orElse(null),
-									mltDocumentFieldsShared,
-									additionalQuery,
-									minCompetitiveScore,
-									enableScoring,
-									sortByScore,
+									queryParams,
 									keyFieldName,
+									mltDocumentFieldsShared,
 									actionId
 							)
 					)
@@ -253,13 +244,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(tuple -> tuple
 								.getT1()
 								.distributedMoreLikeThis(tuple.getT2().orElse(null),
-										mltDocumentFieldsShared,
-										additionalQuery,
-										limit,
-										minCompetitiveScore,
-										enableScoring,
-										sortByScore,
+										queryParams,
 										keyFieldName,
+										mltDocumentFieldsShared,
 										actionId,
 										scoreDivisor
 								)
@@ -280,16 +267,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			Query query,
-			long limit,
-			@Nullable LLSort sort,
-			LLScoreMode scoreMode,
-			@Nullable Float minCompetitiveScore,
+			QueryParams queryParams,
 			String keyFieldName) {
 		long actionId;
 		int scoreDivisor;
 		Mono<Void> distributedPre;
-		if (luceneIndices.length <= 1 || scoreMode == LLScoreMode.COMPLETE_NO_SCORES) {
+		if (luceneIndices.length <= 1 || !queryParams.getScoreMode().getComputeScores()) {
 			actionId = -1;
 			scoreDivisor = 1;
 			distributedPre = Mono.empty();
@@ -306,10 +289,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					.flatMap(tuple -> tuple
 							.getT1()
 							.distributedPreSearch(tuple.getT2().orElse(null),
-									query,
-									sort,
-									scoreMode,
-									minCompetitiveScore,
+									queryParams,
 									keyFieldName,
 									actionId
 							)
@@ -327,11 +307,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(tuple -> tuple
 								.getT1()
 								.distributedSearch(tuple.getT2().orElse(null),
-										query,
-										limit,
-										sort,
-										scoreMode,
-										minCompetitiveScore,
+										queryParams,
 										keyFieldName,
 										actionId,
 										scoreDivisor

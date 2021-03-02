@@ -1,0 +1,198 @@
+# A type that starts with "-" is an optional type, otherwise it can't be null
+currentVersion: "0.0.0"
+interfacesData:
+  Query: []
+# versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
+versions:
+  0.0.0:
+    details:
+      changelog: "First version"
+    superTypes:
+      Query: [
+          BoxedQuery, TermQuery, PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery,
+          MatchNoDocsQuery, BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
+          ConstantScoreQuery, BoostQuery, IntPointRangeQuery, LongPointRangeQuery, IntPointExactQuery,
+          LongPointExactQuery
+      ]
+      Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
+      Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
+    customTypes: {}
+    classes:
+
+      # Basic data
+      # ==========
+
+      # Wrapper for type Query
+      BoxedQuery:
+        data:
+          query: Query
+      # A term consists in a field that is exactly equal to the value string
+      Term:
+        data:
+          field: String
+          value: String
+      # A Term with a position relative to the start of the query. Used internally in some specific queries
+      TermPosition:
+        data:
+          term: Term
+          position: int
+      # A Term with a specified boost. Used internally in some specific queries
+      TermAndBoost:
+        data:
+          term: Term
+          boost: float
+      # Occur options used for boolean queries
+      OccurMust:
+        data: { }
+      OccurMustNot:
+        data: { }
+      OccurShould:
+        data: { }
+      OccurFilter:
+        data: { }
+
+      # Text queries
+      # ============
+
+      # Query that matches a term.
+      TermQuery:
+        data:
+          term: Term
+      # Query that matches a phrase.
+      PhraseQuery:
+        data:
+          # A phrase is a collection of positioned terms, with absolute positions,
+          #   counted as characters from the beginning of the phrase.
+          phrase: TermPosition[]
+          slop: int
+      # Advanced query that matches text allowing asterisks in the query
+      WildcardQuery:
+        data:
+          field: String
+          pattern: String # Example: "*ing"
+      # Advanced query that matches different exact values (synonyms)
+      SynonymQuery:
+        data:
+          field: String
+          parts: TermAndBoost[] # Each term has a boost. The preferred synonym has the highest boost value.
+      # Advanced query. todo: document it
+      FuzzyQuery:
+        data:
+          term: Term
+          maxEdits: int
+          prefixLength: int
+          maxExpansions: int
+          transpositions: boolean
+
+
+      # Combination queries
+      # ===================
+
+      # Query that matches everything
+      MatchAllDocsQuery:
+        data: {}
+      # Query that matches nothing
+      MatchNoDocsQuery:
+        data: {}
+      # Query that matches if the document satisfies all the required parts
+      BooleanQuery:
+        data:
+          # Each part can be:
+          #  - "MUST"
+          #  - "MUST_NOT"
+          #  - "SHOULD"
+          #  - "FILTER" (advanced, ignore this)
+          # "SHOULD" is like "MUST" but it's not necessary.
+          parts: BooleanQueryPart[]
+          minShouldMatch: int # If set, it specifies how many "SHOULD" parts must be matched. 0 if not set
+      # Part of a boolean query
+      BooleanQueryPart:
+        data:
+          query: Query
+          occur: Occur
+
+
+      # Number queries
+      # ==============
+
+      # Advanced query that matches only a range of a sorted field, from "min" to "max".
+      SortedNumericDocValuesFieldSlowRangeQuery:
+        data:
+          field: String
+          min: long
+          max: long
+      # Query that matches if the sorted field exist in the document
+      SortedDocFieldExistsQuery:
+        data:
+          field: String
+
+
+      # Score modifying queries
+      # ============
+
+      # Query that fixes the score of a query
+      ConstantScoreQuery:
+        data:
+          query: Query
+          score: float
+      # Query that boosts the query score
+      BoostQuery:
+        data:
+          query: Query
+          scoreBoost: float
+
+
+      # Sorted fields queries
+      # =====================
+
+      # Query that matches an int point field, from "min", to "max"
+      IntPointRangeQuery:
+        data:
+          field: String
+          min: int
+          max: int
+      # Query that matches a long point field, from "min", to "max"
+      LongPointRangeQuery:
+        data:
+          field: String
+          min: long
+          max: long
+      # Query that matches an int point field
+      IntPointExactQuery:
+        data:
+          field: String
+          value: int
+      # Query that matches a long point field
+      LongPointExactQuery:
+        data:
+          field: String
+          value: long
+
+
+      # Extra data used for parameters and the client
+      # =============================================
+
+      # Query parameters
+      QueryParams:
+        data:
+          query: Query
+          limit: long
+          minCompetitiveScore: -float
+          sort: Sort
+          scoreMode: ScoreMode
+      NoSort:
+        data: { }
+      NumericSort:
+        data:
+          field: String
+          reverse: boolean
+      RandomSort:
+        data: { }
+      ScoreSort:
+        data: { }
+      DocSort:
+        data: { }
+      ScoreMode:
+        data:
+          onlyTopScores: boolean
+          computeScores: boolean

@@ -1,16 +1,17 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.query.QueryUtils;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.ScoreMode;
+import it.cavallium.dbengine.client.query.current.data.ScoreSort;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLScoreMode;
-import it.cavallium.dbengine.database.LLSort;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
-import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
-import it.cavallium.dbengine.lucene.serializer.Query;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,11 +37,13 @@ public class IndicizationExample {
 						)
 						.then(index.refresh())
 						.then(index.search(null,
-								Query.exactSearch(TextFieldsAnalyzer.N4GramPartialString, "name", "Mario"),
-								1,
-								LLSort.newSortScore(),
-								LLScoreMode.COMPLETE,
-								null,
+								QueryParams
+										.builder()
+										.query(QueryUtils.exactSearch(TextFieldsAnalyzer.N4GramPartialString, "name", "Mario"))
+										.limit(1)
+										.sort(ScoreSort.of())
+										.scoreMode(ScoreMode.of(false, true))
+										.build(),
 								"id"
 						))
 						.flatMap(results -> results
@@ -106,8 +109,16 @@ public class IndicizationExample {
 										})
 								))
 						.then(index.refresh())
-						.then(index.search(null, Query.exactSearch(TextFieldsAnalyzer.N4GramPartialString,"name", "Mario"), 10, MultiSort.topScore()
-								.getQuerySort(), LLScoreMode.COMPLETE, null, "id"))
+								.then(index.search(null,
+										QueryParams
+												.builder()
+												.query(QueryUtils.exactSearch(TextFieldsAnalyzer.N4GramPartialString, "name", "Mario"))
+												.limit(10)
+												.sort(MultiSort.topScore().getQuerySort())
+												.scoreMode(ScoreMode.of(false, true))
+												.build(),
+										"id"
+								))
 						.flatMap(results -> LuceneUtils.mergeStream(results
 								.results(), MultiSort.topScoreRaw(), 10L)
 								.doOnNext(value -> System.out.println("Value: " + value))

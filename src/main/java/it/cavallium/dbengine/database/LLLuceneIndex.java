@@ -1,6 +1,10 @@
 package it.cavallium.dbengine.database;
 
-import it.cavallium.dbengine.lucene.serializer.Query;
+import it.cavallium.data.generator.nativedata.Nullablefloat;
+import it.cavallium.dbengine.client.query.current.data.NoSort;
+import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.ScoreMode;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -25,38 +29,27 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<Void> deleteAll();
 
 	/**
-	 * @param additionalQuery An additional query that will be used with the moreLikeThis query: "mltQuery AND additionalQuery"
-	 * @param limit the limit is valid for each lucene instance.
-	 *               If you have 15 instances, the number of elements returned
-	 *               can be at most <code>limit * 15</code>
+	 * @param queryParams the limit is valid for each lucene instance. If you have 15 instances, the number of elements
+	 *                    returned can be at most <code>limit * 15</code>.
+	 *                    <p>
+	 *                    The additional query will be used with the moreLikeThis query: "mltQuery AND additionalQuery"
 	 * @return the collection has one or more flux
 	 */
 	Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFields,
-			@Nullable it.cavallium.dbengine.lucene.serializer.Query additionalQuery,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			boolean enableScoring,
-			boolean sortByScore,
-			String keyFieldName);
+			QueryParams queryParams,
+			String keyFieldName,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFields);
 
 	/**
-	 *
-	 * @param limit the limit is valid for each lucene instance.
-	 *               If you have 15 instances, the number of elements returned
-	 *               can be at most <code>limit * 15</code>
+	 * @param queryParams the limit is valid for each lucene instance. If you have 15 instances, the number of elements
+	 *                    returned can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			Query query,
-			long limit,
-			@Nullable LLSort sort,
-			LLScoreMode scoreMode,
-			@Nullable Float minCompetitiveScore,
-			String keyFieldName);
+	Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
 
 	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
-		return this.search(snapshot, query, 0, null, null, null, null)
+		QueryParams params = QueryParams.of(query, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
+		return this.search(snapshot, params, null)
 				.flatMap(LLSearchResult::totalHitsCount)
 				.single();
 	}

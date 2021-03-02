@@ -130,11 +130,10 @@ versions:
       # Score modifying queries
       # ============
 
-      # Query that fixes the score of a query
+      # Query that fixes the score of a query to 1
       ConstantScoreQuery:
         data:
           query: Query
-          score: float
       # Query that boosts the query score
       BoostQuery:
         data:

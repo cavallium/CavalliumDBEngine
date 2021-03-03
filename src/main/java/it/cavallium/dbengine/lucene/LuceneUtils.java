@@ -238,13 +238,14 @@ public class LuceneUtils {
 				.map(LuceneSignal::getTotalHitsCount)
 				.reduce(Long::sum)
 				.map(sum -> LuceneSignal.totalHitsCount(sum));
-		return sortedValues.mergeWith(sortedTotalSize);
+		return Flux.merge(sortedValues, sortedTotalSize);
 	}
 
 	public static Flux<LLSignal> mergeSignalStreamRaw(Flux<Flux<LLSignal>> mappedKeys,
 			MultiSort<LLSignal> mappedSort,
 			Long limit) {
 		Flux<Flux<LLSignal>> sharedMappedSignals = mappedKeys.publish().refCount(2);
+
 		Flux<LLSignal> sortedValues = LuceneUtils
 				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LLSignal::isValue)), mappedSort, limit);
 		//noinspection Convert2MethodRef
@@ -254,6 +255,7 @@ public class LuceneUtils {
 				.map(LLSignal::getTotalHitsCount)
 				.reduce(Long::sum)
 				.map(sum -> new LLTotalHitsCount(sum));
-		return sortedValues.mergeWith(sortedTotalSize);
+
+		return Flux.merge(sortedValues, sortedTotalSize);
 	}
 }

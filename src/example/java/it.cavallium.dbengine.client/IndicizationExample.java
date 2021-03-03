@@ -124,7 +124,7 @@ public class IndicizationExample {
 												.build(),
 										"id"
 								))
-						.flatMap(results -> LuceneUtils.mergeStream(results
+						.flatMap(results -> LuceneUtils.mergeSignalStreamRaw(results
 								.results(), MultiSort.topScoreRaw(), 10L)
 								.doOnNext(value -> System.out.println("Value: " + value))
 								.then(Mono.from(results

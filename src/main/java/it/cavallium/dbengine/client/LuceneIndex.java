@@ -113,8 +113,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		} else {
 			mappedSort = null;
 		}
-		Flux<LuceneSignal<SearchResultKey<T>>> sortedKeys = LuceneUtils.mergeStream(mappedKeys, mappedSort, limit);
-		return new SearchResultKeys<>(sortedKeys);
+		return new SearchResultKeys<>(LuceneUtils.mergeSignalStream(mappedKeys, mappedSort, limit));
 	}
 
 	private SearchResult<T, U> transformLuceneResultWithValues(LLSearchResult llSearchResult,
@@ -153,7 +152,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		} else {
 			mappedSort = null;
 		}
-		var sortedKeys = LuceneUtils.mergeStream(mappedKeys, mappedSort, limit);
+		var sortedKeys = LuceneUtils.mergeSignalStream(mappedKeys, mappedSort, limit);
 		return new SearchResult<>(sortedKeys);
 	}
 

@@ -1,7 +1,10 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.client.LuceneSignal;
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLSignal;
+import it.cavallium.dbengine.database.LLTotalHitsCount;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -34,6 +37,7 @@ import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import org.warp.commonutils.log.Logger;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 public class LuceneUtils {
 	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
@@ -219,5 +223,37 @@ public class LuceneUtils {
 			}
 		}
 		return HandleResult.CONTINUE;
+	}
+
+	public static <T> Flux<LuceneSignal<T>> mergeSignalStream(Flux<Flux<LuceneSignal<T>>> mappedKeys,
+			MultiSort<LuceneSignal<T>> mappedSort,
+			Long limit) {
+		Flux<Flux<LuceneSignal<T>>> sharedMappedSignals = mappedKeys.publish().refCount(2);
+		Flux<LuceneSignal<T>> sortedValues = LuceneUtils
+				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LuceneSignal::isValue)), mappedSort, limit);
+		//noinspection Convert2MethodRef
+		Mono<LuceneSignal<T>> sortedTotalSize = sharedMappedSignals
+				.flatMap(sub -> sub)
+				.filter(LuceneSignal::isTotalHitsCount)
+				.map(LuceneSignal::getTotalHitsCount)
+				.reduce(Long::sum)
+				.map(sum -> LuceneSignal.totalHitsCount(sum));
+		return sortedValues.mergeWith(sortedTotalSize);
+	}
+
+	public static Flux<LLSignal> mergeSignalStreamRaw(Flux<Flux<LLSignal>> mappedKeys,
+			MultiSort<LLSignal> mappedSort,
+			Long limit) {
+		Flux<Flux<LLSignal>> sharedMappedSignals = mappedKeys.publish().refCount(2);
+		Flux<LLSignal> sortedValues = LuceneUtils
+				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LLSignal::isValue)), mappedSort, limit);
+		//noinspection Convert2MethodRef
+		Mono<LLSignal> sortedTotalSize = sharedMappedSignals
+				.flatMap(sub -> sub)
+				.filter(LLSignal::isTotalHitsCount)
+				.map(LLSignal::getTotalHitsCount)
+				.reduce(Long::sum)
+				.map(sum -> new LLTotalHitsCount(sum));
+		return sortedValues.mergeWith(sortedTotalSize);
 	}
 }

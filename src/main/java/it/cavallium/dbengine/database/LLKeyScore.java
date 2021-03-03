@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database;
 
 import java.util.Objects;
 
-public class LLKeyScore {
+public class LLKeyScore implements LLSignal {
 
 	private final String key;
 	private final float score;
@@ -44,5 +44,25 @@ public class LLKeyScore {
 				"key=" + key +
 				", score=" + score +
 				'}';
+	}
+
+	@Override
+	public boolean isValue() {
+		return true;
+	}
+
+	@Override
+	public boolean isTotalHitsCount() {
+		return false;
+	}
+
+	@Override
+	public LLKeyScore getValue() {
+		return this;
+	}
+
+	@Override
+	public long getTotalHitsCount() {
+		throw new UnsupportedOperationException();
 	}
 }

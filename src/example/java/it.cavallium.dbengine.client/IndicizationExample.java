@@ -7,6 +7,7 @@ import it.cavallium.dbengine.client.query.current.data.ScoreSort;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLSignal;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -46,11 +47,15 @@ public class IndicizationExample {
 										.build(),
 								"id"
 						))
-						.flatMap(results -> results
+						.flatMap(results -> Mono.from(results
 								.results()
 								.flatMap(r -> r)
-								.doOnNext(value -> System.out.println("Value: " + value))
-								.then(results.totalHitsCount())
+								.doOnNext(signal -> {
+									if (signal.isValue()) {
+										System.out.println("Value: " + signal.getValue());
+									}
+								})
+								.filter(LLSignal::isTotalHitsCount))
 						)
 						.doOnNext(count -> System.out.println("Total hits: " + count))
 						.doOnTerminate(() -> System.out.println("Completed"))
@@ -122,7 +127,11 @@ public class IndicizationExample {
 						.flatMap(results -> LuceneUtils.mergeStream(results
 								.results(), MultiSort.topScoreRaw(), 10L)
 								.doOnNext(value -> System.out.println("Value: " + value))
-								.then(results.totalHitsCount())
+								.then(Mono.from(results
+										.results()
+										.flatMap(part -> part)
+										.filter(LLSignal::isTotalHitsCount)
+										.map(LLSignal::getTotalHitsCount)))
 						)
 						.doOnNext(count -> System.out.println("Total hits: " + count))
 						.doOnTerminate(() -> System.out.println("Completed"))

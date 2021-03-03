@@ -49,9 +49,11 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
 		QueryParams params = QueryParams.of(query, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
-		return this.search(snapshot, params, null)
-				.flatMap(LLSearchResult::totalHitsCount)
-				.single();
+		return Mono.from(this.search(snapshot, params, null)
+				.flatMapMany(LLSearchResult::results)
+				.flatMap(s -> s)
+				.filter(LLSignal::isTotalHitsCount)
+				.map(LLSignal::getTotalHitsCount));
 	}
 
 	boolean isLowMemoryMode();

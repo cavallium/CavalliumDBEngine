@@ -9,8 +9,10 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchCollectionStatisticsGetter;
 import it.cavallium.dbengine.database.LLSearchResult;
+import it.cavallium.dbengine.database.LLSignal;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLTotalHitsCount;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
@@ -29,7 +31,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -57,11 +61,6 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.EmissionException;
-import reactor.core.publisher.Sinks.EmitResult;
-import reactor.core.publisher.Sinks.Many;
-import reactor.core.publisher.Sinks.One;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
@@ -546,77 +545,82 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Query luceneQuery,
 			Sort luceneSort,
 			ScoreMode luceneScoreMode) {
+		var searchFlux = Flux.<LLSignal>create(sink -> {
+			AtomicBoolean cancelled = new AtomicBoolean();
+			AtomicLong requests = new AtomicLong();
+			Semaphore requestsAvailable = new Semaphore(0);
+			sink.onDispose(() -> {
+				cancelled.set(true);
+				requestsAvailable.release();
+			});
+			sink.onRequest(delta -> {
+				requests.addAndGet(delta);
+				requestsAvailable.release();
+			});
 
-		One<Long> totalHitsCountSink = Sinks.one();
-		Many<LLKeyScore> topKeysSink = Sinks
-				.many()
-				.unicast()
-				.onBackpressureBuffer();
-
-		var searchFlux = Mono.<Void>create(sink -> {
 			try {
-				if (doDistributedPre) {
-					allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
-					totalHitsCountSink.tryEmitValue(0L);
-				} else {
-					int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
-					streamSearcher.search(indexSearcher,
-							luceneQuery,
-							boundedLimit,
-							luceneSort,
-							luceneScoreMode,
-							minCompetitiveScore,
-							keyFieldName,
-							keyScore -> {
-								EmitResult result = topKeysSink.tryEmitNext(fixKeyScore(keyScore, scoreDivisor));
-								if (result.isSuccess()) {
-									return HandleResult.CONTINUE;
-								} else {
-									if (result == EmitResult.FAIL_CANCELLED) {
-										logger.debug("Fail to emit next value: cancelled");
+				//noinspection BlockingMethodInNonBlockingContext
+				requestsAvailable.acquire();
+				requestsAvailable.release();
+				if (!cancelled.get()) {
+					if (doDistributedPre) {
+						//noinspection BlockingMethodInNonBlockingContext
+						allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
+						sink.next(new LLTotalHitsCount(0L));
+					} else {
+						int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
+						//noinspection BlockingMethodInNonBlockingContext
+						streamSearcher.search(indexSearcher,
+								luceneQuery,
+								boundedLimit,
+								luceneSort,
+								luceneScoreMode,
+								minCompetitiveScore,
+								keyFieldName,
+								keyScore -> {
+									try {
+										while (requests.get() <= 0 && !cancelled.get()) {
+											requestsAvailable.acquire();
+										}
+										if (!cancelled.get()) {
+											requests.decrementAndGet();
+											sink.next(fixKeyScore(keyScore, scoreDivisor));
+											return HandleResult.CONTINUE;
+										} else {
+											return HandleResult.HALT;
+										}
+									} catch (Exception ex) {
+										sink.error(ex);
+										cancelled.set(true);
 										return HandleResult.HALT;
-									} else if (result == EmitResult.FAIL_TERMINATED) {
-										logger.debug("Fail to emit next value: terminated");
-										return HandleResult.HALT;
-									} else if (result == EmitResult.FAIL_ZERO_SUBSCRIBER) {
-										logger.error("Fail to emit next value: zero subscriber. You must subscribe to results before total hits if you specified a limit > 0!");
-										sink.error(new EmissionException(result));
-										throw new EmissionException(result);
-									} else {
-										throw new EmissionException(result);
+									}
+								},
+								totalHitsCount -> {
+									try {
+										while (requests.get() <= 0 && !cancelled.get()) {
+											requestsAvailable.acquire();
+										}
+										if (!cancelled.get()) {
+											requests.decrementAndGet();
+											sink.next(new LLTotalHitsCount(totalHitsCount));
+										}
+									} catch (Exception ex) {
+										sink.error(ex);
+										cancelled.set(true);
 									}
 								}
-							},
-							totalHitsCount -> {
-								EmitResult result = totalHitsCountSink.tryEmitValue(totalHitsCount);
-								if (result.isFailure()) {
-									if (result == EmitResult.FAIL_CANCELLED) {
-										logger.debug("Fail to emit total hits count: cancelled");
-									} else if (result == EmitResult.FAIL_TERMINATED) {
-										logger.debug("Fail to emit total hits count: terminated");
-									} else if (result == EmitResult.FAIL_ZERO_SUBSCRIBER) {
-										logger.debug("Fail to emit total hits count: zero subscriber");
-									} else {
-										sink.error(new EmissionException(result));
-										throw new EmissionException(result);
-									}
-								}
-							}
-					);
+						);
+					}
+					if (!cancelled.get()) {
+						sink.complete();
+					}
 				}
-				topKeysSink.tryEmitComplete();
-				sink.success();
-			} catch (IOException e) {
-				topKeysSink.tryEmitError(e);
-				totalHitsCountSink.tryEmitError(e);
-				sink.error(e);
+			} catch (Exception ex) {
+				sink.error(ex);
 			}
-		}).subscribeOn(luceneQueryScheduler).cache();
+		}).subscribeOn(luceneQueryScheduler);
 
-		return new LLSearchResult(
-				Mono.<Long>firstWithValue(searchFlux.then(Mono.empty()), totalHitsCountSink.asMono()),
-				Flux.<Flux<LLKeyScore>>merge(searchFlux.then(Mono.empty()), Flux.just(topKeysSink.asFlux()))
-		);
+		return new LLSearchResult(Flux.just(searchFlux));
 	}
 
 	@Override

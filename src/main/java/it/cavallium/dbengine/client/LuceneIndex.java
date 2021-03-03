@@ -82,14 +82,39 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			@Nullable MultiSort<SearchResultKey<T>> sort,
 			LLScoreMode scoreMode,
 			@Nullable Long limit) {
-		var mappedKeys = llSearchResult
+		Flux<Flux<LuceneSignal<SearchResultKey<T>>>> mappedKeys = llSearchResult
 				.results()
-				.map(flux -> flux.map(item -> new SearchResultKey<>(indicizer.getKey(item.getKey()), item.getScore())));
+				.map(flux -> flux.map(signal -> {
+					if (signal.isValue()) {
+						return LuceneSignal.value(
+								new SearchResultKey<T>(indicizer.getKey(signal.getValue().getKey()),
+								signal.getValue().getScore()
+						));
+					} else {
+						return LuceneSignal.totalHitsCount(signal.getTotalHitsCount());
+					}
+				}));
+		MultiSort<SearchResultKey<T>> finalSort;
 		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
-			sort = MultiSort.topScore();
+			finalSort = MultiSort.topScore();
+		} else {
+			finalSort = sort;
 		}
-		var sortedKeys = LuceneUtils.mergeStream(mappedKeys, sort, limit);
-		return new SearchResultKeys<>(llSearchResult.totalHitsCount(), sortedKeys);
+
+		MultiSort<LuceneSignal<SearchResultKey<T>>> mappedSort;
+		if (finalSort != null) {
+			mappedSort = new MultiSort<>(finalSort.getQuerySort(), (signal1, signal2) -> {
+				if (signal1.isValue() && signal2.isValue()) {
+					return finalSort.getResultSort().compare((signal1.getValue()), signal2.getValue());
+				} else {
+					return 0;
+				}
+			});
+		} else {
+			mappedSort = null;
+		}
+		Flux<LuceneSignal<SearchResultKey<T>>> sortedKeys = LuceneUtils.mergeStream(mappedKeys, mappedSort, limit);
+		return new SearchResultKeys<>(sortedKeys);
 	}
 
 	private SearchResult<T, U> transformLuceneResultWithValues(LLSearchResult llSearchResult,
@@ -97,17 +122,39 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			LLScoreMode scoreMode,
 			@Nullable Long limit,
 			ValueGetter<T, U> valueGetter) {
-		var mappedKeys = llSearchResult
+		Flux<Flux<LuceneSignal<SearchResultItem<T, U>>>> mappedKeys = llSearchResult
 				.results()
-				.map(flux -> flux.flatMapSequential(item -> {
-					var key = indicizer.getKey(item.getKey());
-					return valueGetter.get(key).map(value -> new SearchResultItem<>(key, value, item.getScore()));
+				.map(flux -> flux.flatMapSequential(signal -> {
+					if (signal.isValue()) {
+						var key = indicizer.getKey(signal.getValue().getKey());
+						return valueGetter
+								.get(key)
+								.map(value -> LuceneSignal.value(new SearchResultItem<>(key, value, signal.getValue().getScore())));
+					} else {
+						return Mono.just(LuceneSignal.totalHitsCount((signal.getTotalHitsCount())));
+					}
 				}));
+		MultiSort<SearchResultItem<T, U>> finalSort;
 		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
-			sort = MultiSort.topScoreWithValues();
+			finalSort = MultiSort.topScoreWithValues();
+		} else {
+			finalSort = sort;
 		}
-		var sortedKeys = LuceneUtils.mergeStream(mappedKeys, sort, limit);
-		return new SearchResult<>(llSearchResult.totalHitsCount(), sortedKeys);
+
+		MultiSort<LuceneSignal<SearchResultItem<T, U>>> mappedSort;
+		if (finalSort != null) {
+			mappedSort = new MultiSort<>(finalSort.getQuerySort(), (signal1, signal2) -> {
+				if (signal1.isValue() && signal2.isValue()) {
+					return finalSort.getResultSort().compare((signal1.getValue()), signal2.getValue());
+				} else {
+					return 0;
+				}
+			});
+		} else {
+			mappedSort = null;
+		}
+		var sortedKeys = LuceneUtils.mergeStream(mappedKeys, mappedSort, limit);
+		return new SearchResult<>(sortedKeys);
 	}
 
 	/**
@@ -200,9 +247,10 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	}
 
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
-				.flatMap(SearchResultKeys::totalHitsCount)
-				.single();
+		return Mono.from(this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
+				.flatMapMany(SearchResultKeys::results)
+				.filter(LuceneSignal::isTotalHitsCount)
+				.map(LuceneSignal::getTotalHitsCount));
 	}
 
 	public boolean isLowMemoryMode() {

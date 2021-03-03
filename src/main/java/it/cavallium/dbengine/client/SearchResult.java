@@ -1,54 +1,35 @@
 package it.cavallium.dbengine.client;
 
-import java.util.Objects;
-import java.util.StringJoiner;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
+@EqualsAndHashCode
+@ToString
 public class SearchResult<T, U> {
 
-	private final Mono<Long> totalHitsCount;
-	private final Flux<SearchResultItem<T, U>> results;
+	private final Flux<LuceneSignal<SearchResultItem<T, U>>> results;
 
-	public SearchResult(Mono<Long> totalHitsCount, Flux<SearchResultItem<T, U>> results) {
-		this.totalHitsCount = totalHitsCount;
+	public SearchResult(Flux<LuceneSignal<SearchResultItem<T, U>>> results) {
 		this.results = results;
 	}
 
 	public static <T, U> SearchResult<T, U> empty() {
-		return new SearchResult<>(Mono.just(0L), Flux.empty());
+		return new SearchResult<>(Flux.just(LuceneSignal.totalHitsCount(0L)));
 	}
 
-	public Mono<Long> totalHitsCount() {
-		return this.totalHitsCount;
-	}
-
-	public Flux<SearchResultItem<T, U>> results() {
+	public Flux<LuceneSignal<SearchResultItem<T, U>>> results() {
 		return this.results;
 	}
 
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		SearchResult<?, ?> that = (SearchResult<?, ?>) o;
-		return Objects.equals(totalHitsCount, that.totalHitsCount) && Objects.equals(results, that.results);
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(totalHitsCount, results);
-	}
-
-	@Override
-	public String toString() {
-		return new StringJoiner(", ", SearchResult.class.getSimpleName() + "[", "]")
-				.add("totalHitsCount=" + totalHitsCount)
-				.add("results=" + results)
-				.toString();
+	public Tuple2<Flux<SearchResultItem<T, U>>, Mono<Long>> splitShared() {
+		Flux<LuceneSignal<SearchResultItem<T, U>>> shared = results.publish().refCount(2);
+		return Tuples.of(
+				shared.filter(LuceneSignal::isValue).map(LuceneSignal::getValue).share(),
+				Mono.from(shared.filter(LuceneSignal::isTotalHitsCount).map(LuceneSignal::getTotalHitsCount)).cache()
+		);
 	}
 }

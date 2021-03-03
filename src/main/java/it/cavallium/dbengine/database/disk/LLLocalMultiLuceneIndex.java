@@ -257,7 +257,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								var resultsWithTermination = result
 										.results()
 										.map(flux -> flux.doOnTerminate(() -> completedAction(actionId)));
-								return new LLSearchResult(result.totalHitsCount(), resultsWithTermination);
+								return new LLSearchResult(resultsWithTermination);
 							} else {
 								return result;
 							}
@@ -318,7 +318,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								var resultsWithTermination = result
 										.results()
 										.map(flux -> flux.doOnTerminate(() -> completedAction(actionId)));
-								return new LLSearchResult(result.totalHitsCount(), resultsWithTermination);
+								return new LLSearchResult(resultsWithTermination);
 							} else {
 								return result;
 							}

@@ -1,63 +1,40 @@
 package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
-import java.util.Objects;
-import java.util.StringJoiner;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+@EqualsAndHashCode
+@ToString
 public class SearchResultKeys<T> {
 
-	private final Mono<Long> totalHitsCount;
-	private final Flux<SearchResultKey<T>> results;
+	private final Flux<LuceneSignal<SearchResultKey<T>>> results;
 
-	public SearchResultKeys(Mono<Long> totalHitsCount, Flux<SearchResultKey<T>> results) {
-		this.totalHitsCount = totalHitsCount;
+	public SearchResultKeys(Flux<LuceneSignal<SearchResultKey<T>>> results) {
 		this.results = results;
 	}
 
 	public static <T, U> SearchResultKeys<T> empty() {
-		return new SearchResultKeys<>(Mono.just(0L), Flux.empty());
+		return new SearchResultKeys<>(Flux.just(LuceneSignal.totalHitsCount(0L)));
 	}
 
-	public Mono<Long> totalHitsCount() {
-		return this.totalHitsCount;
-	}
-
-	public Flux<SearchResultKey<T>> results() {
+	public Flux<LuceneSignal<SearchResultKey<T>>> results() {
 		return this.results;
 	}
 
 	public <U> SearchResult<T, U> withValues(ValueGetter<T, U> valuesGetter) {
-		return new SearchResult<>(totalHitsCount,
-				results.flatMap(item -> valuesGetter
-						.get(item.getKey())
-						.map(value -> new SearchResultItem<>(item.getKey(), value, item.getScore())))
+		return new SearchResult<>(
+				results.flatMapSequential(item -> {
+					if (item.isValue()) {
+						return valuesGetter
+								.get(item.getValue().getKey())
+								.map(value -> LuceneSignal.value(new SearchResultItem<>(item.getValue().getKey(), value, item.getValue().getScore())));
+					} else {
+						return Mono.just(item.mapTotalHitsCount());
+					}
+				})
 		);
-	}
-
-	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		SearchResultKeys<?> that = (SearchResultKeys<?>) o;
-		return Objects.equals(totalHitsCount, that.totalHitsCount) && Objects.equals(results, that.results);
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(totalHitsCount, results);
-	}
-
-	@Override
-	public String toString() {
-		return new StringJoiner(", ", SearchResultKeys.class.getSimpleName() + "[", "]")
-				.add("totalHitsCount=" + totalHitsCount)
-				.add("results=" + results)
-				.toString();
 	}
 }

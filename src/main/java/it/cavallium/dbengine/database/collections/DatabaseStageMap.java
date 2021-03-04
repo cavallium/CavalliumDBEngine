@@ -143,14 +143,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	/**
 	 * Value getter doesn't lock data. Please make sure to lock before getting data.
 	 */
-	default ValueGetterBlocking<T, U> getDbValueGetter() {
-		return k -> getValue(null, k).block();
+	default ValueGetterBlocking<T, U> getDbValueGetter(@Nullable CompositeSnapshot snapshot) {
+		return k -> getValue(snapshot, k).block();
 	}
 
 	/**
 	 * Value getter doesn't lock data. Please make sure to lock before getting data.
 	 */
-	default ValueGetter<T, U> getAsyncDbValueGetter() {
-		return k -> getValue(null, k);
+	default ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {
+		return k -> getValue(snapshot, k);
 	}
 }

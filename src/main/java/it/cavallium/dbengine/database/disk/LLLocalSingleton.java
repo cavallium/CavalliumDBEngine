@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -52,7 +53,7 @@ public class LLLocalSingleton implements LLSingleton {
 	public Mono<byte[]> get(@Nullable LLSnapshot snapshot) {
 		return Mono
 				.fromCallable(() -> db.get(cfh, resolveSnapshot(snapshot), name))
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -63,7 +64,7 @@ public class LLLocalSingleton implements LLSingleton {
 					db.put(cfh, name, value);
 					return null;
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to write " + Arrays.toString(name), cause))
 				.subscribeOn(dbScheduler);
 	}
 

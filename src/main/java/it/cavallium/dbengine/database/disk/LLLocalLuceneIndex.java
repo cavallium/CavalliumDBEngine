@@ -93,10 +93,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.newBoundedElastic(1, Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "lucene-low-memory", Integer.MAX_VALUE))::get;
 	private static final Supplier<Scheduler> querySchedulerSupplier = Suppliers.memoize(() -> boundedSchedulerSupplier.apply("query"))::get;
 	private static final Supplier<Scheduler> blockingSchedulerSupplier = Suppliers.memoize(() -> boundedSchedulerSupplier.apply("blocking"))::get;
+	private static final Supplier<Scheduler> blockingLuceneSearchSchedulerSupplier = Suppliers.memoize(() -> boundedSchedulerSupplier.apply("search-blocking"))::get;
 	/**
 	 * Lucene query scheduler.
 	 */
 	private final Scheduler luceneQueryScheduler;
+	private final Scheduler blockingLuceneSearchScheduler;
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -155,6 +157,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			this.luceneBlockingScheduler = blockingSchedulerSupplier.get();
 			this.luceneQueryScheduler = querySchedulerSupplier.get();
 		}
+		this.blockingLuceneSearchScheduler = blockingLuceneSearchSchedulerSupplier.get();
 
 		// Create scheduled tasks lifecycle manager
 		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();
@@ -565,7 +568,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			});
 
 			try {
-				luceneQueryScheduler.schedule(() -> {
+				blockingLuceneSearchScheduler.schedule(() -> {
 					try {
 						if (!cancelled.get()) {
 							if (doDistributedPre) {
@@ -585,13 +588,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 												if (cancelled.get()) {
 													return HandleResult.HALT;
 												}
-												while (requests.get() <= 0) {
+												while (requests.decrementAndGet() < 0) {
+													requests.incrementAndGet();
 													requestsAvailable.acquire();
 													if (cancelled.get()) {
 														return HandleResult.HALT;
 													}
 												}
-												requests.decrementAndGet();
 												sink.next(fixKeyScore(keyScore, scoreDivisor));
 												return HandleResult.CONTINUE;
 											} catch (Exception ex) {
@@ -606,13 +609,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 												if (cancelled.get()) {
 													return;
 												}
-												while (requests.get() <= 0) {
+												while (requests.decrementAndGet() < 0) {
+													requests.incrementAndGet();
 													requestsAvailable.acquire();
 													if (cancelled.get()) {
 														return;
 													}
 												}
-												requests.decrementAndGet();
 												sink.next(new LLTotalHitsCount(totalHitsCount));
 											} catch (Exception ex) {
 												sink.error(ex);
@@ -631,13 +634,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			} catch (Exception ex) {
 				sink.error(ex);
 			}
-		}, OverflowStrategy.ERROR).subscribeOn(Schedulers.boundedElastic()))));
+		}, OverflowStrategy.BUFFER).subscribeOn(luceneQueryScheduler))));
 	}
 
 	@Override
 	public Mono<Void> close() {
 		return Mono
 				.<Void>fromCallable(() -> {
+					this.blockingLuceneSearchScheduler.dispose();
 					scheduledTasksLifecycle.cancelAndWait();
 					//noinspection BlockingMethodInNonBlockingContext
 					indexWriter.close();

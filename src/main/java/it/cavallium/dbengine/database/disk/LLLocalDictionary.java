@@ -151,7 +151,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					}
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(key), cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -185,7 +185,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					}
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to read range " + range.toString(), cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -219,7 +219,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					}
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(key), cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -248,7 +248,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							}
 						})
-						.onErrorMap(IOException::new)
+						.onErrorMap(cause -> new IOException("Failed to write " + Arrays.toString(key), cause))
 						.subscribeOn(dbScheduler)
 						.then(Mono.empty())
 				).singleOrEmpty();
@@ -326,7 +326,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							}
 						})
-						.onErrorMap(IOException::new)
+						.onErrorMap(cause -> new IOException("Failed to read or write " + Arrays.toString(key), cause))
 						.subscribeOn(dbScheduler);
 	}
 
@@ -354,7 +354,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							}
 						})
-						.onErrorMap(IOException::new)
+						.onErrorMap(cause -> new IOException("Failed to delete " + Arrays.toString(key), cause))
 						.subscribeOn(dbScheduler)
 						.then(Mono.empty())
 				).singleOrEmpty();
@@ -396,7 +396,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 							})
-							.onErrorMap(IOException::new)
+							.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(key), cause))
 							.subscribeOn(dbScheduler);
 				case VOID:
 					return Mono.empty();
@@ -452,9 +452,10 @@ public class LLLocalDictionary implements LLDictionary {
 								})
 								.subscribeOn(dbScheduler)
 								.flatMapMany(Flux::fromIterable)
+								.onErrorMap(cause -> new IOException("Failed to read keys "
+										+ Arrays.deepToString(keysWindow.toArray(byte[][]::new)), cause))
 						)
-				)
-				.onErrorMap(IOException::new);
+				);
 	}
 
 	@Override
@@ -688,8 +689,9 @@ public class LLLocalDictionary implements LLDictionary {
 									synchronized (writeBatch) {
 										writeBatch.close();
 									}
-								}))
-						.onErrorMap(IOException::new);
+								})
+						)
+						.onErrorMap(cause -> new IOException("Failed to write range", cause));
 			}
 		});
 	}
@@ -722,7 +724,7 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					return null;
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to clear", cause))
 				.subscribeOn(dbScheduler);
 
 	}
@@ -760,7 +762,8 @@ public class LLLocalDictionary implements LLDictionary {
 										return i;
 									}
 								})
-								.onErrorMap(IOException::new)
+								.onErrorMap(cause -> new IOException("Failed to get size of range "
+										+ range.toString(), cause))
 								.subscribeOn(dbScheduler);
 					}
 				});
@@ -873,7 +876,7 @@ public class LLLocalDictionary implements LLDictionary {
 						return Map.entry(key, value);
 					}
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to delete " + range.toString(), cause))
 				.subscribeOn(dbScheduler);
 	}
 }

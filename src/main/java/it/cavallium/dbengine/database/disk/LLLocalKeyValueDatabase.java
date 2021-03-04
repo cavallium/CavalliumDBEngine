@@ -294,7 +294,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						dbScheduler,
 						defaultValue
 				))
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -314,7 +314,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -356,7 +356,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					}
 					return null;
 				})
-				.onErrorMap(IOException::new)
+				.onErrorMap(cause -> new IOException("Failed to close", cause))
 				.subscribeOn(dbScheduler);
 	}
 

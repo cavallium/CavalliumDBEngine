@@ -537,7 +537,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 								return Mono.just(signal);
 							}
 						})
-						.dematerialize()
+						.<LLSearchResult>dematerialize()
 				);
 	}
 

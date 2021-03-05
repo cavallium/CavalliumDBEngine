@@ -176,21 +176,22 @@ public class LuceneUtils {
 			@Nullable Long limit) {
 		if (limit != null && limit == 0) {
 			return mappedMultiResults.flatMap(f -> f).ignoreElements().flux();
+		} else {
+			return mappedMultiResults.collectList().flatMapMany(mappedMultiResultsList -> {
+				Flux<T> mergedFlux;
+				if (sort == null) {
+					mergedFlux = Flux.merge(mappedMultiResultsList);
+				} else {
+					//noinspection unchecked
+					mergedFlux = Flux.mergeOrdered(32, sort.getResultSort(), mappedMultiResultsList.toArray(Flux[]::new));
+				}
+				if (limit == null || limit == Long.MAX_VALUE) {
+					return mergedFlux;
+				} else {
+					return mergedFlux.limitRequest(limit);
+				}
+			});
 		}
-		return mappedMultiResults.collectList().flatMapMany(mappedMultiResultsList -> {
-			Flux<T> mergedFlux;
-			if (sort == null) {
-				mergedFlux = Flux.merge(mappedMultiResultsList);
-			} else {
-				//noinspection unchecked
-				mergedFlux = Flux.mergeOrdered(32, sort.getResultSort(), mappedMultiResultsList.toArray(Flux[]::new));
-			}
-			if (limit == null || limit == Long.MAX_VALUE) {
-				return mergedFlux;
-			} else {
-				return mergedFlux.limitRequest(limit);
-			}
-		});
 	}
 
 	public static HandleResult collectTopDoc(Logger logger,
@@ -228,7 +229,13 @@ public class LuceneUtils {
 	public static <T> Flux<LuceneSignal<T>> mergeSignalStream(Flux<Flux<LuceneSignal<T>>> mappedKeys,
 			MultiSort<LuceneSignal<T>> mappedSort,
 			Long limit) {
-		Flux<Flux<LuceneSignal<T>>> sharedMappedSignals = mappedKeys.publish().refCount(2);
+		Flux<Flux<LuceneSignal<T>>> sharedMappedSignals = mappedKeys
+				.map(sub -> sub
+						.publish()
+						.refCount(2)
+				)
+				.publish()
+				.refCount(2);
 		Flux<LuceneSignal<T>> sortedValues = LuceneUtils
 				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LuceneSignal::isValue)), mappedSort, limit);
 		//noinspection Convert2MethodRef
@@ -244,7 +251,13 @@ public class LuceneUtils {
 	public static Flux<LLSignal> mergeSignalStreamRaw(Flux<Flux<LLSignal>> mappedKeys,
 			MultiSort<LLSignal> mappedSort,
 			Long limit) {
-		Flux<Flux<LLSignal>> sharedMappedSignals = mappedKeys.publish().refCount(2);
+		Flux<Flux<LLSignal>> sharedMappedSignals = mappedKeys
+				.map(sub -> sub
+						.publish()
+						.refCount(2)
+				)
+				.publish()
+				.refCount(2);
 
 		Flux<LLSignal> sortedValues = LuceneUtils
 				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LLSignal::isValue)), mappedSort, limit);

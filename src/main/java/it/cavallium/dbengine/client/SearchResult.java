@@ -25,6 +25,9 @@ public class SearchResult<T, U> {
 		return this.results;
 	}
 
+	/**
+	 * You must subscribe to both publishers
+	 */
 	public Tuple2<Flux<SearchResultItem<T, U>>, Mono<Long>> splitShared() {
 		Flux<LuceneSignal<SearchResultItem<T, U>>> shared = results.publish().refCount(2);
 		return Tuples.of(

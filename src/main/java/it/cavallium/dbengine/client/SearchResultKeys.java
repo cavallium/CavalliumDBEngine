@@ -5,6 +5,8 @@ import lombok.EqualsAndHashCode;
 import lombok.ToString;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 @EqualsAndHashCode
 @ToString
@@ -35,6 +37,17 @@ public class SearchResultKeys<T> {
 						return Mono.just(item.mapTotalHitsCount());
 					}
 				})
+		);
+	}
+
+	/**
+	 * You must subscribe to both publishers
+	 */
+	public Tuple2<Flux<SearchResultKey<T>>, Mono<Long>> splitShared() {
+		Flux<LuceneSignal<SearchResultKey<T>>> shared = results.publish().refCount(2);
+		return Tuples.of(
+				shared.filter(LuceneSignal::isValue).map(LuceneSignal::getValue).share(),
+				Mono.from(shared.filter(LuceneSignal::isTotalHitsCount).map(LuceneSignal::getTotalHitsCount)).cache()
 		);
 	}
 }

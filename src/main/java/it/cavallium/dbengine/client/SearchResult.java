@@ -25,6 +25,10 @@ public class SearchResult<T, U> {
 		return this.results;
 	}
 
+	public Flux<SearchResultItem<T, U>> onlyValues() {
+		return this.results.filter(LuceneSignal::isValue).map(LuceneSignal::getValue);
+	}
+
 	/**
 	 * You must subscribe to both publishers
 	 */

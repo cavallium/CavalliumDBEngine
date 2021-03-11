@@ -40,6 +40,10 @@ public class SearchResultKeys<T> {
 		);
 	}
 
+	public Flux<SearchResultKey<T>> onlyKeys() {
+		return this.results.filter(LuceneSignal::isValue).map(LuceneSignal::getValue);
+	}
+
 	/**
 	 * You must subscribe to both publishers
 	 */

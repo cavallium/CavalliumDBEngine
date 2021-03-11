@@ -1,10 +1,14 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.LuceneSignal;
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLSignal;
 import it.cavallium.dbengine.database.LLTotalHitsCount;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
+import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -14,6 +18,8 @@ import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.ResultItemConsumer;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.IOException;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
@@ -270,5 +276,13 @@ public class LuceneUtils {
 				.map(sum -> new LLTotalHitsCount(sum));
 
 		return Flux.merge(sortedValues, sortedTotalSize);
+	}
+
+	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
+			CompositeSnapshot snapshot,
+			DatabaseMapDictionaryDeep<T, Map<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
+		return entry -> dictionaryDeep
+				.at(snapshot, entry.getKey())
+				.flatMap(sub -> sub.getValue(snapshot, entry.getValue()));
 	}
 }

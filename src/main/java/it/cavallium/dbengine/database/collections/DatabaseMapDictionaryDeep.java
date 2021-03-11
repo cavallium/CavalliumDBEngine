@@ -244,10 +244,17 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return getAllStages(null)
 				.flatMap(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
-				.concatWith(entries
+				.concatWith(clear().then(entries
 						.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
 						.flatMap(tuple -> tuple.getT1().set(tuple.getT2()))
-						.then(Mono.empty()));
+						.then(Mono.empty())));
+	}
+
+	@Override
+	public Mono<Void> clear() {
+		return dictionary
+				.setRange(range, Flux.empty(), false)
+				.then();
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

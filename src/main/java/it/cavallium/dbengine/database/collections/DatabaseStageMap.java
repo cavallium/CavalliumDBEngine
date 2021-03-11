@@ -65,8 +65,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	default Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
 		return this
-				.getAllStages(null)
-				.flatMap(entry -> entry.getValue().get(null).map(value -> Map.entry(entry.getKey(), value)));
+				.getAllStages(snapshot)
+				.flatMap(entry -> entry.getValue().get(snapshot).map(value -> Map.entry(entry.getKey(), value)));
 	}
 
 	default Mono<Void> setAllValues(Flux<Entry<T, U>> entries) {

@@ -3,6 +3,9 @@ package it.cavallium.dbengine.database;
 import java.util.Arrays;
 import java.util.StringJoiner;
 
+/**
+ * Range of data, from min (inclusive),to max (exclusive)
+ */
 public class LLRange {
 
 	private static final LLRange RANGE_ALL = new LLRange(null, null);

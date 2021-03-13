@@ -33,7 +33,7 @@ public class CappedWriteBatch implements WriteBatchInterface, AutoCloseable {
 		this.writeBatch.setMaxBytes(maxWriteBatchSize);
 	}
 
-	private void flushIfNeeded(boolean force) throws RocksDBException {
+	private synchronized void flushIfNeeded(boolean force) throws RocksDBException {
 		if (this.writeBatch.count() >= (force ? 1 : cap)) {
 			db.write(writeOptions, this.writeBatch);
 			this.writeBatch.clear();
@@ -41,151 +41,151 @@ public class CappedWriteBatch implements WriteBatchInterface, AutoCloseable {
 	}
 
 	@Override
-	public int count() {
+	public synchronized int count() {
 		return writeBatch.count();
 	}
 
 	@Override
-	public void put(byte[] key, byte[] value) throws RocksDBException {
+	public synchronized void put(byte[] key, byte[] value) throws RocksDBException {
 		writeBatch.put(key, value);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void put(ColumnFamilyHandle columnFamilyHandle, byte[] key, byte[] value) throws RocksDBException {
+	public synchronized void put(ColumnFamilyHandle columnFamilyHandle, byte[] key, byte[] value) throws RocksDBException {
 		writeBatch.put(columnFamilyHandle, key, value);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void put(ByteBuffer key, ByteBuffer value) throws RocksDBException {
+	public synchronized void put(ByteBuffer key, ByteBuffer value) throws RocksDBException {
 		writeBatch.put(key, value);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void put(ColumnFamilyHandle columnFamilyHandle, ByteBuffer key, ByteBuffer value) throws RocksDBException {
+	public synchronized void put(ColumnFamilyHandle columnFamilyHandle, ByteBuffer key, ByteBuffer value) throws RocksDBException {
 		writeBatch.put(columnFamilyHandle, key, value);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void merge(byte[] key, byte[] value) throws RocksDBException {
+	public synchronized void merge(byte[] key, byte[] value) throws RocksDBException {
 		writeBatch.merge(key, value);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void merge(ColumnFamilyHandle columnFamilyHandle, byte[] key, byte[] value) throws RocksDBException {
+	public synchronized void merge(ColumnFamilyHandle columnFamilyHandle, byte[] key, byte[] value) throws RocksDBException {
 		writeBatch.merge(columnFamilyHandle, key, value);
 		flushIfNeeded(false);
 	}
 
 	@Deprecated
 	@Override
-	public void remove(byte[] key) throws RocksDBException {
+	public synchronized void remove(byte[] key) throws RocksDBException {
 		writeBatch.remove(key);
 		flushIfNeeded(false);
 	}
 
 	@Deprecated
 	@Override
-	public void remove(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
+	public synchronized void remove(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
 		writeBatch.remove(columnFamilyHandle, key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void delete(byte[] key) throws RocksDBException {
+	public synchronized void delete(byte[] key) throws RocksDBException {
 		writeBatch.delete(key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void delete(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
+	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
 		writeBatch.delete(columnFamilyHandle, key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void singleDelete(byte[] key) throws RocksDBException {
+	public synchronized void singleDelete(byte[] key) throws RocksDBException {
 		writeBatch.singleDelete(key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void singleDelete(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
+	public synchronized void singleDelete(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
 		writeBatch.singleDelete(columnFamilyHandle, key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void remove(ByteBuffer key) throws RocksDBException {
+	public synchronized void remove(ByteBuffer key) throws RocksDBException {
 		writeBatch.remove(key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void remove(ColumnFamilyHandle columnFamilyHandle, ByteBuffer key) throws RocksDBException {
+	public synchronized void remove(ColumnFamilyHandle columnFamilyHandle, ByteBuffer key) throws RocksDBException {
 		writeBatch.remove(columnFamilyHandle, key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void deleteRange(byte[] beginKey, byte[] endKey) throws RocksDBException {
+	public synchronized void deleteRange(byte[] beginKey, byte[] endKey) throws RocksDBException {
 		writeBatch.deleteRange(beginKey, endKey);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void deleteRange(ColumnFamilyHandle columnFamilyHandle, byte[] beginKey, byte[] endKey)
+	public synchronized void deleteRange(ColumnFamilyHandle columnFamilyHandle, byte[] beginKey, byte[] endKey)
 			throws RocksDBException {
 		writeBatch.deleteRange(columnFamilyHandle, beginKey, endKey);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void putLogData(byte[] blob) throws RocksDBException {
+	public synchronized void putLogData(byte[] blob) throws RocksDBException {
 		writeBatch.putLogData(blob);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public void clear() {
+	public synchronized void clear() {
 		writeBatch.clear();
 	}
 
 	@Override
-	public void setSavePoint() {
+	public synchronized void setSavePoint() {
 		writeBatch.setSavePoint();
 	}
 
 	@Override
-	public void rollbackToSavePoint() throws RocksDBException {
+	public synchronized void rollbackToSavePoint() throws RocksDBException {
 		writeBatch.rollbackToSavePoint();
 	}
 
 	@Override
-	public void popSavePoint() throws RocksDBException {
+	public synchronized void popSavePoint() throws RocksDBException {
 		writeBatch.popSavePoint();
 	}
 
 	@Override
-	public void setMaxBytes(long maxBytes) {
+	public synchronized void setMaxBytes(long maxBytes) {
 		writeBatch.setMaxBytes(maxBytes);
 	}
 
 	@Override
-	public WriteBatch getWriteBatch() {
+	public synchronized WriteBatch getWriteBatch() {
 		return writeBatch;
 	}
 
-	public void writeToDbAndClose() throws RocksDBException {
+	public synchronized void writeToDbAndClose() throws RocksDBException {
 		flushIfNeeded(true);
 	}
 
 	@Override
-	public void close() {
+	public synchronized void close() {
 		writeBatch.close();
 	}
 }

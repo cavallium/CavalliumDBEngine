@@ -29,6 +29,7 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
+import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
@@ -167,22 +168,17 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Boolean> containsRange(@Nullable LLSnapshot snapshot, LLRange range) {
 		return Mono
 				.fromCallable(() -> {
-					try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							iter.seek(range.getMin());
-						} else {
-							iter.seekToFirst();
-						}
-						if (!iter.isValid()) {
-							return false;
-						}
-
-						if (range.hasMax()) {
-							byte[] key1 = iter.key();
-							return Arrays.compareUnsigned(key1, range.getMax()) <= 0;
-						} else {
-							return true;
-						}
+					var readOpts = resolveSnapshot(snapshot);
+					readOpts.setVerifyChecksums(false);
+					if (range.hasMin()) {
+						readOpts.setIterateLowerBound(new Slice(range.getMin()));
+					}
+					if (range.hasMax()) {
+						readOpts.setIterateUpperBound(new Slice(range.getMax()));
+					}
+					try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
+						iter.seekToFirst();
+						return iter.isValid();
 					}
 				})
 				.onErrorMap(cause -> new IOException("Failed to read range " + range.toString(), cause))
@@ -508,22 +504,22 @@ public class LLLocalDictionary implements LLDictionary {
 	@NotNull
 	private Mono<Entry<byte[], byte[]>> putEntryToWriteBatch(Entry<byte[], byte[]> newEntry, boolean getOldValues,
 			CappedWriteBatch writeBatch) {
-		return Mono.from(Mono
-				.defer(() -> {
-					if (getOldValues) {
-						return get(null, newEntry.getKey());
-					} else {
-						return Mono.empty();
-					}
-				})
-				.concatWith(Mono.<byte[]>fromCallable(() -> {
-					synchronized (writeBatch) {
-						writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
-					}
-					return null;
-				})
-						.subscribeOn(dbScheduler))
-				.map(oldValue -> Map.entry(newEntry.getKey(), oldValue)));
+		Mono<byte[]> getOldValueMono;
+		if (getOldValues) {
+			getOldValueMono = get(null, newEntry.getKey());
+		} else {
+			getOldValueMono = Mono.empty();
+		}
+		return getOldValueMono
+				.concatWith(Mono
+						.<byte[]>fromCallable(() -> {
+							writeBatch.put(cfh, newEntry.getKey(), newEntry.getValue());
+							return null;
+						})
+						.subscribeOn(dbScheduler)
+				)
+				.singleOrEmpty()
+				.map(oldValue -> Map.entry(newEntry.getKey(), oldValue));
 	}
 
 	@Override
@@ -637,7 +633,6 @@ public class LLLocalDictionary implements LLDictionary {
 		}.generateNonblocking(dbScheduler, 128);
 	}
 
-	//todo: replace implementation with a simple Flux.push
 	@Override
 	public Flux<Entry<byte[], byte[]>> setRange(LLRange range,
 			Flux<Entry<byte[], byte[]>> entries,
@@ -646,51 +641,49 @@ public class LLLocalDictionary implements LLDictionary {
 			if (range.isAll()) {
 				return clear().thenMany(Flux.empty());
 			} else {
-				return Mono
-						.fromCallable(() -> new CappedWriteBatch(db,
-								CAPPED_WRITE_BATCH_CAP,
-								RESERVED_WRITE_BATCH_SIZE,
-								MAX_WRITE_BATCH_SIZE,
-								BATCH_WRITE_OPTIONS
-						))
-						.subscribeOn(dbScheduler)
-						.flatMapMany(writeBatch -> Mono
-								.fromCallable(() -> {
-									synchronized (writeBatch) {
-										if (range.hasMin() && range.hasMax()) {
-											writeBatch.deleteRange(cfh, range.getMin(), range.getMax());
-											writeBatch.delete(cfh, range.getMax());
-										} else if (range.hasMax()) {
-											writeBatch.deleteRange(cfh, FIRST_KEY, range.getMax());
-											writeBatch.delete(cfh, range.getMax());
-										} else {
-											try (var it = db.newIterator(cfh, getReadOptions(null))) {
-												it.seekToLast();
-												if (it.isValid()) {
-													writeBatch.deleteRange(cfh, range.getMin(), it.key());
-													writeBatch.delete(cfh, it.key());
+				return Flux
+						.usingWhen(
+								Mono
+										.fromCallable(() -> new CappedWriteBatch(db,
+												CAPPED_WRITE_BATCH_CAP,
+												RESERVED_WRITE_BATCH_SIZE,
+												MAX_WRITE_BATCH_SIZE,
+												BATCH_WRITE_OPTIONS)
+										)
+										.subscribeOn(dbScheduler),
+								writeBatch -> Mono
+										.fromCallable(() -> {
+											if (range.hasMin() && range.hasMax()) {
+												writeBatch.deleteRange(cfh, range.getMin(), range.getMax());
+											} else if (range.hasMax()) {
+												writeBatch.deleteRange(cfh, FIRST_KEY, range.getMax());
+											} else {
+												// Delete from x to end of column
+												var readOpts = getReadOptions(null);
+												try (var it = db.newIterator(cfh, readOpts)) {
+													it.seekToLast();
+													if (it.isValid()) {
+														writeBatch.deleteRange(cfh, range.getMin(), it.key());
+														// Delete the last key because we are deleting everything from "min" onward
+														writeBatch.delete(it.key());
+													}
 												}
 											}
-										}
-									}
-									return null;
-								})
-								.subscribeOn(dbScheduler)
-								.thenMany(entries)
-								.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch))
-								.concatWith(Mono.<Entry<byte[], byte[]>>fromCallable(() -> {
-									synchronized (writeBatch) {
-										writeBatch.writeToDbAndClose();
-										writeBatch.close();
-									}
-									return null;
-								}).subscribeOn(dbScheduler))
-								.doFinally(signalType -> {
-									synchronized (writeBatch) {
-										writeBatch.close();
-									}
-								})
+											return null;
+										})
+										.subscribeOn(dbScheduler)
+										.thenMany(entries)
+										.flatMap(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch)),
+								writeBatch -> Mono
+										.fromCallable(() -> {
+											try (writeBatch) {
+												writeBatch.writeToDbAndClose();
+											}
+											return null;
+										})
+										.subscribeOn(dbScheduler)
 						)
+						.subscribeOn(dbScheduler)
 						.onErrorMap(cause -> new IOException("Failed to write range", cause));
 			}
 		});
@@ -741,21 +734,23 @@ public class LLLocalDictionary implements LLDictionary {
 					} else {
 						return Mono
 								.fromCallable(() -> {
-									try (var iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-										if (range.hasMin()) {
-											iter.seek(range.getMin());
-										} else {
-											iter.seekToFirst();
-										}
+									var readOpts = resolveSnapshot(snapshot);
+									readOpts.setFillCache(false);
+									readOpts.setVerifyChecksums(false);
+									if (range.hasMin()) {
+										readOpts.setIterateLowerBound(new Slice(range.getMin()));
+									}
+									if (range.hasMax()) {
+										readOpts.setIterateUpperBound(new Slice(range.getMax()));
+									}
+									if (fast) {
+										readOpts.setIgnoreRangeDeletions(true);
+										readOpts.setPinData(false);
+									}
+									try (var iter = db.newIterator(cfh, readOpts)) {
+										iter.seekToFirst();
 										long i = 0;
 										while (iter.isValid()) {
-											if (range.hasMax()) {
-												byte[] key1 = iter.key();
-												if (Arrays.compareUnsigned(key1, range.getMax()) > 0) {
-													break;
-												}
-											}
-
 											iter.next();
 											i++;
 										}
@@ -773,18 +768,18 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Entry<byte[], byte[]>> getOne(@Nullable LLSnapshot snapshot, LLRange range) {
 		return Mono
 				.fromCallable(() -> {
-					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
+					var readOpts = resolveSnapshot(snapshot);
+					if (range.hasMin()) {
+						readOpts.setIterateLowerBound(new Slice(range.getMin()));
+					}
+					if (range.hasMax()) {
+						readOpts.setIterateUpperBound(new Slice(range.getMax()));
+					}
+					try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+						rocksIterator.seekToFirst();
 						byte[] key;
 						if (rocksIterator.isValid()) {
 							key = rocksIterator.key();
-							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-								return null;
-							}
 							return Map.entry(key, rocksIterator.value());
 						} else {
 							return null;
@@ -798,18 +793,18 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<byte[]> getOneKey(@Nullable LLSnapshot snapshot, LLRange range) {
 		return Mono
 				.fromCallable(() -> {
-					try (var rocksIterator = db.newIterator(cfh, resolveSnapshot(snapshot))) {
-						if (range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
+					var readOpts = resolveSnapshot(snapshot);
+					if (range.hasMin()) {
+						readOpts.setIterateLowerBound(new Slice(range.getMin()));
+					}
+					if (range.hasMax()) {
+						readOpts.setIterateUpperBound(new Slice(range.getMax()));
+					}
+					try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+						rocksIterator.seekToFirst();
 						byte[] key;
 						if (rocksIterator.isValid()) {
 							key = rocksIterator.key();
-							if (range.hasMax() && Arrays.compareUnsigned(key, range.getMax()) > 0) {
-								return null;
-							}
 							return key;
 						} else {
 							return null;
@@ -820,7 +815,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private long fastSizeAll(@Nullable LLSnapshot snapshot) {
-		var rocksdbSnapshot = resolveSnapshot(snapshot);
+		var rocksdbSnapshot = resolveSnapshot(snapshot).setFillCache(false).setVerifyChecksums(false);
 		if (USE_CURRENT_FASTSIZE_FOR_OLD_SNAPSHOTS || rocksdbSnapshot.snapshot() == null) {
 			try {
 				return db.getLongProperty(cfh, "rocksdb.estimate-num-keys");
@@ -829,11 +824,15 @@ public class LLLocalDictionary implements LLDictionary {
 				return 0;
 			}
 		} else {
+			rocksdbSnapshot.setFillCache(false);
+			rocksdbSnapshot.setVerifyChecksums(false);
+			rocksdbSnapshot.setIgnoreRangeDeletions(true);
+			rocksdbSnapshot.setPinData(false);
 			long count = 0;
 			try (RocksIterator iter = db.newIterator(cfh, rocksdbSnapshot)) {
 				iter.seekToFirst();
-				// If it's a fast size of a snapshot, count only up to 1000 elements
-				while (iter.isValid() && count < 1000) {
+				// If it's a fast size of a snapshot, count only up to 1'000'000 elements
+				while (iter.isValid() && count < 1_000_000) {
 					count++;
 					iter.next();
 				}
@@ -843,8 +842,12 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
+		var readOpts = resolveSnapshot(snapshot);
+		readOpts.setFillCache(false);
+		readOpts.setVerifyChecksums(false);
+		readOpts.setPinData(false);
 		long count = 0;
-		try (RocksIterator iter = db.newIterator(cfh, resolveSnapshot(snapshot))) {
+		try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
 			iter.seekToFirst();
 			while (iter.isValid()) {
 				count++;
@@ -858,16 +861,16 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Entry<byte[], byte[]>> removeOne(LLRange range) {
 		return Mono
 				.fromCallable(() -> {
-					try (RocksIterator iter = db.newIterator(cfh)) {
-						if (range.hasMin()) {
-							iter.seek(range.getMin());
-						} else {
-							iter.seekToFirst();
-						}
+					var readOpts = getReadOptions(null);
+					if (range.hasMin()) {
+						readOpts.setIterateLowerBound(new Slice(range.getMin()));
+					}
+					if (range.hasMax()) {
+						readOpts.setIterateUpperBound(new Slice(range.getMax()));
+					}
+					try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
+						iter.seekToFirst();
 						if (!iter.isValid()) {
-							return null;
-						}
-						if (range.hasMax() && Arrays.compareUnsigned(iter.key(), range.getMax()) > 0) {
 							return null;
 						}
 						byte[] key = iter.key();

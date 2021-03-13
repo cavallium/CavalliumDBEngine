@@ -25,12 +25,35 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected final int keyExtLength;
 	protected final LLRange range;
 
-	protected static byte[] firstKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
+	private static byte[] incrementPrefix(byte[] key, int prefixLength) {
+		boolean remainder = true;
+		final byte ff = (byte) 0xFF;
+		for (int i = prefixLength - 1; i >= 0; i--) {
+			if (key[i] != ff) {
+				key[i]++;
+				remainder = false;
+				break;
+			} else {
+				key[i] = 0x00;
+				remainder = true;
+			}
+		}
+
+		if (remainder) {
+			Arrays.fill(key, 0, prefixLength, (byte) 0xFF);
+			return Arrays.copyOf(key, key.length + 1);
+		} else {
+			return key;
+		}
+	}
+
+	static byte[] firstRangeKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
 		return fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
 	}
 
-	protected static byte[] lastKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
-		return fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0xFF);
+	static byte[] nextRangeKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
+		byte[] nonIncremented = fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+		return incrementPrefix(nonIncremented, prefixLength);
 	}
 
 	protected static byte[] fillKeySuffixAndExt(byte[] prefixKey,
@@ -46,7 +69,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return result;
 	}
 
-	protected static byte[] firstKey(byte[] prefixKey,
+	static byte[] firstRangeKey(byte[] prefixKey,
 			byte[] suffixKey,
 			int prefixLength,
 			int suffixLength,
@@ -54,12 +77,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
 	}
 
-	protected static byte[] lastKey(byte[] prefixKey,
+	static byte[] nextRangeKey(byte[] prefixKey,
 			byte[] suffixKey,
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
-		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0xFF);
+		byte[] nonIncremented = fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+		return incrementPrefix(nonIncremented, prefixLength + suffixLength);
 	}
 
 	protected static byte[] fillKeyExt(byte[] prefixKey,
@@ -114,9 +138,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		this.keyPrefix = prefixKey;
 		this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
 		this.keyExtLength = keyExtLength;
-		byte[] firstKey = firstKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
-		byte[] lastKey = lastKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
-		this.range = keyPrefix.length == 0 ? LLRange.all() : LLRange.of(firstKey, lastKey);
+		byte[] firstKey = firstRangeKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
+		byte[] nextRangeKey = nextRangeKey(keyPrefix, keyPrefix.length, keySuffixLength, keyExtLength);
+		this.range = keyPrefix.length == 0 ? LLRange.all() : LLRange.of(firstKey, nextRangeKey);
 		assert subStageKeysConsistency(keyPrefix.length + keySuffixLength + keyExtLength);
 	}
 
@@ -169,8 +193,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	protected LLRange toExtRange(byte[] keySuffix) {
-		byte[] first = firstKey(keyPrefix, keySuffix, keyPrefix.length, keySuffixLength, keyExtLength);
-		byte[] end = lastKey(keyPrefix, keySuffix, keyPrefix.length, keySuffixLength, keyExtLength);
+		byte[] first = firstRangeKey(keyPrefix, keySuffix, keyPrefix.length, keySuffixLength, keyExtLength);
+		byte[] end = nextRangeKey(keyPrefix, keySuffix, keyPrefix.length, keySuffixLength, keyExtLength);
 		return LLRange.of(first, end);
 	}
 

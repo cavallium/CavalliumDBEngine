@@ -4,15 +4,13 @@ import it.cavallium.dbengine.database.LLRange;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.Arrays;
 import java.util.List;
-import org.jetbrains.annotations.NotNull;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.Slice;
-import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 
-public abstract class LLLocalLuceneGroupedReactiveIterator<T> extends Flux<List<T>> {
+public abstract class LLLocalLuceneGroupedReactiveIterator<T> {
 
 	private static final byte[] EMPTY = new byte[0];
 
@@ -22,24 +20,28 @@ public abstract class LLLocalLuceneGroupedReactiveIterator<T> extends Flux<List<
 	private final LLRange range;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
+	private final String debugName;
 
 	public LLLocalLuceneGroupedReactiveIterator(RocksDB db,
 			ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
 			ReadOptions readOptions,
-			boolean readValues) {
+			boolean readValues,
+			String debugName) {
 		this.db = db;
 		this.cfh = cfh;
 		this.prefixLength = prefixLength;
 		this.range = range;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
+		this.debugName = debugName;
 	}
 
-	@Override
-	public void subscribe(@NotNull CoreSubscriber<? super List<T>> actual) {
-		Flux<List<T>> flux = Flux
+
+	@SuppressWarnings("Convert2MethodRef")
+	public Flux<List<T>> flux() {
+		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(range.hasMin() && range.hasMax());
@@ -78,8 +80,7 @@ public abstract class LLLocalLuceneGroupedReactiveIterator<T> extends Flux<List<
 						sink.complete();
 					}
 					return rocksIterator;
-				}, tuple -> {});
-		flux.subscribe(actual);
+				}, rocksIterator1 -> rocksIterator1.close());
 	}
 
 	public abstract T getEntry(byte[] key, byte[] value);

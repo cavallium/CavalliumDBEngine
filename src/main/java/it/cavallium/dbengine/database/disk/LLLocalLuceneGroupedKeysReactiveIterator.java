@@ -11,8 +11,9 @@ public class LLLocalLuceneGroupedKeysReactiveIterator extends LLLocalLuceneGroup
 			ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
-			ReadOptions readOptions) {
-		super(db, cfh, prefixLength, range, readOptions, false);
+			ReadOptions readOptions,
+			String debugName) {
+		super(db, cfh, prefixLength, range, readOptions, false, debugName);
 	}
 
 	@Override

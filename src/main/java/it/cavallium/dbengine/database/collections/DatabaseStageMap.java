@@ -84,19 +84,17 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> replaceAllValues(boolean canKeysChange, Function<Entry<T, U>, Mono<Entry<T, U>>> entriesReplacer) {
-		return Mono.defer(() -> {
-			if (canKeysChange) {
-				return this.setAllValues(this.getAllValues(null).flatMap(entriesReplacer)).then();
-			} else {
-				return this
-						.getAllValues(null)
-						.flatMap(entriesReplacer)
-						.flatMap(replacedEntry -> this
-								.at(null, replacedEntry.getKey())
-								.map(entry -> entry.set(replacedEntry.getValue())))
-						.then();
-			}
-		});
+		if (canKeysChange) {
+			return this.setAllValues(this.getAllValues(null).flatMap(entriesReplacer)).then();
+		} else {
+			return this
+					.getAllValues(null)
+					.flatMap(entriesReplacer)
+					.flatMap(replacedEntry -> this
+							.at(null, replacedEntry.getKey())
+							.map(entry -> entry.set(replacedEntry.getValue())))
+					.then();
+		}
 	}
 
 	default Mono<Void> replaceAll(Function<Entry<T, US>, Mono<Void>> entriesReplacer) {

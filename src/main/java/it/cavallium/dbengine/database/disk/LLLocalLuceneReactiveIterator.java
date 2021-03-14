@@ -1,16 +1,13 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.LLRange;
-import org.jetbrains.annotations.NotNull;
-import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.Slice;
-import reactor.core.CoreSubscriber;
 import reactor.core.publisher.Flux;
 
-public abstract class LLLocalLuceneReactiveIterator<T> extends Flux<T> {
+public abstract class LLLocalLuceneReactiveIterator<T> {
 
 	private static final byte[] EMPTY = new byte[0];
 
@@ -32,9 +29,9 @@ public abstract class LLLocalLuceneReactiveIterator<T> extends Flux<T> {
 		this.readValues = readValues;
 	}
 
-	@Override
-	public void subscribe(@NotNull CoreSubscriber<? super T> actual) {
-		Flux<T> flux = Flux
+	@SuppressWarnings("Convert2MethodRef")
+	public Flux<T> flux() {
+		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(range.hasMin() && range.hasMax());
@@ -61,8 +58,7 @@ public abstract class LLLocalLuceneReactiveIterator<T> extends Flux<T> {
 						sink.complete();
 					}
 					return rocksIterator;
-				}, AbstractImmutableNativeReference::close);
-		flux.subscribe(actual);
+				}, rocksIterator1 -> rocksIterator1.close());
 	}
 
 	public abstract T getEntry(byte[] key, byte[] value);

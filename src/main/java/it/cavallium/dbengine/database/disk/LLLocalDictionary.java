@@ -168,6 +168,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.fromCallable(() -> {
 					var readOpts = resolveSnapshot(snapshot);
 					readOpts.setVerifyChecksums(false);
+					readOpts.setFillCache(false);
 					if (range.hasMin()) {
 						readOpts.setIterateLowerBound(new Slice(range.getMin()));
 					}
@@ -355,49 +356,47 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Mono<byte[]> getPrevValue(byte[] key, LLDictionaryResultType resultType) {
-		return Mono.defer(() -> {
-			switch (resultType) {
-				case VALUE_CHANGED:
-					return containsKey(null, key).single().map(LLUtils::booleanToResponse);
-				case PREVIOUS_VALUE:
-					return Mono
-							.fromCallable(() -> {
-								StampedLock lock;
-								long stamp;
-								if (updateMode == UpdateMode.ALLOW) {
-									lock = itemsLock.getAt(getLockIndex(key));
-									
-									stamp = lock.readLock();
-								} else {
-									lock = null;
-									stamp = 0;
-								}
-								try {
-									logger.trace("Reading {}", key);
-									var data = new Holder<byte[]>();
-									if (db.keyMayExist(cfh, key, data)) {
-										if (data.getValue() != null) {
-											return data.getValue();
-										} else {
-											return db.get(cfh, key);
-										}
+		switch (resultType) {
+			case VALUE_CHANGED:
+				return containsKey(null, key).single().map(LLUtils::booleanToResponse);
+			case PREVIOUS_VALUE:
+				return Mono
+						.fromCallable(() -> {
+							StampedLock lock;
+							long stamp;
+							if (updateMode == UpdateMode.ALLOW) {
+								lock = itemsLock.getAt(getLockIndex(key));
+
+								stamp = lock.readLock();
+							} else {
+								lock = null;
+								stamp = 0;
+							}
+							try {
+								logger.trace("Reading {}", key);
+								var data = new Holder<byte[]>();
+								if (db.keyMayExist(cfh, key, data)) {
+									if (data.getValue() != null) {
+										return data.getValue();
 									} else {
-										return null;
+										return db.get(cfh, key);
 									}
-								} finally {
-									if (updateMode == UpdateMode.ALLOW) {
-										lock.unlockRead(stamp);
-									}
+								} else {
+									return null;
 								}
-							})
-							.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(key), cause))
-							.subscribeOn(dbScheduler);
-				case VOID:
-					return Mono.empty();
-				default:
-					return Mono.error(new IllegalStateException("Unexpected value: " + resultType));
-			}
-		});
+							} finally {
+								if (updateMode == UpdateMode.ALLOW) {
+									lock.unlockRead(stamp);
+								}
+							}
+						})
+						.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(key), cause))
+						.subscribeOn(dbScheduler);
+			case VOID:
+				return Mono.empty();
+			default:
+				return Mono.error(new IllegalStateException("Unexpected value: " + resultType));
+		}
 	}
 
 	@Override
@@ -522,26 +521,22 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
-		return Flux.defer(() -> {
-			if (range.isSingle()) {
-				return getRangeSingle(snapshot, range.getMin());
-			} else {
-				return getRangeMulti(snapshot, range);
-			}
-		});
+		if (range.isSingle()) {
+			return getRangeSingle(snapshot, range.getMin());
+		} else {
+			return getRangeMulti(snapshot, range);
+		}
 	}
 
 	@Override
 	public Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			LLRange range,
 			int prefixLength) {
-		return Flux.defer(() -> {
-			if (range.isSingle()) {
-				return getRangeSingle(snapshot, range.getMin()).map(List::of);
-			} else {
-				return getRangeMultiGrouped(snapshot, range, prefixLength);
-			}
-		});
+		if (range.isSingle()) {
+			return getRangeSingle(snapshot, range.getMin()).map(List::of);
+		} else {
+			return getRangeMultiGrouped(snapshot, range, prefixLength);
+		}
 	}
 
 	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key) {
@@ -552,22 +547,30 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<Entry<byte[],byte[]>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
-		return new LLLocalLuceneEntryReactiveIterator(db, cfh, range, resolveSnapshot(snapshot)).subscribeOn(dbScheduler);
+		return new LLLocalLuceneEntryReactiveIterator(db, cfh, range, resolveSnapshot(snapshot))
+				.flux()
+				.subscribeOn(dbScheduler);
 	}
 
 	private Flux<List<Entry<byte[],byte[]>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return new LLLocalLuceneGroupedEntryReactiveIterator(db, cfh, prefixLength, range, resolveSnapshot(snapshot)).subscribeOn(dbScheduler);
+		return new LLLocalLuceneGroupedEntryReactiveIterator(db,
+				cfh,
+				prefixLength,
+				range,
+				resolveSnapshot(snapshot),
+				"getRangeMultiGrouped"
+		)
+				.flux()
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
 	public Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range) {
-		return Flux.defer(() -> {
-			if (range.isSingle()) {
-				return getRangeKeysSingle(snapshot, range.getMin());
-			} else {
-				return getRangeKeysMulti(snapshot, range);
-			}
-		});
+		if (range.isSingle()) {
+			return getRangeKeysSingle(snapshot, range.getMin());
+		} else {
+			return getRangeKeysMulti(snapshot, range);
+		}
 	}
 
 	@Override
@@ -576,8 +579,9 @@ public class LLLocalDictionary implements LLDictionary {
 				cfh,
 				prefixLength,
 				range,
-				resolveSnapshot(snapshot)
-		).subscribeOn(dbScheduler);
+				resolveSnapshot(snapshot),
+				"getRangeKeysGrouped"
+		).flux().subscribeOn(dbScheduler);
 	}
 
 	private Flux<byte[]> getRangeKeysSingle(LLSnapshot snapshot, byte[] key) {
@@ -589,14 +593,14 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<byte[]> getRangeKeysMulti(LLSnapshot snapshot, LLRange range) {
-		return new LLLocalLuceneKeysReactiveIterator(db, cfh, range, resolveSnapshot(snapshot)).subscribeOn(dbScheduler);
+		return new LLLocalLuceneKeysReactiveIterator(db, cfh, range, resolveSnapshot(snapshot)).flux().subscribeOn(dbScheduler);
 	}
 
 	@Override
 	public Flux<Entry<byte[], byte[]>> setRange(LLRange range,
 			Flux<Entry<byte[], byte[]>> entries,
 			boolean getOldValues) {
-		return Flux.defer(() -> Flux
+		return Flux
 				.usingWhen(
 						Mono
 								.fromCallable(() -> new CappedWriteBatch(db,
@@ -653,8 +657,7 @@ public class LLLocalDictionary implements LLDictionary {
 								.subscribeOn(dbScheduler)
 				)
 				.subscribeOn(dbScheduler)
-				.onErrorMap(cause -> new IOException("Failed to write range", cause))
-		);
+				.onErrorMap(cause -> new IOException("Failed to write range", cause));
 	}
 
 	private static byte[] incrementLexicographically(byte[] key) {
@@ -685,7 +688,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.<Void>fromCallable(() -> {
 					var readOpts = getReadOptions(null);
 					readOpts.setVerifyChecksums(false);
-					
+
 					// readOpts.setIgnoreRangeDeletions(true);
 					readOpts.setFillCache(false);
 					try (CappedWriteBatch writeBatch = new CappedWriteBatch(db,
@@ -728,44 +731,41 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast) {
-		return Mono
-				.defer(() -> {
-					if (range.isAll()) {
-						return Mono
-								.fromCallable(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
-								.onErrorMap(IOException::new)
-								.subscribeOn(dbScheduler);
-					} else {
-						return Mono
-								.fromCallable(() -> {
-									var readOpts = resolveSnapshot(snapshot);
-									readOpts.setFillCache(false);
-									readOpts.setVerifyChecksums(false);
-									if (range.hasMin()) {
-										readOpts.setIterateLowerBound(new Slice(range.getMin()));
-									}
-									if (range.hasMax()) {
-										readOpts.setIterateUpperBound(new Slice(range.getMax()));
-									}
-									if (fast) {
-										readOpts.setIgnoreRangeDeletions(true);
-										
-									}
-									try (var iter = db.newIterator(cfh, readOpts)) {
-										iter.seekToFirst();
-										long i = 0;
-										while (iter.isValid()) {
-											iter.next();
-											i++;
-										}
-										return i;
-									}
-								})
-								.onErrorMap(cause -> new IOException("Failed to get size of range "
-										+ range.toString(), cause))
-								.subscribeOn(dbScheduler);
-					}
-				});
+		if (range.isAll()) {
+			return Mono
+					.fromCallable(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
+					.onErrorMap(IOException::new)
+					.subscribeOn(dbScheduler);
+		} else {
+			return Mono
+					.fromCallable(() -> {
+						var readOpts = resolveSnapshot(snapshot);
+						readOpts.setFillCache(false);
+						readOpts.setVerifyChecksums(false);
+						if (range.hasMin()) {
+							readOpts.setIterateLowerBound(new Slice(range.getMin()));
+						}
+						if (range.hasMax()) {
+							readOpts.setIterateUpperBound(new Slice(range.getMax()));
+						}
+						if (fast) {
+							readOpts.setIgnoreRangeDeletions(true);
+
+						}
+						try (var iter = db.newIterator(cfh, readOpts)) {
+							iter.seekToFirst();
+							long i = 0;
+							while (iter.isValid()) {
+								iter.next();
+								i++;
+							}
+							return i;
+						}
+					})
+					.onErrorMap(cause -> new IOException("Failed to get size of range "
+							+ range.toString(), cause))
+					.subscribeOn(dbScheduler);
+		}
 	}
 
 	@Override

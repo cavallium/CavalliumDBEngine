@@ -13,8 +13,9 @@ public class LLLocalLuceneGroupedEntryReactiveIterator extends LLLocalLuceneGrou
 			ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
-			ReadOptions readOptions) {
-		super(db, cfh, prefixLength, range, readOptions, true);
+			ReadOptions readOptions,
+			String debugName) {
+		super(db, cfh, prefixLength, range, readOptions, true, debugName);
 	}
 
 	@Override

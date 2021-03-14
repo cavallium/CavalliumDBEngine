@@ -63,7 +63,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 
 	@Override
 	public boolean needsKeyFlux() {
-		return assertsEnabled;
+		return true;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {

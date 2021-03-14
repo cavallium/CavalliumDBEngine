@@ -46,7 +46,7 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 
 	@Override
 	public boolean needsKeyFlux() {
-		return assertsEnabled;
+		return true;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {

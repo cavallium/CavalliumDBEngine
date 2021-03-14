@@ -213,13 +213,17 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		byte[] keySuffixData = serializeSuffix(keySuffix);
+		Flux<byte[]> keyFlux;
+		if (this.subStageGetter.needsKeyFlux()) {
+			keyFlux = this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData));
+		} else {
+			keyFlux = Flux.empty();
+		}
 		return this.subStageGetter
 				.subStage(dictionary,
 						snapshot,
 						toKeyWithoutExt(keySuffixData),
-						this.subStageGetter.needsKeyFlux()
-								? this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData))
-								: Flux.empty()
+						keyFlux
 				);
 	}
 

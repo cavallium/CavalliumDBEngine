@@ -54,7 +54,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
-		return keys.flatMap(key -> this.getValue(snapshot, key).map(value -> Map.entry(key, value)));
+		return keys.flatMapSequential(key -> this.getValue(snapshot, key).map(value -> Map.entry(key, value)));
 	}
 
 	default Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
@@ -66,7 +66,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
 		return this
 				.getAllStages(snapshot)
-				.flatMap(entry -> entry.getValue().get(snapshot).map(value -> Map.entry(entry.getKey(), value)));
+				.flatMapSequential(entry -> entry
+						.getValue()
+						.get(snapshot)
+						.map(value -> Map.entry(entry.getKey(), value))
+				);
 	}
 
 	default Mono<Void> setAllValues(Flux<Entry<T, U>> entries) {

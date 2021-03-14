@@ -8,17 +8,19 @@ public interface Serializer<A, B> {
 
 	@NotNull B serialize(@NotNull A deserialized);
 
-	static Serializer<byte[], byte[]> noop() {
-		return new Serializer<>() {
-			@Override
-			public byte @NotNull [] deserialize(byte @NotNull [] serialized) {
-				return serialized;
-			}
+	Serializer<byte[], byte[]> NOOP_SERIALIZER = new Serializer<>() {
+		@Override
+		public byte @NotNull [] deserialize(byte @NotNull [] serialized) {
+			return serialized;
+		}
 
-			@Override
-			public byte @NotNull [] serialize(byte @NotNull [] deserialized) {
-				return deserialized;
-			}
-		};
+		@Override
+		public byte @NotNull [] serialize(byte @NotNull [] deserialized) {
+			return deserialized;
+		}
+	};
+
+	static Serializer<byte[], byte[]> noop() {
+		return NOOP_SERIALIZER;
 	}
 }

@@ -19,6 +19,8 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater);
 
+	Mono<Void> clear();
+
 	Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType);
 
 	Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys);

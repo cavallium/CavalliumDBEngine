@@ -92,6 +92,11 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
+	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), range);
+	}
+
+	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono
 				.just(new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noop()))
@@ -185,6 +190,22 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						entries.map(entry ->
 								Map.entry(toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue()))), true)
 				.map(entry -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey())), deserialize(entry.getValue())));
+	}
+
+	@Override
+	public Mono<Void> clear() {
+		if (range.isAll()) {
+			return dictionary
+					.clear();
+		} else if (range.isSingle()) {
+			return dictionary
+					.remove(range.getSingle(), LLDictionaryResultType.VOID)
+					.then();
+		} else {
+			return dictionary
+					.setRange(range, Flux.empty(), false)
+					.then();
+		}
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -203,6 +204,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return dictionary.sizeRange(resolveSnapshot(snapshot), range, fast);
 	}
 
+	@Override
+	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), range);
+	}
+
 	@SuppressWarnings("ReactiveStreamsUnusedPublisher")
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
@@ -219,37 +225,35 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		return Flux.defer(() -> {
-			if (this.subStageGetter.needsKeyFlux()) {
-				return dictionary
-						.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
-						.flatMap(rangeKeys -> {
-							byte[] groupKeyWithExt = rangeKeys.get(0);
-							byte[] groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt);
-							byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
-							assert subStageKeysConsistency(groupKeyWithExt.length);
-							return this.subStageGetter
-									.subStage(dictionary,
-											snapshot,
-											groupKeyWithoutExt,
-											this.subStageGetter.needsKeyFlux() ? Flux.defer(() -> Flux.fromIterable(rangeKeys)) : Flux.empty()
-									)
-									.map(us -> Map.entry(this.deserializeSuffix(groupSuffix), us));
-						});
-			} else {
-				return dictionary
-						.getOneKey(resolveSnapshot(snapshot), range)
-						.flatMap(randomKeyWithExt -> {
-							byte[] keyWithoutExt = removeExtFromFullKey(randomKeyWithExt);
-							byte[] keySuffix = this.stripPrefix(keyWithoutExt);
-							assert subStageKeysConsistency(keyWithoutExt.length);
-							return this.subStageGetter
-									.subStage(dictionary, snapshot, keyWithoutExt, Mono.just(randomKeyWithExt).flux())
-									.map(us -> Map.entry(this.deserializeSuffix(keySuffix), us));
-						});
-			}
-		});
-
+		if (this.subStageGetter.needsKeyFlux()) {
+			return dictionary
+					.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
+					.flatMapSequential(rangeKeys -> {
+						byte[] groupKeyWithExt = rangeKeys.get(0);
+						byte[] groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt);
+						byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
+						assert subStageKeysConsistency(groupKeyWithExt.length);
+						return this.subStageGetter
+								.subStage(dictionary,
+										snapshot,
+										groupKeyWithoutExt,
+										this.subStageGetter.needsKeyFlux() ? Flux.defer(() -> Flux.fromIterable(rangeKeys)) : Flux.empty()
+								)
+								.map(us -> Map.entry(this.deserializeSuffix(groupSuffix), us));
+					});
+		} else {
+			return dictionary
+					.getOneKey(resolveSnapshot(snapshot), range)
+					.flatMap(randomKeyWithExt -> {
+						byte[] keyWithoutExt = removeExtFromFullKey(randomKeyWithExt);
+						byte[] keySuffix = this.stripPrefix(keyWithoutExt);
+						assert subStageKeysConsistency(keyWithoutExt.length);
+						return this.subStageGetter
+								.subStage(dictionary, snapshot, keyWithoutExt, Mono.just(randomKeyWithExt).flux())
+								.map(us -> Map.entry(this.deserializeSuffix(keySuffix), us));
+					})
+					.flux();
+		}
 	}
 
 	private boolean subStageKeysConsistency(int totalKeyLength) {
@@ -267,7 +271,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return getAllStages(null)
-				.flatMap(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
+				.flatMapSequential(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
 				.concatWith(clear().then(entries
 						.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
 						.flatMap(tuple -> tuple.getT1().set(tuple.getT2()))
@@ -276,9 +280,18 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Mono<Void> clear() {
-		return dictionary
-				.setRange(range, Flux.empty(), false)
-				.then();
+		if (range.isAll()) {
+			return dictionary
+					.clear();
+		} else if (range.isSingle()) {
+			return dictionary
+					.remove(range.getSingle(), LLDictionaryResultType.VOID)
+					.then();
+		} else {
+			return dictionary
+					.setRange(range, Flux.empty(), false)
+					.then();
+		}
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

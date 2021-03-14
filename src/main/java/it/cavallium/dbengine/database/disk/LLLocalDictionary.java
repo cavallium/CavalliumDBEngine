@@ -550,13 +550,13 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<Entry<byte[],byte[]>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
-		return new LLLocalLuceneEntryReactiveIterator(db, cfh, range, resolveSnapshot(snapshot))
+		return new LLLocalEntryReactiveRocksIterator(db, cfh, range, resolveSnapshot(snapshot))
 				.flux()
 				.subscribeOn(dbScheduler);
 	}
 
 	private Flux<List<Entry<byte[],byte[]>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return new LLLocalLuceneGroupedEntryReactiveIterator(db,
+		return new LLLocalGroupedEntryReactiveRocksIterator(db,
 				cfh,
 				prefixLength,
 				range,
@@ -578,7 +578,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<List<byte[]>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return new LLLocalLuceneGroupedKeysReactiveIterator(db,
+		return new LLLocalGroupedKeyReactiveRocksIterator(db,
 				cfh,
 				prefixLength,
 				range,
@@ -589,7 +589,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<byte[]> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return new LLLocalLuceneKeyPrefixesReactiveIterator(db,
+		return new LLLocalKeyPrefixReactiveRocksIterator(db,
 				cfh,
 				prefixLength,
 				range,
@@ -607,7 +607,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<byte[]> getRangeKeysMulti(LLSnapshot snapshot, LLRange range) {
-		return new LLLocalLuceneKeysReactiveIterator(db, cfh, range, resolveSnapshot(snapshot)).flux().subscribeOn(dbScheduler);
+		return new LLLocalKeyReactiveRocksIterator(db, cfh, range, resolveSnapshot(snapshot)).flux().subscribeOn(dbScheduler);
 	}
 
 	@Override

@@ -1,6 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.LLRange;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
@@ -10,30 +13,37 @@ import org.rocksdb.Slice;
 import reactor.core.publisher.Flux;
 import reactor.util.function.Tuples;
 
-public abstract class LLLocalLuceneReactiveIterator<T> {
+public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 
 	private static final byte[] EMPTY = new byte[0];
 
 	private final RocksDB db;
 	private final ColumnFamilyHandle cfh;
+	private final int prefixLength;
 	private final LLRange range;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
+	private final String debugName;
 
-	public LLLocalLuceneReactiveIterator(RocksDB db,
+	public LLLocalGroupedReactiveRocksIterator(RocksDB db,
 			ColumnFamilyHandle cfh,
+			int prefixLength,
 			LLRange range,
 			ReadOptions readOptions,
-			boolean readValues) {
+			boolean readValues,
+			String debugName) {
 		this.db = db;
 		this.cfh = cfh;
+		this.prefixLength = prefixLength;
 		this.range = range;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
+		this.debugName = debugName;
 	}
 
+
 	@SuppressWarnings("Convert2MethodRef")
-	public Flux<T> flux() {
+	public Flux<List<T>> flux() {
 		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
@@ -61,11 +71,22 @@ public abstract class LLLocalLuceneReactiveIterator<T> {
 					return Tuples.of(rocksIterator, Optional.ofNullable(sliceMin), Optional.ofNullable(sliceMax));
 				}, (tuple, sink) -> {
 					var rocksIterator = tuple.getT1();
-					if (rocksIterator.isValid()) {
+					ObjectArrayList<T> values = new ObjectArrayList<>();
+					byte[] firstGroupKey = null;
+
+					while (rocksIterator.isValid()) {
 						byte[] key = rocksIterator.key();
+						if (firstGroupKey == null) {
+							firstGroupKey = key;
+						} else if (!Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
+							break;
+						}
 						byte[] value = readValues ? rocksIterator.value() : EMPTY;
 						rocksIterator.next();
-						sink.next(getEntry(key, value));
+						values.add(getEntry(key, value));
+					}
+					if (!values.isEmpty()) {
+						sink.next(values);
 					} else {
 						sink.complete();
 					}

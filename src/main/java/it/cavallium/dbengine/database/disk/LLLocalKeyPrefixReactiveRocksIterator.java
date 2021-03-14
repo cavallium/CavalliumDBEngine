@@ -11,7 +11,7 @@ import org.rocksdb.Slice;
 import reactor.core.publisher.Flux;
 import reactor.util.function.Tuples;
 
-public class LLLocalLuceneKeyPrefixesReactiveIterator {
+public class LLLocalKeyPrefixReactiveRocksIterator {
 
 	private static final byte[] EMPTY = new byte[0];
 
@@ -22,7 +22,7 @@ public class LLLocalLuceneKeyPrefixesReactiveIterator {
 	private final ReadOptions readOptions;
 	private final String debugName;
 
-	public LLLocalLuceneKeyPrefixesReactiveIterator(RocksDB db,
+	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db,
 			ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,

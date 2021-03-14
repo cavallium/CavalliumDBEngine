@@ -5,15 +5,13 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 
-public class LLLocalLuceneGroupedKeysReactiveIterator extends LLLocalLuceneGroupedReactiveIterator<byte[]> {
+public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterator<byte[]> {
 
-	public LLLocalLuceneGroupedKeysReactiveIterator(RocksDB db,
+	public LLLocalKeyReactiveRocksIterator(RocksDB db,
 			ColumnFamilyHandle cfh,
-			int prefixLength,
 			LLRange range,
-			ReadOptions readOptions,
-			String debugName) {
-		super(db, cfh, prefixLength, range, readOptions, false, debugName);
+			ReadOptions readOptions) {
+		super(db, cfh, range, readOptions, false);
 	}
 
 	@Override

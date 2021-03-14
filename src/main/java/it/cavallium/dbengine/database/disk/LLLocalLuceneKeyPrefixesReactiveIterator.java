@@ -38,41 +38,48 @@ public class LLLocalLuceneKeyPrefixesReactiveIterator {
 	public Flux<byte[]> flux() {
 		return Flux
 				.generate(() -> {
-					var readOptions = new ReadOptions(this.readOptions);
-					readOptions.setFillCache(range.hasMin() && range.hasMax());
-					if (range.hasMin()) {
-						readOptions.setIterateLowerBound(new Slice(range.getMin()));
-					}
-					if (range.hasMax()) {
-						readOptions.setIterateUpperBound(new Slice(range.getMax()));
-					}
-					readOptions.setPrefixSameAsStart(true);
-					var rocksIterator = db.newIterator(cfh, readOptions);
-					if (range.hasMin()) {
-						rocksIterator.seek(range.getMin());
-					} else {
-						rocksIterator.seekToFirst();
-					}
-					return rocksIterator;
-				}, (rocksIterator, sink) -> {
-					byte[] firstGroupKey = null;
-
-					while (rocksIterator.isValid()) {
-						byte[] key = rocksIterator.key();
-						if (firstGroupKey == null) {
-							firstGroupKey = key;
-						} else if (!Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
-							break;
+					synchronized (this) {
+						var readOptions = new ReadOptions(this.readOptions);
+						readOptions.setFillCache(range.hasMin() && range.hasMax());
+						if (range.hasMin()) {
+							readOptions.setIterateLowerBound(new Slice(range.getMin()));
 						}
-						rocksIterator.next();
+						if (range.hasMax()) {
+							readOptions.setIterateUpperBound(new Slice(range.getMax()));
+						}
+						var rocksIterator = db.newIterator(cfh, readOptions);
+						if (range.hasMin()) {
+							rocksIterator.seek(range.getMin());
+						} else {
+							rocksIterator.seekToFirst();
+						}
+						return rocksIterator;
 					}
-					if (firstGroupKey != null) {
-						var groupKeyPrefix = Arrays.copyOf(firstGroupKey, prefixLength);
-						sink.next(groupKeyPrefix);
-					} else {
-						sink.complete();
+				}, (rocksIterator, sink) -> {
+					synchronized (this) {
+						byte[] firstGroupKey = null;
+
+						while (rocksIterator.isValid()) {
+							byte[] key = rocksIterator.key();
+							if (firstGroupKey == null) {
+								firstGroupKey = key;
+							} else if (!Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
+								break;
+							}
+							rocksIterator.next();
+						}
+						if (firstGroupKey != null) {
+							var groupKeyPrefix = Arrays.copyOf(firstGroupKey, prefixLength);
+							sink.next(groupKeyPrefix);
+						} else {
+							sink.complete();
+						}
+						return rocksIterator;
 					}
-					return rocksIterator;
-				}, rocksIterator1 -> rocksIterator1.close());
+				}, rocksIterator1 -> {
+					synchronized (this) {
+						rocksIterator1.close();
+					}
+				});
 	}
 }

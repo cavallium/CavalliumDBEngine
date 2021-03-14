@@ -33,32 +33,40 @@ public abstract class LLLocalLuceneReactiveIterator<T> {
 	public Flux<T> flux() {
 		return Flux
 				.generate(() -> {
-					var readOptions = new ReadOptions(this.readOptions);
-					readOptions.setFillCache(range.hasMin() && range.hasMax());
-					if (range.hasMin()) {
-						readOptions.setIterateLowerBound(new Slice(range.getMin()));
+					synchronized (this) {
+						var readOptions = new ReadOptions(this.readOptions);
+						readOptions.setFillCache(range.hasMin() && range.hasMax());
+						if (range.hasMin()) {
+							readOptions.setIterateLowerBound(new Slice(range.getMin()));
+						}
+						if (range.hasMax()) {
+							readOptions.setIterateUpperBound(new Slice(range.getMax()));
+						}
+						var rocksIterator = db.newIterator(cfh, readOptions);
+						if (range.hasMin()) {
+							rocksIterator.seek(range.getMin());
+						} else {
+							rocksIterator.seekToFirst();
+						}
+						return rocksIterator;
 					}
-					if (range.hasMax()) {
-						readOptions.setIterateUpperBound(new Slice(range.getMax()));
-					}
-					var rocksIterator = db.newIterator(cfh, readOptions);
-					if (range.hasMin()) {
-						rocksIterator.seek(range.getMin());
-					} else {
-						rocksIterator.seekToFirst();
-					}
-					return rocksIterator;
 				}, (rocksIterator, sink) -> {
-					if (rocksIterator.isValid()) {
-						byte[] key = rocksIterator.key();
-						byte[] value = readValues ? rocksIterator.value() : EMPTY;
-						rocksIterator.next();
-						sink.next(getEntry(key, value));
-					} else {
-						sink.complete();
+					synchronized (this) {
+						if (rocksIterator.isValid()) {
+							byte[] key = rocksIterator.key();
+							byte[] value = readValues ? rocksIterator.value() : EMPTY;
+							rocksIterator.next();
+							sink.next(getEntry(key, value));
+						} else {
+							sink.complete();
+						}
+						return rocksIterator;
 					}
-					return rocksIterator;
-				}, rocksIterator1 -> rocksIterator1.close());
+				}, rocksIterator1 -> {
+					synchronized (this) {
+						rocksIterator1.close();
+					}
+				});
 	}
 
 	public abstract T getEntry(byte[] key, byte[] value);

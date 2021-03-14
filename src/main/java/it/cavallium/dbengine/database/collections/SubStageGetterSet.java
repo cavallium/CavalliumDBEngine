@@ -30,17 +30,22 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
-			Flux<byte[]> keyFlux) {
+			Flux<byte[]> debuggingKeyFlux) {
 		Mono<DatabaseSetDictionary<T>> result = Mono.just(DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer));
 		if (assertsEnabled) {
-			return checkKeyFluxConsistency(prefixKey, keyFlux).then(result);
+			return checkKeyFluxConsistency(prefixKey, debuggingKeyFlux).then(result);
 		} else {
 			return result;
 		}
 	}
 
 	@Override
-	public boolean needsKeyFlux() {
+	public boolean isMultiKey() {
+		return true;
+	}
+
+	@Override
+	public boolean needsDebuggingKeyFlux() {
 		return assertsEnabled;
 	}
 

@@ -214,7 +214,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		byte[] keySuffixData = serializeSuffix(keySuffix);
 		Flux<byte[]> keyFlux;
-		if (this.subStageGetter.needsKeyFlux()) {
+		if (this.subStageGetter.needsDebuggingKeyFlux()) {
 			keyFlux = this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData));
 		} else {
 			keyFlux = Flux.empty();
@@ -229,10 +229,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		if (this.subStageGetter.needsKeyFlux()) {
+		if (this.subStageGetter.needsDebuggingKeyFlux()) {
 			return dictionary
 					.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
 					.flatMapSequential(rangeKeys -> {
+						assert this.subStageGetter.isMultiKey() || rangeKeys.size() == 1;
 						byte[] groupKeyWithExt = rangeKeys.get(0);
 						byte[] groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt);
 						byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
@@ -241,22 +242,25 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 								.subStage(dictionary,
 										snapshot,
 										groupKeyWithoutExt,
-										this.subStageGetter.needsKeyFlux() ? Flux.defer(() -> Flux.fromIterable(rangeKeys)) : Flux.empty()
+										Flux.fromIterable(rangeKeys)
 								)
 								.map(us -> Map.entry(this.deserializeSuffix(groupSuffix), us));
 					});
 		} else {
 			return dictionary
-					.getOneKey(resolveSnapshot(snapshot), range)
-					.flatMap(randomKeyWithExt -> {
-						byte[] keyWithoutExt = removeExtFromFullKey(randomKeyWithExt);
-						byte[] keySuffix = this.stripPrefix(keyWithoutExt);
-						assert subStageKeysConsistency(keyWithoutExt.length);
+					.getRangeKeyPrefixes(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
+					.flatMapSequential(groupKeyWithExt -> {
+						byte[] groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt);
+						byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
+						assert subStageKeysConsistency(groupKeyWithExt.length);
 						return this.subStageGetter
-								.subStage(dictionary, snapshot, keyWithoutExt, Mono.just(randomKeyWithExt).flux())
-								.map(us -> Map.entry(this.deserializeSuffix(keySuffix), us));
-					})
-					.flux();
+								.subStage(dictionary,
+										snapshot,
+										groupKeyWithoutExt,
+										Flux.empty()
+								)
+								.map(us -> Map.entry(this.deserializeSuffix(groupSuffix), us));
+					});
 		}
 	}
 

@@ -33,20 +33,25 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	public Mono<DatabaseMapDictionary<T, U>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			byte[] prefixKey,
-			Flux<byte[]> keyFlux) {
+			Flux<byte[]> debuggingKeyFlux) {
 		Mono<DatabaseMapDictionary<T, U>> result = Mono.just(DatabaseMapDictionary.tail(dictionary, prefixKey, keySerializer,
 				valueSerializer
 		));
 		if (assertsEnabled) {
-			return checkKeyFluxConsistency(prefixKey, keyFlux).then(result);
+			return checkKeyFluxConsistency(prefixKey, debuggingKeyFlux).then(result);
 		} else {
 			return result;
 		}
 	}
 
 	@Override
-	public boolean needsKeyFlux() {
+	public boolean isMultiKey() {
 		return true;
+	}
+
+	@Override
+	public boolean needsDebuggingKeyFlux() {
+		return assertsEnabled;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {

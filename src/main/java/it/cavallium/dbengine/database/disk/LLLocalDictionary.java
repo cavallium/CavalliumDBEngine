@@ -584,6 +584,17 @@ public class LLLocalDictionary implements LLDictionary {
 		).flux().subscribeOn(dbScheduler);
 	}
 
+	@Override
+	public Flux<byte[]> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
+		return new LLLocalLuceneKeyPrefixesReactiveIterator(db,
+				cfh,
+				prefixLength,
+				range,
+				resolveSnapshot(snapshot),
+				"getRangeKeysGrouped"
+		).flux().subscribeOn(dbScheduler);
+	}
+
 	private Flux<byte[]> getRangeKeysSingle(LLSnapshot snapshot, byte[] key) {
 		return this
 				.containsKey(snapshot, key)

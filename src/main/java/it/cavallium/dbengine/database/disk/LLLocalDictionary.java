@@ -48,6 +48,8 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
 	static final int MULTI_GET_WINDOW = 500;
 	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
+	static final boolean PREFER_ALWAYS_SEEK_TO_FIRST = true;
+	static final boolean ALWAYS_VERIFY_CHECKSUMS = true;
 
 	private static final int STRIPES = 512;
 	private static final byte[] FIRST_KEY = new byte[]{};
@@ -167,7 +169,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono
 				.fromCallable(() -> {
 					var readOpts = resolveSnapshot(snapshot);
-					readOpts.setVerifyChecksums(false);
+					readOpts.setVerifyChecksums(ALWAYS_VERIFY_CHECKSUMS);
 					readOpts.setFillCache(false);
 					if (range.hasMin()) {
 						readOpts.setIterateLowerBound(new Slice(range.getMin()));
@@ -698,7 +700,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono
 				.<Void>fromCallable(() -> {
 					var readOpts = getReadOptions(null);
-					readOpts.setVerifyChecksums(false);
+					readOpts.setVerifyChecksums(ALWAYS_VERIFY_CHECKSUMS);
 
 					// readOpts.setIgnoreRangeDeletions(true);
 					readOpts.setFillCache(false);
@@ -752,7 +754,7 @@ public class LLLocalDictionary implements LLDictionary {
 					.fromCallable(() -> {
 						var readOpts = resolveSnapshot(snapshot);
 						readOpts.setFillCache(false);
-						readOpts.setVerifyChecksums(false);
+						readOpts.setVerifyChecksums(ALWAYS_VERIFY_CHECKSUMS);
 						if (range.hasMin()) {
 							readOpts.setIterateLowerBound(new Slice(range.getMin()));
 						}
@@ -840,12 +842,8 @@ public class LLLocalDictionary implements LLDictionary {
 			}
 		} else {
 			rocksdbSnapshot.setFillCache(false);
-			rocksdbSnapshot.setVerifyChecksums(false);
-			rocksdbSnapshot.setPinData(false);
+			rocksdbSnapshot.setVerifyChecksums(ALWAYS_VERIFY_CHECKSUMS);
 			rocksdbSnapshot.setIgnoreRangeDeletions(false);
-			if (snapshot == null) {
-				rocksdbSnapshot.setTailing(true);
-			}
 			long count = 0;
 			try (RocksIterator iter = db.newIterator(cfh, rocksdbSnapshot)) {
 				iter.seekToFirst();
@@ -862,7 +860,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		var readOpts = resolveSnapshot(snapshot);
 		readOpts.setFillCache(false);
-		readOpts.setVerifyChecksums(false);
+		readOpts.setVerifyChecksums(ALWAYS_VERIFY_CHECKSUMS);
 
 		long count = 0;
 		try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
@@ -887,7 +885,7 @@ public class LLLocalDictionary implements LLDictionary {
 						readOpts.setIterateUpperBound(new Slice(range.getMax()));
 					}
 					try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
-						if (range.hasMin()) {
+						if (!LLLocalDictionary.PREFER_ALWAYS_SEEK_TO_FIRST && range.hasMin()) {
 							iter.seek(range.getMin());
 						} else {
 							iter.seekToFirst();

@@ -53,7 +53,7 @@ public abstract class LLLocalLuceneGroupedReactiveIterator<T> {
 							readOptions.setIterateUpperBound(new Slice(range.getMax()));
 						}
 						var rocksIterator = db.newIterator(cfh, readOptions);
-						if (range.hasMin()) {
+						if (!LLLocalDictionary.PREFER_ALWAYS_SEEK_TO_FIRST && range.hasMin()) {
 							rocksIterator.seek(range.getMin());
 						} else {
 							rocksIterator.seekToFirst();

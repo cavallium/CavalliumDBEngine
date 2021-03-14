@@ -39,6 +39,7 @@ public class LLLocalLuceneKeyPrefixesReactiveIterator {
 		return Flux
 				.generate(() -> {
 					synchronized (this) {
+						System.out.println(Thread.currentThread().getName());
 						var readOptions = new ReadOptions(this.readOptions);
 						readOptions.setFillCache(range.hasMin() && range.hasMax());
 						if (range.hasMin()) {
@@ -48,7 +49,7 @@ public class LLLocalLuceneKeyPrefixesReactiveIterator {
 							readOptions.setIterateUpperBound(new Slice(range.getMax()));
 						}
 						var rocksIterator = db.newIterator(cfh, readOptions);
-						if (range.hasMin()) {
+						if (!LLLocalDictionary.PREFER_ALWAYS_SEEK_TO_FIRST && range.hasMin()) {
 							rocksIterator.seek(range.getMin());
 						} else {
 							rocksIterator.seekToFirst();
@@ -57,6 +58,7 @@ public class LLLocalLuceneKeyPrefixesReactiveIterator {
 					}
 				}, (rocksIterator, sink) -> {
 					synchronized (this) {
+						System.out.println(Thread.currentThread().getName());
 						byte[] firstGroupKey = null;
 
 						while (rocksIterator.isValid()) {

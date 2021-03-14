@@ -249,10 +249,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		} else {
 			return dictionary
 					.getRangeKeyPrefixes(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
-					.flatMapSequential(groupKeyWithExt -> {
-						byte[] groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt);
+					.flatMapSequential(groupKeyWithoutExt -> {
 						byte[] groupSuffix = this.stripPrefix(groupKeyWithoutExt);
-						assert subStageKeysConsistency(groupKeyWithExt.length);
+						assert subStageKeysConsistency(groupKeyWithoutExt.length + keyExtLength);
 						return this.subStageGetter
 								.subStage(dictionary,
 										snapshot,

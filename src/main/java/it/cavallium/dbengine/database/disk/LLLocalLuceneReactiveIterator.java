@@ -1,11 +1,14 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.LLRange;
+import java.util.Optional;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
+import org.rocksdb.RocksMutableObject;
 import org.rocksdb.Slice;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuples;
 
 public abstract class LLLocalLuceneReactiveIterator<T> {
 
@@ -33,39 +36,45 @@ public abstract class LLLocalLuceneReactiveIterator<T> {
 	public Flux<T> flux() {
 		return Flux
 				.generate(() -> {
-					synchronized (this) {
-						var readOptions = new ReadOptions(this.readOptions);
-						readOptions.setFillCache(range.hasMin() && range.hasMax());
-						if (range.hasMin()) {
-							readOptions.setIterateLowerBound(new Slice(range.getMin()));
-						}
-						if (range.hasMax()) {
-							readOptions.setIterateUpperBound(new Slice(range.getMax()));
-						}
-						var rocksIterator = db.newIterator(cfh, readOptions);
-						if (!LLLocalDictionary.PREFER_ALWAYS_SEEK_TO_FIRST && range.hasMin()) {
-							rocksIterator.seek(range.getMin());
-						} else {
-							rocksIterator.seekToFirst();
-						}
-						return rocksIterator;
+					var readOptions = new ReadOptions(this.readOptions);
+					readOptions.setFillCache(range.hasMin() && range.hasMax());
+					Slice sliceMin;
+					Slice sliceMax;
+					if (range.hasMin()) {
+						sliceMin = new Slice(range.getMin());
+						readOptions.setIterateLowerBound(sliceMin);
+					} else {
+						sliceMin = null;
 					}
-				}, (rocksIterator, sink) -> {
-					synchronized (this) {
-						if (rocksIterator.isValid()) {
-							byte[] key = rocksIterator.key();
-							byte[] value = readValues ? rocksIterator.value() : EMPTY;
-							rocksIterator.next();
-							sink.next(getEntry(key, value));
-						} else {
-							sink.complete();
-						}
-						return rocksIterator;
+					if (range.hasMax()) {
+						sliceMax = new Slice(range.getMax());
+						readOptions.setIterateUpperBound(sliceMax);
+					} else {
+						sliceMax = null;
 					}
-				}, rocksIterator1 -> {
-					synchronized (this) {
-						rocksIterator1.close();
+					var rocksIterator = db.newIterator(cfh, readOptions);
+					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+						rocksIterator.seek(range.getMin());
+					} else {
+						rocksIterator.seekToFirst();
 					}
+					return Tuples.of(rocksIterator, Optional.ofNullable(sliceMin), Optional.ofNullable(sliceMax));
+				}, (tuple, sink) -> {
+					var rocksIterator = tuple.getT1();
+					if (rocksIterator.isValid()) {
+						byte[] key = rocksIterator.key();
+						byte[] value = readValues ? rocksIterator.value() : EMPTY;
+						rocksIterator.next();
+						sink.next(getEntry(key, value));
+					} else {
+						sink.complete();
+					}
+					return tuple;
+				}, tuple -> {
+					var rocksIterator = tuple.getT1();
+					rocksIterator.close();
+					tuple.getT2().ifPresent(RocksMutableObject::close);
+					tuple.getT3().ifPresent(RocksMutableObject::close);
 				});
 	}
 

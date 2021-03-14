@@ -5,6 +5,7 @@ import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.disk.LLLocalDictionary;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Arrays;
 import java.util.Map;
@@ -214,7 +215,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		byte[] keySuffixData = serializeSuffix(keySuffix);
 		Flux<byte[]> keyFlux;
-		if (this.subStageGetter.needsDebuggingKeyFlux()) {
+		if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED && this.subStageGetter.needsDebuggingKeyFlux()) {
 			keyFlux = this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData));
 		} else {
 			keyFlux = Flux.empty();
@@ -229,7 +230,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		if (this.subStageGetter.needsDebuggingKeyFlux()) {
+		if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED && this.subStageGetter.needsDebuggingKeyFlux()) {
 			return dictionary
 					.getRangeKeysGrouped(resolveSnapshot(snapshot), range, keyPrefix.length + keySuffixLength)
 					.flatMapSequential(rangeKeys -> {

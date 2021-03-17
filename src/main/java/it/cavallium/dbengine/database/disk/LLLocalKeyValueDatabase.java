@@ -82,7 +82,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			if (lowMemory) {
 				this.dbScheduler = lowMemorySupplier.get();
 			} else {
-				this.dbScheduler = Schedulers.newBoundedElastic(Runtime.getRuntime().availableProcessors(),
+				this.dbScheduler = Schedulers.newBoundedElastic(Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE,
 						Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 						"db-" + name,
 						60,

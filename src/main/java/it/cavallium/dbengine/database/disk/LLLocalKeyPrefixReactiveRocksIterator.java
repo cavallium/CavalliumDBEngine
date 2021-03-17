@@ -42,7 +42,10 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
-					readOptions.setFillCache(range.hasMin() && range.hasMax());
+					if (!range.hasMin() || !range.hasMax()) {
+						readOptions.setReadaheadSize(2 * 1024 * 1024);
+						readOptions.setFillCache(false);
+					}
 					Slice sliceMin;
 					Slice sliceMax;
 					if (range.hasMin()) {

@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -15,6 +16,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -34,6 +36,7 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
+@SuppressWarnings("UnstableApiUsage")
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	private final Long2ObjectMap<LLSnapshot[]> registeredSnapshots = new Long2ObjectOpenHashMap<>();
@@ -41,7 +44,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final LLLocalLuceneIndex[] luceneIndices;
 
 	private final AtomicLong nextActionId = new AtomicLong(0);
-	private final ConcurrentHashMap<Long, Cache<String, CollectionStatistics>[]> statistics = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<Long, Cache<String, Optional<CollectionStatistics>>[]> statistics = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<Long, AtomicInteger> completedStreams = new ConcurrentHashMap<>();
 
 	private final int maxQueueSize = 1000;
@@ -112,9 +115,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			IndexSearcher indexSearcher, String field, boolean distributedPre, long actionId) throws IOException {
 		if (distributedPre) {
 			try {
-				return statistics.get(actionId)[luceneIndex].get(field, () -> indexSearcher.collectionStatistics(field));
-			} catch (ExecutionException e) {
-				throw new IOException();
+				var optional = statistics.get(actionId)[luceneIndex].get(field,
+						() -> Optional.ofNullable(indexSearcher.collectionStatistics(field))
+				);
+				return optional.orElse(null);
+			} catch ( InvalidCacheLoadException | ExecutionException e) {
+				throw new IOException(e);
 			}
 		} else {
 			long maxDoc = 0;
@@ -122,7 +128,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			long sumTotalTermFreq = 0;
 			long sumDocFreq = 0;
 			for (int i = 0; i < luceneIndices.length; i++) {
-				CollectionStatistics iCollStats = statistics.get(actionId)[i].getIfPresent(field);
+				CollectionStatistics iCollStats = Objects
+						.requireNonNull(statistics.get(actionId)[i].getIfPresent(field))
+						.orElse(null);
 				if (iCollStats != null) {
 					maxDoc += iCollStats.maxDoc();
 					docCount += iCollStats.docCount();

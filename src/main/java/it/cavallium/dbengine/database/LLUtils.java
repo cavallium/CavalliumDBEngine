@@ -27,6 +27,14 @@ public class LLUtils {
 
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE = new byte[]{0};
+	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
+
+	static {
+		for (int i1 = 0; i1 < 256; i1++) {
+			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
+			b[0] = (byte) i1;
+		}
+	}
 
 	public static boolean responseToBoolean(byte[] response) {
 		return response[0] == 1;

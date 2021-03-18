@@ -9,10 +9,20 @@ import reactor.core.publisher.Mono;
 
 public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 
-	Mono<T> get(@Nullable CompositeSnapshot snapshot);
+	default Mono<T> get(@Nullable CompositeSnapshot snapshot) {
+		return get(snapshot, false);
+	}
+
+	Mono<T> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly);
+
+	default Mono<T> getOrDefault(@Nullable CompositeSnapshot snapshot,
+			Mono<T> defaultValue,
+			boolean existsAlmostCertainly) {
+		return get(snapshot, existsAlmostCertainly).switchIfEmpty(defaultValue).single();
+	}
 
 	default Mono<T> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<T> defaultValue) {
-		return get(snapshot).switchIfEmpty(defaultValue).single();
+		return getOrDefault(snapshot, defaultValue, false);
 	}
 
 	default Mono<Void> set(T value) {
@@ -25,7 +35,11 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 		return setAndGetPrevious(value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(false);
 	}
 
-	Mono<Boolean> update(Function<Optional<T>, Optional<T>> updater);
+	Mono<Boolean> update(Function<Optional<T>, Optional<T>> updater, boolean existsAlmostCertainly);
+
+	default Mono<Boolean> update(Function<Optional<T>, Optional<T>> updater) {
+		return update(updater, false);
+	}
 
 	default Mono<Void> clear() {
 		return clearAndGetStatus().then();

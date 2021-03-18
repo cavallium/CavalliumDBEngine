@@ -32,8 +32,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Mono<U> get(@Nullable CompositeSnapshot snapshot) {
-		return dictionary.get(resolveSnapshot(snapshot), key).map(this::deserialize);
+	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+		return dictionary.get(resolveSnapshot(snapshot), key, existsAlmostCertainly).map(this::deserialize);
 	}
 
 	@Override
@@ -42,9 +42,10 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<Optional<U>, Optional<U>> updater) {
+	public Mono<Boolean> update(Function<Optional<U>, Optional<U>> updater, boolean existsAlmostCertainly) {
 		return dictionary.update(key,
-				(oldValueSer) -> updater.apply(oldValueSer.map(this::deserialize)).map(this::serialize)
+				(oldValueSer) -> updater.apply(oldValueSer.map(this::deserialize)).map(this::serialize),
+				existsAlmostCertainly
 		);
 	}
 

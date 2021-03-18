@@ -13,23 +13,48 @@ import reactor.core.publisher.Mono;
 @NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
-	Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key);
+	Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key, boolean existsAlmostCertainly);
+
+	default Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) {
+		return get(snapshot, key, false);
+	}
 
 	Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType);
 
-	Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater);
+	Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater, boolean existsAlmostCertainly);
+
+	default Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater) {
+		return update(key, updater, false);
+	}
 
 	Mono<Void> clear();
 
 	Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType);
 
-	Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys);
+	Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys, boolean existsAlmostCertainly);
+
+	default Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys) {
+		return getMulti(snapshot, keys, false);
+	}
 
 	Flux<Entry<byte[], byte[]>> putMulti(Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
 
-	Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range);
+	Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range, boolean existsAlmostCertainly);
 
-	Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+	default Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
+		return getRange(snapshot, range, false);
+	}
+
+	Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
+			int prefixLength,
+			boolean existsAlmostCertainly);
+
+	default Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
+			int prefixLength) {
+		return getRangeGrouped(snapshot, range, prefixLength, false);
+	}
 
 	Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range);
 
@@ -39,22 +64,31 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Flux<Entry<byte[], byte[]>> setRange(LLRange range, Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
 
-	default Mono<Void> replaceRange(LLRange range, boolean canKeysChange, Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer) {
+	default Mono<Void> replaceRange(LLRange range,
+			boolean canKeysChange,
+			Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer,
+			boolean existsAlmostCertainly) {
 		return Mono.defer(() -> {
 			if (canKeysChange) {
 				return this
 						.setRange(range, this
-								.getRange(null, range)
+								.getRange(null, range, existsAlmostCertainly)
 								.flatMap(entriesReplacer), false)
 						.then();
 			} else {
 				return this
 						.putMulti(this
-								.getRange(null, range)
+								.getRange(null, range, existsAlmostCertainly)
 								.flatMap(entriesReplacer), false)
 						.then();
 			}
 		});
+	}
+
+	default Mono<Void> replaceRange(LLRange range,
+			boolean canKeysChange,
+			Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer) {
+		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
 	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range);

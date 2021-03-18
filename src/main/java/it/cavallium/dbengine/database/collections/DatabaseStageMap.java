@@ -17,8 +17,12 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
+	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
+		return this.at(snapshot, key).flatMap(v -> v.get(snapshot, existsAlmostCertainly));
+	}
+
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
-		return this.at(snapshot, key).flatMap(v -> v.get(snapshot));
+		return getValue(snapshot, key, false);
 	}
 
 	default Mono<U> getValueOrDefault(@Nullable CompositeSnapshot snapshot, T key, Mono<U> defaultValue) {
@@ -29,8 +33,12 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return at(null, key).single().flatMap(v -> v.set(value));
 	}
 
+	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<Optional<U>, Optional<U>> updater) {
+		return at(null, key).single().flatMap(v -> v.update(updater, existsAlmostCertainly));
+	}
+
 	default Mono<Boolean> updateValue(T key, Function<Optional<U>, Optional<U>> updater) {
-		return at(null, key).single().flatMap(v -> v.update(updater));
+		return updateValue(key, false, updater);
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
@@ -53,8 +61,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return removeAndGetPrevious(key).map(o -> true).defaultIfEmpty(false);
 	}
 
+	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
+		return keys.flatMapSequential(key -> this
+				.getValue(snapshot, key, existsAlmostCertainly)
+				.map(value -> Map.entry(key, value)));
+	}
+
 	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
-		return keys.flatMapSequential(key -> this.getValue(snapshot, key).map(value -> Map.entry(key, value)));
+		return getMulti(snapshot, keys, false);
 	}
 
 	default Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
@@ -68,7 +82,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				.getAllStages(snapshot)
 				.flatMapSequential(entry -> entry
 						.getValue()
-						.get(snapshot)
+						.get(snapshot, true)
 						.map(value -> Map.entry(entry.getKey(), value))
 				);
 	}
@@ -112,7 +126,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Boolean> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater) {
+	default Mono<Boolean> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater, boolean existsAlmostCertainly) {
 		return this
 				.getAllValues(null)
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
@@ -132,7 +146,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot) {
+	default Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return getAllValues(snapshot)
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
 	}

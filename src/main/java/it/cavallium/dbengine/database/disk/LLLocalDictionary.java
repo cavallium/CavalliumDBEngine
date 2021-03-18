@@ -122,7 +122,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) {
+	public Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key, boolean existsAlmostCertainly) {
 		return Mono
 				.fromCallable(() -> {
 					StampedLock lock;
@@ -137,9 +137,9 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					try {
 						logger.trace("Reading {}", key);
-						Holder<byte[]> data = new Holder<>();
-						if (db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
-							if (data.getValue() != null) {
+						Holder<byte[]> data = existsAlmostCertainly ? null : new Holder<>();
+						if (existsAlmostCertainly || db.keyMayExist(cfh, resolveSnapshot(snapshot), key, data)) {
+							if (!existsAlmostCertainly && data.getValue() != null) {
 								return data.getValue();
 							} else {
 								return db.get(cfh, resolveSnapshot(snapshot), key);
@@ -253,7 +253,9 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> value) {
+	public Mono<Boolean> update(byte[] key,
+			Function<Optional<byte[]>, Optional<byte[]>> value,
+			boolean existsAlmostCertainly) {
 		return Mono
 						.fromCallable(() -> {
 							if (updateMode == UpdateMode.DISALLOW) throw new UnsupportedOperationException("update() is disallowed");
@@ -272,9 +274,9 @@ public class LLLocalDictionary implements LLDictionary {
 								while (true) {
 									boolean changed = false;
 									Optional<byte[]> prevData;
-									var prevDataHolder = new Holder<byte[]>();
-									if (db.keyMayExist(cfh, key, prevDataHolder)) {
-										if (prevDataHolder.getValue() != null) {
+									var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
+									if (existsAlmostCertainly || db.keyMayExist(cfh, key, prevDataHolder)) {
+										if (!existsAlmostCertainly && prevDataHolder.getValue() != null) {
 											prevData = Optional.ofNullable(prevDataHolder.getValue());
 										} else {
 											prevData = Optional.ofNullable(db.get(cfh, key));
@@ -403,7 +405,9 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys) {
+	public Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<byte[]> keys,
+			boolean existsAlmostCertainly) {
 		return keys
 				.window(MULTI_GET_WINDOW)
 				.flatMap(keysWindowFlux -> keysWindowFlux.collectList()
@@ -460,7 +464,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.window(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.flatMap(Flux::collectList)
 				.flatMap(entriesWindow -> this
-						.getMulti(null, Flux.fromIterable(entriesWindow).map(Entry::getKey))
+						.getMulti(null, Flux.fromIterable(entriesWindow).map(Entry::getKey), false)
 						.publishOn(dbScheduler)
 						.concatWith(Mono.fromCallable(() -> {
 							Iterable<StampedLock> locks;
@@ -502,11 +506,13 @@ public class LLLocalDictionary implements LLDictionary {
 
 
 	@NotNull
-	private Mono<Entry<byte[], byte[]>> putEntryToWriteBatch(Entry<byte[], byte[]> newEntry, boolean getOldValues,
+	private Mono<Entry<byte[], byte[]>> putEntryToWriteBatch(Entry<byte[], byte[]> newEntry,
+			boolean getOldValues,
+			boolean existsAlmostCertainly,
 			CappedWriteBatch writeBatch) {
 		Mono<byte[]> getOldValueMono;
 		if (getOldValues) {
-			getOldValueMono = get(null, newEntry.getKey());
+			getOldValueMono = get(null, newEntry.getKey(), existsAlmostCertainly);
 		} else {
 			getOldValueMono = Mono.empty();
 		}
@@ -523,9 +529,11 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
+	public Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot,
+			LLRange range,
+			boolean existsAlmostCertainly) {
 		if (range.isSingle()) {
-			return getRangeSingle(snapshot, range.getMin());
+			return getRangeSingle(snapshot, range.getMin(), existsAlmostCertainly);
 		} else {
 			return getRangeMulti(snapshot, range);
 		}
@@ -534,17 +542,17 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			LLRange range,
-			int prefixLength) {
+			int prefixLength, boolean existsAlmostCertainly) {
 		if (range.isSingle()) {
-			return getRangeSingle(snapshot, range.getMin()).map(List::of);
+			return getRangeSingle(snapshot, range.getMin(), existsAlmostCertainly).map(List::of);
 		} else {
 			return getRangeMultiGrouped(snapshot, range, prefixLength);
 		}
 	}
 
-	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key) {
+	private Flux<Entry<byte[],byte[]>> getRangeSingle(LLSnapshot snapshot, byte[] key, boolean existsAlmostCertainly) {
 		return this
-				.get(snapshot, key)
+				.get(snapshot, key, existsAlmostCertainly)
 				.map(value -> Map.entry(key, value))
 				.flux();
 	}
@@ -660,7 +668,7 @@ public class LLLocalDictionary implements LLDictionary {
 								})
 								.subscribeOn(dbScheduler)
 								.thenMany(entries)
-								.flatMapSequential(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch)),
+								.flatMapSequential(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, false, writeBatch)),
 						writeBatch -> Mono
 								.fromCallable(() -> {
 									try (writeBatch) {

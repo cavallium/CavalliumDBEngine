@@ -52,9 +52,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot) {
+	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
-				.getRange(resolveSnapshot(snapshot), range)
+				.getRange(resolveSnapshot(snapshot), range, existsAlmostCertainly)
 				.collectMap(
 						entry -> deserializeSuffix(stripPrefix(entry.getKey())),
 						entry -> deserialize(entry.getValue()),
@@ -104,8 +104,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		return dictionary.get(resolveSnapshot(snapshot), toKey(serializeSuffix(keySuffix))).map(this::deserialize);
+	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T keySuffix, boolean existsAlmostCertainly) {
+		return dictionary
+				.get(resolveSnapshot(snapshot), toKey(serializeSuffix(keySuffix)), existsAlmostCertainly)
+				.map(this::deserialize);
 	}
 
 	@Override
@@ -114,9 +116,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Boolean> updateValue(T keySuffix, Function<Optional<U>, Optional<U>> updater) {
+	public Mono<Boolean> updateValue(T keySuffix,
+			boolean existsAlmostCertainly,
+			Function<Optional<U>, Optional<U>> updater) {
 		return dictionary.update(toKey(serializeSuffix(keySuffix)),
-				oldSerialized -> updater.apply(oldSerialized.map(this::deserialize)).map(this::serialize)
+				oldSerialized -> updater.apply(oldSerialized.map(this::deserialize)).map(this::serialize),
+				existsAlmostCertainly
 		);
 	}
 
@@ -154,9 +159,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
+	public Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
 		return dictionary
-				.getMulti(resolveSnapshot(snapshot), keys.map(keySuffix -> toKey(serializeSuffix(keySuffix))))
+				.getMulti(resolveSnapshot(snapshot), keys.map(keySuffix -> toKey(serializeSuffix(keySuffix))), existsAlmostCertainly)
 				.map(entry -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey())), deserialize(entry.getValue())));
 	}
 

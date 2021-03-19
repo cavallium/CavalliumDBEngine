@@ -38,7 +38,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					if (!range.hasMin() || !range.hasMax()) {
-						readOptions.setReadaheadSize(2 * 1024 * 1024);
+						// readOptions.setReadaheadSize(2 * 1024 * 1024);
 						readOptions.setFillCache(false);
 					}
 					Slice sliceMin;

@@ -27,6 +27,7 @@ import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
+import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.CompactionStyle;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
@@ -37,6 +38,8 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WALRecoveryMode;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -47,6 +50,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		RocksDB.loadLibrary();
 	}
 
+	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyValueDatabase.class);
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 	private static final Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() ->
@@ -101,6 +105,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				this.handles.put(columns.get(i), handles.get(i));
 			}
 
+			compactDb(db, handles);
 			flushDb(db, handles);
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
@@ -131,6 +136,27 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			db.syncWal();
 		}
 		// end force flush
+	}
+
+	private void compactDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
+		// force compact the database
+		for (ColumnFamilyHandle cfh : handles) {
+			var t = new Thread(() -> {
+				try {
+					// Range rangeToCompact = db.suggestCompactRange(cfh);
+					db.compactRange(cfh, null, null, new CompactRangeOptions().setAllowWriteStall(false).setChangeLevel(false));
+				} catch (RocksDBException e) {
+					if ("Database shutdown".equalsIgnoreCase(e.getMessage())) {
+						logger.warn("Compaction cancelled: database shutdown");
+					} else {
+						logger.warn("Failed to compact range", e);
+					}
+				}
+			}, "Compaction");
+			t.setDaemon(true);
+			t.start();
+		}
+		// end force compact
 	}
 
 	@SuppressWarnings("CommentedOutCode")
@@ -415,7 +441,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 								}
 							}
 						} catch (IOException ex) {
-							ex.printStackTrace();
+							logger.error("Error when deleting unused log files", ex);
 							return false;
 						}
 						return false;

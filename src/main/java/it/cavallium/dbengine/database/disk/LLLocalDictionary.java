@@ -894,7 +894,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		var readOpts = resolveSnapshot(snapshot);
 		readOpts.setFillCache(false);
-		readOpts.setReadaheadSize(2 * 1024 * 1024);
+		// readOpts.setReadaheadSize(2 * 1024 * 1024);
 		readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 		if (PARALLEL_EXACT_SIZE) {

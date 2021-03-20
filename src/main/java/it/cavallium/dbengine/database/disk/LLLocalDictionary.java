@@ -27,6 +27,7 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
+import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.ReadOptions;
@@ -647,33 +648,8 @@ public class LLLocalDictionary implements LLDictionary {
 								.fromCallable(() -> {
 									if (range.isSingle()) {
 										writeBatch.delete(cfh, range.getSingle());
-									} else if (range.hasMin() && range.hasMax()) {
-										writeBatch.deleteRange(cfh, range.getMin(), range.getMax());
-									} else if (range.hasMax()) {
-										writeBatch.deleteRange(cfh, FIRST_KEY, range.getMax());
-									} else if (range.hasMin()) {
-										// Delete from x to end of column
-										var readOpts = getReadOptions(null);
-										readOpts.setIterateLowerBound(new Slice(range.getMin()));
-										try (var it = db.newIterator(cfh, readOpts)) {
-											it.seekToLast();
-											if (it.isValid()) {
-												writeBatch.deleteRange(cfh, range.getMin(), it.key());
-												// Delete the last key because we are deleting everything from "min" onward, without a max bound
-												writeBatch.delete(it.key());
-											}
-										}
 									} else {
-										// Delete all
-										var readOpts = getReadOptions(null);
-										try (var it = db.newIterator(cfh, readOpts)) {
-											it.seekToLast();
-											if (it.isValid()) {
-												writeBatch.deleteRange(cfh, FIRST_KEY, it.key());
-												// Delete the last key because we are deleting everything without a max bound
-												writeBatch.delete(it.key());
-											}
-										}
+										deleteSmallRangeWriteBatch(writeBatch, range);
 									}
 									return null;
 								})
@@ -691,6 +667,52 @@ public class LLLocalDictionary implements LLDictionary {
 				)
 				.subscribeOn(dbScheduler)
 				.onErrorMap(cause -> new IOException("Failed to write range", cause));
+	}
+
+	private void deleteSmallRange(LLRange range)
+			throws RocksDBException {
+		var readOpts = getReadOptions(null);
+		readOpts.setFillCache(false);
+		if (range.hasMin()) {
+			readOpts.setIterateLowerBound(new Slice(range.getMin()));
+		}
+		if (range.hasMax()) {
+			readOpts.setIterateUpperBound(new Slice(range.getMax()));
+		}
+		try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+			if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+				rocksIterator.seek(range.getMin());
+			} else {
+				rocksIterator.seekToFirst();
+			}
+			while (rocksIterator.isValid()) {
+				db.delete(cfh, rocksIterator.key());
+				rocksIterator.next();
+			}
+		}
+	}
+
+	private void deleteSmallRangeWriteBatch(CappedWriteBatch writeBatch, LLRange range)
+			throws RocksDBException {
+		var readOpts = getReadOptions(null);
+		readOpts.setFillCache(false);
+		if (range.hasMin()) {
+			readOpts.setIterateLowerBound(new Slice(range.getMin()));
+		}
+		if (range.hasMax()) {
+			readOpts.setIterateUpperBound(new Slice(range.getMax()));
+		}
+		try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+			if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+				rocksIterator.seek(range.getMin());
+			} else {
+				rocksIterator.seekToFirst();
+			}
+			while (rocksIterator.isValid()) {
+				writeBatch.delete(cfh, rocksIterator.key());
+				rocksIterator.next();
+			}
+		}
 	}
 
 	private static byte[] incrementLexicographically(byte[] key) {
@@ -731,26 +753,27 @@ public class LLLocalDictionary implements LLDictionary {
 							BATCH_WRITE_OPTIONS
 					)) {
 
-						//byte[] firstDeletedKey = null;
-						//byte[] lastDeletedKey = null;
+						byte[] firstDeletedKey = null;
+						byte[] lastDeletedKey = null;
 						try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
 							iter.seekToLast();
 
 							if (iter.isValid()) {
+								firstDeletedKey = FIRST_KEY;
+								lastDeletedKey = iter.key();
 								writeBatch.deleteRange(cfh, FIRST_KEY, iter.key());
 								writeBatch.delete(cfh, iter.key());
-								//firstDeletedKey = FIRST_KEY;
-								//lastDeletedKey = incrementLexicographically(iter.key());
 							}
 						}
 
 						writeBatch.writeToDbAndClose();
 
+
 						// Compact range
 						db.suggestCompactRange(cfh);
-						//if (firstDeletedKey != null && lastDeletedKey != null) {
-							//db.compactRange(cfh, firstDeletedKey, lastDeletedKey, new CompactRangeOptions().setChangeLevel(false));
-						//}
+						if (firstDeletedKey != null && lastDeletedKey != null) {
+							db.compactRange(cfh, firstDeletedKey, lastDeletedKey, new CompactRangeOptions().setChangeLevel(false));
+						}
 
 						db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
 						db.flushWal(true);

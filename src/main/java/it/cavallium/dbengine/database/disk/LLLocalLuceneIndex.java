@@ -146,7 +146,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			indexWriterConfig.setRAMPerThreadHardLimitMB(32);
 		} else {
 			indexWriterConfig.setRAMBufferSizeMB(128);
-			indexWriterConfig.setRAMPerThreadHardLimitMB(512);
+			//indexWriterConfig.setRAMPerThreadHardLimitMB(512);
 		}
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);

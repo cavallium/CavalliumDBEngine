@@ -33,11 +33,13 @@ import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
+import org.rocksdb.LRUCache;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WALRecoveryMode;
+import org.rocksdb.WriteBufferManager;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -190,11 +192,15 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
 		options.setPreserveDeletes(false);
 		options.setKeepLogFileNum(10);
+		options.setAllowMmapReads(true);
+		options.setAllowMmapWrites(true);
+		options.setAllowFAllocate(true);
 		// Direct I/O parameters. Removed because they use too much disk.
 		//options.setUseDirectReads(true);
 		//options.setUseDirectIoForFlushAndCompaction(true);
 		//options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
 		//options.setWritableFileMaxBufferSize(1024 * 1024); // 1MB by default
+		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		if (lowMemory) {
 			// LOW MEMORY
 			options
@@ -211,6 +217,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 									600L * 1024L * 1024L * 1024L))) // 600GiB
 			;
+			tableOptions.setBlockCache(new LRUCache(8L * 1024L * 1024L)); // 8MiB
+			options.setWriteBufferManager(new WriteBufferManager(8L * 1024L * 1024L, new LRUCache(8L * 1024L * 1024L))); // 8MiB
 		} else {
 			// HIGH MEMORY
 			options
@@ -221,18 +229,19 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalBytesPerSync(10 * 1024 * 1024)
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
-					.setWriteBufferSize(128 * 1024 * 1024) // 128MB
+					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
 					.setWalSizeLimitMB(1024) // 1024MB
-					.setMaxTotalWalSize(8L * 1024L * 1024L * 1024L) // 8GiB max wal directory size
+					.setMaxTotalWalSize(2L * 1024L * 1024L * 1024L) // 2GiB max wal directory size
 					.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
 									400L * 1024L * 1024L * 1024L), // 400GiB
 							new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 									600L * 1024L * 1024L * 1024L))) // 600GiB
 			;
+			tableOptions.setBlockCache(new LRUCache(256L * 1024L * 1024L)); // 256MiB
+			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(256L * 1024L * 1024L))); // 256MiB
 		}
 
 		final BloomFilter bloomFilter = new BloomFilter(10, false);
-		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		tableOptions.setFilterPolicy(bloomFilter);
 		options.setTableFormatConfig(tableOptions);
 

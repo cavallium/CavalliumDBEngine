@@ -21,8 +21,11 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
+import org.apache.commons.lang3.time.StopWatch;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.ColumnFamilyDescriptor;
@@ -107,7 +110,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				this.handles.put(columns.get(i), handles.get(i));
 			}
 
-			compactDb(db, handles);
+			// compactDb(db, handles);
 			flushDb(db, handles);
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
@@ -144,9 +147,15 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// force compact the database
 		for (ColumnFamilyHandle cfh : handles) {
 			var t = new Thread(() -> {
+				int r = ThreadLocalRandom.current().nextInt();
+				var s = StopWatch.createStarted();
 				try {
 					// Range rangeToCompact = db.suggestCompactRange(cfh);
-					db.compactRange(cfh, null, null, new CompactRangeOptions().setAllowWriteStall(false).setChangeLevel(false));
+					logger.info("Compacting range {}", r);
+					db.compactRange(cfh, null, null, new CompactRangeOptions()
+							.setAllowWriteStall(true)
+							.setExclusiveManualCompaction(true)
+							.setChangeLevel(false));
 				} catch (RocksDBException e) {
 					if ("Database shutdown".equalsIgnoreCase(e.getMessage())) {
 						logger.warn("Compaction cancelled: database shutdown");
@@ -154,6 +163,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						logger.warn("Failed to compact range", e);
 					}
 				}
+				logger.info("Compacted range {} in {} milliseconds", r, s.getTime(TimeUnit.MILLISECONDS));
 			}, "Compaction");
 			t.setDaemon(true);
 			t.start();
@@ -198,8 +208,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// Direct I/O parameters. Removed because they use too much disk.
 		//options.setUseDirectReads(true);
 		//options.setUseDirectIoForFlushAndCompaction(true);
-		//options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
 		//options.setWritableFileMaxBufferSize(1024 * 1024); // 1MB by default
+		options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		if (lowMemory) {
 			// LOW MEMORY

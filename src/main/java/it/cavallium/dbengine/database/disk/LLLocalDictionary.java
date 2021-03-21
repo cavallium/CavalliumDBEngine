@@ -746,6 +746,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 					// readOpts.setIgnoreRangeDeletions(true);
 					readOpts.setFillCache(false);
+					readOpts.setReadaheadSize(2 * 1024 * 1024);
 					try (CappedWriteBatch writeBatch = new CappedWriteBatch(db,
 							CAPPED_WRITE_BATCH_CAP,
 							RESERVED_WRITE_BATCH_SIZE,
@@ -772,7 +773,14 @@ public class LLLocalDictionary implements LLDictionary {
 						// Compact range
 						db.suggestCompactRange(cfh);
 						if (firstDeletedKey != null && lastDeletedKey != null) {
-							db.compactRange(cfh, firstDeletedKey, lastDeletedKey, new CompactRangeOptions().setChangeLevel(false));
+							db.compactRange(cfh,
+									firstDeletedKey,
+									lastDeletedKey,
+									new CompactRangeOptions()
+											.setAllowWriteStall(false)
+											.setExclusiveManualCompaction(false)
+											.setChangeLevel(false)
+							);
 						}
 
 						db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
@@ -917,7 +925,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		var readOpts = resolveSnapshot(snapshot);
 		readOpts.setFillCache(false);
-		// readOpts.setReadaheadSize(2 * 1024 * 1024);
+		readOpts.setReadaheadSize(2 * 1024 * 1024);
 		readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 		if (PARALLEL_EXACT_SIZE) {

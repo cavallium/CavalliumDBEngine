@@ -20,6 +20,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	private final int prefixLength;
 	private final LLRange range;
 	private final ReadOptions readOptions;
+	private final boolean canFillCache;
 	private final String debugName;
 
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db,
@@ -27,12 +28,14 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 			int prefixLength,
 			LLRange range,
 			ReadOptions readOptions,
+			boolean canFillCache,
 			String debugName) {
 		this.db = db;
 		this.cfh = cfh;
 		this.prefixLength = prefixLength;
 		this.range = range;
 		this.readOptions = readOptions;
+		this.canFillCache = canFillCache;
 		this.debugName = debugName;
 	}
 
@@ -42,8 +45,8 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					if (!range.hasMin() || !range.hasMax()) {
-						readOptions.setReadaheadSize(2 * 1024 * 1024);
-						readOptions.setFillCache(false);
+						//readOptions.setReadaheadSize(2 * 1024 * 1024);
+						readOptions.setFillCache(canFillCache);
 					}
 					Slice sliceMin;
 					Slice sliceMax;

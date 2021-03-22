@@ -22,6 +22,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	private final int prefixLength;
 	private final LLRange range;
 	private final ReadOptions readOptions;
+	private final boolean canFillCache;
 	private final boolean readValues;
 	private final String debugName;
 
@@ -30,6 +31,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 			int prefixLength,
 			LLRange range,
 			ReadOptions readOptions,
+			boolean canFillCache,
 			boolean readValues,
 			String debugName) {
 		this.db = db;
@@ -37,6 +39,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 		this.prefixLength = prefixLength;
 		this.range = range;
 		this.readOptions = readOptions;
+		this.canFillCache = canFillCache;
 		this.readValues = readValues;
 		this.debugName = debugName;
 	}
@@ -47,7 +50,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
-					readOptions.setFillCache(range.hasMin() && range.hasMax());
+					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
 					Slice sliceMin;
 					Slice sliceMax;
 					if (range.hasMin()) {

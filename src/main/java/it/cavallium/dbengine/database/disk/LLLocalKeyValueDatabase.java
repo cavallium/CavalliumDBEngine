@@ -91,7 +91,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			if (lowMemory) {
 				this.dbScheduler = lowMemorySupplier.get();
 			} else {
-				this.dbScheduler = Schedulers.newBoundedElastic(6,
+				this.dbScheduler = Schedulers.newBoundedElastic(Math.max(8, Runtime.getRuntime().availableProcessors()),
 						Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 						"db-" + name,
 						60,
@@ -209,7 +209,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		//options.setUseDirectReads(true);
 		//options.setUseDirectIoForFlushAndCompaction(true);
 		//options.setWritableFileMaxBufferSize(1024 * 1024); // 1MB by default
-		options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
+		//options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		if (lowMemory) {
 			// LOW MEMORY

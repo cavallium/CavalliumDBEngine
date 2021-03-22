@@ -178,13 +178,23 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range)
-				.map(keySuffix -> Map.entry(deserializeSuffix(stripPrefix(keySuffix)),
+				.map(key -> Map.entry(deserializeSuffix(stripPrefix(key)),
 						new DatabaseSingleMapped<>(
 								new DatabaseSingle<>(dictionary,
-										toKey(stripPrefix(keySuffix)),
+										toKey(stripPrefix(key)),
 										Serializer.noop()),
 								valueSerializer
 						)
+				));
+	}
+
+	@Override
+	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
+		return dictionary
+				.getRange(resolveSnapshot(snapshot), range)
+				.map(serializedEntry -> Map.entry(
+						deserializeSuffix(stripPrefix(serializedEntry.getKey())),
+						valueSerializer.deserialize(serializedEntry.getValue())
 				));
 	}
 

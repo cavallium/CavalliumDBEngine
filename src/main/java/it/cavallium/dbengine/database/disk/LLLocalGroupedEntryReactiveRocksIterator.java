@@ -16,7 +16,7 @@ public class LLLocalGroupedEntryReactiveRocksIterator extends
 			LLRange range,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, cfh, prefixLength, range, readOptions, true, debugName);
+		super(db, cfh, prefixLength, range, readOptions, false, true, debugName);
 	}
 
 	@Override

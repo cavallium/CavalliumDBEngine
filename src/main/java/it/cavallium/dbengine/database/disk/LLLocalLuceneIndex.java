@@ -552,19 +552,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			ScoreMode luceneScoreMode) {
 		return new LLSearchResult(Flux.just(Flux.defer(() -> Flux.<LLSignal>create(sink -> {
 			AtomicBoolean cancelled = new AtomicBoolean();
-			AtomicLong requests = new AtomicLong();
-			Semaphore requestsAvailable = new Semaphore(0);
+			Semaphore requests = new Semaphore(0);
 			sink.onDispose(() -> {
 				cancelled.set(true);
-				requestsAvailable.release();
 			});
 			sink.onCancel(() -> {
 				cancelled.set(true);
-				requestsAvailable.release();
 			});
 			sink.onRequest(delta -> {
-				requests.addAndGet(delta);
-				requestsAvailable.release();
+				requests.release((int) Math.min(delta, Integer.MAX_VALUE));
 			});
 
 			try {
@@ -588,19 +584,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										if (cancelled.get()) {
 											return HandleResult.HALT;
 										}
-										while (requests.decrementAndGet() < 0) {
-											requests.incrementAndGet();
-											requestsAvailable.acquire();
+										while (!requests.tryAcquire(500, TimeUnit.MILLISECONDS)) {
 											if (cancelled.get()) {
 												return HandleResult.HALT;
 											}
 										}
 										sink.next(fixKeyScore(keyScore, scoreDivisor));
-										return HandleResult.CONTINUE;
+										if (cancelled.get()) {
+											return HandleResult.HALT;
+										} else {
+											return HandleResult.CONTINUE;
+										}
 									} catch (Exception ex) {
 										sink.error(ex);
 										cancelled.set(true);
-										requestsAvailable.release();
+										requests.release(Integer.MAX_VALUE);
 										return HandleResult.HALT;
 									}
 								},
@@ -609,9 +607,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										if (cancelled.get()) {
 											return;
 										}
-										while (requests.decrementAndGet() < 0) {
-											requests.incrementAndGet();
-											requestsAvailable.acquire();
+										while (!requests.tryAcquire(500, TimeUnit.MILLISECONDS)) {
 											if (cancelled.get()) {
 												return;
 											}
@@ -620,7 +616,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									} catch (Exception ex) {
 										sink.error(ex);
 										cancelled.set(true);
-										requestsAvailable.release();
+										requests.release(Integer.MAX_VALUE);
 									}
 								}
 						);

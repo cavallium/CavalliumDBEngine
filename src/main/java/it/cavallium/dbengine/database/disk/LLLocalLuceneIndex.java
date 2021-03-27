@@ -9,10 +9,9 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchCollectionStatisticsGetter;
 import it.cavallium.dbengine.database.LLSearchResult;
-import it.cavallium.dbengine.database.LLSignal;
+import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.LLTotalHitsCount;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
@@ -392,15 +391,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			 long actionId) {
-		return moreLikeThis(snapshot,
-				queryParams,
-				keyFieldName,
-				mltDocumentFieldsFlux,
-				true,
-				actionId,
-				1
-		)
-				.flatMap(LLSearchResult::completion);
+		return moreLikeThis(snapshot, queryParams, keyFieldName, mltDocumentFieldsFlux, true, actionId, 1).then();
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
@@ -422,7 +413,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.flatMap(mltDocumentFields -> {
 					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
 					if (mltDocumentFields.isEmpty()) {
-						return Mono.just(LLSearchResult.empty());
+						return Mono.just(new LLSearchResult(Flux.empty()));
 					}
 
 					return acquireSearcherWrapper(snapshot, doDistributedPre, actionId).flatMap(indexSearcher -> Mono
@@ -495,7 +486,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> distributedPreSearch(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName, long actionId) {
 		return this
 				.search(snapshot, queryParams, keyFieldName, true, actionId, 1)
-				.flatMap(LLSearchResult::completion);
+				.then();
 	}
 
 	private Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
@@ -550,27 +541,58 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Query luceneQuery,
 			Sort luceneSort,
 			ScoreMode luceneScoreMode) {
-		return new LLSearchResult(Flux.just(Flux.defer(() -> Flux.<LLSignal>create(sink -> {
-			AtomicBoolean cancelled = new AtomicBoolean();
-			Semaphore requests = new Semaphore(0);
-			sink.onDispose(() -> {
-				cancelled.set(true);
-			});
-			sink.onCancel(() -> {
-				cancelled.set(true);
-			});
-			sink.onRequest(delta -> {
-				requests.release((int) Math.min(delta, Integer.MAX_VALUE));
-			});
+		return new LLSearchResult(Mono.<LLSearchResultShard>create(monoSink -> {
 
+			long totalHitsCount;
 			try {
-				if (!cancelled.get()) {
-					if (doDistributedPre) {
-						//noinspection BlockingMethodInNonBlockingContext
-						allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
-						sink.next(new LLTotalHitsCount(0L));
-					} else {
+				if (!doDistributedPre) {
+					AtomicLong totalHitsCountAtomic = new AtomicLong(0);
+					//noinspection BlockingMethodInNonBlockingContext
+					streamSearcher.search(indexSearcher,
+							luceneQuery,
+							0,
+							luceneSort,
+							luceneScoreMode,
+							minCompetitiveScore,
+							keyFieldName,
+							keyScore -> HandleResult.HALT,
+							totalHitsCountAtomic::set
+					);
+					totalHitsCount = totalHitsCountAtomic.get();
+				} else {
+					//noinspection BlockingMethodInNonBlockingContext
+					allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
+					totalHitsCount = 0;
+				}
+			} catch (Exception ex) {
+				monoSink.error(ex);
+				return;
+			}
+
+			AtomicBoolean alreadySubscribed = new AtomicBoolean(false);
+			var resultsFlux = Flux.<LLKeyScore>create(sink -> {
+
+				if (!alreadySubscribed.compareAndSet(false, true)) {
+					sink.error(new IllegalStateException("Already subscribed to results"));
+					return;
+				}
+
+				AtomicBoolean cancelled = new AtomicBoolean();
+				Semaphore requests = new Semaphore(0);
+				sink.onDispose(() -> {
+					cancelled.set(true);
+				});
+				sink.onCancel(() -> {
+					cancelled.set(true);
+				});
+				sink.onRequest(delta -> {
+					requests.release((int) Math.min(delta, Integer.MAX_VALUE));
+				});
+
+				try {
+					if (!doDistributedPre) {
 						int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
+						AtomicLong atomicTotalHitsCount = new AtomicLong(0);
 						//noinspection BlockingMethodInNonBlockingContext
 						streamSearcher.search(indexSearcher,
 								luceneQuery,
@@ -602,31 +624,18 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 										return HandleResult.HALT;
 									}
 								},
-								totalHitsCount -> {
-									try {
-										if (cancelled.get()) {
-											return;
-										}
-										while (!requests.tryAcquire(500, TimeUnit.MILLISECONDS)) {
-											if (cancelled.get()) {
-												return;
-											}
-										}
-										sink.next(new LLTotalHitsCount(totalHitsCount));
-									} catch (Exception ex) {
-										sink.error(ex);
-										cancelled.set(true);
-										requests.release(Integer.MAX_VALUE);
-									}
-								}
+								atomicTotalHitsCount::set
 						);
 					}
 					sink.complete();
+				} catch (Exception ex) {
+					sink.error(ex);
 				}
-			} catch (Exception ex) {
-				sink.error(ex);
-			}
-		}, OverflowStrategy.ERROR).subscribeOn(blockingLuceneSearchScheduler).publishOn(luceneQueryScheduler))));
+
+			}, OverflowStrategy.ERROR).subscribeOn(blockingLuceneSearchScheduler).publishOn(luceneQueryScheduler);
+
+			monoSink.success(new LLSearchResultShard(resultsFlux, totalHitsCount));
+		}).subscribeOn(blockingLuceneSearchScheduler).publishOn(luceneQueryScheduler).flux());
 	}
 
 	@Override

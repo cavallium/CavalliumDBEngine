@@ -1,11 +1,13 @@
 package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.client.LuceneSignal;
 import it.cavallium.dbengine.client.MultiSort;
+import it.cavallium.dbengine.client.SearchResult;
+import it.cavallium.dbengine.client.SearchResultItem;
+import it.cavallium.dbengine.client.SearchResultKey;
+import it.cavallium.dbengine.client.SearchResultKeys;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLSignal;
-import it.cavallium.dbengine.database.LLTotalHitsCount;
+import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
@@ -232,50 +234,36 @@ public class LuceneUtils {
 		return HandleResult.CONTINUE;
 	}
 
-	public static <T> Flux<LuceneSignal<T>> mergeSignalStream(Flux<Flux<LuceneSignal<T>>> mappedKeys,
-			MultiSort<LuceneSignal<T>> mappedSort,
+	public static <T> Mono<SearchResultKeys<T>> mergeSignalStreamKeys(Flux<SearchResultKeys<T>> mappedKeys,
+			MultiSort<SearchResultKey<T>> sort,
 			Long limit) {
-		Flux<Flux<LuceneSignal<T>>> sharedMappedSignals = mappedKeys
-				.map(sub -> sub
-						.publish()
-						.refCount(2)
-				)
-				.publish()
-				.refCount(2);
-		Flux<LuceneSignal<T>> sortedValues = LuceneUtils
-				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LuceneSignal::isValue)), mappedSort, limit);
-		//noinspection Convert2MethodRef
-		Mono<LuceneSignal<T>> sortedTotalSize = sharedMappedSignals
-				.flatMap(sub -> sub)
-				.filter(LuceneSignal::isTotalHitsCount)
-				.map(LuceneSignal::getTotalHitsCount)
-				.reduce(Long::sum)
-				.map(sum -> LuceneSignal.totalHitsCount(sum));
-		return Flux.merge(sortedValues, sortedTotalSize);
+		return mappedKeys.reduce(
+				new SearchResultKeys<>(Flux.empty(), 0L),
+				(a, b) -> new SearchResultKeys<T>(LuceneUtils
+						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
+		);
 	}
 
-	public static Flux<LLSignal> mergeSignalStreamRaw(Flux<Flux<LLSignal>> mappedKeys,
-			MultiSort<LLSignal> mappedSort,
+	public static <T, U> Mono<SearchResult<T, U>> mergeSignalStreamItems(Flux<SearchResult<T, U>> mappedKeys,
+			MultiSort<SearchResultItem<T, U>> sort,
 			Long limit) {
-		Flux<Flux<LLSignal>> sharedMappedSignals = mappedKeys
-				.map(sub -> sub
-						.publish()
-						.refCount(2)
+		return mappedKeys.reduce(
+				new SearchResult<>(Flux.empty(), 0L),
+				(a, b) -> new SearchResult<T, U>(LuceneUtils
+						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
+		);
+	}
+
+	public static Mono<LLSearchResultShard> mergeSignalStreamRaw(Flux<LLSearchResultShard> mappedKeys,
+			MultiSort<LLKeyScore> mappedSort,
+			Long limit) {
+		return mappedKeys.reduce(
+				new LLSearchResultShard(Flux.empty(), 0),
+				(s1, s2) -> new LLSearchResultShard(
+						LuceneUtils.mergeStream(Flux.just(s1.getResults(), s2.getResults()), mappedSort, limit),
+						s1.getTotalHitsCount() + s2.getTotalHitsCount()
 				)
-				.publish()
-				.refCount(2);
-
-		Flux<LLSignal> sortedValues = LuceneUtils
-				.mergeStream(sharedMappedSignals.map(sub -> sub.filter(LLSignal::isValue)), mappedSort, limit);
-		//noinspection Convert2MethodRef
-		Mono<LLSignal> sortedTotalSize = sharedMappedSignals
-				.flatMap(sub -> sub)
-				.filter(LLSignal::isTotalHitsCount)
-				.map(LLSignal::getTotalHitsCount)
-				.reduce(Long::sum)
-				.map(sum -> new LLTotalHitsCount(sum));
-
-		return Flux.merge(sortedValues, sortedTotalSize);
+		);
 	}
 
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(

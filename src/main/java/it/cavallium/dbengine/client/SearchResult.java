@@ -1,42 +1,15 @@
 package it.cavallium.dbengine.client;
 
-import lombok.EqualsAndHashCode;
-import lombok.ToString;
+import lombok.Value;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
-@EqualsAndHashCode
-@ToString
+@Value
 public class SearchResult<T, U> {
 
-	private final Flux<LuceneSignal<SearchResultItem<T, U>>> results;
-
-	public SearchResult(Flux<LuceneSignal<SearchResultItem<T, U>>> results) {
-		this.results = results;
-	}
+	Flux<SearchResultItem<T, U>> results;
+	long totalHitsCount;
 
 	public static <T, U> SearchResult<T, U> empty() {
-		return new SearchResult<>(Flux.just(LuceneSignal.totalHitsCount(0L)));
-	}
-
-	public Flux<LuceneSignal<SearchResultItem<T, U>>> results() {
-		return this.results;
-	}
-
-	public Flux<SearchResultItem<T, U>> onlyValues() {
-		return this.results.filter(LuceneSignal::isValue).map(LuceneSignal::getValue);
-	}
-
-	/**
-	 * You must subscribe to both publishers
-	 */
-	public Tuple2<Flux<SearchResultItem<T, U>>, Mono<Long>> splitShared() {
-		Flux<LuceneSignal<SearchResultItem<T, U>>> shared = results.publish().refCount(2);
-		return Tuples.of(
-				shared.filter(LuceneSignal::isValue).map(LuceneSignal::getValue).share(),
-				Mono.from(shared.filter(LuceneSignal::isTotalHitsCount).map(LuceneSignal::getTotalHitsCount)).cache()
-		);
+		return new SearchResult<>(Flux.empty(), 0L);
 	}
 }

@@ -5,7 +5,6 @@ import it.cavallium.dbengine.client.query.current.data.RandomSort;
 import it.cavallium.dbengine.client.query.current.data.ScoreSort;
 import it.cavallium.dbengine.client.query.current.data.Sort;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLSignal;
 import java.util.Comparator;
 import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
@@ -68,15 +67,9 @@ public class MultiSort<T> {
 		return new MultiSort<>(RandomSort.of(), (a, b) -> 0);
 	}
 
-	public static MultiSort<LLSignal> topScoreRaw() {
+	public static MultiSort<LLKeyScore> topScoreRaw() {
 		Comparator<LLKeyScore> comp = Comparator.comparingDouble(LLKeyScore::getScore).reversed();
-		return new MultiSort<>(ScoreSort.of(), (signal1, signal2) -> {
-			if (signal1.isValue() && signal2.isValue()) {
-				return comp.compare(signal1.getValue(), signal2.getValue());
-			} else {
-				return 0;
-			}
-		});
+		return new MultiSort<>(ScoreSort.of(), comp);
 	}
 
 	public static <T> MultiSort<SearchResultKey<T>> topScore() {

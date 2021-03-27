@@ -78,22 +78,17 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		return luceneIndex.deleteAll();
 	}
 
-	private SearchResultKeys<T> transformLuceneResult(LLSearchResult llSearchResult,
+	private Mono<SearchResultKeys<T>> transformLuceneResult(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultKey<T>> sort,
 			LLScoreMode scoreMode,
 			@Nullable Long limit) {
-		Flux<Flux<LuceneSignal<SearchResultKey<T>>>> mappedKeys = llSearchResult
-				.results()
-				.map(flux -> flux.map(signal -> {
-					if (signal.isValue()) {
-						return LuceneSignal.value(
-								new SearchResultKey<T>(indicizer.getKey(signal.getValue().getKey()),
-								signal.getValue().getScore()
-						));
-					} else {
-						return LuceneSignal.totalHitsCount(signal.getTotalHitsCount());
-					}
-				}));
+		Flux<SearchResultKeys<T>> mappedKeys = llSearchResult
+				.getResults()
+				.map(flux -> new SearchResultKeys<>(flux.getResults().map(signal -> {
+					return new SearchResultKey<T>(indicizer.getKey(signal.getKey()),
+							signal.getScore()
+					);
+				}), flux.getTotalHitsCount()));
 		MultiSort<SearchResultKey<T>> finalSort;
 		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
 			finalSort = MultiSort.topScore();
@@ -101,38 +96,30 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			finalSort = sort;
 		}
 
-		MultiSort<LuceneSignal<SearchResultKey<T>>> mappedSort;
+		MultiSort<SearchResultKey<T>> mappedSort;
 		if (finalSort != null) {
 			mappedSort = new MultiSort<>(finalSort.getQuerySort(), (signal1, signal2) -> {
-				if (signal1.isValue() && signal2.isValue()) {
-					return finalSort.getResultSort().compare((signal1.getValue()), signal2.getValue());
-				} else {
-					return 0;
-				}
+				return finalSort.getResultSort().compare((signal1), signal2);
 			});
 		} else {
 			mappedSort = null;
 		}
-		return new SearchResultKeys<>(LuceneUtils.mergeSignalStream(mappedKeys, mappedSort, limit));
+		return LuceneUtils.mergeSignalStreamKeys(mappedKeys, mappedSort, limit);
 	}
 
-	private SearchResult<T, U> transformLuceneResultWithValues(LLSearchResult llSearchResult,
+	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultItem<T, U>> sort,
 			LLScoreMode scoreMode,
 			@Nullable Long limit,
 			ValueGetter<T, U> valueGetter) {
-		Flux<Flux<LuceneSignal<SearchResultItem<T, U>>>> mappedKeys = llSearchResult
-				.results()
-				.map(flux -> flux.flatMapSequential(signal -> {
-					if (signal.isValue()) {
-						var key = indicizer.getKey(signal.getValue().getKey());
+		Flux<SearchResult<T, U>> mappedKeys = llSearchResult
+				.getResults()
+				.map(flux -> new SearchResult<>(flux.getResults().flatMapSequential(signal -> {
+						var key = indicizer.getKey(signal.getKey());
 						return valueGetter
 								.get(key)
-								.map(value -> LuceneSignal.value(new SearchResultItem<>(key, value, signal.getValue().getScore())));
-					} else {
-						return Mono.just(LuceneSignal.totalHitsCount((signal.getTotalHitsCount())));
-					}
-				}));
+								.map(value -> new SearchResultItem<>(key, value, signal.getScore()));
+				}), flux.getTotalHitsCount()));
 		MultiSort<SearchResultItem<T, U>> finalSort;
 		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
 			finalSort = MultiSort.topScoreWithValues();
@@ -140,20 +127,15 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			finalSort = sort;
 		}
 
-		MultiSort<LuceneSignal<SearchResultItem<T, U>>> mappedSort;
+		MultiSort<SearchResultItem<T, U>> mappedSort;
 		if (finalSort != null) {
 			mappedSort = new MultiSort<>(finalSort.getQuerySort(), (signal1, signal2) -> {
-				if (signal1.isValue() && signal2.isValue()) {
-					return finalSort.getResultSort().compare((signal1.getValue()), signal2.getValue());
-				} else {
-					return 0;
-				}
+				return finalSort.getResultSort().compare((signal1), signal2);
 			});
 		} else {
 			mappedSort = null;
 		}
-		var sortedKeys = LuceneUtils.mergeSignalStream(mappedKeys, mappedSort, limit);
-		return new SearchResult<>(sortedKeys);
+		return LuceneUtils.mergeSignalStreamItems(mappedKeys, mappedSort, limit);
 	}
 
 	/**
@@ -171,7 +153,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName(), mltDocumentFields)
-				.map(llSearchResult -> this.transformLuceneResult(llSearchResult,
+				.flatMap(llSearchResult -> this.transformLuceneResult(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
 						queryParams.getLimit()
@@ -199,7 +181,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
 				)
-				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
+				.flatMap(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
 						queryParams.getLimit(),
@@ -218,7 +200,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			ClientQueryParams<SearchResultKey<T>> queryParams) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResult(llSearchResult,
+				.flatMap(llSearchResult -> this.transformLuceneResult(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
 						queryParams.getLimit()
@@ -237,7 +219,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			ValueGetter<T, U> valueGetter) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
-				.map(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
+				.flatMap(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
 						queryParams.getLimit(),
@@ -246,10 +228,8 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	}
 
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return Mono.from(this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
-				.flatMapMany(SearchResultKeys::results)
-				.filter(LuceneSignal::isTotalHitsCount)
-				.map(LuceneSignal::getTotalHitsCount));
+		return this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
+				.map(SearchResultKeys::getTotalHitsCount);
 	}
 
 	public boolean isLowMemoryMode() {

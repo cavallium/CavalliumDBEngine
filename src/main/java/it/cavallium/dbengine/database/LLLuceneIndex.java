@@ -5,6 +5,7 @@ import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.ScoreMode;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -50,10 +51,9 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
 		QueryParams params = QueryParams.of(query, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
 		return Mono.from(this.search(snapshot, params, null)
-				.flatMapMany(LLSearchResult::results)
-				.flatMap(s -> s)
-				.filter(LLSignal::isTotalHitsCount)
-				.map(LLSignal::getTotalHitsCount));
+				.flatMap(results -> LuceneUtils.mergeSignalStreamRaw(results.getResults(), null, null))
+				.map(LLSearchResultShard::getTotalHitsCount)
+				.defaultIfEmpty(0L));
 	}
 
 	boolean isLowMemoryMode();

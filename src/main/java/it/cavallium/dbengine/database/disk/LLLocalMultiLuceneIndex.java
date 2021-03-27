@@ -7,6 +7,7 @@ import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResult;
+import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -262,9 +263,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.reduce(LLSearchResult.accumulator())
 						.map(result -> {
 							if (actionId != -1) {
-								var resultsWithTermination = result
-										.results()
-										.map(flux -> flux.doOnTerminate(() -> completedAction(actionId)));
+								Flux<LLSearchResultShard> resultsWithTermination = result
+										.getResults()
+										.map(flux -> new LLSearchResultShard(flux
+												.getResults()
+												.doOnTerminate(() -> completedAction(actionId)), flux.getTotalHitsCount())
+										);
 								return new LLSearchResult(resultsWithTermination);
 							} else {
 								return result;
@@ -323,9 +327,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.reduce(LLSearchResult.accumulator())
 						.map(result -> {
 							if (actionId != -1) {
-								var resultsWithTermination = result
-										.results()
-										.map(flux -> flux.doOnTerminate(() -> completedAction(actionId)));
+								Flux<LLSearchResultShard> resultsWithTermination = result
+										.getResults()
+										.map(flux -> new LLSearchResultShard(flux
+												.getResults()
+												.doOnTerminate(() -> completedAction(actionId)), flux.getTotalHitsCount())
+										);
 								return new LLSearchResult(resultsWithTermination);
 							} else {
 								return result;

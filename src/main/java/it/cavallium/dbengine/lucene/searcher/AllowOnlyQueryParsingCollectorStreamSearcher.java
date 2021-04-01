@@ -2,7 +2,6 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.function.LongConsumer;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
@@ -21,19 +20,18 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 
 	public void search(IndexSearcher indexSearcher,
 			Query query) throws IOException {
-		search(indexSearcher, query, 0, null, null, null, null, null, null);
+		search(indexSearcher, query, 0, 0, null, null, null, null);
 	}
 
 	@Override
-	public void search(IndexSearcher indexSearcher,
+	public LuceneSearchInstance search(IndexSearcher indexSearcher,
 			Query query,
+			int offset,
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
-			String keyFieldName,
-			ResultItemConsumer resultsConsumer,
-			LongConsumer totalHitsConsumer) throws IOException {
+			String keyFieldName) throws IOException {
 		if (limit > 0) {
 			throw new IllegalArgumentException("Limit > 0 not allowed");
 		}
@@ -48,12 +46,6 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 		}
 		if (keyFieldName != null) {
 			throw new IllegalArgumentException("Key field name not allowed");
-		}
-		if (resultsConsumer != null) {
-			throw new IllegalArgumentException("Results consumer not allowed");
-		}
-		if (totalHitsConsumer != null) {
-			throw new IllegalArgumentException("Total hits consumer not allowed");
 		}
 		indexSearcher.search(query, new CollectorManager<>() {
 			@Override
@@ -85,5 +77,17 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 				return null;
 			}
 		});
+
+		return new LuceneSearchInstance() {
+			@Override
+			public long getTotalHitsCount() throws IOException {
+				throw new IllegalArgumentException("Total hits consumer not allowed");
+			}
+
+			@Override
+			public void getResults(ResultItemConsumer consumer) throws IOException {
+				throw new IllegalArgumentException("Results consumer not allowed");
+			}
+		};
 	}
 }

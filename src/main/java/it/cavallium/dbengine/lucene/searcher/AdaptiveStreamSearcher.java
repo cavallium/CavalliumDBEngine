@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import java.io.IOException;
-import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
@@ -21,56 +20,52 @@ public class AdaptiveStreamSearcher implements LuceneStreamSearcher {
 
 	public AdaptiveStreamSearcher() {
 		this.simpleStreamSearcher = new SimpleStreamSearcher();
-		this.parallelCollectorStreamSearcher = new ParallelCollectorStreamSearcher();
-		this.pagedStreamSearcher = new PagedStreamSearcher(simpleStreamSearcher);
 		this.countStreamSearcher = new CountStreamSearcher();
+		this.parallelCollectorStreamSearcher = new ParallelCollectorStreamSearcher(countStreamSearcher);
+		this.pagedStreamSearcher = new PagedStreamSearcher(simpleStreamSearcher);
 	}
 
 	@Override
-	public void search(IndexSearcher indexSearcher,
+	public LuceneSearchInstance search(IndexSearcher indexSearcher,
 			Query query,
+			int offset,
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
-			String keyFieldName,
-			ResultItemConsumer consumer,
-			LongConsumer totalHitsConsumer) throws IOException {
+			String keyFieldName) throws IOException {
 		if (limit == 0) {
-			totalHitsConsumer.accept(countStreamSearcher.count(indexSearcher, query));
-		} else if (luceneSort == null && ENABLE_PARALLEL_COLLECTOR) {
-			parallelCollectorStreamSearcher.search(indexSearcher,
+			return countStreamSearcher.count(indexSearcher, query);
+		} else if (offset == 0 && luceneSort == null && ENABLE_PARALLEL_COLLECTOR) {
+			return parallelCollectorStreamSearcher.search(indexSearcher,
 					query,
+					offset,
 					limit,
 					null,
 					scoreMode,
 					minCompetitiveScore,
-					keyFieldName,
-					consumer,
-					totalHitsConsumer
+					keyFieldName
 			);
 		} else {
-			if (luceneSort != null && limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {
-				pagedStreamSearcher.search(indexSearcher,
+			if (offset > 0 || limit > PagedStreamSearcher.MAX_ITEMS_PER_PAGE) {
+				return pagedStreamSearcher.search(indexSearcher,
 						query,
+						offset,
 						limit,
 						luceneSort,
 						scoreMode,
 						minCompetitiveScore,
-						keyFieldName,
-						consumer,
-						totalHitsConsumer
+						keyFieldName
 				);
 			} else {
-				simpleStreamSearcher.search(indexSearcher,
+				return simpleStreamSearcher.search(indexSearcher,
 						query,
+						offset,
 						limit,
 						luceneSort,
 						scoreMode,
 						minCompetitiveScore,
-						keyFieldName,
-						consumer,
-						totalHitsConsumer
+						keyFieldName
 				);
 			}
 		}

@@ -19,6 +19,7 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneSearchInstance;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import java.io.IOException;
@@ -451,6 +452,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							.subscribeOn(luceneQueryScheduler)
 							.map(luceneQuery -> luceneSearch(doDistributedPre,
 									indexSearcher,
+									queryParams.getOffset(),
 									queryParams.getLimit(),
 									queryParams.getMinCompetitiveScore().getNullable(),
 									keyFieldName,
@@ -510,6 +512,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 									return luceneSearch(doDistributedPre,
 											indexSearcher,
+											queryParams.getOffset(),
 											queryParams.getLimit(),
 											queryParams.getMinCompetitiveScore().getNullable(),
 											keyFieldName,
@@ -534,6 +537,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	private LLSearchResult luceneSearch(boolean doDistributedPre,
 			IndexSearcher indexSearcher,
+			long offset,
 			long limit,
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
@@ -543,26 +547,29 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			ScoreMode luceneScoreMode) {
 		return new LLSearchResult(Mono.<LLSearchResultShard>create(monoSink -> {
 
+			LuceneSearchInstance luceneSearchInstance;
 			long totalHitsCount;
 			try {
-				if (!doDistributedPre) {
-					AtomicLong totalHitsCountAtomic = new AtomicLong(0);
+				if (doDistributedPre) {
 					//noinspection BlockingMethodInNonBlockingContext
-					streamSearcher.search(indexSearcher,
+					allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
+					monoSink.success(new LLSearchResultShard(Flux.empty(), 0));
+					return;
+				} else {
+					int boundedOffset = Math.max(0, offset > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) offset);
+					int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
+					//noinspection BlockingMethodInNonBlockingContext
+					luceneSearchInstance = streamSearcher.search(indexSearcher,
 							luceneQuery,
-							0,
+							boundedOffset,
+							boundedLimit,
 							luceneSort,
 							luceneScoreMode,
 							minCompetitiveScore,
-							keyFieldName,
-							keyScore -> HandleResult.HALT,
-							totalHitsCountAtomic::set
+							keyFieldName
 					);
-					totalHitsCount = totalHitsCountAtomic.get();
-				} else {
 					//noinspection BlockingMethodInNonBlockingContext
-					allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
-					totalHitsCount = 0;
+					totalHitsCount = luceneSearchInstance.getTotalHitsCount();
 				}
 			} catch (Exception ex) {
 				monoSink.error(ex);
@@ -590,43 +597,30 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				});
 
 				try {
-					if (!doDistributedPre) {
-						int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
-						AtomicLong atomicTotalHitsCount = new AtomicLong(0);
-						//noinspection BlockingMethodInNonBlockingContext
-						streamSearcher.search(indexSearcher,
-								luceneQuery,
-								boundedLimit,
-								luceneSort,
-								luceneScoreMode,
-								minCompetitiveScore,
-								keyFieldName,
-								keyScore -> {
-									try {
-										if (cancelled.get()) {
-											return HandleResult.HALT;
-										}
-										while (!requests.tryAcquire(500, TimeUnit.MILLISECONDS)) {
-											if (cancelled.get()) {
-												return HandleResult.HALT;
-											}
-										}
-										sink.next(fixKeyScore(keyScore, scoreDivisor));
-										if (cancelled.get()) {
-											return HandleResult.HALT;
-										} else {
-											return HandleResult.CONTINUE;
-										}
-									} catch (Exception ex) {
-										sink.error(ex);
-										cancelled.set(true);
-										requests.release(Integer.MAX_VALUE);
-										return HandleResult.HALT;
-									}
-								},
-								atomicTotalHitsCount::set
-						);
-					}
+					//noinspection BlockingMethodInNonBlockingContext
+					luceneSearchInstance.getResults(keyScore -> {
+						try {
+							if (cancelled.get()) {
+								return HandleResult.HALT;
+							}
+							while (!requests.tryAcquire(500, TimeUnit.MILLISECONDS)) {
+								if (cancelled.get()) {
+									return HandleResult.HALT;
+								}
+							}
+							sink.next(fixKeyScore(keyScore, scoreDivisor));
+							if (cancelled.get()) {
+								return HandleResult.HALT;
+							} else {
+								return HandleResult.CONTINUE;
+							}
+						} catch (Exception ex) {
+							sink.error(ex);
+							cancelled.set(true);
+							requests.release(Integer.MAX_VALUE);
+							return HandleResult.HALT;
+						}
+					});
 					sink.complete();
 				} catch (Exception ex) {
 					sink.error(ex);
@@ -719,5 +713,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public boolean isLowMemoryMode() {
 		return lowMemory;
+	}
+
+	@Override
+	public boolean supportsOffset() {
+		return true;
 	}
 }

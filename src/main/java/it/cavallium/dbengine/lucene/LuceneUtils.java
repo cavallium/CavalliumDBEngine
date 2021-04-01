@@ -181,6 +181,7 @@ public class LuceneUtils {
 	 */
 	public static <T> Flux<T> mergeStream(Flux<Flux<T>> mappedMultiResults,
 			@Nullable MultiSort<T> sort,
+			long offset,
 			@Nullable Long limit) {
 		if (limit != null && limit == 0) {
 			return mappedMultiResults.flatMap(f -> f).ignoreElements().flux();
@@ -193,10 +194,16 @@ public class LuceneUtils {
 					//noinspection unchecked
 					mergedFlux = Flux.mergeOrdered(32, sort.getResultSort(), mappedMultiResultsList.toArray(Flux[]::new));
 				}
-				if (limit == null || limit == Long.MAX_VALUE) {
-					return mergedFlux;
+				Flux<T> offsetedFlux;
+				if (offset > 0) {
+					offsetedFlux = mergedFlux.skip(offset);
 				} else {
-					return mergedFlux.limitRequest(limit);
+					offsetedFlux = mergedFlux;
+				}
+				if (limit == null || limit == Long.MAX_VALUE) {
+					return offsetedFlux;
+				} else {
+					return offsetedFlux.limitRequest(limit);
 				}
 			});
 		}
@@ -236,31 +243,34 @@ public class LuceneUtils {
 
 	public static <T> Mono<SearchResultKeys<T>> mergeSignalStreamKeys(Flux<SearchResultKeys<T>> mappedKeys,
 			MultiSort<SearchResultKey<T>> sort,
+			long offset,
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResultKeys<>(Flux.empty(), 0L),
 				(a, b) -> new SearchResultKeys<T>(LuceneUtils
-						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
+						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, offset, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
 		);
 	}
 
 	public static <T, U> Mono<SearchResult<T, U>> mergeSignalStreamItems(Flux<SearchResult<T, U>> mappedKeys,
 			MultiSort<SearchResultItem<T, U>> sort,
+			long offset,
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResult<>(Flux.empty(), 0L),
 				(a, b) -> new SearchResult<T, U>(LuceneUtils
-						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
+						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, offset, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
 		);
 	}
 
 	public static Mono<LLSearchResultShard> mergeSignalStreamRaw(Flux<LLSearchResultShard> mappedKeys,
 			MultiSort<LLKeyScore> mappedSort,
+			long offset,
 			Long limit) {
 		return mappedKeys.reduce(
 				new LLSearchResultShard(Flux.empty(), 0),
 				(s1, s2) -> new LLSearchResultShard(
-						LuceneUtils.mergeStream(Flux.just(s1.getResults(), s2.getResults()), mappedSort, limit),
+						LuceneUtils.mergeStream(Flux.just(s1.getResults(), s2.getResults()), mappedSort, offset, limit),
 						s1.getTotalHitsCount() + s2.getTotalHitsCount()
 				)
 		);

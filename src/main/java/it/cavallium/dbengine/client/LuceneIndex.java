@@ -2,6 +2,7 @@ package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLSearchResult;
@@ -78,9 +79,26 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		return luceneIndex.deleteAll();
 	}
 
+	private static QueryParams fixOffset(LLLuceneIndex luceneIndex, QueryParams queryParams) {
+		if (luceneIndex.supportsOffset()) {
+			return queryParams;
+		} else {
+			return queryParams.setOffset(0);
+		}
+	}
+
+	private static long fixTransformOffset(LLLuceneIndex luceneIndex, long offset) {
+		if (luceneIndex.supportsOffset()) {
+			return 0;
+		} else {
+			return offset;
+		}
+	}
+
 	private Mono<SearchResultKeys<T>> transformLuceneResult(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultKey<T>> sort,
 			LLScoreMode scoreMode,
+			long offset,
 			@Nullable Long limit) {
 		Flux<SearchResultKeys<T>> mappedKeys = llSearchResult
 				.getResults()
@@ -104,12 +122,13 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		} else {
 			mappedSort = null;
 		}
-		return LuceneUtils.mergeSignalStreamKeys(mappedKeys, mappedSort, limit);
+		return LuceneUtils.mergeSignalStreamKeys(mappedKeys, mappedSort, offset, limit);
 	}
 
 	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResult llSearchResult,
 			@Nullable MultiSort<SearchResultItem<T, U>> sort,
 			LLScoreMode scoreMode,
+			long offset,
 			@Nullable Long limit,
 			ValueGetter<T, U> valueGetter) {
 		Flux<SearchResult<T, U>> mappedKeys = llSearchResult
@@ -135,7 +154,7 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		} else {
 			mappedSort = null;
 		}
-		return LuceneUtils.mergeSignalStreamItems(mappedKeys, mappedSort, limit);
+		return LuceneUtils.mergeSignalStreamItems(mappedKeys, mappedSort, offset, limit);
 	}
 
 	/**
@@ -152,14 +171,16 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
-				.moreLikeThis(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName(), mltDocumentFields)
+				.moreLikeThis(resolveSnapshot(queryParams.getSnapshot()), fixOffset(luceneIndex, queryParams.toQueryParams()), indicizer.getKeyFieldName(), mltDocumentFields)
 				.flatMap(llSearchResult -> this.transformLuceneResult(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
+						fixTransformOffset(luceneIndex, queryParams.getOffset()),
 						queryParams.getLimit()
 				));
 
 	}
+
 
 	/**
 	 *
@@ -177,13 +198,14 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(queryParams.getSnapshot()),
-						queryParams.toQueryParams(),
+						fixOffset(luceneIndex, queryParams.toQueryParams()),
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
 				)
 				.flatMap(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
+						fixTransformOffset(luceneIndex, queryParams.getOffset()),
 						queryParams.getLimit(),
 						valueGetter
 				));
@@ -199,10 +221,14 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 	public Mono<SearchResultKeys<T>> search(
 			ClientQueryParams<SearchResultKey<T>> queryParams) {
 		return luceneIndex
-				.search(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
+				.search(resolveSnapshot(queryParams.getSnapshot()),
+						fixOffset(luceneIndex, queryParams.toQueryParams()),
+						indicizer.getKeyFieldName()
+				)
 				.flatMap(llSearchResult -> this.transformLuceneResult(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
+						fixTransformOffset(luceneIndex, queryParams.getOffset()),
 						queryParams.getLimit()
 				));
 	}
@@ -218,10 +244,11 @@ public class LuceneIndex<T, U> implements LLSnapshottable {
 			ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueGetter<T, U> valueGetter) {
 		return luceneIndex
-				.search(resolveSnapshot(queryParams.getSnapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
+				.search(resolveSnapshot(queryParams.getSnapshot()), fixOffset(luceneIndex, queryParams.toQueryParams()), indicizer.getKeyFieldName())
 				.flatMap(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
 						queryParams.getSort(),
 						queryParams.getScoreMode(),
+						fixTransformOffset(luceneIndex, queryParams.getOffset()),
 						queryParams.getLimit(),
 						valueGetter
 				));

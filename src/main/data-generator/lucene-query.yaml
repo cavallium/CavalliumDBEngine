@@ -175,6 +175,7 @@ versions:
       QueryParams:
         data:
           query: Query
+          offset: long
           limit: long
           minCompetitiveScore: -float
           sort: Sort

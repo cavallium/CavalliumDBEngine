@@ -212,6 +212,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
+		if (queryParams.getOffset() != 0) {
+			return Mono.error(new IllegalArgumentException("MultiLuceneIndex requires an offset equal to 0"));
+		}
 		long actionId;
 		int scoreDivisor;
 		Flux<Tuple2<String, Set<String>>> mltDocumentFieldsShared;
@@ -284,6 +287,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		long actionId;
 		int scoreDivisor;
 		Mono<Void> distributedPre;
+		if (queryParams.getOffset() != 0) {
+			return Mono.error(new IllegalArgumentException("MultiLuceneIndex requires an offset equal to 0"));
+		}
 		if (luceneIndices.length <= 1 || !queryParams.getScoreMode().getComputeScores()) {
 			actionId = -1;
 			scoreDivisor = 1;
@@ -409,5 +415,10 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public boolean isLowMemoryMode() {
 		return luceneIndices[0].isLowMemoryMode();
+	}
+
+	@Override
+	public boolean supportsOffset() {
+		return false;
 	}
 }

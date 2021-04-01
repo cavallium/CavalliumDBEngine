@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import java.io.IOException;
-import java.util.function.LongConsumer;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
@@ -14,31 +13,42 @@ import org.jetbrains.annotations.Nullable;
 public class CountStreamSearcher implements LuceneStreamSearcher {
 
 	@Override
-	public void search(IndexSearcher indexSearcher,
+	public LuceneSearchInstance search(IndexSearcher indexSearcher,
 			Query query,
+			int offset,
 			int limit,
 			@Nullable Sort luceneSort,
 			ScoreMode scoreMode,
 			@Nullable Float minCompetitiveScore,
-			String keyFieldName,
-			ResultItemConsumer resultsConsumer,
-			LongConsumer totalHitsConsumer) throws IOException {
+			String keyFieldName) throws IOException {
 		if (limit != 0) {
 			throw new IllegalArgumentException("CountStream doesn't support a limit different than 0");
 		}
 		if (luceneSort != null) {
 			throw new IllegalArgumentException("CountStream doesn't support sorting");
 		}
-		if (resultsConsumer != null) {
-			throw new IllegalArgumentException("CountStream doesn't support a results consumer");
-		}
 		if (keyFieldName != null) {
 			throw new IllegalArgumentException("CountStream doesn't support a key field");
 		}
-		totalHitsConsumer.accept(count(indexSearcher, query));
+		return count(indexSearcher, query);
 	}
 
-	public long count(IndexSearcher indexSearcher, Query query) throws IOException {
+	public long countLong(IndexSearcher indexSearcher, Query query) throws IOException {
 		return indexSearcher.count(query);
+	}
+
+	public LuceneSearchInstance count(IndexSearcher indexSearcher, Query query) throws IOException {
+		long totalHitsCount = countLong(indexSearcher, query);
+		return new LuceneSearchInstance() {
+			@Override
+			public long getTotalHitsCount() {
+				return totalHitsCount;
+			}
+
+			@Override
+			public void getResults(ResultItemConsumer consumer) {
+
+			}
+		};
 	}
 }

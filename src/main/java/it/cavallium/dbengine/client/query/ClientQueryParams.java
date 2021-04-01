@@ -36,6 +36,9 @@ public final class ClientQueryParams<T> {
 	private Query query;
 
 	@Default
+	private long offset = 0;
+
+	@Default
 	private long limit = Long.MAX_VALUE;
 
 	@Nullable
@@ -75,6 +78,7 @@ public final class ClientQueryParams<T> {
 				.query(getQuery())
 				.sort(getSort() != null ? getSort().getQuerySort() : NoSort.of())
 				.minCompetitiveScore(Nullablefloat.ofNullable(getMinCompetitiveScore()))
+				.offset(getOffset())
 				.limit(getLimit())
 				.scoreMode(toScoreMode())
 				.build();

@@ -49,14 +49,16 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
 
 	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
-		QueryParams params = QueryParams.of(query, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
+		QueryParams params = QueryParams.of(query, 0, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
 		return Mono.from(this.search(snapshot, params, null)
-				.flatMap(results -> LuceneUtils.mergeSignalStreamRaw(results.getResults(), null, null))
+				.flatMap(results -> LuceneUtils.mergeSignalStreamRaw(results.getResults(), null, 0, null))
 				.map(LLSearchResultShard::getTotalHitsCount)
 				.defaultIfEmpty(0L));
 	}
 
 	boolean isLowMemoryMode();
+
+	boolean supportsOffset();
 
 	Mono<Void> close();
 

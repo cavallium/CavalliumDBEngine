@@ -50,24 +50,20 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	static byte[] firstRangeKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
-		return fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+		return zeroFillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength);
 	}
 
 	static byte[] nextRangeKey(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
-		byte[] nonIncremented = fillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+		byte[] nonIncremented = zeroFillKeySuffixAndExt(prefixKey, prefixLength, suffixLength, extLength);
 		return incrementPrefix(nonIncremented, prefixLength);
 	}
 
-	protected static byte[] fillKeySuffixAndExt(byte[] prefixKey,
-			int prefixLength,
-			int suffixLength,
-			int extLength,
-			byte fillValue) {
+	protected static byte[] zeroFillKeySuffixAndExt(byte[] prefixKey, int prefixLength, int suffixLength, int extLength) {
 		assert prefixKey.length == prefixLength;
 		assert suffixLength > 0;
 		assert extLength >= 0;
 		byte[] result = Arrays.copyOf(prefixKey, prefixLength + suffixLength + extLength);
-		Arrays.fill(result, prefixLength, result.length, fillValue);
+		Arrays.fill(result, prefixLength, result.length, (byte) 0);
 		return result;
 	}
 
@@ -76,7 +72,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
-		return fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+		return zeroFillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength);
 	}
 
 	static byte[] nextRangeKey(byte[] prefixKey,
@@ -84,23 +80,22 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
-		byte[] nonIncremented = fillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength, (byte) 0x00);
+		byte[] nonIncremented = zeroFillKeyExt(prefixKey, suffixKey, prefixLength, suffixLength, extLength);
 		return incrementPrefix(nonIncremented, prefixLength + suffixLength);
 	}
 
-	protected static byte[] fillKeyExt(byte[] prefixKey,
+	protected static byte[] zeroFillKeyExt(byte[] prefixKey,
 			byte[] suffixKey,
 			int prefixLength,
 			int suffixLength,
-			int extLength,
-			byte fillValue) {
+			int extLength) {
 		assert prefixKey.length == prefixLength;
 		assert suffixKey.length == suffixLength;
 		assert suffixLength > 0;
 		assert extLength >= 0;
 		byte[] result = Arrays.copyOf(prefixKey, prefixLength + suffixLength + extLength);
 		System.arraycopy(suffixKey, 0, result, prefixLength, suffixLength);
-		Arrays.fill(result, prefixLength + suffixLength, result.length, fillValue);
+		Arrays.fill(result, prefixLength + suffixLength, result.length, (byte) 0);
 		return result;
 	}
 
@@ -210,7 +205,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), range);
 	}
 
-	@SuppressWarnings("ReactiveStreamsUnusedPublisher")
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		byte[] keySuffixData = serializeSuffix(keySuffix);

@@ -71,6 +71,7 @@ public class CodecSerializer<A> implements Serializer<A, byte[]> {
 		}
 	}
 
+	@SuppressWarnings("unused")
 	public int getCodecHeadersBytes() {
 		if (microCodecs) {
 			return Byte.BYTES;

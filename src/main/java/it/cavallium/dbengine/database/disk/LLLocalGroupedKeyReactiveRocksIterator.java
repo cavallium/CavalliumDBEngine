@@ -13,7 +13,7 @@ public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReacti
 			LLRange range,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, cfh, prefixLength, range, readOptions, true, false, debugName);
+		super(db, cfh, prefixLength, range, readOptions, true, false);
 	}
 
 	@Override

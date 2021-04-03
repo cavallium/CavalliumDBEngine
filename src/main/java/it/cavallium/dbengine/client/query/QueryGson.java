@@ -39,6 +39,7 @@ public class QueryGson {
 		return gsonBuilder;
 	}
 
+	@SuppressWarnings("DuplicatedCode")
 	public static class DbClassesGenericSerializer<T extends IType> implements JsonSerializer<T>, JsonDeserializer<T> {
 
 		private final BiMap<String, Class<? extends IBasicType>> subTypes;

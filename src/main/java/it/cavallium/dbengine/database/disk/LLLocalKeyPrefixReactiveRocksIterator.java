@@ -2,14 +2,11 @@ package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.LLRange;
 import java.util.Arrays;
-import java.util.Optional;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksMutableObject;
-import org.rocksdb.Slice;
 import reactor.core.publisher.Flux;
-import reactor.util.function.Tuples;
 
 public class LLLocalKeyPrefixReactiveRocksIterator {
 
@@ -48,27 +45,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 						//readOptions.setReadaheadSize(2 * 1024 * 1024);
 						readOptions.setFillCache(canFillCache);
 					}
-					Slice sliceMin;
-					Slice sliceMax;
-					if (range.hasMin()) {
-						sliceMin = new Slice(range.getMin());
-						readOptions.setIterateLowerBound(sliceMin);
-					} else {
-						sliceMin = null;
-					}
-					if (range.hasMax()) {
-						sliceMax = new Slice(range.getMax());
-						readOptions.setIterateUpperBound(sliceMax);
-					} else {
-						sliceMax = null;
-					}
-					var rocksIterator = db.newIterator(cfh, readOptions);
-					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-						rocksIterator.seek(range.getMin());
-					} else {
-						rocksIterator.seekToFirst();
-					}
-					return Tuples.of(rocksIterator, Optional.ofNullable(sliceMin), Optional.ofNullable(sliceMax));
+					return LLLocalDictionary.getRocksIterator(readOptions, range, db, cfh);
 				}, (tuple, sink) -> {
 					var rocksIterator = tuple.getT1();
 					byte[] firstGroupKey = null;
@@ -96,4 +73,5 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 					tuple.getT3().ifPresent(RocksMutableObject::close);
 				});
 	}
+
 }

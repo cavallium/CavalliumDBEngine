@@ -46,7 +46,7 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 			long totalHitsCount = countStreamSearcher.countLong(indexSearcher, query);
 
 			@Override
-			public long getTotalHitsCount() throws IOException {
+			public long getTotalHitsCount() {
 				return totalHitsCount;
 			}
 

@@ -95,10 +95,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private static final Supplier<Scheduler> lowMemorySchedulerSupplier = Suppliers.memoize(() ->
 			Schedulers.newBoundedElastic(1, Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 					"lucene-low-memory", Integer.MAX_VALUE))::get;
+	@SuppressWarnings("FieldCanBeLocal")
 	private final Supplier<Scheduler> querySchedulerSupplier = USE_STANDARD_SCHEDULERS ?
 			Schedulers::boundedElastic : Suppliers.memoize(() -> boundedSchedulerSupplier.apply("query"))::get;
+	@SuppressWarnings("FieldCanBeLocal")
 	private final Supplier<Scheduler> blockingSchedulerSupplier = USE_STANDARD_SCHEDULERS ?
 			Schedulers::boundedElastic : Suppliers.memoize(() -> boundedSchedulerSupplier.apply("blocking"))::get;
+	@SuppressWarnings("FieldCanBeLocal")
 	private final Supplier<Scheduler> blockingLuceneSearchSchedulerSupplier = USE_STANDARD_SCHEDULERS ?
 			Schedulers::boundedElastic : Suppliers.memoize(() -> boundedSchedulerSupplier.apply("search-blocking"))::get;
 	/**
@@ -603,15 +606,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 				AtomicBoolean cancelled = new AtomicBoolean();
 				Semaphore requests = new Semaphore(0);
-				sink.onDispose(() -> {
-					cancelled.set(true);
-				});
-				sink.onCancel(() -> {
-					cancelled.set(true);
-				});
-				sink.onRequest(delta -> {
-					requests.release((int) Math.min(delta, Integer.MAX_VALUE));
-				});
+				sink.onDispose(() -> cancelled.set(true));
+				sink.onCancel(() -> cancelled.set(true));
+				sink.onRequest(delta -> requests.release((int) Math.min(delta, Integer.MAX_VALUE)));
 
 				try {
 					//noinspection BlockingMethodInNonBlockingContext

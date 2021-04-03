@@ -247,6 +247,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			distributedPre = Mono.empty();
 		}
 
+		//noinspection DuplicatedCode
 		return distributedPre.then(Flux
 						.fromArray(luceneIndices)
 						.index()
@@ -314,6 +315,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					)
 					.then();
 		}
+		//noinspection DuplicatedCode
 		return distributedPre
 				.then(Flux
 						.fromArray(luceneIndices)

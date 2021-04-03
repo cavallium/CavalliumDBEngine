@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database;
 
 import java.util.Objects;
 
+@SuppressWarnings("unused")
 public class LLSort {
 
 	private final String fieldName;

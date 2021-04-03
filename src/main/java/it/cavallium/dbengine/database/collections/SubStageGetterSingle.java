@@ -40,12 +40,7 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 							return null;
 						})
 				)
-				.then(Mono.fromSupplier(() -> {
-					return new DatabaseSingle<>(dictionary,
-							keyPrefix,
-							serializer
-					);
-				}));
+				.then(Mono.fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix, serializer)));
 	}
 
 	@Override

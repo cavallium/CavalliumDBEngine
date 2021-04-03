@@ -143,7 +143,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force flush
 	}
 
-	private void compactDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
+	@SuppressWarnings("unused")
+	private void compactDb(RocksDB db, List<ColumnFamilyHandle> handles) {
 		// force compact the database
 		for (ColumnFamilyHandle cfh : handles) {
 			var t = new Thread(() -> {

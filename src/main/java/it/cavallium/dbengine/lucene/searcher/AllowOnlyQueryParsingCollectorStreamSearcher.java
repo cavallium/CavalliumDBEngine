@@ -80,12 +80,12 @@ public class AllowOnlyQueryParsingCollectorStreamSearcher implements LuceneStrea
 
 		return new LuceneSearchInstance() {
 			@Override
-			public long getTotalHitsCount() throws IOException {
+			public long getTotalHitsCount() {
 				throw new IllegalArgumentException("Total hits consumer not allowed");
 			}
 
 			@Override
-			public void getResults(ResultItemConsumer consumer) throws IOException {
+			public void getResults(ResultItemConsumer consumer) {
 				throw new IllegalArgumentException("Results consumer not allowed");
 			}
 		};

@@ -44,6 +44,8 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.util.function.Tuple3;
+import reactor.util.function.Tuples;
 
 @NotAtomic
 public class LLLocalDictionary implements LLDictionary {
@@ -299,6 +301,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 									Optional<byte[]> newData = value.apply(prevData);
 									if (prevData.isPresent() && newData.isEmpty()) {
+										//noinspection DuplicatedCode
 										if (updateMode == UpdateMode.ALLOW) {
 											var ws = lock.tryConvertToWriteLock(stamp);
 											if (ws != 0) {
@@ -315,6 +318,7 @@ public class LLLocalDictionary implements LLDictionary {
 										db.delete(cfh, key);
 									} else if (newData.isPresent()
 											&& (prevData.isEmpty() || !Arrays.equals(prevData.get(), newData.get()))) {
+										//noinspection DuplicatedCode
 										if (updateMode == UpdateMode.ALLOW) {
 											var ws = lock.tryConvertToWriteLock(stamp);
 											if (ws != 0) {
@@ -519,12 +523,10 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@NotNull
 	private Mono<Entry<byte[], byte[]>> putEntryToWriteBatch(Entry<byte[], byte[]> newEntry,
-			boolean getOldValues,
-			boolean existsAlmostCertainly,
-			CappedWriteBatch writeBatch) {
+			boolean getOldValues, CappedWriteBatch writeBatch) {
 		Mono<byte[]> getOldValueMono;
 		if (getOldValues) {
-			getOldValueMono = get(null, newEntry.getKey(), existsAlmostCertainly);
+			getOldValueMono = get(null, newEntry.getKey(), false);
 		} else {
 			getOldValueMono = Mono.empty();
 		}
@@ -656,7 +658,7 @@ public class LLLocalDictionary implements LLDictionary {
 								})
 								.subscribeOn(dbScheduler)
 								.thenMany(entries)
-								.flatMapSequential(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, false, writeBatch)),
+								.flatMapSequential(newEntry -> putEntryToWriteBatch(newEntry, getOldValues, writeBatch)),
 						writeBatch -> Mono
 								.fromCallable(() -> {
 									try (writeBatch) {
@@ -668,29 +670,6 @@ public class LLLocalDictionary implements LLDictionary {
 				)
 				.subscribeOn(dbScheduler)
 				.onErrorMap(cause -> new IOException("Failed to write range", cause));
-	}
-
-	private void deleteSmallRange(LLRange range)
-			throws RocksDBException {
-		var readOpts = getReadOptions(null);
-		readOpts.setFillCache(false);
-		if (range.hasMin()) {
-			readOpts.setIterateLowerBound(new Slice(range.getMin()));
-		}
-		if (range.hasMax()) {
-			readOpts.setIterateUpperBound(new Slice(range.getMax()));
-		}
-		try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-			if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-				rocksIterator.seek(range.getMin());
-			} else {
-				rocksIterator.seekToFirst();
-			}
-			while (rocksIterator.isValid()) {
-				db.delete(cfh, rocksIterator.key());
-				rocksIterator.next();
-			}
-		}
 	}
 
 	private void deleteSmallRangeWriteBatch(CappedWriteBatch writeBatch, LLRange range)
@@ -713,29 +692,6 @@ public class LLLocalDictionary implements LLDictionary {
 				writeBatch.delete(cfh, rocksIterator.key());
 				rocksIterator.next();
 			}
-		}
-	}
-
-	private static byte[] incrementLexicographically(byte[] key) {
-		boolean remainder = true;
-		int prefixLength = key.length;
-		final byte ff = (byte) 0xFF;
-		for (int i = prefixLength - 1; i >= 0; i--) {
-			if (key[i] != ff) {
-				key[i]++;
-				remainder = false;
-				break;
-			} else {
-				key[i] = 0x00;
-				remainder = true;
-			}
-		}
-
-		if (remainder) {
-			Arrays.fill(key, 0, prefixLength, (byte) 0xFF);
-			return Arrays.copyOf(key, key.length + 1);
-		} else {
-			return key;
 		}
 	}
 
@@ -1024,5 +980,33 @@ public class LLLocalDictionary implements LLDictionary {
 				})
 				.onErrorMap(cause -> new IOException("Failed to delete " + range.toString(), cause))
 				.subscribeOn(dbScheduler);
+	}
+
+	@NotNull
+	public static Tuple3<RocksIterator, Optional<Slice>, Optional<Slice>> getRocksIterator(ReadOptions readOptions,
+			LLRange range,
+			RocksDB db,
+			ColumnFamilyHandle cfh) {
+		Slice sliceMin;
+		Slice sliceMax;
+		if (range.hasMin()) {
+			sliceMin = new Slice(range.getMin());
+			readOptions.setIterateLowerBound(sliceMin);
+		} else {
+			sliceMin = null;
+		}
+		if (range.hasMax()) {
+			sliceMax = new Slice(range.getMax());
+			readOptions.setIterateUpperBound(sliceMax);
+		} else {
+			sliceMax = null;
+		}
+		var rocksIterator = db.newIterator(cfh, readOptions);
+		if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
+			rocksIterator.seek(range.getMin());
+		} else {
+			rocksIterator.seekToFirst();
+		}
+		return Tuples.of(rocksIterator, Optional.ofNullable(sliceMin), Optional.ofNullable(sliceMax));
 	}
 }

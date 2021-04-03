@@ -26,11 +26,10 @@ public class NCharGramAnalyzer extends Analyzer {
 		TokenStream tokenStream;
 		if (words) {
 			tokenizer = new StandardTokenizer();
-			tokenStream = tokenizer;
 		} else {
 			tokenizer = new KeywordTokenizer();
-			tokenStream = tokenizer;
 		}
+		tokenStream = tokenizer;
 		tokenStream = LuceneUtils.newCommonFilter(tokenStream, words);
 		tokenStream = new NGramTokenFilter(tokenStream, minGram, maxGram, false);
 

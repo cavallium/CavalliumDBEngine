@@ -14,42 +14,35 @@ public class LLItem {
 	private final LLType type;
 	private final String name;
 	private final byte[] data;
-	// nullable
-	private final byte[] data2;
 
-	public LLItem(LLType type, String name, byte[] data, byte[] data2) {
+	public LLItem(LLType type, String name, byte[] data) {
 		this.type = type;
 		this.name = name;
 		this.data = data;
-		this.data2 = data2;
 	}
 
 	private LLItem(LLType type, String name, String data) {
 		this.type = type;
 		this.name = name;
 		this.data = data.getBytes(StandardCharsets.UTF_8);
-		this.data2 = null;
 	}
 
 	private LLItem(LLType type, String name, int data) {
 		this.type = type;
 		this.name = name;
 		this.data = Ints.toByteArray(data);
-		this.data2 = null;
 	}
 
 	private LLItem(LLType type, String name, float data) {
 		this.type = type;
 		this.name = name;
-		this.data = ByteBuffer.allocate(4).putFloat(data).array();;
-		this.data2 = null;
+		this.data = ByteBuffer.allocate(4).putFloat(data).array();
 	}
 
 	private LLItem(LLType type, String name, long data) {
 		this.type = type;
 		this.name = name;
 		this.data = Longs.toByteArray(data);
-		this.data2 = null;
 	}
 
 	public static LLItem newIntPoint(String name, int data) {
@@ -96,10 +89,6 @@ public class LLItem {
 		return data;
 	}
 
-	public byte[] getData2() {
-		return data2;
-	}
-
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -111,15 +100,13 @@ public class LLItem {
 		LLItem llItem = (LLItem) o;
 		return type == llItem.type &&
 				Objects.equals(name, llItem.name) &&
-				Arrays.equals(data, llItem.data) &&
-				Arrays.equals(data2, llItem.data2);
+				Arrays.equals(data, llItem.data);
 	}
 
 	@Override
 	public int hashCode() {
 		int result = Objects.hash(type, name);
 		result = 31 * result + Arrays.hashCode(data);
-		result = 31 * result + Arrays.hashCode(data2);
 		return result;
 	}
 
@@ -129,12 +116,9 @@ public class LLItem {
 				.add("type=" + type)
 				.add("name='" + name + "'");
 		if (data != null && data.length > 0) {
-				sj.add("data=" + new String(data));
+			sj.add("data=" + new String(data));
 		}
-		if (data2 != null && data2.length > 0) {
-				sj.add("data2=" + new String(data2));
-		}
-				return sj.toString();
+		return sj.toString();
 	}
 
 	public String stringValue() {

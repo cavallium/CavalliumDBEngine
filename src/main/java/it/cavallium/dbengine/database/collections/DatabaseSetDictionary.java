@@ -10,6 +10,7 @@ import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
+@SuppressWarnings("unused")
 public class DatabaseSetDictionary<T> extends DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>> {
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,

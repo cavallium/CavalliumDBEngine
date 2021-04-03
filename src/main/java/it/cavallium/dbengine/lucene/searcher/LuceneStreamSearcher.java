@@ -24,8 +24,6 @@ public interface LuceneStreamSearcher {
 	 * @param scoreMode score mode
 	 * @param minCompetitiveScore minimum score accepted
 	 * @param keyFieldName the name of the key field
-	 * @param resultsConsumer the consumer of results
-	 * @param totalHitsConsumer the consumer of total count of results
 	 * @throws IOException thrown if there is an error
 	 */
 	LuceneSearchInstance search(IndexSearcher indexSearcher,

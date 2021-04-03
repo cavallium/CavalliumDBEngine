@@ -247,8 +247,11 @@ public class LuceneUtils {
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResultKeys<>(Flux.empty(), 0L),
-				(a, b) -> new SearchResultKeys<T>(LuceneUtils
-						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, offset, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
+				(a, b) -> new SearchResultKeys<>(LuceneUtils.mergeStream(Flux.just(a.getResults(), b.getResults()),
+						sort,
+						offset,
+						limit
+				), a.getTotalHitsCount() + b.getTotalHitsCount())
 		);
 	}
 
@@ -258,8 +261,11 @@ public class LuceneUtils {
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResult<>(Flux.empty(), 0L),
-				(a, b) -> new SearchResult<T, U>(LuceneUtils
-						.mergeStream(Flux.just(a.getResults(), b.getResults()), sort, offset, limit), a.getTotalHitsCount() + b.getTotalHitsCount())
+				(a, b) -> new SearchResult<>(LuceneUtils.mergeStream(Flux.just(a.getResults(), b.getResults()),
+						sort,
+						offset,
+						limit
+				), a.getTotalHitsCount() + b.getTotalHitsCount())
 		);
 	}
 

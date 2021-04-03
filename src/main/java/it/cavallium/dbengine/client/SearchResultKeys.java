@@ -4,6 +4,7 @@ import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import lombok.Value;
 import reactor.core.publisher.Flux;
 
+@SuppressWarnings("unused")
 @Value
 public class SearchResultKeys<T> {
 

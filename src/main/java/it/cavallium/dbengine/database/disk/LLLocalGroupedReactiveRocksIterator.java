@@ -1,17 +1,16 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
+
 import it.cavallium.dbengine.database.LLRange;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksMutableObject;
-import org.rocksdb.Slice;
 import reactor.core.publisher.Flux;
-import reactor.util.function.Tuples;
 
 public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 
@@ -24,7 +23,6 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	private final ReadOptions readOptions;
 	private final boolean canFillCache;
 	private final boolean readValues;
-	private final String debugName;
 
 	public LLLocalGroupedReactiveRocksIterator(RocksDB db,
 			ColumnFamilyHandle cfh,
@@ -32,8 +30,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 			LLRange range,
 			ReadOptions readOptions,
 			boolean canFillCache,
-			boolean readValues,
-			String debugName) {
+			boolean readValues) {
 		this.db = db;
 		this.cfh = cfh;
 		this.prefixLength = prefixLength;
@@ -41,37 +38,15 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 		this.readOptions = readOptions;
 		this.canFillCache = canFillCache;
 		this.readValues = readValues;
-		this.debugName = debugName;
 	}
 
 
-	@SuppressWarnings("Convert2MethodRef")
 	public Flux<List<T>> flux() {
 		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
-					Slice sliceMin;
-					Slice sliceMax;
-					if (range.hasMin()) {
-						sliceMin = new Slice(range.getMin());
-						readOptions.setIterateLowerBound(sliceMin);
-					} else {
-						sliceMin = null;
-					}
-					if (range.hasMax()) {
-						sliceMax = new Slice(range.getMax());
-						readOptions.setIterateUpperBound(sliceMax);
-					} else {
-						sliceMax = null;
-					}
-					var rocksIterator = db.newIterator(cfh, readOptions);
-					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-						rocksIterator.seek(range.getMin());
-					} else {
-						rocksIterator.seekToFirst();
-					}
-					return Tuples.of(rocksIterator, Optional.ofNullable(sliceMin), Optional.ofNullable(sliceMax));
+					return getRocksIterator(readOptions, range, db, cfh);
 				}, (tuple, sink) -> {
 					var rocksIterator = tuple.getT1();
 					ObjectArrayList<T> values = new ObjectArrayList<>();

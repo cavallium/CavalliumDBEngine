@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database;
 import java.util.Arrays;
 import java.util.Objects;
 
+@SuppressWarnings("unused")
 public class LLTopKeys {
 
 	private final long totalHitsCount;

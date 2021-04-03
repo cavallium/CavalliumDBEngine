@@ -6,7 +6,7 @@ import org.jetbrains.annotations.NotNull;
 
 public class DatabaseEmpty {
 
-	@SuppressWarnings("unused")
+	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
 	private static final byte[] NOTHING_BYTES = new byte[0];
 	private static final Serializer<Nothing, byte[]> NOTHING_SERIALIZER = new Serializer<>() {

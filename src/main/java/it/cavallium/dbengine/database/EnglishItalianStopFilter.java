@@ -1010,6 +1010,7 @@ public class EnglishItalianStopFilter extends StopFilter {
 				.collect(Collectors.toSet()));
 	}
 
+	@SuppressWarnings("unused")
 	public static CharArraySet getStopWords() {
 		return stopWords;
 	}

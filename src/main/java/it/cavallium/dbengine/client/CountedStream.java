@@ -31,13 +31,13 @@ public class CountedStream<T> {
 	public static <T> CountedStream<T> merge(Collection<CountedStream<T>> stream) {
 		return stream
 				.stream()
-				.reduce((a, b) -> new CountedStream<T>(Flux.merge(a.getStream(), b.getStream()), a.getCount() + b.getCount()))
+				.reduce((a, b) -> new CountedStream<>(Flux.merge(a.getStream(), b.getStream()), a.getCount() + b.getCount()))
 				.orElseGet(() -> new CountedStream<>(Flux.empty(), 0));
 	}
 
 	public static <T> Mono<CountedStream<T>> merge(Flux<CountedStream<T>> stream) {
 		return stream
-				.reduce((a, b) -> new CountedStream<T>(Flux.merge(a.getStream(), b.getStream()), a.getCount() + b.getCount()))
+				.reduce((a, b) -> new CountedStream<>(Flux.merge(a.getStream(), b.getStream()), a.getCount() + b.getCount()))
 				.switchIfEmpty(Mono.fromSupplier(() -> new CountedStream<>(Flux.empty(), 0)));
 	}
 

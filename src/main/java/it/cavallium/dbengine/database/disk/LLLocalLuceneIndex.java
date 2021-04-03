@@ -92,7 +92,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			"lucene-" + name,
 			60
 	);
-	private final Supplier<Scheduler> lowMemorySchedulerSupplier = Suppliers.memoize(() ->
+	private static final Supplier<Scheduler> lowMemorySchedulerSupplier = Suppliers.memoize(() ->
 			Schedulers.newBoundedElastic(1, Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 					"lucene-low-memory", Integer.MAX_VALUE))::get;
 	private final Supplier<Scheduler> querySchedulerSupplier = USE_STANDARD_SCHEDULERS ?
@@ -160,12 +160,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.searcherManager
 				= new SearcherManager(indexWriter, false, false, null);
 		if (lowMemory) {
-			this.luceneQueryScheduler = this.luceneBlockingScheduler = lowMemorySchedulerSupplier.get();
+			this.luceneQueryScheduler = this.luceneBlockingScheduler = blockingLuceneSearchScheduler
+					= lowMemorySchedulerSupplier.get();
 		} else {
 			this.luceneBlockingScheduler = blockingSchedulerSupplier.get();
 			this.luceneQueryScheduler = querySchedulerSupplier.get();
+			this.blockingLuceneSearchScheduler = blockingLuceneSearchSchedulerSupplier.get();
 		}
-		this.blockingLuceneSearchScheduler = blockingLuceneSearchSchedulerSupplier.get();
 
 		// Create scheduled tasks lifecycle manager
 		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();

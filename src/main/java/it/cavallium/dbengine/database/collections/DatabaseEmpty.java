@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 
 public class DatabaseEmpty {
@@ -9,7 +10,7 @@ public class DatabaseEmpty {
 	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
 	private static final byte[] NOTHING_BYTES = new byte[0];
-	private static final Serializer<Nothing, byte[]> NOTHING_SERIALIZER = new Serializer<>() {
+	public static final Serializer<Nothing, byte[]> NOTHING_SERIALIZER = new Serializer<>() {
 		@Override
 		public @NotNull Nothing deserialize(byte @NotNull [] serialized) {
 			return NOTHING;
@@ -20,7 +21,9 @@ public class DatabaseEmpty {
 			return NOTHING_BYTES;
 		}
 	};
-	private static final SubStageGetter<Nothing, DatabaseStageEntry<Nothing>> NOTHING_SUB_STAGE_GETTER = new SubStageGetterSingle<>(NOTHING_SERIALIZER);
+	public static final Function<Nothing, Nothing> NOTHING_HASH_FUNCTION = nothing -> nothing;
+	private static final SubStageGetter<Nothing, DatabaseStageEntry<Nothing>> NOTHING_SUB_STAGE_GETTER
+			= new SubStageGetterSingle<>(NOTHING_SERIALIZER);
 
 	private DatabaseEmpty() {
 	}

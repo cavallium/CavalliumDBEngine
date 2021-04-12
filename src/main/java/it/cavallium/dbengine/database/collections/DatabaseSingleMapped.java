@@ -7,43 +7,44 @@ import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
-public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
+@SuppressWarnings("unused")
+public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 
-	private final DatabaseSingle<byte[]> serializedSingle;
-	private final Serializer<U, byte[]> serializer;
+	private final DatabaseStageEntry<B> serializedSingle;
+	private final Serializer<A, B> serializer;
 
-	public DatabaseSingleMapped(DatabaseSingle<byte[]> serializedSingle, Serializer<U, byte[]> serializer) {
+	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Serializer<A, B> serializer) {
 		this.serializedSingle = serializedSingle;
 		this.serializer = serializer;
 	}
 
 	@Override
-	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	public Mono<A> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return serializedSingle.get(snapshot, existsAlmostCertainly).map(this::deserialize);
 	}
 
 	@Override
-	public Mono<U> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<U> defaultValue) {
+	public Mono<A> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<A> defaultValue) {
 		return serializedSingle.get(snapshot).map(this::deserialize).switchIfEmpty(defaultValue);
 	}
 
 	@Override
-	public Mono<Void> set(U value) {
+	public Mono<Void> set(A value) {
 		return serializedSingle.set(serialize(value));
 	}
 
 	@Override
-	public Mono<U> setAndGetPrevious(U value) {
+	public Mono<A> setAndGetPrevious(A value) {
 		return serializedSingle.setAndGetPrevious(serialize(value)).map(this::deserialize);
 	}
 
 	@Override
-	public Mono<Boolean> setAndGetStatus(U value) {
+	public Mono<Boolean> setAndGetStatus(A value) {
 		return serializedSingle.setAndGetStatus(serialize(value));
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<Optional<U>, Optional<U>> updater, boolean existsAlmostCertainly) {
+	public Mono<Boolean> update(Function<Optional<A>, Optional<A>> updater, boolean existsAlmostCertainly) {
 		return serializedSingle
 				.update(oldValue -> updater.apply(oldValue.map(this::deserialize)).map(this::serialize), existsAlmostCertainly);
 	}
@@ -54,7 +55,7 @@ public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Mono<U> clearAndGetPrevious() {
+	public Mono<A> clearAndGetPrevious() {
 		return serializedSingle.clearAndGetPrevious().map(this::deserialize);
 	}
 
@@ -79,17 +80,17 @@ public class DatabaseSingleMapped<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public DatabaseStageEntry<U> entry() {
+	public DatabaseStageEntry<A> entry() {
 		return this;
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private U deserialize(byte[] bytes) {
+	private A deserialize(B bytes) {
 		return serializer.deserialize(bytes);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private byte[] serialize(U bytes) {
+	private B serialize(A bytes) {
 		return serializer.serialize(bytes);
 	}
 }

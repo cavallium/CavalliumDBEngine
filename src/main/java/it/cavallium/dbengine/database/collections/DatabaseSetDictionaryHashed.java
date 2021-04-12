@@ -32,7 +32,7 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, byte[]> keySerializer,
+			Serializer<T, byte[]> keySerializer,
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
@@ -45,7 +45,7 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
 			byte[] prefixKey,
-			SerializerFixedBinaryLength<T, byte[]> keySuffixSerializer,
+			Serializer<T, byte[]> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,

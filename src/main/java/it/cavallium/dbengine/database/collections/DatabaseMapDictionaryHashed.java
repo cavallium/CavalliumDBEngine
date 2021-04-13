@@ -57,10 +57,13 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		@Override
 		public @NotNull Entry<T, U> deserialize(byte @NotNull [] serialized) {
 			int keySuffixLength = Ints.fromBytes(serialized[0], serialized[1], serialized[2], serialized[3]);
-			T keySuffix = keySuffixSerializer.deserialize(Arrays.copyOfRange(serialized, 4, keySuffixLength));
+			T keySuffix = keySuffixSerializer.deserialize(Arrays.copyOfRange(serialized,
+					Integer.BYTES,
+					Integer.BYTES + keySuffixLength
+			));
 			U value = valueSerializer.deserialize(Arrays.copyOfRange(serialized,
-					4 + keySuffixLength,
-					serialized.length - (4 + keySuffixLength)
+					Integer.BYTES + keySuffixLength,
+					serialized.length
 			));
 			return Map.entry(keySuffix, value);
 		}
@@ -69,11 +72,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		public byte @NotNull [] serialize(@NotNull Entry<T, U> deserialized) {
 			byte[] keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
 			byte[] value = valueSerializer.serialize(deserialized.getValue());
-			byte[] result = new byte[4 + keySuffix.length + value.length];
+			byte[] result = new byte[Integer.BYTES + keySuffix.length + value.length];
 			byte[] keySuffixLen = Ints.toByteArray(keySuffix.length);
-			System.arraycopy(keySuffixLen, 0, result, 0, 4);
-			System.arraycopy(keySuffix, 0, result, 4, keySuffix.length);
-			System.arraycopy(value, 0, result, 4 + keySuffix.length, value.length);
+			System.arraycopy(keySuffixLen, 0, result, 0, Integer.BYTES);
+			System.arraycopy(keySuffix, 0, result, Integer.BYTES, keySuffix.length);
+			System.arraycopy(value, 0, result, Integer.BYTES + keySuffix.length, value.length);
 			return result;
 		}
 	}

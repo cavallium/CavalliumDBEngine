@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.disk;
 
-import com.google.common.base.Suppliers;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -24,7 +23,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 import org.apache.commons.lang3.time.StopWatch;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
@@ -58,8 +56,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyValueDatabase.class);
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
-	private static final Supplier<Scheduler> lowMemorySupplier = Suppliers.memoize(() ->
-			Schedulers.newBoundedElastic(1, Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "db-low-memory", Integer.MAX_VALUE))::get;
 
 	private final Scheduler dbScheduler;
 	private final Path dbPath;
@@ -88,16 +84,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			Path dbPath = Paths.get(dbPathString);
 			this.dbPath = dbPath;
 			this.name = name;
-			if (lowMemory) {
-				this.dbScheduler = lowMemorySupplier.get();
-			} else {
-				this.dbScheduler = Schedulers.newBoundedElastic(Math.max(8, Runtime.getRuntime().availableProcessors()),
-						Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-						"db-" + name,
-						60,
-						true
-				);
-			}
+			this.dbScheduler = Schedulers.newBoundedElastic(lowMemory ? Runtime.getRuntime().availableProcessors()
+							: Math.max(8, Runtime.getRuntime().availableProcessors()),
+					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+					"db-" + name,
+					60,
+					true
+			);
 
 			createIfNotExists(descriptors, options, dbPath, dbPathString);
 			// Create all column families that don't exist

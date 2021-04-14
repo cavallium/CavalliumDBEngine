@@ -47,6 +47,9 @@ public class CountedStream<T> {
 
 	public static <T> Mono<CountedStream<T>> counted(Flux<T> flux) {
 		var publishedFlux = flux.cache();
-		return publishedFlux.count().map(count -> new CountedStream<>(publishedFlux, count));
+		return publishedFlux
+				.count()
+				.map(count -> new CountedStream<>(publishedFlux, count))
+				.switchIfEmpty(Mono.fromSupplier(() -> new CountedStream<>(Flux.empty(), 0)));
 	}
 }

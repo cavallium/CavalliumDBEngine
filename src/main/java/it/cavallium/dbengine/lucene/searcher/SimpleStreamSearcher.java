@@ -32,8 +32,8 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 				scoreMode != ScoreMode.COMPLETE_NO_SCORES,
 				1000
 		);
-		var firstTopDocs = searcher.getTopDocs(0, 1);
-		long totalHitsCount = firstTopDocs.totalHits.value;
+		var topDocs = searcher.getTopDocs();
+		long totalHitsCount = topDocs.totalHits.value;
 		return new LuceneSearchInstance() {
 			@Override
 			public long getTotalHitsCount() {
@@ -42,14 +42,8 @@ public class SimpleStreamSearcher implements LuceneStreamSearcher {
 
 			@Override
 			public void getResults(ResultItemConsumer resultsConsumer) throws IOException {
-				if (firstTopDocs.scoreDocs.length > 0) {
-					{
-						var hit = firstTopDocs.scoreDocs[0];
-						if (publishHit(hit, resultsConsumer) == HandleResult.HALT) {
-							return;
-						}
-					}
-					ObjectArrayList<ScoreDoc> hits = ObjectArrayList.wrap(searcher.getTopDocs(offset, limit - 1).scoreDocs);
+				if (topDocs.scoreDocs.length > 0) {
+					ObjectArrayList<ScoreDoc> hits = ObjectArrayList.wrap(topDocs.scoreDocs);
 					for (ScoreDoc hit : hits) {
 						if (publishHit(hit, resultsConsumer) == HandleResult.HALT) {
 							return;

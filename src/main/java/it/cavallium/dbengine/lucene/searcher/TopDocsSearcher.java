@@ -35,6 +35,20 @@ class TopDocsSearcher {
 		indexSearcher.search(query, collector);
 	}
 
+	/**
+	 * This method must not be called more than once!
+	 */
+	public TopDocs getTopDocs() throws IOException {
+		TopDocs topDocs = collector.topDocs();
+		if (doDocScores) {
+			TopFieldCollector.populateScores(topDocs.scoreDocs, indexSearcher, query);
+		}
+		return topDocs;
+	}
+
+	/**
+	 * This method must not be called more than once!
+	 */
 	public TopDocs getTopDocs(int offset, int length) throws IOException {
 		TopDocs topDocs = collector.topDocs(offset, length);
 		if (doDocScores) {

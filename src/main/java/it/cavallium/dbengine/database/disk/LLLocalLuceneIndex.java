@@ -429,59 +429,55 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						return Mono.just(new LLSearchResult(Flux.empty()));
 					}
 
-					return acquireSearcherWrapper(snapshot, doDistributedPre, actionId).flatMap(indexSearcher -> Mono
-							.fromCallable(() -> {
-								var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
-								mlt.setAnalyzer(indexWriter.getAnalyzer());
-								mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-								mlt.setMinTermFreq(1);
-								mlt.setMinDocFreq(3);
-								mlt.setMaxDocFreqPct(20);
-								mlt.setBoost(QueryParser.isScoringEnabled(queryParams));
-								mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
-								var similarity = getSimilarity();
-								if (similarity instanceof TFIDFSimilarity) {
-									mlt.setSimilarity((TFIDFSimilarity) similarity);
-								} else {
-									logger.trace("Using an unsupported similarity algorithm for MoreLikeThis:"
-											+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
-								}
+					return acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
+							.flatMap(indexSearcher -> Mono
+									.fromCallable(() -> {
+										var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
+										mlt.setAnalyzer(indexWriter.getAnalyzer());
+										mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+										mlt.setMinTermFreq(1);
+										mlt.setMinDocFreq(3);
+										mlt.setMaxDocFreqPct(20);
+										mlt.setBoost(QueryParser.isScoringEnabled(queryParams));
+										mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
+										var similarity = getSimilarity();
+										if (similarity instanceof TFIDFSimilarity) {
+											mlt.setSimilarity((TFIDFSimilarity) similarity);
+										} else {
+											logger.trace("Using an unsupported similarity algorithm for MoreLikeThis:"
+													+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
+										}
 
-								// Get the reference doc and apply it to MoreLikeThis, to generate the query
-								//noinspection BlockingMethodInNonBlockingContext
-								var mltQuery = mlt.like((Map) mltDocumentFields);
-								Query luceneQuery;
-								if (luceneAdditionalQuery != null) {
-									luceneQuery = new BooleanQuery.Builder()
-											.add(mltQuery, Occur.MUST)
-											.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
-											.build();
-								} else {
-									luceneQuery = mltQuery;
-								}
+										// Get the reference doc and apply it to MoreLikeThis, to generate the query
+										//noinspection BlockingMethodInNonBlockingContext
+										var mltQuery = mlt.like((Map) mltDocumentFields);
+										Query luceneQuery;
+										if (luceneAdditionalQuery != null) {
+											luceneQuery = new BooleanQuery.Builder()
+													.add(mltQuery, Occur.MUST)
+													.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
+													.build();
+										} else {
+											luceneQuery = mltQuery;
+										}
 
-								return luceneQuery;
-							})
-							.subscribeOn(luceneQueryScheduler)
-							.map(luceneQuery -> luceneSearch(doDistributedPre,
-									indexSearcher,
-									queryParams.getOffset(),
-									queryParams.getLimit(),
-									queryParams.getMinCompetitiveScore().getNullable(),
-									keyFieldName,
-									scoreDivisor,
-									luceneQuery,
-									QueryParser.toSort(queryParams.getSort()),
-									QueryParser.toScoreMode(queryParams.getScoreMode())
-							))
-							.materialize()
-							.flatMap(signal -> {
-								if (signal.isOnComplete() || signal.isOnError()) {
-									return releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(signal);
-								} else {
-									return Mono.just(signal);
-								}
-							}).dematerialize());
+										return luceneQuery;
+									})
+									.subscribeOn(luceneQueryScheduler)
+									.map(luceneQuery -> luceneSearch(doDistributedPre,
+											indexSearcher,
+											queryParams.getOffset(),
+											queryParams.getLimit(),
+											queryParams.getMinCompetitiveScore().getNullable(),
+											keyFieldName,
+											scoreDivisor,
+											luceneQuery,
+											QueryParser.toSort(queryParams.getSort()),
+											QueryParser.toScoreMode(queryParams.getScoreMode()),
+											releaseSearcherWrapper(snapshot, indexSearcher)
+									))
+									.onErrorResume(ex -> releaseSearcherWrapper(snapshot, indexSearcher).then(Mono.error(ex)))
+							);
 				});
 	}
 
@@ -514,7 +510,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams, String keyFieldName,
 			boolean doDistributedPre, long actionId, int scoreDivisor) {
-		return acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
+		return this
+				.acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
 				.flatMap(indexSearcher -> Mono
 						.fromCallable(() -> {
 							Objects.requireNonNull(queryParams.getScoreMode(), "ScoreMode must not be null");
@@ -524,7 +521,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
 						.subscribeOn(luceneQueryScheduler)
-						.flatMap(tuple -> Mono
+						.<LLSearchResult>flatMap(tuple -> Mono
 								.fromSupplier(() -> {
 									Query luceneQuery = tuple.getT1();
 									Sort luceneSort = tuple.getT2().orElse(null);
@@ -539,22 +536,18 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 											scoreDivisor,
 											luceneQuery,
 											luceneSort,
-											luceneScoreMode
+											luceneScoreMode,
+											releaseSearcherWrapper(snapshot, indexSearcher)
 									);
 								})
+								.onErrorResume(ex -> releaseSearcherWrapper(snapshot, indexSearcher).then(Mono.error(ex)))
 						)
-						.materialize()
-						.flatMap(signal -> {
-							if (signal.isOnComplete() || signal.isOnError()) {
-								return releaseSearcherWrapper(snapshot, indexSearcher).thenReturn(signal);
-							} else {
-								return Mono.just(signal);
-							}
-						})
-						.dematerialize()
 				);
 	}
 
+	/**
+	 * This method always returns 1 shard! Not zero, not more than one.
+	 */
 	private LLSearchResult luceneSearch(boolean doDistributedPre,
 			IndexSearcher indexSearcher,
 			long offset,
@@ -564,7 +557,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			int scoreDivisor,
 			Query luceneQuery,
 			Sort luceneSort,
-			ScoreMode luceneScoreMode) {
+			ScoreMode luceneScoreMode,
+			Mono<Void> successCleanup) {
 		return new LLSearchResult(Mono.<LLSearchResultShard>create(monoSink -> {
 
 			LuceneSearchInstance luceneSearchInstance;
@@ -573,7 +567,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				if (doDistributedPre) {
 					//noinspection BlockingMethodInNonBlockingContext
 					allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
-					monoSink.success(new LLSearchResultShard(Flux.empty(), 0));
+					monoSink.success(new LLSearchResultShard(successCleanup.thenMany(Flux.empty()), 0));
 					return;
 				} else {
 					int boundedOffset = Math.max(0, offset > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) offset);
@@ -642,7 +636,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 			}, OverflowStrategy.ERROR).subscribeOn(blockingLuceneSearchScheduler).publishOn(luceneQueryScheduler);
 
-			monoSink.success(new LLSearchResultShard(resultsFlux, totalHitsCount));
+			monoSink.success(new LLSearchResultShard(Flux
+					.usingWhen(
+							Mono.just(true),
+							b -> resultsFlux,
+							b -> successCleanup),
+					totalHitsCount));
 		}).subscribeOn(blockingLuceneSearchScheduler).publishOn(luceneQueryScheduler).flux());
 	}
 

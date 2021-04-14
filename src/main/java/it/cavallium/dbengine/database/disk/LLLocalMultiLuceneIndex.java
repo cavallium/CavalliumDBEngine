@@ -25,6 +25,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import lombok.Value;
 import org.apache.lucene.search.CollectionStatistics;
 import org.apache.lucene.search.IndexSearcher;
 import org.jetbrains.annotations.Nullable;
@@ -215,13 +216,10 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		if (queryParams.getOffset() != 0) {
 			return Mono.error(new IllegalArgumentException("MultiLuceneIndex requires an offset equal to 0"));
 		}
-		long actionId;
-		int scoreDivisor;
 		Flux<Tuple2<String, Set<String>>> mltDocumentFieldsShared;
-		Mono<Void> distributedPre;
+		Mono<DistributedSearch> distributedPre;
 		if (luceneIndices.length > 1) {
-			actionId = newAction();
-			scoreDivisor = 20;
+			long actionId = newAction();
 			mltDocumentFieldsShared = mltDocumentFields.publish().refCount();
 			distributedPre = Flux
 					.fromArray(luceneIndices)
@@ -239,16 +237,15 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 									actionId
 							)
 					)
-					.then();
+					.then(Mono.just(new DistributedSearch(actionId, 20)));
 		} else {
-			actionId = -1;
-			scoreDivisor = 1;
 			mltDocumentFieldsShared = mltDocumentFields;
-			distributedPre = Mono.empty();
+			distributedPre = Mono.just(new DistributedSearch(-1, 1));
 		}
 
 		//noinspection DuplicatedCode
-		return distributedPre.then(Flux
+		return distributedPre
+				.flatMap(distributedSearch -> Flux
 						.fromArray(luceneIndices)
 						.index()
 						.flatMap(tuple -> Mono
@@ -260,45 +257,55 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 										queryParams,
 										keyFieldName,
 										mltDocumentFieldsShared,
-										actionId,
-										scoreDivisor
+										distributedSearch.getActionId(),
+										distributedSearch.getScoreDivisor()
 								)
 						)
 						.reduce(LLSearchResult.accumulator())
 						.map(result -> {
-							if (actionId != -1) {
+							if (distributedSearch.getActionId() != -1) {
 								Flux<LLSearchResultShard> resultsWithTermination = result
 										.getResults()
-										.map(flux -> new LLSearchResultShard(flux
-												.getResults()
-												.doOnTerminate(() -> completedAction(actionId)), flux.getTotalHitsCount())
+										.map(flux -> new LLSearchResultShard(Flux
+												.using(
+														distributedSearch::getActionId,
+														actionId -> flux.getResults(),
+														this::completedAction
+												), flux.getTotalHitsCount())
 										);
 								return new LLSearchResult(resultsWithTermination);
 							} else {
 								return result;
 							}
 						})
+						.doOnError(ex -> {
+							if (distributedSearch.getActionId() != -1) {
+								completedAction(distributedSearch.getActionId());
+							}
+						})
 				);
+	}
+
+	@Value
+	private static class DistributedSearch {
+		long actionId;
+		int scoreDivisor;
 	}
 
 	@Override
 	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName) {
-		long actionId;
-		int scoreDivisor;
-		Mono<Void> distributedPre;
 		if (queryParams.getOffset() != 0) {
 			return Mono.error(new IllegalArgumentException("MultiLuceneIndex requires an offset equal to 0"));
 		}
+
+		Mono<DistributedSearch> distributedSearchMono;
 		if (luceneIndices.length <= 1 || !queryParams.getScoreMode().getComputeScores()) {
-			actionId = -1;
-			scoreDivisor = 1;
-			distributedPre = Mono.empty();
+			distributedSearchMono = Mono.just(new DistributedSearch(-1, 1));
 		} else {
-			actionId = newAction();
-			scoreDivisor = 20;
-			distributedPre = Flux
+			var actionId = newAction();
+			distributedSearchMono = Flux
 					.fromArray(luceneIndices)
 					.index()
 					.flatMap(tuple -> Mono
@@ -313,11 +320,11 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 									actionId
 							)
 					)
-					.then();
+					.then(Mono.just(new DistributedSearch(actionId, 20)));
 		}
-		//noinspection DuplicatedCode
-		return distributedPre
-				.then(Flux
+
+		return distributedSearchMono
+				.flatMap(distributedSearch -> Flux
 						.fromArray(luceneIndices)
 						.index()
 						.flatMap(tuple -> Mono
@@ -329,21 +336,29 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								.distributedSearch(tuple.getT2().orElse(null),
 										queryParams,
 										keyFieldName,
-										actionId,
-										scoreDivisor
+										distributedSearch.getActionId(),
+										distributedSearch.getScoreDivisor()
 								))
 						.reduce(LLSearchResult.accumulator())
 						.map(result -> {
-							if (actionId != -1) {
+							if (distributedSearch.getActionId() != -1) {
 								Flux<LLSearchResultShard> resultsWithTermination = result
 										.getResults()
-										.map(flux -> new LLSearchResultShard(flux
-												.getResults()
-												.doOnTerminate(() -> completedAction(actionId)), flux.getTotalHitsCount())
+										.map(flux -> new LLSearchResultShard(Flux
+												.using(
+														distributedSearch::getActionId,
+														actionId -> flux.getResults(),
+														this::completedAction
+												), flux.getTotalHitsCount())
 										);
 								return new LLSearchResult(resultsWithTermination);
 							} else {
 								return result;
+							}
+						})
+						.doOnError(ex -> {
+							if (distributedSearch.getActionId() != -1) {
+								completedAction(distributedSearch.getActionId());
 							}
 						})
 				);

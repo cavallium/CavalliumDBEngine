@@ -58,7 +58,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			TextFieldsSimilarity textFieldsSimilarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
-			boolean lowMemory) throws IOException {
+			boolean lowMemory, boolean inMemory) throws IOException {
 
 		if (instancesCount <= 1 || instancesCount > 100) {
 			throw new IOException("Unsupported instances count: " + instancesCount);
@@ -79,8 +79,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					textFieldsSimilarity,
 					queryRefreshDebounceTime,
 					commitDebounceTime,
-					lowMemory,
-					(indexSearcher, field, distributedPre, actionId) -> distributedCustomCollectionStatistics(finalI,
+					lowMemory, inMemory, (indexSearcher, field, distributedPre, actionId) -> distributedCustomCollectionStatistics(finalI,
 							indexSearcher,
 							field,
 							distributedPre,

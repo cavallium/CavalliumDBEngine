@@ -53,6 +53,9 @@ import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.MMapDirectory;
+import org.apache.lucene.store.RAMDirectory;
+import org.apache.solr.core.RAMDirectoryFactory;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
@@ -113,13 +116,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			TextFieldsSimilarity similarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
-			boolean lowMemory,
-			@Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter) throws IOException {
+			boolean lowMemory, boolean inMemory, @Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter) throws IOException {
 		if (name.length() == 0) {
 			throw new IOException("Empty lucene database name");
 		}
 		Path directoryPath = luceneBasePath.resolve(name + ".lucene.db");
-		this.directory = FSDirectory.open(directoryPath);
+		this.directory = inMemory ? new RAMDirectory() : FSDirectory.open(directoryPath);
 		this.luceneIndexName = name;
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;

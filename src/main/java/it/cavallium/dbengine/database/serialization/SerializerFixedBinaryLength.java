@@ -2,6 +2,12 @@ package it.cavallium.dbengine.database.serialization;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.PooledByteBufAllocator;
+import java.io.NotSerializableException;
+import java.nio.charset.StandardCharsets;
+import org.apache.commons.lang3.SerializationException;
 import org.jetbrains.annotations.NotNull;
 
 @SuppressWarnings("unused")
@@ -9,18 +15,31 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 	int getSerializedBinaryLength();
 
-	static SerializerFixedBinaryLength<byte[], byte[]> noop(int length) {
+	static SerializerFixedBinaryLength<ByteBuf, ByteBuf> noop(int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public byte @NotNull [] deserialize(byte @NotNull [] serialized) {
-				assert serialized.length == getSerializedBinaryLength();
-				return serialized;
+			public @NotNull ByteBuf deserialize(@NotNull ByteBuf serialized) {
+				try {
+					if (serialized.readableBytes() != getSerializedBinaryLength()) {
+						throw new IllegalArgumentException(
+								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+										+ serialized.readableBytes() + " bytes instead");
+					}
+					return serialized.retain();
+				} finally {
+					serialized.release();
+				}
 			}
 
 			@Override
-			public byte @NotNull [] serialize(byte @NotNull [] deserialized) {
-				assert deserialized.length == getSerializedBinaryLength();
-				return deserialized;
+			public @NotNull ByteBuf serialize(@NotNull ByteBuf deserialized) {
+				ByteBuf buf = deserialized.retain();
+				if (buf.readableBytes() != getSerializedBinaryLength()) {
+					throw new IllegalArgumentException(
+							"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to serialize an element with "
+									+ buf.readableBytes() + " bytes instead");
+				}
+				return buf;
 			}
 
 			@Override
@@ -30,17 +49,65 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 		};
 	}
 
-	static SerializerFixedBinaryLength<Integer, byte[]> intSerializer() {
+	static SerializerFixedBinaryLength<String, ByteBuf> utf8(int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull Integer deserialize(byte @NotNull [] serialized) {
-				assert serialized.length == getSerializedBinaryLength();
-				return Ints.fromByteArray(serialized);
+			public @NotNull String deserialize(@NotNull ByteBuf serialized) {
+				try {
+					if (serialized.readableBytes() != getSerializedBinaryLength()) {
+						throw new SerializationException(
+								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+										+ serialized.readableBytes() + " bytes instead");
+					}
+					return serialized.toString(StandardCharsets.UTF_8);
+				} finally {
+					serialized.release();
+				}
 			}
 
 			@Override
-			public byte @NotNull [] serialize(@NotNull Integer deserialized) {
-				return Ints.toByteArray(deserialized);
+			public @NotNull ByteBuf serialize(@NotNull String deserialized) {
+				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
+				ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(ByteBufUtil.utf8MaxBytes(deserialized));
+				try {
+					ByteBufUtil.writeUtf8(buf, deserialized);
+					if (buf.readableBytes() != getSerializedBinaryLength()) {
+						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to serialize an element with "
+								+ buf.readableBytes() + " bytes instead");
+					}
+					return buf.retain();
+				} finally {
+					buf.release();
+				}
+			}
+
+			@Override
+			public int getSerializedBinaryLength() {
+				return length;
+			}
+		};
+	}
+
+	static SerializerFixedBinaryLength<Integer, ByteBuf> intSerializer() {
+		return new SerializerFixedBinaryLength<>() {
+			@Override
+			public @NotNull Integer deserialize(@NotNull ByteBuf serialized) {
+				try {
+					if (serialized.readableBytes() != getSerializedBinaryLength()) {
+						throw new IllegalArgumentException(
+								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+										+ serialized.readableBytes() + " bytes instead");
+					}
+					return serialized.readInt();
+				} finally {
+					serialized.release();
+				}
+			}
+
+			@Override
+			public @NotNull ByteBuf serialize(@NotNull Integer deserialized) {
+				ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(Integer.BYTES, Integer.BYTES);
+				return buf.writeInt(deserialized);
 			}
 
 			@Override
@@ -50,17 +117,26 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 		};
 	}
 
-	static SerializerFixedBinaryLength<Long, byte[]> longSerializer() {
+	static SerializerFixedBinaryLength<Long, ByteBuf> longSerializer() {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull Long deserialize(byte @NotNull [] serialized) {
-				assert serialized.length == getSerializedBinaryLength();
-				return Longs.fromByteArray(serialized);
+			public @NotNull Long deserialize(@NotNull ByteBuf serialized) {
+				try {
+					if (serialized.readableBytes() != getSerializedBinaryLength()) {
+						throw new IllegalArgumentException(
+								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+										+ serialized.readableBytes() + " bytes instead");
+					}
+					return serialized.readLong();
+				} finally {
+					serialized.release();
+				}
 			}
 
 			@Override
-			public byte @NotNull [] serialize(@NotNull Long deserialized) {
-				return Longs.toByteArray(deserialized);
+			public @NotNull ByteBuf serialize(@NotNull Long deserialized) {
+				ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(Integer.BYTES, Integer.BYTES);
+				return buf.writeLong(deserialized);
 			}
 
 			@Override

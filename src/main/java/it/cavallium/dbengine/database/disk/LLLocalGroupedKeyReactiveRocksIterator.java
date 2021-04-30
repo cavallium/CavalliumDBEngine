@@ -1,23 +1,26 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.LLRange;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 
-public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReactiveRocksIterator<byte[]> {
+public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReactiveRocksIterator<ByteBuf> {
 
 	public LLLocalGroupedKeyReactiveRocksIterator(RocksDB db,
+			ByteBufAllocator alloc,
 			ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, cfh, prefixLength, range, readOptions, true, false);
+		super(db, alloc, cfh, prefixLength, range, readOptions, true, false);
 	}
 
 	@Override
-	public byte[] getEntry(byte[] key, byte[] value) {
+	public ByteBuf getEntry(ByteBuf key, ByteBuf value) {
 		return key;
 	}
 }

@@ -107,7 +107,7 @@
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-api</artifactId>
-      <version>5.7.0</version>
+      <version>5.8.0-M1</version>
       <scope>test</scope>
       <exclusions>
         <exclusion>
@@ -115,6 +115,18 @@
           <artifactId>hamcrest-core</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <version>5.8.0-M1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
+      <version>5.8.0-M1</version>
+      <scope>test</scope>
     </dependency>
     <!-- This will get hamcrest-core automatically -->
     <dependency>
@@ -138,7 +150,7 @@
     <dependency>
       <groupId>org.rocksdb</groupId>
       <artifactId>rocksdbjni</artifactId>
-      <version>6.16.4</version>
+      <version>6.19.3</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>

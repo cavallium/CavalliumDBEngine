@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -23,15 +24,15 @@ public class SubStageGetterHashMap<T, U, TH> implements
 		assertsEnabled = assertsEnabledTmp;
 	}
 
-	private final Serializer<T, byte[]> keySerializer;
-	private final Serializer<U, byte[]> valueSerializer;
+	private final Serializer<T, ByteBuf> keySerializer;
+	private final Serializer<U, ByteBuf> valueSerializer;
 	private final Function<T, TH> keyHashFunction;
-	private final SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer;
+	private final SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer;
 
-	public SubStageGetterHashMap(Serializer<T, byte[]> keySerializer,
-			Serializer<U, byte[]> valueSerializer,
+	public SubStageGetterHashMap(Serializer<T, ByteBuf> keySerializer,
+			Serializer<U, ByteBuf> valueSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 		this.keyHashFunction = keyHashFunction;
@@ -41,8 +42,8 @@ public class SubStageGetterHashMap<T, U, TH> implements
 	@Override
 	public Mono<DatabaseMapDictionaryHashed<T, U, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			byte[] prefixKey,
-			Flux<byte[]> debuggingKeyFlux) {
+			ByteBuf prefixKey,
+			Flux<ByteBuf> debuggingKeyFlux) {
 		Mono<DatabaseMapDictionaryHashed<T, U, TH>> result = Mono.just(DatabaseMapDictionaryHashed.tail(dictionary,
 				prefixKey,
 				keySerializer,
@@ -67,9 +68,9 @@ public class SubStageGetterHashMap<T, U, TH> implements
 		return assertsEnabled;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {
+	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
 		return keyFlux.doOnNext(key -> {
-			assert key.length == prefixKey.length + getKeyHashBinaryLength();
+			assert key.readableBytes() == prefixKey.readableBytes() + getKeyHashBinaryLength();
 		}).then();
 	}
 

@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import static it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep.EMPTY_BYTES;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -18,10 +19,10 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHashed<T, Nothing, TH> {
 
 	protected DatabaseSetDictionaryHashed(LLDictionary dictionary,
-			byte[] prefixKey,
-			Serializer<T, byte[]> keySuffixSerializer,
+			ByteBuf prefixKey,
+			Serializer<T, ByteBuf> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, byte[]> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keySuffixHashSerializer) {
 		super(dictionary,
 				prefixKey,
 				keySuffixSerializer,
@@ -32,9 +33,9 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
-			Serializer<T, byte[]> keySerializer,
+			Serializer<T, ByteBuf> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				EMPTY_BYTES,
 				keySerializer,
@@ -44,10 +45,10 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
-			byte[] prefixKey,
-			Serializer<T, byte[]> keySuffixSerializer,
+			ByteBuf prefixKey,
+			Serializer<T, ByteBuf> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

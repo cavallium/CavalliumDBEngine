@@ -36,14 +36,18 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<LLLocalKeyValueDatabase> getDatabase(String name, List<Column> columns, boolean lowMemory) {
+	public Mono<LLLocalKeyValueDatabase> getDatabase(String name,
+			List<Column> columns,
+			boolean lowMemory,
+			boolean inMemory) {
 		return Mono
 				.fromCallable(() -> new LLLocalKeyValueDatabase(name,
 						basePath.resolve("database_" + name),
 						columns,
 						new LinkedList<>(),
 						crashIfWalError,
-						lowMemory
+						lowMemory,
+						inMemory
 				))
 				.subscribeOn(Schedulers.boundedElastic());
 	}
@@ -55,7 +59,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 			TextFieldsSimilarity textFieldsSimilarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
-			boolean lowMemory) {
+			boolean lowMemory,
+			boolean inMemory) {
 		return Mono
 				.fromCallable(() -> {
 					if (instancesCount != 1) {
@@ -66,7 +71,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								textFieldsSimilarity,
 								queryRefreshDebounceTime,
 								commitDebounceTime,
-								lowMemory
+								lowMemory,
+								inMemory
 						);
 					} else {
 						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
@@ -76,6 +82,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								queryRefreshDebounceTime,
 								commitDebounceTime,
 								lowMemory,
+								inMemory,
 								null
 						);
 					}

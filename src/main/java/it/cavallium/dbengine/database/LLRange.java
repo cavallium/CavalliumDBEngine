@@ -1,5 +1,10 @@
 package it.cavallium.dbengine.database;
 
+import static io.netty.buffer.Unpooled.wrappedBuffer;
+import static io.netty.buffer.Unpooled.wrappedUnmodifiableBuffer;
+
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufUtil;
 import java.util.Arrays;
 import java.util.StringJoiner;
 
@@ -9,10 +14,18 @@ import java.util.StringJoiner;
 public class LLRange {
 
 	private static final LLRange RANGE_ALL = new LLRange(null, null);
-	private final byte[] min;
-	private final byte[] max;
+	private final ByteBuf min;
+	private final ByteBuf max;
 
-	private LLRange(byte[] min, byte[] max) {
+	private LLRange(ByteBuf min, ByteBuf max) {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
+		if (min != null && !min.isDirect()) {
+			throw new IllegalArgumentException("Min buffer must be direct");
+		}
+		if (max != null && !max.isDirect()) {
+			throw new IllegalArgumentException("Min buffer must be direct");
+		}
 		this.min = min;
 		this.max = max;
 	}
@@ -21,50 +34,64 @@ public class LLRange {
 		return RANGE_ALL;
 	}
 
-	public static LLRange from(byte[] min) {
+	public static LLRange from(ByteBuf min) {
 		return new LLRange(min, null);
 	}
 
-	public static LLRange to(byte[] max) {
+	public static LLRange to(ByteBuf max) {
 		return new LLRange(null, max);
 	}
 
-	public static LLRange single(byte[] single) {
+	public static LLRange single(ByteBuf single) {
 		return new LLRange(single, single);
 	}
 
-	public static LLRange of(byte[] min, byte[] max) {
+	public static LLRange of(ByteBuf min, ByteBuf max) {
 		return new LLRange(min, max);
 	}
 
 	public boolean isAll() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		return min == null && max == null;
 	}
 
 	public boolean isSingle() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		if (min == null || max == null) return false;
-		return Arrays.equals(min, max);
+		return LLUtils.equals(min, max);
 	}
 
 	public boolean hasMin() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		return min != null;
 	}
 
-	public byte[] getMin() {
+	public ByteBuf getMin() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		assert min != null;
 		return min;
 	}
 
 	public boolean hasMax() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		return max != null;
 	}
 
-	public byte[] getMax() {
+	public ByteBuf getMax() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		assert max != null;
 		return max;
 	}
 
-	public byte[] getSingle() {
+	public ByteBuf getSingle() {
+		assert min == null || min.refCnt() > 0;
+		assert max == null || max.refCnt() > 0;
 		assert isSingle();
 		return min;
 	}
@@ -78,21 +105,40 @@ public class LLRange {
 			return false;
 		}
 		LLRange llRange = (LLRange) o;
-		return Arrays.equals(min, llRange.min) && Arrays.equals(max, llRange.max);
+		return LLUtils.equals(min, llRange.min) && LLUtils.equals(max, llRange.max);
 	}
 
 	@Override
 	public int hashCode() {
-		int result = Arrays.hashCode(min);
-		result = 31 * result + Arrays.hashCode(max);
+		int result = LLUtils.hashCode(min);
+		result = 31 * result + LLUtils.hashCode(max);
 		return result;
 	}
 
 	@Override
 	public String toString() {
 		return new StringJoiner(", ", LLRange.class.getSimpleName() + "[", "]")
-				.add("min=" + Arrays.toString(min))
-				.add("max=" + Arrays.toString(max))
+				.add("min=" + LLUtils.toString(min))
+				.add("max=" + LLUtils.toString(max))
 				.toString();
+	}
+
+	public LLRange retain() {
+		if (min != null) {
+			min.retain();
+		}
+		if (max != null) {
+			max.retain();
+		}
+		return this;
+	}
+
+	public void release() {
+		if (min != null) {
+			min.release();
+		}
+		if (max != null) {
+			max.release();
+		}
 	}
 }

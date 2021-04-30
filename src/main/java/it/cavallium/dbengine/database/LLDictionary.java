@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.database;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import java.util.List;
 import java.util.Map.Entry;
-import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
@@ -13,60 +14,62 @@ import reactor.core.publisher.Mono;
 @NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
-	Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key, boolean existsAlmostCertainly);
+	ByteBufAllocator getAllocator();
 
-	default Mono<byte[]> get(@Nullable LLSnapshot snapshot, byte[] key) {
+	Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, ByteBuf key, boolean existsAlmostCertainly);
+
+	default Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, ByteBuf key) {
 		return get(snapshot, key, false);
 	}
 
-	Mono<byte[]> put(byte[] key, byte[] value, LLDictionaryResultType resultType);
+	Mono<ByteBuf> put(ByteBuf key, ByteBuf value, LLDictionaryResultType resultType);
 
-	Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater, boolean existsAlmostCertainly);
+	Mono<Boolean> update(ByteBuf key, Function<@Nullable ByteBuf, @Nullable ByteBuf> updater, boolean existsAlmostCertainly);
 
-	default Mono<Boolean> update(byte[] key, Function<Optional<byte[]>, Optional<byte[]>> updater) {
+	default Mono<Boolean> update(ByteBuf key, Function<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
 		return update(key, updater, false);
 	}
 
 	Mono<Void> clear();
 
-	Mono<byte[]> remove(byte[] key, LLDictionaryResultType resultType);
+	Mono<ByteBuf> remove(ByteBuf key, LLDictionaryResultType resultType);
 
-	Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys, boolean existsAlmostCertainly);
+	Flux<Entry<ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot, Flux<ByteBuf> keys, boolean existsAlmostCertainly);
 
-	default Flux<Entry<byte[], byte[]>> getMulti(@Nullable LLSnapshot snapshot, Flux<byte[]> keys) {
+	default Flux<Entry<ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot, Flux<ByteBuf> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 
-	Flux<Entry<byte[], byte[]>> putMulti(Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
+	Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues);
 
-	Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range, boolean existsAlmostCertainly);
+	Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, LLRange range, boolean existsAlmostCertainly);
 
-	default Flux<Entry<byte[], byte[]>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
+	default Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
 		return getRange(snapshot, range, false);
 	}
 
-	Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+	Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			LLRange range,
 			int prefixLength,
 			boolean existsAlmostCertainly);
 
-	default Flux<List<Entry<byte[], byte[]>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+	default Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			LLRange range,
 			int prefixLength) {
 		return getRangeGrouped(snapshot, range, prefixLength, false);
 	}
 
-	Flux<byte[]> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range);
+	Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range);
 
-	Flux<List<byte[]>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+	Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
 
-	Flux<byte[]> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+	Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
 
-	Flux<Entry<byte[], byte[]>> setRange(LLRange range, Flux<Entry<byte[], byte[]>> entries, boolean getOldValues);
+	Flux<Entry<ByteBuf, ByteBuf>> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues);
 
 	default Mono<Void> replaceRange(LLRange range,
 			boolean canKeysChange,
-			Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer,
+			Function<Entry<ByteBuf, ByteBuf>, Mono<Entry<ByteBuf, ByteBuf>>> entriesReplacer,
 			boolean existsAlmostCertainly) {
 		return Mono.defer(() -> {
 			if (canKeysChange) {
@@ -87,7 +90,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	default Mono<Void> replaceRange(LLRange range,
 			boolean canKeysChange,
-			Function<Entry<byte[], byte[]>, Mono<Entry<byte[], byte[]>>> entriesReplacer) {
+			Function<Entry<ByteBuf, ByteBuf>, Mono<Entry<ByteBuf, ByteBuf>>> entriesReplacer) {
 		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
@@ -95,9 +98,9 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast);
 
-	Mono<Entry<byte[], byte[]>> getOne(@Nullable LLSnapshot snapshot, LLRange range);
+	Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, LLRange range);
 
-	Mono<byte[]> getOneKey(@Nullable LLSnapshot snapshot, LLRange range);
+	Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, LLRange range);
 
-	Mono<Entry<byte[], byte[]>> removeOne(LLRange range);
+	Mono<Entry<ByteBuf, ByteBuf>> removeOne(LLRange range);
 }

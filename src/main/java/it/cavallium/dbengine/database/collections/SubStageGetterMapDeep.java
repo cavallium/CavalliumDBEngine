@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -20,11 +21,11 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	}
 
 	private final SubStageGetter<U, US> subStageGetter;
-	private final SerializerFixedBinaryLength<T, byte[]> keySerializer;
+	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
 	private final int keyExtLength;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, byte[]> keySerializer,
+			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
 			int keyExtLength) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;
@@ -46,8 +47,8 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	@Override
 	public Mono<DatabaseMapDictionaryDeep<T, U, US>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			byte[] prefixKey,
-			Flux<byte[]> debuggingKeyFlux) {
+			ByteBuf prefixKey,
+			Flux<ByteBuf> debuggingKeyFlux) {
 		Mono<DatabaseMapDictionaryDeep<T, U, US>> result = Mono.just(DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
 				prefixKey,
 				keySerializer,
@@ -71,9 +72,9 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		return assertsEnabled;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {
+	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
 		return keyFlux.doOnNext(key -> {
-			assert key.length == prefixKey.length + getKeyBinaryLength();
+			assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
 		}).then();
 	}
 

@@ -1,18 +1,22 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufUtil;
 import it.cavallium.dbengine.database.LLRange;
+import it.cavallium.dbengine.database.LLUtils;
 import java.util.Arrays;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksMutableObject;
 import reactor.core.publisher.Flux;
+import static io.netty.buffer.Unpooled.*;
 
 public class LLLocalKeyPrefixReactiveRocksIterator {
 
-	private static final byte[] EMPTY = new byte[0];
-
 	private final RocksDB db;
+	private final ByteBufAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 	private final int prefixLength;
 	private final LLRange range;
@@ -20,14 +24,14 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	private final boolean canFillCache;
 	private final String debugName;
 
-	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db,
-			ColumnFamilyHandle cfh,
+	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
 			ReadOptions readOptions,
 			boolean canFillCache,
 			String debugName) {
 		this.db = db;
+		this.alloc = alloc;
 		this.cfh = cfh;
 		this.prefixLength = prefixLength;
 		this.range = range;
@@ -37,7 +41,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	}
 
 
-	public Flux<byte[]> flux() {
+	public Flux<ByteBuf> flux() {
 		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
@@ -45,32 +49,42 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 						//readOptions.setReadaheadSize(2 * 1024 * 1024);
 						readOptions.setFillCache(canFillCache);
 					}
-					return LLLocalDictionary.getRocksIterator(readOptions, range, db, cfh);
+					return LLLocalDictionary.getRocksIterator(readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
 					var rocksIterator = tuple.getT1();
-					byte[] firstGroupKey = null;
-
-					while (rocksIterator.isValid()) {
-						byte[] key = rocksIterator.key();
-						if (firstGroupKey == null) {
-							firstGroupKey = key;
-						} else if (!Arrays.equals(firstGroupKey, 0, prefixLength, key, 0, prefixLength)) {
-							break;
+					ByteBuf firstGroupKey = null;
+					try {
+						while (rocksIterator.isValid()) {
+							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+							try {
+								if (firstGroupKey == null) {
+									firstGroupKey = key.retain();
+								} else if (!ByteBufUtil.equals(firstGroupKey, 0, key, 0, prefixLength)) {
+									break;
+								}
+								rocksIterator.next();
+							} finally {
+								key.release();
+							}
 						}
-						rocksIterator.next();
-					}
-					if (firstGroupKey != null) {
-						var groupKeyPrefix = Arrays.copyOf(firstGroupKey, prefixLength);
-						sink.next(groupKeyPrefix);
-					} else {
-						sink.complete();
+						if (firstGroupKey != null) {
+							var groupKeyPrefix = firstGroupKey.slice(0, prefixLength);
+							sink.next(groupKeyPrefix.retain());
+						} else {
+							sink.complete();
+						}
+					} finally {
+						if (firstGroupKey != null) {
+							firstGroupKey.release();
+						}
 					}
 					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
-					tuple.getT2().ifPresent(RocksMutableObject::close);
-					tuple.getT3().ifPresent(RocksMutableObject::close);
+					tuple.getT2().release();
+					tuple.getT3().release();
+					range.release();
 				});
 	}
 

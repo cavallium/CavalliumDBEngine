@@ -1,7 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.Arrays;
 import org.jetbrains.annotations.Nullable;
@@ -19,22 +21,22 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 		assertsEnabled = assertsEnabledTmp;
 	}
 
-	private final Serializer<T, byte[]> serializer;
+	private final Serializer<T, ByteBuf> serializer;
 
-	public SubStageGetterSingle(Serializer<T, byte[]> serializer) {
+	public SubStageGetterSingle(Serializer<T, ByteBuf> serializer) {
 		this.serializer = serializer;
 	}
 
 	@Override
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			byte[] keyPrefix,
-			Flux<byte[]> debuggingKeyFlux) {
+			ByteBuf keyPrefix,
+			Flux<ByteBuf> debuggingKeyFlux) {
 		return debuggingKeyFlux
 				.singleOrEmpty()
 				.flatMap(key -> Mono
 						.<DatabaseStageEntry<T>>fromCallable(() -> {
-							if (!Arrays.equals(keyPrefix, key)) {
+							if (!LLUtils.equals(keyPrefix, key)) {
 								throw new IndexOutOfBoundsException("Found more than one element!");
 							}
 							return null;

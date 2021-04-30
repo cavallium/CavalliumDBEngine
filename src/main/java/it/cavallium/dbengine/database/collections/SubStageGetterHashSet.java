@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -24,13 +25,13 @@ public class SubStageGetterHashSet<T, TH> implements
 		assertsEnabled = assertsEnabledTmp;
 	}
 
-	private final Serializer<T, byte[]> keySerializer;
+	private final Serializer<T, ByteBuf> keySerializer;
 	private final Function<T, TH> keyHashFunction;
-	private final SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer;
+	private final SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer;
 
-	public SubStageGetterHashSet(Serializer<T, byte[]> keySerializer,
+	public SubStageGetterHashSet(Serializer<T, ByteBuf> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, byte[]> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
 		this.keySerializer = keySerializer;
 		this.keyHashFunction = keyHashFunction;
 		this.keyHashSerializer = keyHashSerializer;
@@ -39,8 +40,8 @@ public class SubStageGetterHashSet<T, TH> implements
 	@Override
 	public Mono<DatabaseSetDictionaryHashed<T, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			byte[] prefixKey,
-			Flux<byte[]> debuggingKeyFlux) {
+			ByteBuf prefixKey,
+			Flux<ByteBuf> debuggingKeyFlux) {
 		Mono<DatabaseSetDictionaryHashed<T, TH>> result = Mono.just(DatabaseSetDictionaryHashed.tail(dictionary,
 				prefixKey,
 				keySerializer,
@@ -64,9 +65,9 @@ public class SubStageGetterHashSet<T, TH> implements
 		return assertsEnabled;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {
+	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
 		return keyFlux.doOnNext(key -> {
-			assert key.length == prefixKey.length + getKeyHashBinaryLength();
+			assert key.readableBytes() == prefixKey.readableBytes() + getKeyHashBinaryLength();
 		}).then();
 	}
 

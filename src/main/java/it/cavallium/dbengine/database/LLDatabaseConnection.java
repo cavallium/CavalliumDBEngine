@@ -11,7 +11,7 @@ public interface LLDatabaseConnection {
 
 	Mono<? extends LLDatabaseConnection> connect();
 
-	Mono<? extends LLKeyValueDatabase> getDatabase(String name, List<Column> columns, boolean lowMemory);
+	Mono<? extends LLKeyValueDatabase> getDatabase(String name, List<Column> columns, boolean lowMemory, boolean inMemory);
 
 	Mono<? extends LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
@@ -19,7 +19,8 @@ public interface LLDatabaseConnection {
 			TextFieldsSimilarity textFieldsSimilarity,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
-			boolean lowMemory);
+			boolean lowMemory,
+			boolean inMemory);
 
 	Mono<Void> disconnect();
 }

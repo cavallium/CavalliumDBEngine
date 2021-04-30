@@ -1,24 +1,25 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
+import static io.netty.buffer.Unpooled.*;
 
 public class DatabaseEmpty {
 
 	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
-	private static final byte[] NOTHING_BYTES = new byte[0];
-	public static final Serializer<Nothing, byte[]> NOTHING_SERIALIZER = new Serializer<>() {
+	public static final Serializer<Nothing, ByteBuf> NOTHING_SERIALIZER = new Serializer<>() {
 		@Override
-		public @NotNull Nothing deserialize(byte @NotNull [] serialized) {
+		public @NotNull Nothing deserialize(@NotNull ByteBuf serialized) {
 			return NOTHING;
 		}
 
 		@Override
-		public byte @NotNull [] serialize(@NotNull Nothing deserialized) {
-			return NOTHING_BYTES;
+		public @NotNull ByteBuf serialize(@NotNull Nothing deserialized) {
+			return EMPTY_BUFFER;
 		}
 	};
 	public static final Function<Nothing, Nothing> NOTHING_HASH_FUNCTION = nothing -> nothing;
@@ -28,7 +29,7 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, byte[] key) {
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, ByteBuf key) {
 		return new DatabaseSingle<>(dictionary, key, NOTHING_SERIALIZER);
 	}
 

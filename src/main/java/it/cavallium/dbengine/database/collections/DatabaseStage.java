@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
@@ -26,18 +25,18 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 	}
 
 	default Mono<Void> set(T value) {
-		return setAndGetStatus(value).then();
+		return setAndGetChanged(value).then();
 	}
 
 	Mono<T> setAndGetPrevious(T value);
 
-	default Mono<Boolean> setAndGetStatus(T value) {
-		return setAndGetPrevious(value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(false);
+	default Mono<Boolean> setAndGetChanged(T value) {
+		return setAndGetPrevious(value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(value != null);
 	}
 
-	Mono<Boolean> update(Function<Optional<T>, Optional<T>> updater, boolean existsAlmostCertainly);
+	Mono<Boolean> update(Function<@Nullable T, @Nullable T> updater, boolean existsAlmostCertainly);
 
-	default Mono<Boolean> update(Function<Optional<T>, Optional<T>> updater) {
+	default Mono<Boolean> update(Function<@Nullable T, @Nullable T> updater) {
 		return update(updater, false);
 	}
 
@@ -50,6 +49,8 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 	default Mono<Boolean> clearAndGetStatus() {
 		return clearAndGetPrevious().map(Objects::nonNull).defaultIfEmpty(false);
 	}
+
+	void release();
 
 	default Mono<Void> close() {
 		return Mono.empty();

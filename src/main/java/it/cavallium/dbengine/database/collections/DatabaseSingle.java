@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -10,15 +11,19 @@ import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
+import static io.netty.buffer.Unpooled.*;
 
 public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	private final LLDictionary dictionary;
-	private final byte[] key;
-	private final Serializer<U, byte[]> serializer;
+	private final ByteBuf key;
+	private final Serializer<U, ByteBuf> serializer;
 
-	public DatabaseSingle(LLDictionary dictionary, byte[] key, Serializer<U, byte[]> serializer) {
+	public DatabaseSingle(LLDictionary dictionary, ByteBuf key, Serializer<U, ByteBuf> serializer) {
 		this.dictionary = dictionary;
+		if (!key.isDirect()) {
+			throw new IllegalArgumentException("Key must be direct");
+		}
 		this.key = key;
 		this.serializer = serializer;
 	}
@@ -33,47 +38,60 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	@Override
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return dictionary.get(resolveSnapshot(snapshot), key, existsAlmostCertainly).map(this::deserialize);
+		return dictionary.get(resolveSnapshot(snapshot), key.retain(), existsAlmostCertainly).map(this::deserialize);
 	}
 
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
-		return dictionary.put(key, serialize(value), LLDictionaryResultType.PREVIOUS_VALUE).map(this::deserialize);
+		ByteBuf valueByteBuf = serialize(value);
+		return dictionary
+				.put(key.retain(), valueByteBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
+				.map(this::deserialize)
+				.doFinally(s -> valueByteBuf.release());
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<Optional<U>, Optional<U>> updater, boolean existsAlmostCertainly) {
-		return dictionary.update(key,
-				(oldValueSer) -> updater.apply(oldValueSer.map(this::deserialize)).map(this::serialize),
-				existsAlmostCertainly
-		);
+	public Mono<Boolean> update(Function<@Nullable U, @Nullable U> updater, boolean existsAlmostCertainly) {
+		return dictionary.update(key.retain(), (oldValueSer) -> {
+			var result = updater.apply(oldValueSer == null ? null : this.deserialize(oldValueSer));
+			if (result == null) {
+				return null;
+			} else {
+				return this.serialize(result);
+			}
+		}, existsAlmostCertainly);
 	}
 
 	@Override
 	public Mono<U> clearAndGetPrevious() {
-		return dictionary.remove(key, LLDictionaryResultType.PREVIOUS_VALUE).map(this::deserialize);
+		return dictionary.remove(key.retain(), LLDictionaryResultType.PREVIOUS_VALUE).map(this::deserialize);
 	}
 
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key))
+				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()))
 				.map(empty -> empty ? 0L : 1L);
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key));
+				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()));
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private U deserialize(byte[] bytes) {
+	private U deserialize(ByteBuf bytes) {
 		return serializer.deserialize(bytes);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private byte[] serialize(U bytes) {
+	private ByteBuf serialize(U bytes) {
 		return serializer.serialize(bytes);
+	}
+
+	@Override
+	public void release() {
+		key.release();
 	}
 }

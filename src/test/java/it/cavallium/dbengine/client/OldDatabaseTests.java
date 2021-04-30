@@ -2,15 +2,19 @@ package it.cavallium.dbengine.client;
 
 import static it.cavallium.dbengine.client.CompositeDatabasePartLocation.CompositeDatabasePartType.KV_DATABASE;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,6 +24,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
@@ -29,7 +34,61 @@ import reactor.core.scheduler.Schedulers;
 import reactor.test.StepVerifier;
 import reactor.util.function.Tuples;
 
-public class Database {
+public class OldDatabaseTests {
+
+	@Test
+	public void testDatabaseAddKeysAndCheckSize() {
+		LinkedHashSet<String> originalKeys = new LinkedHashSet<>(List.of("K1a", "K1b", "K1c"));
+
+		StepVerifier
+				.create(
+						tempDb()
+								.flatMap(db -> db
+										.getDictionary("testmap", UpdateMode.DISALLOW)
+										.map(dictionary -> DatabaseMapDictionary.simple(dictionary,
+												new FixedStringSerializer(3),
+												Serializer.noop()
+										))
+										.flatMap(collection -> Flux
+												.fromIterable(originalKeys)
+												.flatMap(k1 -> collection.putValue(k1, DUMMY_VALUE))
+												.then(collection.leavesCount(null, false))
+										)
+								)
+				)
+				.expectNext((long) originalKeys.size())
+				.verifyComplete();
+	}
+
+	@Test
+	public void testDeepDatabaseAddKeysAndCheckSize() {
+		LinkedHashSet<String> originalSuperKeys = new LinkedHashSet<>(List.of("K1a", "K1b", "K1c"));
+		LinkedHashSet<String> originalSubKeys = new LinkedHashSet<>(List.of("K2aa", "K2bb", "K2cc"));
+
+		StepVerifier
+				.create(
+						tempDb()
+								.flatMap(db -> db
+										.getDictionary("testmap", UpdateMode.DISALLOW)
+										.map(dictionary -> DatabaseMapDictionaryDeep.deepTail(dictionary,
+												new FixedStringSerializer(3),
+												4,
+												new SubStageGetterMap<>(new FixedStringSerializer(4), Serializer.noop())
+										))
+										.flatMap(collection -> Flux
+												.fromIterable(originalSuperKeys)
+												.flatMap(k1 -> collection.at(null, k1))
+												.flatMap(k1at -> Flux
+														.fromIterable(originalSubKeys)
+														.flatMap(k2 -> k1at.putValue(k2, DUMMY_VALUE))
+												)
+												.then(collection.leavesCount(null, false))
+										)
+								)
+				)
+				.expectNext((long) originalSuperKeys.size() * originalSubKeys.size())
+				.verifyComplete();
+	}
 
 	@Test
 	public void testDeepDatabaseAddKeysAndConvertToLongerOnes() {
@@ -53,7 +112,7 @@ public class Database {
 	}
 
 	public static <U> Mono<? extends LLKeyValueDatabase> tempDb() {
-		var wrkspcPath = Path.of("/tmp/.cache/tempdb/");
+		var wrkspcPath = Path.of("/tmp/.cache/tempdb-" + DbTestUtils.dbId.incrementAndGet() + "/");
 		return Mono
 				.fromCallable(() -> {
 					if (Files.exists(wrkspcPath)) {
@@ -72,10 +131,16 @@ public class Database {
 				})
 				.subscribeOn(Schedulers.boundedElastic())
 				.then(new LLLocalDatabaseConnection(wrkspcPath, true).connect())
-				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), false));
+				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), false, true));
 	}
 
-	private static final byte[] DUMMY_VALUE = new byte[] {0x01, 0x03};
+	private static final ByteBuf DUMMY_VALUE;
+	static {
+		ByteBuf buf = Unpooled.directBuffer(2, 2);
+		buf.writeByte(0x01);
+		buf.writeByte(0x03);
+		DUMMY_VALUE = buf;
+	}
 
 	private Flux<Entry<String, String>> addKeysAndConvertToLongerOnes(LLKeyValueDatabase db,
 			LinkedHashSet<String> originalSuperKeys,
@@ -157,7 +222,7 @@ public class Database {
 				);
 	}
 
-	private static class FixedStringSerializer implements SerializerFixedBinaryLength<String, byte[]> {
+	private static class FixedStringSerializer implements SerializerFixedBinaryLength<String, ByteBuf> {
 
 		private final int size;
 
@@ -171,13 +236,21 @@ public class Database {
 		}
 
 		@Override
-		public @NotNull String deserialize(byte @NotNull [] serialized) {
-			return new String(serialized, StandardCharsets.US_ASCII);
+		public @NotNull String deserialize(ByteBuf serialized) {
+			try {
+				return serialized.toString(StandardCharsets.US_ASCII);
+			} finally {
+				serialized.release();
+			}
 		}
 
 		@Override
-		public byte @NotNull [] serialize(@NotNull String deserialized) {
-			return deserialized.getBytes(StandardCharsets.US_ASCII);
+		public ByteBuf serialize(@NotNull String deserialized) {
+			var serialized = deserialized.getBytes(StandardCharsets.US_ASCII);
+			var serializedBuf = Unpooled.directBuffer(serialized.length, serialized.length);
+			serializedBuf.writeBytes(serialized);
+			assert serializedBuf.isDirect();
+			return serializedBuf;
 		}
 	}
 }

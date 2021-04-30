@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
@@ -39,14 +38,20 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	@Override
-	public Mono<Boolean> setAndGetStatus(A value) {
-		return serializedSingle.setAndGetStatus(serialize(value));
+	public Mono<Boolean> setAndGetChanged(A value) {
+		return serializedSingle.setAndGetChanged(serialize(value)).single();
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<Optional<A>, Optional<A>> updater, boolean existsAlmostCertainly) {
-		return serializedSingle
-				.update(oldValue -> updater.apply(oldValue.map(this::deserialize)).map(this::serialize), existsAlmostCertainly);
+	public Mono<Boolean> update(Function<@Nullable A, @Nullable A> updater, boolean existsAlmostCertainly) {
+		return serializedSingle.update(oldValue -> {
+			var result = updater.apply(oldValue == null ? null : this.deserialize(oldValue));
+			if (result == null) {
+				return null;
+			} else {
+				return this.serialize(result);
+			}
+		}, existsAlmostCertainly);
 	}
 
 	@Override
@@ -82,6 +87,11 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	@Override
 	public DatabaseStageEntry<A> entry() {
 		return this;
+	}
+
+	@Override
+	public void release() {
+		serializedSingle.release();
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

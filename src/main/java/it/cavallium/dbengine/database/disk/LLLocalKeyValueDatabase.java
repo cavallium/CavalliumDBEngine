@@ -59,6 +59,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private final Scheduler dbScheduler;
 	private final Path dbPath;
+	private final boolean inMemory;
 	private final String name;
 	private RocksDB db;
 	private final Map<Column, ColumnFamilyHandle> handles;
@@ -66,7 +67,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 
 	public LLLocalKeyValueDatabase(String name, Path path, List<Column> columns, List<ColumnFamilyHandle> handles,
-			boolean crashIfWalError, boolean lowMemory) throws IOException {
+			boolean crashIfWalError, boolean lowMemory, boolean inMemory) throws IOException {
 		Options options = openRocksDb(path, crashIfWalError, lowMemory);
 		try {
 			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
@@ -83,6 +84,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			String dbPathString = databasesDirPath.toString() + File.separatorChar + path.getFileName();
 			Path dbPath = Paths.get(dbPathString);
 			this.dbPath = dbPath;
+			this.inMemory = inMemory;
 			this.name = name;
 			this.dbScheduler = Schedulers.newBoundedElastic(lowMemory ? Runtime.getRuntime().availableProcessors()
 							: Math.max(8, Runtime.getRuntime().availableProcessors()),
@@ -92,12 +94,17 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					true
 			);
 
-			createIfNotExists(descriptors, options, dbPath, dbPathString);
+			createIfNotExists(descriptors, options, inMemory, this.dbPath, dbPathString);
 			// Create all column families that don't exist
-			createAllColumns(descriptors, options, dbPathString);
+			createAllColumns(descriptors, options, inMemory, dbPathString);
 
 			// a factory method that returns a RocksDB instance
-			this.db = RocksDB.open(new DBOptions(options), dbPathString, descriptors, handles);
+			this.db = RocksDB.open(new DBOptions(options),
+					dbPathString,
+					inMemory ? List.of(DEFAULT_COLUMN_FAMILY) : descriptors,
+					handles
+			);
+			createInMemoryColumns(descriptors, inMemory, handles);
 			this.handles = new HashMap<>();
 			for (int i = 0; i < columns.size(); i++) {
 				this.handles.put(columns.get(i), handles.get(i));
@@ -252,8 +259,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return options;
 	}
 
-	private void createAllColumns(List<ColumnFamilyDescriptor> totalDescriptors, Options options,
-			String dbPathString) throws RocksDBException {
+	private void createAllColumns(List<ColumnFamilyDescriptor> totalDescriptors, Options options, boolean inMemory, String dbPathString) throws RocksDBException {
+		if (inMemory) {
+			return;
+		}
 		List<byte[]> columnFamiliesToCreate = new LinkedList<>();
 
 		for (ColumnFamilyDescriptor descriptor : totalDescriptors) {
@@ -293,8 +302,35 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		flushAndCloseDb(db, handles);
 	}
 
-	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors, Options options,
-			Path dbPath, String dbPathString) throws RocksDBException {
+	private void createInMemoryColumns(List<ColumnFamilyDescriptor> totalDescriptors,
+			boolean inMemory,
+			List<ColumnFamilyHandle> handles)
+			throws RocksDBException {
+		if (!inMemory) {
+			return;
+		}
+		List<byte[]> columnFamiliesToCreate = new LinkedList<>();
+
+		for (ColumnFamilyDescriptor descriptor : totalDescriptors) {
+			columnFamiliesToCreate.add(descriptor.getName());
+		}
+
+		for (byte[] name : columnFamiliesToCreate) {
+			if (!Arrays.equals(name, DEFAULT_COLUMN_FAMILY.getName())) {
+				var descriptor = new ColumnFamilyDescriptor(name);
+				handles.add(db.createColumnFamily(descriptor));
+			}
+		}
+	}
+
+	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors,
+			Options options,
+			boolean inMemory,
+			Path dbPath,
+			String dbPathString) throws RocksDBException {
+		if (inMemory) {
+			return;
+		}
 		if (Files.notExists(dbPath)) {
 			// Check if handles are all different
 			var descriptorsSet = new HashSet<>(descriptors);
@@ -318,7 +354,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				handles.add(db.createColumnFamily(columnFamilyDescriptor));
 			}
 
-			flushAndCloseDb(db, handles);
+			if (!inMemory) {
+				flushAndCloseDb(db, handles);
+			}
 		}
 	}
 

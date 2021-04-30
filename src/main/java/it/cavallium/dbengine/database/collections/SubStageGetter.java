@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import org.jetbrains.annotations.Nullable;
@@ -10,8 +11,8 @@ public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 
 	Mono<US> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			byte[] prefixKey,
-			Flux<byte[]> debuggingKeyFlux);
+			ByteBuf prefixKey,
+			Flux<ByteBuf> debuggingKeyFlux);
 
 	boolean isMultiKey();
 

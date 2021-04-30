@@ -2,18 +2,18 @@ package it.cavallium.dbengine.database.collections;
 
 import static it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep.EMPTY_BYTES;
 
-import com.google.common.primitives.Ints;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -23,19 +23,21 @@ import reactor.core.publisher.Mono;
 @SuppressWarnings("unused")
 public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
+	private final ByteBufAllocator alloc;
 	private final DatabaseMapDictionary<TH, Entry<T, U>> subDictionary;
 	private final Function<T, TH> keySuffixHashFunction;
 	private final Function<T, ValueMapper<T, U>> valueMapper;
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
-			byte[] prefixKey,
-			Serializer<T, byte[]> keySuffixSerializer,
-			Serializer<U, byte[]> valueSerializer,
+			ByteBuf prefixKey,
+			Serializer<T, ByteBuf> keySuffixSerializer,
+			Serializer<U, ByteBuf> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, byte[]> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keySuffixHashSerializer) {
 		ValueWithHashSerializer<T, U> valueWithHashSerializer = new ValueWithHashSerializer<>(keySuffixSerializer,
 				valueSerializer
 		);
+		this.alloc = dictionary.getAllocator();
 		this.valueMapper = ValueMapper::new;
 		this.subDictionary = DatabaseMapDictionary.tail(dictionary,
 				prefixKey,
@@ -44,40 +46,35 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		this.keySuffixHashFunction = keySuffixHashFunction;
 	}
 
-	private static class ValueWithHashSerializer<T, U> implements Serializer<Entry<T, U>, byte[]> {
+	private class ValueWithHashSerializer<T, U> implements Serializer<Entry<T, U>, ByteBuf> {
 
-		private final Serializer<T, byte[]> keySuffixSerializer;
-		private final Serializer<U, byte[]> valueSerializer;
+		private final Serializer<T, ByteBuf> keySuffixSerializer;
+		private final Serializer<U, ByteBuf> valueSerializer;
 
-		private ValueWithHashSerializer(Serializer<T, byte[]> keySuffixSerializer, Serializer<U, byte[]> valueSerializer) {
+		private ValueWithHashSerializer(Serializer<T, ByteBuf> keySuffixSerializer, Serializer<U, ByteBuf> valueSerializer) {
 			this.keySuffixSerializer = keySuffixSerializer;
 			this.valueSerializer = valueSerializer;
 		}
 
 		@Override
-		public @NotNull Entry<T, U> deserialize(byte @NotNull [] serialized) {
-			int keySuffixLength = Ints.fromBytes(serialized[0], serialized[1], serialized[2], serialized[3]);
-			T keySuffix = keySuffixSerializer.deserialize(Arrays.copyOfRange(serialized,
-					Integer.BYTES,
-					Integer.BYTES + keySuffixLength
-			));
-			U value = valueSerializer.deserialize(Arrays.copyOfRange(serialized,
-					Integer.BYTES + keySuffixLength,
-					serialized.length
-			));
-			return Map.entry(keySuffix, value);
+		public @NotNull Entry<T, U> deserialize(@NotNull ByteBuf serialized) {
+			try {
+				int keySuffixLength = serialized.readInt();
+				T keySuffix = keySuffixSerializer.deserialize(serialized.retainedSlice(serialized.readerIndex(), keySuffixLength));
+				U value = valueSerializer.deserialize(serialized.retain());
+				return Map.entry(keySuffix, value);
+			} finally {
+				serialized.release();
+			}
 		}
 
 		@Override
-		public byte @NotNull [] serialize(@NotNull Entry<T, U> deserialized) {
-			byte[] keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
-			byte[] value = valueSerializer.serialize(deserialized.getValue());
-			byte[] result = new byte[Integer.BYTES + keySuffix.length + value.length];
-			byte[] keySuffixLen = Ints.toByteArray(keySuffix.length);
-			System.arraycopy(keySuffixLen, 0, result, 0, Integer.BYTES);
-			System.arraycopy(keySuffix, 0, result, Integer.BYTES, keySuffix.length);
-			System.arraycopy(value, 0, result, Integer.BYTES + keySuffix.length, value.length);
-			return result;
+		public @NotNull ByteBuf serialize(@NotNull Entry<T, U> deserialized) {
+			ByteBuf keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
+			ByteBuf value = valueSerializer.serialize(deserialized.getValue());
+			ByteBuf keySuffixLen = alloc.buffer(Integer.BYTES, Integer.BYTES);
+			keySuffixLen.writeInt(keySuffix.readableBytes());
+			return LLUtils.directCompositeBuffer(alloc, keySuffixLen, keySuffix, value);
 		}
 	}
 
@@ -101,10 +98,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> simple(LLDictionary dictionary,
-			Serializer<T, byte[]> keySerializer,
-			Serializer<U, byte[]> valueSerializer,
+			Serializer<T, ByteBuf> keySerializer,
+			Serializer<U, ByteBuf> valueSerializer,
 			Function<T, UH> keyHashFunction,
-			SerializerFixedBinaryLength<UH, byte[]> keyHashSerializer) {
+			SerializerFixedBinaryLength<UH, ByteBuf> keyHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
 				EMPTY_BYTES,
 				keySerializer,
@@ -115,11 +112,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
-			byte[] prefixKey,
-			Serializer<T, byte[]> keySuffixSerializer,
-			Serializer<U, byte[]> valueSerializer,
+			ByteBuf prefixKey,
+			Serializer<T, ByteBuf> keySuffixSerializer,
+			Serializer<U, ByteBuf> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<UH, byte[]> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<UH, ByteBuf> keySuffixHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,
@@ -157,13 +154,20 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Mono<Boolean> setAndGetStatus(Map<T, U> map) {
-		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::setAndGetStatus);
+	public Mono<Boolean> setAndGetChanged(Map<T, U> map) {
+		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::setAndGetChanged).single();
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater) {
-		return subDictionary.update(old -> updater.apply(old.map(this::deserializeMap)).map(this::serializeMap));
+	public Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater) {
+		return subDictionary.update(old -> {
+			var result = updater.apply(old == null ? null : this.deserializeMap(old));
+			if (result == null) {
+				return null;
+			} else {
+				return this.serializeMap(result);
+			}
+		});
 	}
 
 	@Override
@@ -184,6 +188,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	@Override
 	public DatabaseStageEntry<Map<T, U>> entry() {
 		return this;
+	}
+
+	@Override
+	public void release() {
+		this.subDictionary.release();
 	}
 
 	@Override
@@ -218,18 +227,27 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<Optional<U>, Optional<U>> updater) {
-		return subDictionary.updateValue(keySuffixHashFunction.apply(key),
-				existsAlmostCertainly,
-				old -> updater.apply(old.map(Entry::getValue)).map(newV -> Map.entry(key, newV))
-		);
+	public Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
+		return subDictionary.updateValue(keySuffixHashFunction.apply(key), existsAlmostCertainly, old -> {
+			var result = updater.apply(old == null ? null : old.getValue());
+			if (result == null) {
+				return null;
+			} else {
+				return Map.entry(key, result);
+			}
+		});
 	}
 
 	@Override
-	public Mono<Boolean> updateValue(T key, Function<Optional<U>, Optional<U>> updater) {
-		return subDictionary.updateValue(keySuffixHashFunction.apply(key),
-				old -> updater.apply(old.map(Entry::getValue)).map(newV -> Map.entry(key, newV))
-		);
+	public Mono<Boolean> updateValue(T key, Function<@Nullable U, @Nullable U> updater) {
+		return subDictionary.updateValue(keySuffixHashFunction.apply(key), old -> {
+			var result = updater.apply(old == null ? null : old.getValue());
+			if (result == null) {
+				return null;
+			} else {
+				return Map.entry(key, result);
+			}
+		});
 	}
 
 	@Override
@@ -346,10 +364,16 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater,
+	public Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater,
 			boolean existsAlmostCertainly) {
-		return subDictionary
-				.update(item -> updater.apply(item.map(this::deserializeMap)).map(this::serializeMap), existsAlmostCertainly);
+		return subDictionary.update(item -> {
+			var result = updater.apply(item == null ? null : this.deserializeMap(item));
+			if (result == null) {
+				return null;
+			} else {
+				return this.serializeMap(result);
+			}
+		}, existsAlmostCertainly);
 	}
 
 	@Override

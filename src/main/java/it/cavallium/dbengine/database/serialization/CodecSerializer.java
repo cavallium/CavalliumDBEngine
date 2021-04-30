@@ -3,13 +3,14 @@ package it.cavallium.dbengine.database.serialization;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
 
-public class CodecSerializer<A> implements Serializer<A, byte[]> {
+public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
 
 	private final Codecs<A> deserializationCodecs;
 	private final Codec<A> serializationCodec;
@@ -34,9 +35,8 @@ public class CodecSerializer<A> implements Serializer<A, byte[]> {
 	}
 
 	@Override
-	public @NotNull A deserialize(byte @NotNull [] serialized) {
-		ByteBuf buf = Unpooled.wrappedBuffer(serialized);
-		try (var is = new ByteBufInputStream(buf)) {
+	public @NotNull A deserialize(@NotNull ByteBuf serialized) {
+		try (var is = new ByteBufInputStream(serialized)) {
 			int codecId;
 			if (microCodecs) {
 				codecId = is.readUnsignedByte();
@@ -48,12 +48,14 @@ public class CodecSerializer<A> implements Serializer<A, byte[]> {
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);
+		} finally {
+			serialized.release();
 		}
 	}
 
 	@Override
-	public byte @NotNull [] serialize(@NotNull A deserialized) {
-		ByteBuf buf = Unpooled.buffer(256);
+	public @NotNull ByteBuf serialize(@NotNull A deserialized) {
+		ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
 		try (var os = new ByteBufOutputStream(buf)) {
 			if (microCodecs) {
 				os.writeByte(serializationCodecId);
@@ -61,14 +63,11 @@ public class CodecSerializer<A> implements Serializer<A, byte[]> {
 				os.writeInt(serializationCodecId);
 			}
 			serializationCodec.serialize(os, deserialized);
-			os.flush();
-			var bytes = new byte[buf.readableBytes()];
-			buf.readBytes(bytes);
-			return bytes;
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);
 		}
+		return buf;
 	}
 
 	@SuppressWarnings("unused")

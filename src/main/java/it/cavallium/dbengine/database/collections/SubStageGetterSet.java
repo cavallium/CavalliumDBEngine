@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -20,22 +21,27 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 		assertsEnabled = assertsEnabledTmp;
 	}
 
-	private final SerializerFixedBinaryLength<T, byte[]> keySerializer;
+	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
 
-	public SubStageGetterSet(SerializerFixedBinaryLength<T, byte[]> keySerializer) {
+	public SubStageGetterSet(SerializerFixedBinaryLength<T, ByteBuf> keySerializer) {
 		this.keySerializer = keySerializer;
 	}
 
 	@Override
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			byte[] prefixKey,
-			Flux<byte[]> debuggingKeyFlux) {
-		Mono<DatabaseSetDictionary<T>> result = Mono.just(DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer));
-		if (assertsEnabled) {
-			return checkKeyFluxConsistency(prefixKey, debuggingKeyFlux).then(result);
-		} else {
-			return result;
+			ByteBuf prefixKey,
+			Flux<ByteBuf> debuggingKeyFlux) {
+		try {
+			Mono<DatabaseSetDictionary<T>> result = Mono
+					.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey.retain(), keySerializer));
+			if (assertsEnabled) {
+				return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux).then(result);
+			} else {
+				return result;
+			}
+		} finally {
+			prefixKey.release();
 		}
 	}
 
@@ -49,10 +55,10 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 		return assertsEnabled;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(byte[] prefixKey, Flux<byte[]> keyFlux) {
+	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
 		return keyFlux.doOnNext(key -> {
-			assert key.length == prefixKey.length + getKeyBinaryLength();
-		}).then();
+			assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+		}).doFinally(s -> prefixKey.release()).then();
 	}
 
 	public int getKeyBinaryLength() {

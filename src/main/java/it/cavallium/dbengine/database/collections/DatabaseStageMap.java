@@ -6,7 +6,6 @@ import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBloc
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -18,7 +17,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
-		return this.at(snapshot, key).flatMap(v -> v.get(snapshot, existsAlmostCertainly));
+		return this.at(snapshot, key).flatMap(v -> v.get(snapshot, existsAlmostCertainly).doFinally(s -> v.release()));
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
@@ -30,23 +29,29 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.set(value));
+		return at(null, key).single().flatMap(v -> v.set(value).doFinally(s -> v.release()));
 	}
 
-	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<Optional<U>, Optional<U>> updater) {
-		return at(null, key).single().flatMap(v -> v.update(updater, existsAlmostCertainly));
+	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
+		return at(null, key).single().flatMap(v -> v.update(updater, existsAlmostCertainly).doFinally(s -> v.release()));
 	}
 
-	default Mono<Boolean> updateValue(T key, Function<Optional<U>, Optional<U>> updater) {
+	default Mono<Boolean> updateValue(T key, Function<@Nullable U, @Nullable U> updater) {
 		return updateValue(key, false, updater);
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.setAndGetPrevious(value));
+		return at(null, key).single().flatMap(v -> v.setAndGetPrevious(value).doFinally(s -> v.release()));
 	}
 
+	/**
+	 *
+	 * @param key
+	 * @param value
+	 * @return true if the key was associated with any value, false if the key didn't exist.
+	 */
 	default Mono<Boolean> putValueAndGetStatus(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.setAndGetStatus(value));
+		return at(null, key).single().flatMap(v -> v.setAndGetChanged(value).doFinally(s -> v.release())).single();
 	}
 
 	default Mono<Void> remove(T key) {
@@ -54,7 +59,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return at(null, key).flatMap(DatabaseStage::clearAndGetPrevious);
+		return at(null, key).flatMap(v -> v.clearAndGetPrevious().doFinally(s -> v.release()));
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {
@@ -106,7 +111,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 					.flatMap(entriesReplacer)
 					.flatMap(replacedEntry -> this
 							.at(null, replacedEntry.getKey())
-							.map(entry -> entry.set(replacedEntry.getValue())))
+							.map(v -> v.set(replacedEntry.getValue()).doFinally(s -> v.release())))
 					.then();
 		}
 	}
@@ -126,15 +131,23 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Boolean> update(Function<Optional<Map<T, U>>, Optional<Map<T, U>>> updater, boolean existsAlmostCertainly) {
+	default Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater, boolean existsAlmostCertainly) {
 		return this
 				.getAllValues(null)
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
 				.single()
-				.map(v -> v.isEmpty() ? Optional.<Map<T, U>>empty() : Optional.of(v))
-				.map(updater)
-				.filter(Optional::isPresent)
-				.map(Optional::get)
+				.<Map<T, U>>handle((v, sink) -> {
+					if (v == null || v.isEmpty()) {
+						sink.complete();
+					} else {
+						var result = updater.apply(v);
+						if (result == null) {
+							sink.complete();
+						} else {
+							sink.next(result);
+						}
+					}
+				})
 				.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
 				//todo: can be optimized by calculating the correct return value
 				.thenReturn(true);

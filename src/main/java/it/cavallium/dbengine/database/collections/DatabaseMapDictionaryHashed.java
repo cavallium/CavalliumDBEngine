@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -34,16 +35,21 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			Serializer<U, ByteBuf> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH, ByteBuf> keySuffixHashSerializer) {
-		ValueWithHashSerializer<T, U> valueWithHashSerializer = new ValueWithHashSerializer<>(keySuffixSerializer,
-				valueSerializer
-		);
-		this.alloc = dictionary.getAllocator();
-		this.valueMapper = ValueMapper::new;
-		this.subDictionary = DatabaseMapDictionary.tail(dictionary,
-				prefixKey,
-				keySuffixHashSerializer, valueWithHashSerializer
-		);
-		this.keySuffixHashFunction = keySuffixHashFunction;
+		try {
+			ValueWithHashSerializer<T, U> valueWithHashSerializer = new ValueWithHashSerializer<>(keySuffixSerializer,
+					valueSerializer
+			);
+			this.alloc = dictionary.getAllocator();
+			this.valueMapper = ValueMapper::new;
+			this.subDictionary = DatabaseMapDictionary.tail(dictionary,
+					prefixKey.retain(),
+					keySuffixHashSerializer,
+					valueWithHashSerializer
+			);
+			this.keySuffixHashFunction = keySuffixHashFunction;
+		} finally {
+			prefixKey.release();
+		}
 	}
 
 	private class ValueWithHashSerializer<T, U> implements Serializer<Entry<T, U>, ByteBuf> {
@@ -72,9 +78,18 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		public @NotNull ByteBuf serialize(@NotNull Entry<T, U> deserialized) {
 			ByteBuf keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
 			ByteBuf value = valueSerializer.serialize(deserialized.getValue());
-			ByteBuf keySuffixLen = alloc.buffer(Integer.BYTES, Integer.BYTES);
-			keySuffixLen.writeInt(keySuffix.readableBytes());
-			return LLUtils.directCompositeBuffer(alloc, keySuffixLen, keySuffix, value);
+			try {
+				ByteBuf keySuffixLen = alloc.directBuffer(Integer.BYTES, Integer.BYTES);
+				try {
+					keySuffixLen.writeInt(keySuffix.readableBytes());
+					return LLUtils.directCompositeBuffer(alloc, keySuffixLen.retain(), keySuffix.retain(), value.retain());
+				} finally {
+					keySuffixLen.release();
+				}
+			} finally {
+				keySuffix.release();
+				value.release();
+			}
 		}
 	}
 
@@ -227,6 +242,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
+	public Mono<UpdateMode> getUpdateMode() {
+		return subDictionary.getUpdateMode();
+	}
+
+	@Override
 	public Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
 		return subDictionary.updateValue(keySuffixHashFunction.apply(key), existsAlmostCertainly, old -> {
 			var result = updater.apply(old == null ? null : old.getValue());
@@ -258,9 +278,9 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Mono<Boolean> putValueAndGetStatus(T key, U value) {
+	public Mono<Boolean> putValueAndGetChanged(T key, U value) {
 		return subDictionary
-				.putValueAndGetStatus(keySuffixHashFunction.apply(key), Map.entry(key, value));
+				.putValueAndGetChanged(keySuffixHashFunction.apply(key), Map.entry(key, value));
 	}
 
 	@Override

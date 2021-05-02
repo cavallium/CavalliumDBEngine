@@ -1,15 +1,20 @@
 package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 @SuppressWarnings("unused")
 public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends DatabaseStageEntry<Map<T, U>> {
@@ -32,8 +37,16 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return at(null, key).single().flatMap(v -> v.set(value).doFinally(s -> v.release()));
 	}
 
+	Mono<UpdateMode> getUpdateMode();
+
 	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
-		return at(null, key).single().flatMap(v -> v.update(updater, existsAlmostCertainly).doFinally(s -> v.release()));
+		return this
+				.at(null, key)
+				.single()
+				.flatMap(v -> v
+						.update(updater, existsAlmostCertainly)
+						.doFinally(s -> v.release())
+				);
 	}
 
 	default Mono<Boolean> updateValue(T key, Function<@Nullable U, @Nullable U> updater) {
@@ -50,7 +63,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	 * @param value
 	 * @return true if the key was associated with any value, false if the key didn't exist.
 	 */
-	default Mono<Boolean> putValueAndGetStatus(T key, U value) {
+	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
 		return at(null, key).single().flatMap(v -> v.setAndGetChanged(value).doFinally(s -> v.release())).single();
 	}
 
@@ -89,6 +102,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 						.getValue()
 						.get(snapshot, true)
 						.map(value -> Map.entry(entry.getKey(), value))
+						.doFinally(s -> entry.getValue().release())
 				);
 	}
 
@@ -111,7 +125,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 					.flatMap(entriesReplacer)
 					.flatMap(replacedEntry -> this
 							.at(null, replacedEntry.getKey())
-							.map(v -> v.set(replacedEntry.getValue()).doFinally(s -> v.release())))
+							.flatMap(v -> v.set(replacedEntry.getValue()).doFinally(s -> v.release())))
 					.then();
 		}
 	}
@@ -119,7 +133,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<Void> replaceAll(Function<Entry<T, US>, Mono<Void>> entriesReplacer) {
 		return this
 				.getAllStages(null)
-				.flatMap(entriesReplacer)
+				.flatMap(stage -> Mono
+						.defer(() -> entriesReplacer.apply(stage))
+						.doFinally(s -> stage.getValue().release())
+				)
 				.then();
 	}
 
@@ -131,26 +148,54 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
+	default Mono<Boolean> setAndGetChanged(Map<T, U> value) {
+		return this
+				.setAndGetPrevious(value)
+				.map(oldValue -> !Objects.equals(oldValue, value))
+				.switchIfEmpty(Mono.fromSupplier(() -> !value.isEmpty()));
+	}
+
+	@Override
 	default Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater, boolean existsAlmostCertainly) {
 		return this
-				.getAllValues(null)
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.getUpdateMode()
 				.single()
-				.<Map<T, U>>handle((v, sink) -> {
-					if (v == null || v.isEmpty()) {
-						sink.complete();
+				.flatMap(updateMode -> {
+					if (updateMode == UpdateMode.ALLOW_UNSAFE) {
+						return this
+								.getAllValues(null)
+								.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+								.single()
+								.<Tuple2<Optional<Map<T, U>>, Boolean>>handle((v, sink) -> {
+									if (v.isEmpty()) {
+										v = null;
+									}
+									var result = updater.apply(v);
+									if (result != null && result.isEmpty()) {
+										result = null;
+									}
+									boolean changed = !Objects.equals(v, result);
+									sink.next(Tuples.of(Optional.ofNullable(result), changed));
+								})
+								.flatMap(result -> Mono
+										.justOrEmpty(result.getT1())
+										.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
+										.thenReturn(result.getT2())
+								);
+					} else if (updateMode == UpdateMode.ALLOW) {
+						return Mono.fromCallable(() -> {
+							throw new UnsupportedOperationException("Maps can't be updated atomically");
+						});
+					} else if (updateMode == UpdateMode.DISALLOW) {
+						return Mono.fromCallable(() -> {
+							throw new UnsupportedOperationException("Map can't be updated because updates are disabled");
+						});
 					} else {
-						var result = updater.apply(v);
-						if (result == null) {
-							sink.complete();
-						} else {
-							sink.next(result);
-						}
+						return Mono.fromCallable(() -> {
+							throw new UnsupportedOperationException("Unknown update mode: " + updateMode);
+						});
 					}
-				})
-				.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
-				//todo: can be optimized by calculating the correct return value
-				.thenReturn(true);
+				});
 	}
 
 	@Override
@@ -166,7 +211,12 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	@Override
 	default Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return getAllStages(snapshot).count();
+		return getAllStages(snapshot)
+				.flatMap(stage -> Mono
+						.fromRunnable(() -> stage.getValue().release())
+						.thenReturn(true)
+				)
+				.count();
 	}
 
 	/**

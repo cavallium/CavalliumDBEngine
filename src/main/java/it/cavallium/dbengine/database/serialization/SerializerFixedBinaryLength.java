@@ -72,7 +72,8 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 				try {
 					ByteBufUtil.writeUtf8(buf, deserialized);
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
-						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to serialize an element with "
+						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
+								+ " bytes has tried to serialize an element with "
 								+ buf.readableBytes() + " bytes instead");
 					}
 					return buf.retain();

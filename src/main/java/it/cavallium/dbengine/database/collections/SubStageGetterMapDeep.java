@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -49,17 +50,24 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf prefixKey,
 			Flux<ByteBuf> debuggingKeyFlux) {
-		Mono<DatabaseMapDictionaryDeep<T, U, US>> result = Mono.just(DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
-				prefixKey,
-				keySerializer,
-				subStageGetter,
-				keyExtLength
-		));
-		if (assertsEnabled) {
-			return checkKeyFluxConsistency(prefixKey, debuggingKeyFlux).then(result);
-		} else {
-			return result;
-		}
+		return Flux
+				.defer(() -> {
+					if (assertsEnabled) {
+						return this
+								.checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux);
+					} else {
+						return debuggingKeyFlux.flatMap(buf -> Mono.fromRunnable(buf::release));
+					}
+				})
+				.then(Mono
+						.fromSupplier(() -> DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
+								prefixKey.retain(),
+								keySerializer,
+								subStageGetter,
+								keyExtLength
+						))
+				)
+				.doFinally(s -> prefixKey.release());
 	}
 
 	@Override
@@ -73,9 +81,14 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
-		return keyFlux.doOnNext(key -> {
-			assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
-		}).then();
+		return keyFlux
+				.doOnNext(key -> {
+					assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+				})
+				.flatMap(key -> Mono.fromRunnable(key::release))
+				.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
+				.then()
+				.doFinally(s -> prefixKey.release());
 	}
 
 	public int getKeyBinaryLength() {

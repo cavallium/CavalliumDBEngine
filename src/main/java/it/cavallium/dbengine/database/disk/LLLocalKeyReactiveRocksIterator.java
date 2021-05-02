@@ -19,6 +19,9 @@ public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterato
 
 	@Override
 	public ByteBuf getEntry(ByteBuf key, ByteBuf value) {
+		if (value != null) {
+			value.release();
+		}
 		return key;
 	}
 }

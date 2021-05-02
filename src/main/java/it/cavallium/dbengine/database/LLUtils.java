@@ -32,8 +32,8 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
 
-import static io.netty.buffer.Unpooled.EMPTY_BUFFER;
 import static io.netty.buffer.Unpooled.wrappedBuffer;
+import static it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep.EMPTY_BYTES;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -217,79 +217,80 @@ public class LLUtils {
 	@Nullable
 	public static ByteBuf readNullableDirectNioBuffer(ByteBufAllocator alloc, ToIntFunction<ByteBuffer> reader) {
 		ByteBuf buffer = alloc.directBuffer();
-		try {
-			ByteBuf directBuffer = null;
-			ByteBuffer nioBuffer;
-			int size;
-			Boolean mustBeCopied = null;
-			do {
-				if (mustBeCopied == null || !mustBeCopied) {
-					nioBuffer = LLUtils.toDirectFast(buffer.retain());
-					if (nioBuffer != null) {
-						nioBuffer.limit(nioBuffer.capacity());
+		ByteBuf directBuffer = null;
+		ByteBuffer nioBuffer;
+		int size;
+		Boolean mustBeCopied = null;
+		do {
+			if (mustBeCopied == null || !mustBeCopied) {
+				nioBuffer = LLUtils.toDirectFast(buffer);
+				if (nioBuffer != null) {
+					nioBuffer.limit(nioBuffer.capacity());
+				}
+			} else {
+				nioBuffer = null;
+			}
+			if ((mustBeCopied != null && mustBeCopied) || nioBuffer == null) {
+				directBuffer = LLUtils.toDirectCopy(buffer.retain());
+				nioBuffer = directBuffer.nioBuffer(0, directBuffer.capacity());
+				mustBeCopied = true;
+			} else {
+				mustBeCopied = false;
+			}
+			try {
+				assert nioBuffer.isDirect();
+				size = reader.applyAsInt(nioBuffer);
+				if (size != RocksDB.NOT_FOUND) {
+					if (mustBeCopied) {
+						buffer.writerIndex(0).writeBytes(nioBuffer);
 					}
-				} else {
+					if (size == nioBuffer.limit()) {
+						buffer.setIndex(0, size);
+						return buffer;
+					} else {
+						assert size > nioBuffer.limit();
+						assert nioBuffer.limit() > 0;
+						buffer.capacity(size);
+					}
+				}
+			} finally {
+				if (nioBuffer != null) {
 					nioBuffer = null;
 				}
-				if ((mustBeCopied != null && mustBeCopied) || nioBuffer == null) {
-					directBuffer = LLUtils.toDirectCopy(buffer.retain());
-					nioBuffer = directBuffer.nioBuffer(0, directBuffer.capacity());
-					mustBeCopied = true;
-				} else {
-					mustBeCopied = false;
+				if(directBuffer != null) {
+					directBuffer.release();
+					directBuffer = null;
 				}
-				try {
-					assert nioBuffer.isDirect();
-					size = reader.applyAsInt(nioBuffer);
-					if (size != RocksDB.NOT_FOUND) {
-						if (mustBeCopied) {
-							buffer.writerIndex(0).writeBytes(nioBuffer);
-						}
-						if (size == nioBuffer.limit()) {
-							buffer.setIndex(0, size);
-							return buffer;
-						} else {
-							assert size > nioBuffer.limit();
-							assert nioBuffer.limit() > 0;
-							buffer.capacity(size);
-						}
-					}
-				} finally {
-					if (nioBuffer != null) {
-						nioBuffer = null;
-					}
-					if(directBuffer != null) {
-						directBuffer.release();
-						directBuffer = null;
-					}
-				}
-			} while (size != RocksDB.NOT_FOUND);
-		} catch (Throwable t) {
-			buffer.release();
-			throw t;
-		}
+			}
+		} while (size != RocksDB.NOT_FOUND);
 		return null;
 	}
 
 	@Nullable
 	public static ByteBuffer toDirectFast(ByteBuf buffer) {
-		try {
-			ByteBuffer result = buffer.nioBuffer(0, buffer.capacity());
-			if (result.isDirect()) {
-				result.limit(buffer.writerIndex());
+		ByteBuffer result = buffer.nioBuffer(0, buffer.capacity());
+		if (result.isDirect()) {
+			result.limit(buffer.writerIndex());
 
-				assert result.isDirect();
-				assert result.capacity() == buffer.capacity();
-				assert buffer.readerIndex() == result.position();
-				assert result.limit() - result.position() == buffer.readableBytes();
+			assert result.isDirect();
+			assert result.capacity() == buffer.capacity();
+			assert buffer.readerIndex() == result.position();
+			assert result.limit() - result.position() == buffer.readableBytes();
 
-				return result;
-			} else {
-				return null;
-			}
-		} finally {
-			buffer.release();
+			return result;
+		} else {
+			return null;
 		}
+	}
+
+	public static ByteBuffer toDirect(ByteBuf buffer) {
+		ByteBuffer result = toDirectFast(buffer);
+		if (result == null) {
+			throw new IllegalArgumentException("The supplied ByteBuf is not direct "
+					+ "(if it's a CompositeByteBuf it must be consolidated before)");
+		}
+		assert result.isDirect();
+		return result;
 	}
 
 	public static ByteBuf toDirectCopy(ByteBuf buffer) {
@@ -324,59 +325,99 @@ public class LLUtils {
 	}
 
 	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer) {
-		return wrappedBuffer(buffer);
+		try {
+			ByteBuf result = alloc.directBuffer(buffer.readableBytes());
+			try {
+				result.writeBytes(buffer, buffer.readerIndex(), buffer.readableBytes());
+				return result.retain();
+			} finally {
+				result.release();
+			}
+		} finally {
+			buffer.release();
+		}
 	}
 
 	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2) {
-		assert buffer1.isDirect();
-		assert buffer1.nioBuffer().isDirect();
-		assert buffer2.isDirect();
-		assert buffer2.nioBuffer().isDirect();
-		if (buffer1.readableBytes() == 0) {
-			return wrappedBuffer(buffer2);
-		} else if (buffer2.readableBytes() == 0) {
-			return wrappedBuffer(buffer1);
+		try {
+			assert buffer1.isDirect();
+			assert buffer1.nioBuffer().isDirect();
+			assert buffer2.isDirect();
+			assert buffer2.nioBuffer().isDirect();
+			if (buffer1.readableBytes() == 0) {
+				return directCompositeBuffer(alloc, buffer2.retain());
+			} else if (buffer2.readableBytes() == 0) {
+				return directCompositeBuffer(alloc, buffer1.retain());
+			}
+			ByteBuf result = alloc.directBuffer(buffer1.readableBytes() + buffer2.readableBytes());
+			try {
+				result.writeBytes(buffer1, buffer1.readerIndex(), buffer1.readableBytes());
+				result.writeBytes(buffer2, buffer2.readerIndex(), buffer2.readableBytes());
+				return result.retain();
+			} finally {
+				result.release();
+			}
+		} finally {
+			buffer1.release();
+			buffer2.release();
 		}
-		CompositeByteBuf compositeBuffer = alloc.compositeDirectBuffer(2);
-		compositeBuffer.addComponent(true, buffer1);
-		compositeBuffer.addComponent(true, buffer2);
-		compositeBuffer.consolidate();
-		assert compositeBuffer.isDirect();
-		assert compositeBuffer.nioBuffer().isDirect();
-		return compositeBuffer;
 	}
 
 	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2, ByteBuf buffer3) {
-		if (buffer1.readableBytes() == 0) {
-			return directCompositeBuffer(alloc, buffer2, buffer3);
-		} else if (buffer2.readableBytes() == 0) {
-			return directCompositeBuffer(alloc, buffer1, buffer3);
-		} else if (buffer3.readableBytes() == 0) {
-			return directCompositeBuffer(alloc, buffer1, buffer2);
+		try {
+			if (buffer1.readableBytes() == 0) {
+				return directCompositeBuffer(alloc, buffer2.retain(), buffer3.retain());
+			} else if (buffer2.readableBytes() == 0) {
+				return directCompositeBuffer(alloc, buffer1.retain(), buffer3.retain());
+			} else if (buffer3.readableBytes() == 0) {
+				return directCompositeBuffer(alloc, buffer1.retain(), buffer2.retain());
+			}
+			ByteBuf result = alloc.directBuffer(buffer1.readableBytes() + buffer2.readableBytes() + buffer3.readableBytes());
+			try {
+				result.writeBytes(buffer1, buffer1.readerIndex(), buffer1.readableBytes());
+				result.writeBytes(buffer2, buffer2.readerIndex(), buffer2.readableBytes());
+				result.writeBytes(buffer3, buffer3.readerIndex(), buffer3.readableBytes());
+				return result.retain();
+			} finally {
+				result.release();
+			}
+		} finally {
+			buffer1.release();
+			buffer2.release();
+			buffer3.release();
 		}
-		CompositeByteBuf compositeBuffer = alloc.compositeDirectBuffer(3);
-		compositeBuffer.addComponent(true, buffer1);
-		compositeBuffer.addComponent(true, buffer2);
-		compositeBuffer.addComponent(true, buffer3);
-		compositeBuffer.consolidate();
-		return compositeBuffer;
 	}
 
 	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf... buffers) {
-		switch (buffers.length) {
-			case 0:
-				return EMPTY_BUFFER;
-			case 1:
-				return directCompositeBuffer(alloc, buffers[0]);
-			case 2:
-				return directCompositeBuffer(alloc, buffers[0], buffers[1]);
-			case 3:
-				return directCompositeBuffer(alloc, buffers[0], buffers[1], buffers[2]);
-			default:
-				CompositeByteBuf compositeBuffer = alloc.compositeDirectBuffer(buffers.length);
-				compositeBuffer.addComponents(true, buffers);
-				compositeBuffer.consolidate();
-				return compositeBuffer;
+		try {
+			switch (buffers.length) {
+				case 0:
+					return EMPTY_BYTES;
+				case 1:
+					return directCompositeBuffer(alloc, buffers[0].retain().retain());
+				case 2:
+					return directCompositeBuffer(alloc, buffers[0].retain(), buffers[1].retain());
+				case 3:
+					return directCompositeBuffer(alloc, buffers[0].retain(), buffers[1].retain(), buffers[2].retain());
+				default:
+					int readableTotal = 0;
+					for (ByteBuf buffer : buffers) {
+						readableTotal += buffer.readableBytes();
+					}
+					ByteBuf result = alloc.directBuffer(readableTotal);
+					try {
+						for (ByteBuf buffer : buffers) {
+							result.writeBytes(buffer, buffer.readerIndex(), buffer.readableBytes());
+						}
+						return result.retain();
+					} finally {
+						result.release();
+					}
+			}
+		} finally {
+			for (ByteBuf buffer : buffers) {
+				buffer.release();
+			}
 		}
 	}
 }

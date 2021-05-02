@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.client;
+package it.cavallium.dbengine;
 
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -67,6 +67,7 @@ public class DbTestUtils {
 				}).subscribeOn(Schedulers.boundedElastic()))
 		);
 	}
+
 	public static Mono<? extends LLDictionary> tempDictionary(LLKeyValueDatabase database, UpdateMode updateMode) {
 		return tempDictionary(database, "testmap", updateMode);
 	}

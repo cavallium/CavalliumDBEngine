@@ -25,13 +25,18 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 	}
 
 	default Mono<Void> set(T value) {
-		return setAndGetChanged(value).then();
+		return this
+				.setAndGetChanged(value)
+				.then();
 	}
 
 	Mono<T> setAndGetPrevious(T value);
 
 	default Mono<Boolean> setAndGetChanged(T value) {
-		return setAndGetPrevious(value).map(oldValue -> !Objects.equals(oldValue, value)).defaultIfEmpty(value != null);
+		return this
+				.setAndGetPrevious(value)
+				.map(oldValue -> !Objects.equals(oldValue, value))
+				.switchIfEmpty(Mono.fromSupplier(() -> value != null));
 	}
 
 	Mono<Boolean> update(Function<@Nullable T, @Nullable T> updater, boolean existsAlmostCertainly);

@@ -2,23 +2,24 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.util.Arrays;
+import java.util.Collection;
 import java.util.Map;
 import java.util.Map.Entry;
+import lombok.Value;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuples;
+
 import static io.netty.buffer.Unpooled.*;
 
 // todo: implement optimized methods
@@ -34,6 +35,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected final int keySuffixLength;
 	protected final int keyExtLength;
 	protected final LLRange range;
+	private volatile boolean released;
 
 	private static ByteBuf incrementPrefix(ByteBufAllocator alloc, ByteBuf originalKey, int prefixLength) {
 		try {
@@ -115,9 +117,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				assert zeroSuffixAndExt.nioBuffer().isDirect();
 				zeroSuffixAndExt.writeZero(suffixLength + extLength);
 				ByteBuf result = LLUtils.directCompositeBuffer(alloc, prefixKey.retain(), zeroSuffixAndExt.retain());
-				assert result.isDirect();
-				assert result.nioBuffer().isDirect();
-				return result;
+				try {
+					assert result.isDirect();
+					assert result.nioBuffer().isDirect();
+					return result.retain();
+				} finally {
+					result.release();
+				}
 			} finally {
 				zeroSuffixAndExt.release();
 			}
@@ -169,13 +175,26 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
-		assert prefixKey.readableBytes() == prefixLength;
-		assert suffixKey.readableBytes() == suffixLength;
-		assert suffixLength > 0;
-		assert extLength >= 0;
-		var result = LLUtils.directCompositeBuffer(alloc, prefixKey, suffixKey, alloc.buffer(extLength, extLength).writeZero(extLength));
-		assert result.readableBytes() == prefixLength + suffixLength + extLength;
-		return result;
+		try {
+			assert prefixKey.readableBytes() == prefixLength;
+			assert suffixKey.readableBytes() == suffixLength;
+			assert suffixLength > 0;
+			assert extLength >= 0;
+			ByteBuf result = LLUtils.directCompositeBuffer(alloc,
+					prefixKey.retain(),
+					suffixKey.retain(),
+					alloc.directBuffer(extLength, extLength).writeZero(extLength)
+			);
+			try {
+				assert result.readableBytes() == prefixLength + suffixLength + extLength;
+				return result.retain();
+			} finally {
+				result.release();
+			}
+		} finally {
+			prefixKey.release();
+			suffixKey.release();
+		}
 	}
 
 	/**
@@ -213,7 +232,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			this.alloc = dictionary.getAllocator();
 			this.subStageGetter = subStageGetter;
 			this.keySuffixSerializer = keySuffixSerializer;
-			this.keyPrefix = wrappedUnmodifiableBuffer(prefixKey).retain();
+			assert prefixKey.refCnt() > 0;
+			this.keyPrefix = prefixKey.retain();
+			assert keyPrefix.refCnt() > 0;
 			this.keyPrefixLength = keyPrefix.readableBytes();
 			this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
 			this.keyExtLength = keyExtLength;
@@ -221,31 +242,35 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				throw new IllegalArgumentException("KeyPrefix must be a direct buffer");
 			}
 			assert keyPrefix.isDirect();
-			ByteBuf firstKey = wrappedUnmodifiableBuffer(firstRangeKey(alloc,
+			ByteBuf firstKey = firstRangeKey(alloc,
 					keyPrefix.retain(),
 					keyPrefixLength,
 					keySuffixLength,
 					keyExtLength
-			));
-			ByteBuf nextRangeKey = wrappedUnmodifiableBuffer(nextRangeKey(alloc,
-					keyPrefix.retain(),
-					keyPrefixLength,
-					keySuffixLength,
-					keyExtLength
-			));
+			);
 			try {
-				assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
-				assert firstKey.isDirect();
-				assert nextRangeKey.isDirect();
-				assert firstKey.nioBuffer().isDirect();
-				assert nextRangeKey.nioBuffer().isDirect();
-				this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.retain(), nextRangeKey.retain());
-				assert range == null || !range.hasMin() || range.getMin().isDirect();
-				assert range == null || !range.hasMax() || range.getMax().isDirect();
-				assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
+				ByteBuf nextRangeKey = nextRangeKey(alloc,
+						keyPrefix.retain(),
+						keyPrefixLength,
+						keySuffixLength,
+						keyExtLength
+				);
+				try {
+					assert keyPrefix.refCnt() > 0;
+					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
+					assert firstKey.isDirect();
+					assert nextRangeKey.isDirect();
+					assert firstKey.nioBuffer().isDirect();
+					assert nextRangeKey.nioBuffer().isDirect();
+					this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.retain(), nextRangeKey.retain());
+					assert range == null || !range.hasMin() || range.getMin().isDirect();
+					assert range == null || !range.hasMax() || range.getMax().isDirect();
+					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
+				} finally {
+					nextRangeKey.release();
+				}
 			} finally {
 				firstKey.release();
-				nextRangeKey.release();
 			}
 		} finally {
 			prefixKey.release();
@@ -271,7 +296,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	 * Keep only suffix and ext
 	 */
 	protected ByteBuf stripPrefix(ByteBuf key) {
-		return key.slice(this.keyPrefixLength, key.readableBytes() - this.keyPrefixLength);
+		try {
+			return key.retainedSlice(this.keyPrefixLength, key.readableBytes() - this.keyPrefixLength);
+		} finally {
+			key.release();
+		}
 	}
 
 	/**
@@ -292,8 +321,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		try {
 			assert suffixKey.readableBytes() == keySuffixLength;
 			ByteBuf result = LLUtils.directCompositeBuffer(alloc, keyPrefix.retain(), suffixKey.retain());
-			assert result.readableBytes() == keyPrefixLength + keySuffixLength;
-			return result;
+			assert keyPrefix.refCnt() > 0;
+			try {
+				assert result.readableBytes() == keyPrefixLength + keySuffixLength;
+				return result.retain();
+			} finally {
+				result.release();
+			}
 		} finally {
 			suffixKey.release();
 		}
@@ -323,6 +357,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 					keySuffixLength,
 					keyExtLength
 			);
+			assert keyPrefix.refCnt() > 0;
 			return LLRange.of(first, end);
 		} finally {
 			keySuffix.release();
@@ -331,65 +366,129 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast);
+		return Mono.defer(() -> dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast));
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain());
+		return Mono.defer(() -> dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain()));
 	}
 
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		ByteBuf keySuffixData = serializeSuffix(keySuffix);
-		Flux<ByteBuf> keyFlux;
-		if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED && this.subStageGetter.needsDebuggingKeyFlux()) {
-			keyFlux = this.dictionary.getRangeKeys(resolveSnapshot(snapshot), toExtRange(keySuffixData.retain()));
-		} else {
-			keyFlux = Flux.empty();
-		}
-		return this.subStageGetter
-				.subStage(dictionary, snapshot, toKeyWithoutExt(keySuffixData.retain()), keyFlux)
-				.doFinally(s -> keySuffixData.release());
+		return Mono
+				.using(
+						() -> serializeSuffix(keySuffix),
+						keySuffixData -> {
+							Flux<ByteBuf> keyFlux = Flux
+									.defer(() -> {
+										if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED
+												&& this.subStageGetter.needsDebuggingKeyFlux()) {
+											return Flux
+													.using(
+															() -> toExtRange(keySuffixData.retain()),
+															extRangeBuf -> this.dictionary
+																	.getRangeKeys(resolveSnapshot(snapshot), extRangeBuf.retain()),
+															LLRange::release
+													);
+										} else {
+											return Flux.empty();
+										}
+									});
+							return Mono
+									.using(
+											() -> toKeyWithoutExt(keySuffixData.retain()),
+											keyBuf -> this.subStageGetter
+													.subStage(dictionary, snapshot, keyBuf.retain(), keyFlux),
+											ReferenceCounted::release
+									)
+									.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+						},
+						ReferenceCounted::release
+				)
+				.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+	}
+
+	@Override
+	public Mono<UpdateMode> getUpdateMode() {
+		return dictionary.getUpdateMode();
+	}
+
+	@Value
+	private static class GroupBuffers {
+		ByteBuf groupKeyWithExt;
+		ByteBuf groupKeyWithoutExt;
+		ByteBuf groupSuffix;
 	}
 
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED && this.subStageGetter.needsDebuggingKeyFlux()) {
-			return dictionary
-					.getRangeKeysGrouped(resolveSnapshot(snapshot), range.retain(), keyPrefixLength + keySuffixLength)
-					.flatMapSequential(rangeKeys -> {
-						assert this.subStageGetter.isMultiKey() || rangeKeys.size() == 1;
-						ByteBuf groupKeyWithExt = rangeKeys.get(0).retain();
-						ByteBuf groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt.retain());
-						ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain());
-						assert subStageKeysConsistency(groupKeyWithExt.readableBytes());
-						return this.subStageGetter
-								.subStage(dictionary,
-										snapshot,
-										groupKeyWithoutExt,
-										Flux.fromIterable(rangeKeys)
-								)
-								.map(us -> Map.entry(this.deserializeSuffix(wrappedUnmodifiableBuffer(groupSuffix.retain())), us))
-								.doFinally(s -> {
-									groupSuffix.release();
-									groupKeyWithoutExt.release();
-									groupKeyWithExt.release();
-								});
+			return Flux
+					.defer(() -> dictionary
+							.getRangeKeysGrouped(resolveSnapshot(snapshot), range.retain(),
+									keyPrefixLength + keySuffixLength)
+					)
+					.flatMapSequential(rangeKeys -> Flux
+							.using(
+									() -> {
+										assert this.subStageGetter.isMultiKey() || rangeKeys.size() == 1;
+										ByteBuf groupKeyWithExt = rangeKeys.get(0).retain();
+										ByteBuf groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt.retain());
+										ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain());
+										return new GroupBuffers(groupKeyWithExt, groupKeyWithoutExt, groupSuffix);
+									},
+									buffers -> Mono
+											.fromCallable(() -> {
+												assert subStageKeysConsistency(buffers.groupKeyWithExt.readableBytes());
+												return null;
+											})
+											.then(this.subStageGetter
+													.subStage(dictionary,
+															snapshot,
+															buffers.groupKeyWithoutExt.retain(),
+															Flux
+																	.fromIterable(rangeKeys)
+																	.map(ByteBuf::retain)
+													)
+													.map(us -> Map.entry(this.deserializeSuffix(buffers.groupSuffix.retain()), us))
+											),
+									buffers -> {
+										buffers.groupSuffix.release();
+										buffers.groupKeyWithoutExt.release();
+										buffers.groupKeyWithExt.release();
+									}
+							)
+							.doFinally(s -> {
+								for (ByteBuf rangeKey : rangeKeys) {
+									rangeKey.release();
+								}
+							})
+					)
+					.doOnDiscard(Collection.class, discardedCollection -> {
+						//noinspection unchecked
+						var rangeKeys = (Collection<ByteBuf>) discardedCollection;
+						for (ByteBuf rangeKey : rangeKeys) {
+							rangeKey.release();
+						}
 					});
 		} else {
-			return dictionary
-					.getRangeKeyPrefixes(resolveSnapshot(snapshot), range, keyPrefixLength + keySuffixLength)
+			return Flux
+					.defer(() -> dictionary
+							.getRangeKeyPrefixes(resolveSnapshot(snapshot), range.retain(),
+									keyPrefixLength + keySuffixLength)
+					)
 					.flatMapSequential(groupKeyWithoutExt -> {
-						ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt);
+						ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain());
 						assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
 						return this.subStageGetter
 								.subStage(dictionary,
 										snapshot,
-										groupKeyWithoutExt,
+										groupKeyWithoutExt.retain(),
 										Flux.empty()
 								)
-								.map(us -> Map.entry(this.deserializeSuffix(wrappedUnmodifiableBuffer(groupSuffix)), us));
+								.map(us -> Map.entry(this.deserializeSuffix(groupSuffix.retain()), us))
+								.doFinally(s -> groupSuffix.release());
 					});
 		}
 	}
@@ -408,12 +507,22 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		return getAllStages(null)
-				.flatMapSequential(stage -> stage.getValue().get(null).map(val -> Map.entry(stage.getKey(), val)))
-				.concatWith(clear().then(entries
-						.flatMap(entry -> at(null, entry.getKey()).map(us -> Tuples.of(us, entry.getValue())))
-						.flatMap(tuple -> tuple.getT1().set(tuple.getT2()))
-						.then(Mono.empty())));
+		return this
+				.getAllValues(null)
+				.concatWith(this
+						.clear()
+						.then(entries
+								.flatMap(entry -> this
+										.at(null, entry.getKey())
+										.flatMap(us -> us
+												.set(entry.getValue())
+												.doFinally(s -> us.release())
+										)
+								)
+								.doOnDiscard(DatabaseStage.class, DatabaseStage::release)
+								.then(Mono.empty())
+						)
+				);
 	}
 
 	@Override
@@ -422,38 +531,47 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			return dictionary
 					.clear();
 		} else if (range.isSingle()) {
-			return dictionary
-					.remove(range.getSingle().retain(), LLDictionaryResultType.VOID)
+			return Mono
+					.defer(() -> dictionary
+							.remove(range.getSingle().retain(), LLDictionaryResultType.VOID)
+					)
 					.then();
 		} else {
-			return dictionary
-					.setRange(range.retain(), Flux.empty(), false)
-					.then();
+			return Mono
+				.defer(() -> dictionary
+					.setRange(range.retain(), Flux.empty())
+				);
 		}
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	protected T deserializeSuffix(ByteBuf keySuffix) {
-		assert suffixKeyConsistency(keySuffix.readableBytes());
-		return keySuffixSerializer.deserialize(keySuffix);
+		try {
+			assert suffixKeyConsistency(keySuffix.readableBytes());
+			var result = keySuffixSerializer.deserialize(keySuffix.retain());
+			assert keyPrefix.refCnt() > 0;
+			return result;
+		} finally {
+			keySuffix.release();
+		}
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
 	protected ByteBuf serializeSuffix(T keySuffix) {
 		ByteBuf suffixData = keySuffixSerializer.serialize(keySuffix);
 		assert suffixKeyConsistency(suffixData.readableBytes());
+		assert keyPrefix.refCnt() > 0;
 		return suffixData;
 	}
 
 	@Override
-	protected void finalize() throws Throwable {
-		super.finalize();
-		range.release();
-	}
-
-	@Override
 	public void release() {
-		this.range.release();
-		this.keyPrefix.release();
+		if (!released) {
+			released = true;
+			this.range.release();
+			this.keyPrefix.release();
+		} else {
+			throw new IllegalStateException("Already released");
+		}
 	}
 }

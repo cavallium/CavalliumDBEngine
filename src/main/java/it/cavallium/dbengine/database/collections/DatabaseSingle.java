@@ -20,12 +20,16 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	private final Serializer<U, ByteBuf> serializer;
 
 	public DatabaseSingle(LLDictionary dictionary, ByteBuf key, Serializer<U, ByteBuf> serializer) {
-		this.dictionary = dictionary;
-		if (!key.isDirect()) {
-			throw new IllegalArgumentException("Key must be direct");
+		try {
+			this.dictionary = dictionary;
+			if (!key.isDirect()) {
+				throw new IllegalArgumentException("Key must be direct");
+			}
+			this.key = key.retain();
+			this.serializer = serializer;
+		} finally {
+			key.release();
 		}
-		this.key = key;
-		this.serializer = serializer;
 	}
 
 	private LLSnapshot resolveSnapshot(@Nullable CompositeSnapshot snapshot) {

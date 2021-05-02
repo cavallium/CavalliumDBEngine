@@ -7,8 +7,10 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -49,52 +51,65 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
-					return getRocksIterator(readOptions, range, db, cfh);
+					return getRocksIterator(readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
-					var rocksIterator = tuple.getT1();
-					ObjectArrayList<T> values = new ObjectArrayList<>();
-					ByteBuf firstGroupKey = null;
-
+					range.retain();
 					try {
-						while (rocksIterator.isValid()) {
-							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-							try {
-								if (firstGroupKey == null) {
-									firstGroupKey = key.retainedSlice();
-								} else if (!ByteBufUtil.equals(firstGroupKey, 0, key, 0, prefixLength)) {
-									break;
-								}
-								ByteBuf value = readValues ? LLUtils.readDirectNioBuffer(alloc, rocksIterator::value) : EMPTY_BUFFER;
+						var rocksIterator = tuple.getT1();
+						ObjectArrayList<T> values = new ObjectArrayList<>();
+						ByteBuf firstGroupKey = null;
+
+						try {
+							while (rocksIterator.isValid()) {
+								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 								try {
-									rocksIterator.next();
-									T entry = getEntry(key.retain(), value.retain());
-									values.add(entry);
+									if (firstGroupKey == null) {
+										firstGroupKey = key.retain();
+									} else if (!ByteBufUtil.equals(firstGroupKey, firstGroupKey.readerIndex(), key, key.readerIndex(), prefixLength)) {
+										break;
+									}
+									ByteBuf value;
+									if (readValues) {
+										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+									} else {
+										value = DatabaseMapDictionaryDeep.EMPTY_BYTES;
+									}
+									try {
+										rocksIterator.next();
+										T entry = getEntry(key.retain(), value.retain());
+										values.add(entry);
+									} finally {
+										value.release();
+									}
 								} finally {
-									value.release();
+									key.release();
 								}
-							} finally {
-								key.release();
+							}
+						} finally {
+							if (firstGroupKey != null) {
+								firstGroupKey.release();
 							}
 						}
-					} finally {
-						if (firstGroupKey != null) {
-							firstGroupKey.release();
+						if (!values.isEmpty()) {
+							sink.next(values);
+						} else {
+							sink.complete();
 						}
+						return tuple;
+					} finally {
+						range.release();
 					}
-					if (!values.isEmpty()) {
-						sink.next(values);
-					} else {
-						sink.complete();
-					}
-					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
 					tuple.getT2().release();
 					tuple.getT3().release();
-					range.release();
 				});
 	}
 
 	public abstract T getEntry(ByteBuf key, ByteBuf value);
+
+	public void release() {
+		range.release();
+	}
 }

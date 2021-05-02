@@ -51,41 +51,48 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 					}
 					return LLLocalDictionary.getRocksIterator(readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
-					var rocksIterator = tuple.getT1();
-					ByteBuf firstGroupKey = null;
+					range.retain();
 					try {
-						while (rocksIterator.isValid()) {
-							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-							try {
-								if (firstGroupKey == null) {
-									firstGroupKey = key.retain();
-								} else if (!ByteBufUtil.equals(firstGroupKey, 0, key, 0, prefixLength)) {
-									break;
+						var rocksIterator = tuple.getT1();
+						ByteBuf firstGroupKey = null;
+						try {
+							while (rocksIterator.isValid()) {
+								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+								try {
+									if (firstGroupKey == null) {
+										firstGroupKey = key.retain();
+									} else if (!ByteBufUtil.equals(firstGroupKey, 0, key, 0, prefixLength)) {
+										break;
+									}
+									rocksIterator.next();
+								} finally {
+									key.release();
 								}
-								rocksIterator.next();
-							} finally {
-								key.release();
+							}
+							if (firstGroupKey != null) {
+								var groupKeyPrefix = firstGroupKey.slice(0, prefixLength);
+								sink.next(groupKeyPrefix.retain());
+							} else {
+								sink.complete();
+							}
+						} finally {
+							if (firstGroupKey != null) {
+								firstGroupKey.release();
 							}
 						}
-						if (firstGroupKey != null) {
-							var groupKeyPrefix = firstGroupKey.slice(0, prefixLength);
-							sink.next(groupKeyPrefix.retain());
-						} else {
-							sink.complete();
-						}
+						return tuple;
 					} finally {
-						if (firstGroupKey != null) {
-							firstGroupKey.release();
-						}
+						range.release();
 					}
-					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
 					tuple.getT2().release();
 					tuple.getT3().release();
-					range.release();
 				});
 	}
 
+	public void release() {
+		range.release();
+	}
 }

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -42,16 +43,21 @@ public class SubStageGetterHashSet<T, TH> implements
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf prefixKey,
 			Flux<ByteBuf> debuggingKeyFlux) {
-		Mono<DatabaseSetDictionaryHashed<T, TH>> result = Mono.just(DatabaseSetDictionaryHashed.tail(dictionary,
-				prefixKey,
+		Mono<DatabaseSetDictionaryHashed<T, TH>> result = Mono.fromSupplier(() -> DatabaseSetDictionaryHashed.tail(dictionary,
+				prefixKey.retain(),
 				keySerializer,
 				keyHashFunction,
 				keyHashSerializer
 		));
 		if (assertsEnabled) {
-			return checkKeyFluxConsistency(prefixKey, debuggingKeyFlux).then(result);
+			return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux)
+					.then(result)
+					.doFinally(s -> prefixKey.release());
 		} else {
-			return result;
+			return debuggingKeyFlux
+					.flatMap(key -> Mono.fromRunnable(key::release))
+					.then(result)
+					.doFinally(s -> prefixKey.release());
 		}
 	}
 
@@ -66,9 +72,14 @@ public class SubStageGetterHashSet<T, TH> implements
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
-		return keyFlux.doOnNext(key -> {
-			assert key.readableBytes() == prefixKey.readableBytes() + getKeyHashBinaryLength();
-		}).then();
+		return keyFlux
+				.doOnNext(key -> {
+					assert key.readableBytes() == prefixKey.readableBytes() + getKeyHashBinaryLength();
+				})
+				.flatMap(key -> Mono.fromRunnable(key::release))
+				.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
+				.then()
+				.doFinally(s -> prefixKey.release());
 	}
 
 	public int getKeyHashBinaryLength() {

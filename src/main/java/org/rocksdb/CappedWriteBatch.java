@@ -17,6 +17,10 @@ import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 @NotAtomic
 public class CappedWriteBatch extends WriteBatch {
 
+	/**
+	 * Default: true, Use false to debug problems with direct buffers
+	 */
+	private static final boolean USE_FAST_DIRECT_BUFFERS = false;
 	private final RocksDB db;
 	private final int cap;
 	private final WriteOptions writeOptions;
@@ -41,17 +45,20 @@ public class CappedWriteBatch extends WriteBatch {
 
 	private synchronized void flushIfNeeded(boolean force) throws RocksDBException {
 		if (this.count() >= (force ? 1 : cap)) {
-			db.write(writeOptions, this);
+			db.write(writeOptions, this.getWriteBatch());
 			this.clear();
 			releaseAllBuffers();
 		}
 	}
 
 	private synchronized void releaseAllBuffers() {
-		for (ByteBuf byteBuffer : buffersToRelease) {
-			byteBuffer.release();
+		if (!buffersToRelease.isEmpty()) {
+			for (ByteBuf byteBuffer : buffersToRelease) {
+				assert byteBuffer.refCnt() > 0;
+				byteBuffer.release();
+			}
+			buffersToRelease.clear();
 		}
-		buffersToRelease.clear();
 	}
 
 	@Override
@@ -84,33 +91,24 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	public synchronized void put(ColumnFamilyHandle columnFamilyHandle, ByteBuf key, ByteBuf value) throws RocksDBException {
-		buffersToRelease.add(key);
-		buffersToRelease.add(value);
-		ByteBuf keyDirectBuf = key.retain();
-		ByteBuffer keyNioBuffer = LLUtils.toDirectFast(keyDirectBuf.retain());
-		if (keyNioBuffer == null) {
-			keyDirectBuf.release();
-			keyDirectBuf = LLUtils.toDirectCopy(key.retain());
-			keyNioBuffer = keyDirectBuf.nioBuffer();
-		}
-		try {
+		if (USE_FAST_DIRECT_BUFFERS) {
+			buffersToRelease.add(key);
+			buffersToRelease.add(value);
+			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
 			assert keyNioBuffer.isDirect();
 
-			ByteBuf valueDirectBuf = value.retain();
-			ByteBuffer valueNioBuffer = LLUtils.toDirectFast(valueDirectBuf.retain());
-			if (valueNioBuffer == null) {
-				valueDirectBuf.release();
-				valueDirectBuf = LLUtils.toDirectCopy(value.retain());
-				valueNioBuffer = valueDirectBuf.nioBuffer();
-			}
+			ByteBuffer valueNioBuffer = LLUtils.toDirect(value);
+			assert valueNioBuffer.isDirect();
+			super.put(columnFamilyHandle, keyNioBuffer, valueNioBuffer);
+		} else {
 			try {
-				assert valueNioBuffer.isDirect();
-				super.put(columnFamilyHandle, keyNioBuffer, valueNioBuffer);
+				byte[] keyArray = LLUtils.toArray(key);
+				byte[] valueArray = LLUtils.toArray(value);
+				super.put(columnFamilyHandle, keyArray, valueArray);
 			} finally {
-				buffersToRelease.add(valueDirectBuf);
+				key.release();
+				value.release();
 			}
-		} finally {
-			buffersToRelease.add(keyDirectBuf);
 		}
 		flushIfNeeded(false);
 	}
@@ -154,15 +152,9 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, ByteBuf key) throws RocksDBException {
-		buffersToRelease.add(key);
-		ByteBuf keyDirectBuf = key.retain();
-		ByteBuffer keyNioBuffer = LLUtils.toDirectFast(keyDirectBuf.retain());
-		if (keyNioBuffer == null) {
-			keyDirectBuf.release();
-			keyDirectBuf = LLUtils.toDirectCopy(key.retain());
-			keyNioBuffer = keyDirectBuf.nioBuffer();
-		}
-		try {
+		if (USE_FAST_DIRECT_BUFFERS) {
+			buffersToRelease.add(key);
+			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
 			assert keyNioBuffer.isDirect();
 			removeDirect(nativeHandle_,
 					keyNioBuffer,
@@ -171,8 +163,12 @@ public class CappedWriteBatch extends WriteBatch {
 					columnFamilyHandle.nativeHandle_
 			);
 			keyNioBuffer.position(keyNioBuffer.limit());
-		} finally {
-			buffersToRelease.add(keyDirectBuf);
+		} else {
+			try {
+				super.delete(columnFamilyHandle, LLUtils.toArray(key));
+			} finally {
+				key.release();
+			}
 		}
 		flushIfNeeded(false);
 	}
@@ -248,11 +244,24 @@ public class CappedWriteBatch extends WriteBatch {
 
 	@Override
 	public synchronized WriteBatch getWriteBatch() {
-		return this;
+		return super.getWriteBatch();
 	}
 
 	public synchronized void writeToDbAndClose() throws RocksDBException {
-		flushIfNeeded(true);
+		try {
+			flushIfNeeded(true);
+			super.close();
+		} finally {
+			releaseAllBuffers();
+		}
+	}
+
+	public void flush() throws RocksDBException {
+		try {
+			flushIfNeeded(true);
+		} finally {
+			releaseAllBuffers();
+		}
 	}
 
 	@Override

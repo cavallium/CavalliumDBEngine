@@ -24,6 +24,8 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<ByteBuf> put(ByteBuf key, ByteBuf value, LLDictionaryResultType resultType);
 
+	Mono<UpdateMode> getUpdateMode();
+
 	Mono<Boolean> update(ByteBuf key, Function<@Nullable ByteBuf, @Nullable ByteBuf> updater, boolean existsAlmostCertainly);
 
 	default Mono<Boolean> update(ByteBuf key, Function<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
@@ -65,7 +67,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
 
-	Flux<Entry<ByteBuf, ByteBuf>> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues);
+	Mono<Void> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries);
 
 	default Mono<Void> replaceRange(LLRange range,
 			boolean canKeysChange,
@@ -76,8 +78,8 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 				return this
 						.setRange(range, this
 								.getRange(null, range, existsAlmostCertainly)
-								.flatMap(entriesReplacer), false)
-						.then();
+								.flatMap(entriesReplacer)
+						);
 			} else {
 				return this
 						.putMulti(this

@@ -6,11 +6,16 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
+import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSlice;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
+import org.rocksdb.RocksIterator;
 import org.rocksdb.RocksMutableObject;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuple3;
+
 import static io.netty.buffer.Unpooled.*;
 
 public abstract class LLLocalReactiveRocksIterator<T> {
@@ -46,24 +51,34 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 					}
 					return getRocksIterator(readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
-					var rocksIterator = tuple.getT1();
-					if (rocksIterator.isValid()) {
-						ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-						try {
-							ByteBuf value = readValues ? LLUtils.readDirectNioBuffer(alloc, rocksIterator::value) : EMPTY_BUFFER;
+					range.retain();
+					try {
+						var rocksIterator = tuple.getT1();
+						if (rocksIterator.isValid()) {
+							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 							try {
-								rocksIterator.next();
-								sink.next(getEntry(key.retain(), value.retain()));
+								ByteBuf value;
+								if (readValues) {
+									value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+								} else {
+									value = DatabaseMapDictionaryDeep.EMPTY_BYTES;
+								}
+								try {
+									rocksIterator.next();
+									sink.next(getEntry(key.retain(), value.retain()));
+								} finally {
+									value.release();
+								}
 							} finally {
-								value.release();
+								key.release();
 							}
-						} finally {
-							key.release();
+						} else {
+							sink.complete();
 						}
-					} else {
-						sink.complete();
+						return tuple;
+					} finally {
+						range.release();
 					}
-					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
@@ -73,4 +88,8 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	}
 
 	public abstract T getEntry(ByteBuf key, ByteBuf value);
+
+	public void release() {
+		range.release();
+	}
 }

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -32,16 +33,17 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf prefixKey,
 			Flux<ByteBuf> debuggingKeyFlux) {
-		try {
-			Mono<DatabaseSetDictionary<T>> result = Mono
-					.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey.retain(), keySerializer));
-			if (assertsEnabled) {
-				return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux).then(result);
-			} else {
-				return result;
-			}
-		} finally {
-			prefixKey.release();
+		Mono<DatabaseSetDictionary<T>> result = Mono
+				.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey.retain(), keySerializer));
+		if (assertsEnabled) {
+			return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux)
+					.then(result)
+					.doFinally(s -> prefixKey.release());
+		} else {
+			return debuggingKeyFlux
+					.flatMap(key -> Mono.fromRunnable(key::release))
+					.then(result)
+					.doFinally(s -> prefixKey.release());
 		}
 	}
 
@@ -56,9 +58,14 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
-		return keyFlux.doOnNext(key -> {
-			assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
-		}).doFinally(s -> prefixKey.release()).then();
+		return keyFlux
+				.doOnNext(key -> {
+					assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+				})
+				.flatMap(key -> Mono.fromRunnable(key::release))
+				.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
+				.then()
+				.doFinally(s -> prefixKey.release());
 	}
 
 	public int getKeyBinaryLength() {

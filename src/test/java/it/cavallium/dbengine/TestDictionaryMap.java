@@ -1,18 +1,14 @@
-package it.cavallium.dbengine.client;
+package it.cavallium.dbengine;
 
-import static it.cavallium.dbengine.client.DbTestUtils.*;
+import static it.cavallium.dbengine.DbTestUtils.*;
 
-import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentSkipListSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -21,38 +17,37 @@ import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import reactor.test.StepVerifier.FirstStep;
 import reactor.test.StepVerifier.Step;
 import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
-import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
 
 public class TestDictionaryMap {
 
-	private static Stream<Arguments> provideArgumentsCreate() {
-		return Arrays.stream(UpdateMode.values()).map(Arguments::of);
+	private static boolean isTestBadKeysEnabled() {
+		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
 	}
 
-	@ParameterizedTest
-	@MethodSource("provideArgumentsCreate")
-	public void testCreate(UpdateMode updateMode) {
-		StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
-						.flatMap(LLDictionary::clear)
-						.then()
-				))
-				.verifyComplete();
-	}
+	private static final String BIG_STRING
+			= "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
+			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
 	private static Stream<Arguments> provideArgumentsPut() {
 		var goodKeys = Set.of("12345", "zebra");
-		var badKeys = Set.of("", "a", "aaaa", "aaaaaa");
+		Set<String> badKeys;
+		if (isTestBadKeysEnabled()) {
+			badKeys = Set.of("", "a", "aaaa", "aaaaaa");
+		} else {
+			badKeys = Set.of();
+		}
 		Set<Tuple2<String, Boolean>> keys = Stream.concat(
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toSet());
-		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", "bzzazazqzeztzgzzhz!");
+		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
 
 		return keys
 				.stream()
@@ -180,6 +175,9 @@ public class TestDictionaryMap {
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testUpdate(UpdateMode updateMode, String key, String value, boolean shouldFail) {
+		if (updateMode == UpdateMode.DISALLOW && !isTestBadKeysEnabled()) {
+			return;
+		}
 		var stpVer = StepVerifier
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, 5))
@@ -219,6 +217,9 @@ public class TestDictionaryMap {
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testUpdateGet(UpdateMode updateMode, String key, String value, boolean shouldFail) {
+		if (updateMode == UpdateMode.DISALLOW && !isTestBadKeysEnabled()) {
+			return;
+		}
 		var stpVer = StepVerifier
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, 5))
@@ -257,17 +258,17 @@ public class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
-	public void testPutAndGetStatus(UpdateMode updateMode, String key, String value, boolean shouldFail) {
+	public void testPutAndGetChanged(UpdateMode updateMode, String key, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, 5))
 						.flatMapMany(map -> Flux
 								.concat(
-										map.putValueAndGetStatus(key, "error?").single(),
-										map.putValueAndGetStatus(key, value).single(),
-										map.putValueAndGetStatus(key, value).single(),
+										map.putValueAndGetChanged(key, "error?").single(),
+										map.putValueAndGetChanged(key, value).single(),
+										map.putValueAndGetChanged(key, value).single(),
 										map.remove(key),
-										map.putValueAndGetStatus(key, "error?").single()
+										map.putValueAndGetChanged(key, "error?").single()
 								)
 								.doFinally(s -> map.release())
 						)
@@ -275,18 +276,23 @@ public class TestDictionaryMap {
 		if (shouldFail) {
 			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(false, true, true, false).verifyComplete();
+			stpVer.expectNext(true, true, false, true).verifyComplete();
 		}
 	}
 
 	private static Stream<Arguments> provideArgumentsPutMulti() {
 		var goodKeys = Set.of(Set.of("12345", "67890"), Set.of("zebra"), Set.<String>of());
-		var badKeys = Set.of(Set.of("", "12345"), Set.of("12345", "a"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
+		Set<Set<String>> badKeys;
+		if (isTestBadKeysEnabled()) {
+			badKeys = Set.of(Set.of("", "12345"), Set.of("12345", "a"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
+		} else {
+			badKeys = Set.of();
+		}
 		Set<Tuple2<Set<String>, Boolean>> keys = Stream.concat(
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toSet());
-		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", "bzzazazqzeztzgzzhz!");
+		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
 
 		return keys
 				.stream()
@@ -406,7 +412,7 @@ public class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetAndGetStatus(UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testSetAndGetChanged(UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Boolean> stpVer = StepVerifier
 				.create(tempDb(db -> tempDictionary(db, updateMode)

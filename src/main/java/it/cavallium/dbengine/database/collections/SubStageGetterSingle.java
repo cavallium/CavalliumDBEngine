@@ -36,13 +36,20 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 				.singleOrEmpty()
 				.flatMap(key -> Mono
 						.<DatabaseStageEntry<T>>fromCallable(() -> {
-							if (!LLUtils.equals(keyPrefix, key)) {
-								throw new IndexOutOfBoundsException("Found more than one element!");
+							try {
+								if (!LLUtils.equals(keyPrefix, key)) {
+									throw new IndexOutOfBoundsException("Found more than one element!");
+								}
+							} finally {
+								key.release();
 							}
 							return null;
 						})
 				)
-				.then(Mono.fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix, serializer)));
+				.then(Mono
+						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
+				)
+				.doFinally(s -> keyPrefix.release());
 	}
 
 	@Override

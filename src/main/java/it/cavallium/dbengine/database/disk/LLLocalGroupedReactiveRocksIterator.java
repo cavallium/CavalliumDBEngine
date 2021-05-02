@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
@@ -51,14 +49,13 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
-					return getRocksIterator(readOptions, range.retain(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
 					range.retain();
 					try {
 						var rocksIterator = tuple.getT1();
 						ObjectArrayList<T> values = new ObjectArrayList<>();
 						ByteBuf firstGroupKey = null;
-
 						try {
 							while (rocksIterator.isValid()) {
 								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);

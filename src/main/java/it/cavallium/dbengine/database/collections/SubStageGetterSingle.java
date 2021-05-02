@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.Arrays;
+import java.util.List;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -31,21 +32,22 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf keyPrefix,
-			Flux<ByteBuf> debuggingKeyFlux) {
-		return debuggingKeyFlux
-				.singleOrEmpty()
-				.flatMap(key -> Mono
-						.<DatabaseStageEntry<T>>fromCallable(() -> {
-							try {
-								if (!LLUtils.equals(keyPrefix, key)) {
-									throw new IndexOutOfBoundsException("Found more than one element!");
-								}
-							} finally {
-								key.release();
+			List<ByteBuf> debuggingKeys) {
+		return Mono
+				.fromCallable(() -> {
+					try {
+						for (ByteBuf key : debuggingKeys) {
+							if (!LLUtils.equals(keyPrefix, key)) {
+								throw new IndexOutOfBoundsException("Found more than one element!");
 							}
-							return null;
-						})
-				)
+						}
+						return null;
+					} finally {
+						for (ByteBuf key : debuggingKeys) {
+							key.release();
+						}
+					}
+				})
 				.then(Mono
 						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
 				)

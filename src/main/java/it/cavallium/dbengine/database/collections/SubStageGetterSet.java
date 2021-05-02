@@ -6,6 +6,7 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import java.util.List;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -32,19 +33,31 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf prefixKey,
-			Flux<ByteBuf> debuggingKeyFlux) {
-		Mono<DatabaseSetDictionary<T>> result = Mono
-				.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey.retain(), keySerializer));
-		if (assertsEnabled) {
-			return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux)
-					.then(result)
-					.doFinally(s -> prefixKey.release());
-		} else {
-			return debuggingKeyFlux
-					.flatMap(key -> Mono.fromRunnable(key::release))
-					.then(result)
-					.doFinally(s -> prefixKey.release());
-		}
+			List<ByteBuf> debuggingKeys) {
+		return Mono
+				.defer(() -> {
+					if (assertsEnabled) {
+						return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
+					} else {
+						return Mono
+								.fromCallable(() -> {
+									for (ByteBuf key : debuggingKeys) {
+										key.release();
+									}
+									return null;
+								});
+					}
+				})
+				.then(Mono
+						.fromSupplier(() -> DatabaseSetDictionary
+								.tail(
+										dictionary,
+										prefixKey.retain(),
+										keySerializer
+								)
+						)
+				)
+				.doFinally(s -> prefixKey.release());
 	}
 
 	@Override
@@ -57,15 +70,21 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 		return assertsEnabled;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
-		return keyFlux
-				.doOnNext(key -> {
-					assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
-				})
-				.flatMap(key -> Mono.fromRunnable(key::release))
-				.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
-				.then()
-				.doFinally(s -> prefixKey.release());
+	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {
+		return Mono
+				.fromCallable(() -> {
+					try {
+						for (ByteBuf key : keys) {
+							assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+						}
+					} finally {
+						prefixKey.release();
+						for (ByteBuf key : keys) {
+							key.release();
+						}
+					}
+					return null;
+				});
 	}
 
 	public int getKeyBinaryLength() {

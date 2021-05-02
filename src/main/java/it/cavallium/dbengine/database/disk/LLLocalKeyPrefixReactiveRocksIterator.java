@@ -61,7 +61,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 								try {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.retain();
-									} else if (!ByteBufUtil.equals(firstGroupKey, 0, key, 0, prefixLength)) {
+									} else if (!ByteBufUtil.equals(firstGroupKey, firstGroupKey.readerIndex(), key, key.readerIndex(), prefixLength)) {
 										break;
 									}
 									rocksIterator.next();

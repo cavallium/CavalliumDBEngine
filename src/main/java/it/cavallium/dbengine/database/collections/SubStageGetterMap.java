@@ -6,6 +6,7 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import java.util.List;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -35,28 +36,31 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	public Mono<DatabaseMapDictionary<T, U>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf prefixKey,
-			Flux<ByteBuf> debuggingKeyFlux) {
+			List<ByteBuf> debuggingKeys) {
 		return Mono
-				.using(
-						() -> true,
-						b -> Mono
-								.fromSupplier(() -> DatabaseMapDictionary.tail(dictionary, prefixKey.retain(), keySerializer, valueSerializer))
-								.doOnDiscard(DatabaseMapDictionary.class, DatabaseMapDictionary::release)
-								.transformDeferred(result -> {
-									if (assertsEnabled) {
-										return this
-												.checkKeyFluxConsistency(prefixKey.retain(), debuggingKeyFlux)
-												.then(result);
-									} else {
-										return debuggingKeyFlux
-												.flatMap(buf -> Mono.fromRunnable(buf::release))
-												.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
-												.then(result);
+				.defer(() -> {
+					if (assertsEnabled) {
+						return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
+					} else {
+						return Mono
+								.fromCallable(() -> {
+									for (ByteBuf key : debuggingKeys) {
+										key.release();
 									}
-								})
-								.doOnDiscard(DatabaseMapDictionary.class, DatabaseMapDictionary::release),
-						b -> prefixKey.release()
-				);
+									return null;
+								});
+					}
+				})
+				.then(Mono
+						.fromSupplier(() -> DatabaseMapDictionary
+								.tail(dictionary,
+										prefixKey.retain(),
+										keySerializer,
+										valueSerializer
+								)
+						)
+				)
+				.doFinally(s -> prefixKey.release());
 	}
 
 	@Override
@@ -69,15 +73,21 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 		return assertsEnabled;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, Flux<ByteBuf> keyFlux) {
-		return keyFlux
-				.doOnNext(key -> {
-					assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
-				})
-				.flatMap(key -> Mono.fromRunnable(key::release))
-				.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
-				.then()
-				.doFinally(s -> prefixKey.release());
+	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {
+		return Mono
+				.fromCallable(() -> {
+					try {
+						for (ByteBuf key : keys) {
+							assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+						}
+					} finally {
+						prefixKey.release();
+						for (ByteBuf key : keys) {
+							key.release();
+						}
+					}
+					return null;
+				});
 	}
 
 	public int getKeyBinaryLength() {

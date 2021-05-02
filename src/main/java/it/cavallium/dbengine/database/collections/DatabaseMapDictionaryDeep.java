@@ -13,8 +13,10 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 import lombok.Value;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -380,7 +382,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				.using(
 						() -> serializeSuffix(keySuffix),
 						keySuffixData -> {
-							Flux<ByteBuf> keyFlux = Flux
+							Mono<List<ByteBuf>> debuggingKeysMono = Mono
 									.defer(() -> {
 										if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED
 												&& this.subStageGetter.needsDebuggingKeyFlux()) {
@@ -390,16 +392,19 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 															extRangeBuf -> this.dictionary
 																	.getRangeKeys(resolveSnapshot(snapshot), extRangeBuf.retain()),
 															LLRange::release
-													);
+													)
+													.collectList();
 										} else {
-											return Flux.empty();
+											return Mono.just(List.of());
 										}
 									});
 							return Mono
 									.using(
 											() -> toKeyWithoutExt(keySuffixData.retain()),
-											keyBuf -> this.subStageGetter
-													.subStage(dictionary, snapshot, keyBuf.retain(), keyFlux),
+											keyBuf -> debuggingKeysMono
+													.flatMap(debuggingKeysList -> this.subStageGetter
+															.subStage(dictionary, snapshot, keyBuf.retain(), debuggingKeysList)
+													),
 											ReferenceCounted::release
 									)
 									.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
@@ -447,9 +452,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 													.subStage(dictionary,
 															snapshot,
 															buffers.groupKeyWithoutExt.retain(),
-															Flux
-																	.fromIterable(rangeKeys)
-																	.map(ByteBuf::retain)
+															rangeKeys.stream().map(ByteBuf::retain).collect(Collectors.toList())
 													)
 													.map(us -> Map.entry(this.deserializeSuffix(buffers.groupSuffix.retain()), us))
 											),
@@ -485,7 +488,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 								.subStage(dictionary,
 										snapshot,
 										groupKeyWithoutExt.retain(),
-										Flux.empty()
+										List.of()
 								)
 								.map(us -> Map.entry(this.deserializeSuffix(groupSuffix.retain()), us))
 								.doFinally(s -> groupSuffix.release());

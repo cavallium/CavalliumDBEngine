@@ -89,6 +89,10 @@ public class LLLocalDictionary implements LLDictionary {
 	private static final byte[] NO_DATA = new byte[0];
 
 	private static final boolean ASSERTIONS_ENABLED;
+	/**
+	 * Default: true
+	 */
+	private static final boolean USE_DIRECT_BUFFER_BOUNDS = true;
 
 	static {
 		boolean assertionsEnabled = false;
@@ -484,9 +488,9 @@ public class LLLocalDictionary implements LLDictionary {
 								@Nullable ByteBuf newData;
 								ByteBuf prevDataToSendToUpdater = prevData == null ? null : prevData.retainedSlice();
 								try {
-									newData = updater.apply(
-											prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.retain());
-									assert prevDataToSendToUpdater == null || prevDataToSendToUpdater.readerIndex() == 0
+									newData = updater.apply(prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.retain());
+									assert prevDataToSendToUpdater == null
+											|| prevDataToSendToUpdater.readerIndex() == 0
 											|| !prevDataToSendToUpdater.isReadable();
 								} finally {
 									if (prevDataToSendToUpdater != null) {
@@ -928,23 +932,19 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
 		return Flux
 				.using(
-						() -> true,
-						b -> Flux
-								.using(
-										() -> new LLLocalGroupedKeyReactiveRocksIterator(db,
-												alloc,
-												cfh,
-												prefixLength,
-												range.retain(),
-												resolveSnapshot(snapshot),
-												"getRangeKeysGrouped"
-										),
-										LLLocalGroupedReactiveRocksIterator::flux,
-										LLLocalGroupedReactiveRocksIterator::release
-								)
-								.subscribeOn(dbScheduler),
-						b -> range.release()
-				);
+						() -> new LLLocalGroupedKeyReactiveRocksIterator(db,
+								alloc,
+								cfh,
+								prefixLength,
+								range.retain(),
+								resolveSnapshot(snapshot),
+								"getRangeKeysGrouped"
+						),
+						LLLocalGroupedReactiveRocksIterator::flux,
+						LLLocalGroupedReactiveRocksIterator::release
+				)
+				.subscribeOn(dbScheduler)
+				.doFinally(s -> range.release());
 	}
 
 	@Override
@@ -1173,10 +1173,18 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private static ReleasableSlice setIterateBound(ReadOptions readOpts, IterateBound boundType, ByteBuf buffer) {
 		try {
-			ByteBuffer nioBuffer = LLUtils.toDirect(buffer);
 			AbstractSlice<?> slice;
-			assert nioBuffer.isDirect();
-			slice = new DirectSlice(nioBuffer);
+			ByteBuffer nioBuffer;
+			if (LLLocalDictionary.USE_DIRECT_BUFFER_BOUNDS) {
+				nioBuffer = LLUtils.toDirect(buffer);
+				assert nioBuffer.isDirect();
+				slice = new DirectSlice(nioBuffer, buffer.readableBytes());
+				assert slice.size() == buffer.readableBytes();
+				assert slice.compare(new Slice(LLUtils.toArray(buffer))) == 0;
+			} else {
+				nioBuffer = null;
+				slice = new Slice(LLUtils.toArray(buffer));
+			}
 			if (boundType == IterateBound.LOWER) {
 				readOpts.setIterateLowerBound(slice);
 			} else {
@@ -1559,18 +1567,18 @@ public class LLLocalDictionary implements LLDictionary {
 			ReleasableSlice sliceMin;
 			ReleasableSlice sliceMax;
 			if (range.hasMin()) {
-				sliceMin = setIterateBound(readOptions, IterateBound.LOWER, range.getMin().retainedSlice());
+				sliceMin = setIterateBound(readOptions, IterateBound.LOWER, range.getMin().retain());
 			} else {
 				sliceMin = emptyReleasableSlice();
 			}
 			if (range.hasMax()) {
-				sliceMax = setIterateBound(readOptions, IterateBound.UPPER, range.getMax().retainedSlice());
+				sliceMax = setIterateBound(readOptions, IterateBound.UPPER, range.getMax().retain());
 			} else {
 				sliceMax = emptyReleasableSlice();
 			}
 			var rocksIterator = db.newIterator(cfh, readOptions);
 			if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
-				rocksIterSeekTo(rocksIterator, range.getMin().retainedSlice());
+				rocksIterSeekTo(rocksIterator, range.getMin().retain());
 			} else {
 				rocksIterator.seekToFirst();
 			}

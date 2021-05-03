@@ -325,17 +325,9 @@ public class LLUtils {
 	}
 
 	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer) {
-		try {
-			ByteBuf result = alloc.directBuffer(buffer.readableBytes());
-			try {
-				result.writeBytes(buffer, buffer.readerIndex(), buffer.readableBytes());
-				return result.retain();
-			} finally {
-				result.release();
-			}
-		} finally {
-			buffer.release();
-		}
+		assert buffer.isDirect();
+		assert buffer.nioBuffer().isDirect();
+		return buffer;
 	}
 
 	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2) {
@@ -349,11 +341,11 @@ public class LLUtils {
 			} else if (buffer2.readableBytes() == 0) {
 				return directCompositeBuffer(alloc, buffer1.retain());
 			}
-			ByteBuf result = alloc.directBuffer(buffer1.readableBytes() + buffer2.readableBytes());
+			CompositeByteBuf result = alloc.compositeDirectBuffer(2);
 			try {
-				result.writeBytes(buffer1, buffer1.readerIndex(), buffer1.readableBytes());
-				result.writeBytes(buffer2, buffer2.readerIndex(), buffer2.readableBytes());
-				return result.retain();
+				result.addComponent(true, buffer1.retain());
+				result.addComponent(true, buffer2.retain());
+				return result.consolidate().retain();
 			} finally {
 				result.release();
 			}
@@ -372,12 +364,12 @@ public class LLUtils {
 			} else if (buffer3.readableBytes() == 0) {
 				return directCompositeBuffer(alloc, buffer1.retain(), buffer2.retain());
 			}
-			ByteBuf result = alloc.directBuffer(buffer1.readableBytes() + buffer2.readableBytes() + buffer3.readableBytes());
+			CompositeByteBuf result = alloc.compositeDirectBuffer(3);
 			try {
-				result.writeBytes(buffer1, buffer1.readerIndex(), buffer1.readableBytes());
-				result.writeBytes(buffer2, buffer2.readerIndex(), buffer2.readableBytes());
-				result.writeBytes(buffer3, buffer3.readerIndex(), buffer3.readableBytes());
-				return result.retain();
+				result.addComponent(true, buffer1.retain());
+				result.addComponent(true, buffer2.retain());
+				result.addComponent(true, buffer3.retain());
+				return result.consolidate().retain();
 			} finally {
 				result.release();
 			}
@@ -400,16 +392,12 @@ public class LLUtils {
 				case 3:
 					return directCompositeBuffer(alloc, buffers[0].retain(), buffers[1].retain(), buffers[2].retain());
 				default:
-					int readableTotal = 0;
-					for (ByteBuf buffer : buffers) {
-						readableTotal += buffer.readableBytes();
-					}
-					ByteBuf result = alloc.directBuffer(readableTotal);
+					CompositeByteBuf result = alloc.compositeDirectBuffer(buffers.length);
 					try {
 						for (ByteBuf buffer : buffers) {
-							result.writeBytes(buffer, buffer.readerIndex(), buffer.readableBytes());
+							result.addComponent(true, buffer.retain());
 						}
-						return result.retain();
+						return result.consolidate().retain();
 					} finally {
 						result.release();
 					}

@@ -41,10 +41,10 @@ public class TestDictionaryMapDeep {
 			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
 	private static Stream<Arguments> provideArgumentsSet() {
-		var goodKeys = Set.of("12345", "zebra");
+		var goodKeys = Set.of("12345");
 		Set<String> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of("", "a", "aaaa", "aaaaaa");
+			badKeys = Set.of("", "aaaa", "aaaaaa");
 		} else {
 			badKeys = Set.of();
 		}
@@ -54,7 +54,6 @@ public class TestDictionaryMapDeep {
 		).collect(Collectors.toSet());
 		var values = Set.of(
 				Map.of("123456", "a", "234567", ""),
-				Map.of("123456", "", "234567", "bb"),
 				Map.of("123456", "\0", "234567", "\0\0", "345678", BIG_STRING)
 		);
 
@@ -642,10 +641,10 @@ public class TestDictionaryMapDeep {
 	}
 
 	private static Stream<Arguments> provideArgumentsSetMulti() {
-		var goodKeys = Set.of(Set.of("12345", "67890"), Set.of("zebra"), Set.<String>of());
+		var goodKeys = Set.of(Set.of("12345", "67890"), Set.<String>of());
 		Set<Set<String>> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of(Set.of("", "12345"), Set.of("12345", "a"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
+			badKeys = Set.of(Set.of("", "12345"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
 		} else {
 			badKeys = Set.of();
 		}
@@ -655,7 +654,6 @@ public class TestDictionaryMapDeep {
 		).collect(Collectors.toSet());
 		var values = Set.of(
 				Map.of("123456", "a", "234567", ""),
-				Map.of("123456", "", "234567", "bb"),
 				Map.of("123456", "\0", "234567", "\0\0", "345678", BIG_STRING)
 		);
 

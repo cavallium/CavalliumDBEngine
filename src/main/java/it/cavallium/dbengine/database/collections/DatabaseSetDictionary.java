@@ -22,7 +22,7 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionaryDeep<T, Nothi
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer) {
-		return new DatabaseSetDictionary<>(dictionary, EMPTY_BYTES, keySerializer);
+		return new DatabaseSetDictionary<>(dictionary, dictionary.getAllocator().buffer(0), keySerializer);
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,

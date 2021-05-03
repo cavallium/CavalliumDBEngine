@@ -3,6 +3,7 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.client.CompositeDatabasePartLocation.CompositeDatabasePartType.KV_DATABASE;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.client.CompositeDatabasePartLocation;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -28,6 +29,7 @@ import java.util.concurrent.CompletionException;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Test;
+import org.restlet.engine.util.Pool;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -130,7 +132,7 @@ public class OldDatabaseTests {
 					return null;
 				})
 				.subscribeOn(Schedulers.boundedElastic())
-				.then(new LLLocalDatabaseConnection(wrkspcPath, true).connect())
+				.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath, true).connect())
 				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), false, true));
 	}
 

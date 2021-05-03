@@ -36,10 +36,10 @@ public class TestDictionaryMap {
 			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
 	private static Stream<Arguments> provideArgumentsPut() {
-		var goodKeys = Set.of("12345", "zebra");
+		var goodKeys = Set.of("12345");
 		Set<String> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of("", "a", "aaaa", "aaaaaa");
+			badKeys = Set.of("", "aaaa", "aaaaaa");
 		} else {
 			badKeys = Set.of();
 		}
@@ -47,7 +47,7 @@ public class TestDictionaryMap {
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toSet());
-		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
+		var values = Set.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()
@@ -290,10 +290,10 @@ public class TestDictionaryMap {
 	}
 
 	private static Stream<Arguments> provideArgumentsPutMulti() {
-		var goodKeys = Set.of(Set.of("12345", "67890"), Set.of("zebra"), Set.<String>of());
+		var goodKeys = Set.of(Set.of("12345", "67890"), Set.<String>of());
 		Set<Set<String>> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of(Set.of("", "12345"), Set.of("12345", "a"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
+			badKeys = Set.of(Set.of("", "12345"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
 		} else {
 			badKeys = Set.of();
 		}
@@ -301,7 +301,7 @@ public class TestDictionaryMap {
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toSet());
-		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
+		var values = Set.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()

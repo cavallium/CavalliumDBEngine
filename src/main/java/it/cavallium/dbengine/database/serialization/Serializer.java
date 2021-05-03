@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.serialization;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
 import java.nio.charset.StandardCharsets;
@@ -32,32 +33,30 @@ public interface Serializer<A, B> {
 		}
 	};
 
-	Serializer<String, ByteBuf> UTF8_SERIALIZER = new Serializer<>() {
-		@Override
-		public @NotNull String deserialize(@NotNull ByteBuf serialized) {
-			try {
-				var result = serialized.toString(StandardCharsets.UTF_8);
-				serialized.readerIndex(serialized.writerIndex());
-				return result;
-			} finally {
-				serialized.release();
-			}
-		}
-
-		@Override
-		public @NotNull ByteBuf serialize(@NotNull String deserialized) {
-			// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
-			ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(ByteBufUtil.utf8MaxBytes(deserialized));
-			ByteBufUtil.writeUtf8(buf, deserialized);
-			return buf;
-		}
-	};
-
 	static Serializer<ByteBuf, ByteBuf> noop() {
 		return NOOP_SERIALIZER;
 	}
 
-	static Serializer<String, ByteBuf> utf8() {
-		return UTF8_SERIALIZER;
+	static Serializer<String, ByteBuf> utf8(ByteBufAllocator allocator) {
+		return new Serializer<>() {
+			@Override
+			public @NotNull String deserialize(@NotNull ByteBuf serialized) {
+				try {
+					var result = serialized.toString(StandardCharsets.UTF_8);
+					serialized.readerIndex(serialized.writerIndex());
+					return result;
+				} finally {
+					serialized.release();
+				}
+			}
+
+			@Override
+			public @NotNull ByteBuf serialize(@NotNull String deserialized) {
+				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
+				ByteBuf buf = allocator.buffer(ByteBufUtil.utf8MaxBytes(deserialized));
+				ByteBufUtil.writeUtf8(buf, deserialized);
+				return buf;
+			}
+		};
 	}
 }

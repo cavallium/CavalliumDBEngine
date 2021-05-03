@@ -22,12 +22,9 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import static io.netty.buffer.Unpooled.*;
-
 // todo: implement optimized methods
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
 
-	public static final ByteBuf EMPTY_BYTES = unreleasableBuffer(directBuffer(0, 0));
 	protected final LLDictionary dictionary;
 	private final ByteBufAllocator alloc;
 	protected final SubStageGetter<U, US> subStageGetter;
@@ -42,7 +39,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	private static ByteBuf incrementPrefix(ByteBufAllocator alloc, ByteBuf originalKey, int prefixLength) {
 		try {
 			assert originalKey.readableBytes() >= prefixLength;
-			ByteBuf copiedBuf = alloc.directBuffer(originalKey.writerIndex(), originalKey.writerIndex() + 1);
+			ByteBuf copiedBuf = alloc.buffer(originalKey.writerIndex(), originalKey.writerIndex() + 1);
 			try {
 				boolean overflowed = true;
 				final int ff = 0xFF;
@@ -109,19 +106,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			assert prefixKey.readableBytes() == prefixLength;
 			assert suffixLength > 0;
 			assert extLength >= 0;
-			if (!prefixKey.isDirect()) {
-				throw new IllegalArgumentException("Prefix key must be a direct buffer");
-			}
-			assert prefixKey.nioBuffer().isDirect();
-			ByteBuf zeroSuffixAndExt = alloc.directBuffer(suffixLength + extLength, suffixLength + extLength);
+			ByteBuf zeroSuffixAndExt = alloc.buffer(suffixLength + extLength, suffixLength + extLength);
 			try {
-				assert zeroSuffixAndExt.isDirect();
-				assert zeroSuffixAndExt.nioBuffer().isDirect();
 				zeroSuffixAndExt.writeZero(suffixLength + extLength);
-				ByteBuf result = LLUtils.directCompositeBuffer(alloc, prefixKey.retain(), zeroSuffixAndExt.retain());
+				ByteBuf result = LLUtils.compositeBuffer(alloc, prefixKey.retain(), zeroSuffixAndExt.retain());
 				try {
-					assert result.isDirect();
-					assert result.nioBuffer().isDirect();
 					return result.retain();
 				} finally {
 					result.release();
@@ -182,10 +171,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			assert suffixKey.readableBytes() == suffixLength;
 			assert suffixLength > 0;
 			assert extLength >= 0;
-			ByteBuf result = LLUtils.directCompositeBuffer(alloc,
+			ByteBuf result = LLUtils.compositeBuffer(alloc,
 					prefixKey.retain(),
 					suffixKey.retain(),
-					alloc.directBuffer(extLength, extLength).writeZero(extLength)
+					alloc.buffer(extLength, extLength).writeZero(extLength)
 			);
 			try {
 				assert result.readableBytes() == prefixLength + suffixLength + extLength;
@@ -206,14 +195,24 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
 			SubStageGetterSingle<U> subStageGetter) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, EMPTY_BYTES, keySerializer, subStageGetter, 0);
+		return new DatabaseMapDictionaryDeep<>(dictionary,
+				dictionary.getAllocator().buffer(0),
+				keySerializer,
+				subStageGetter,
+				0
+		);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
 			int keyExtLength,
 			SubStageGetter<U, US> subStageGetter) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, EMPTY_BYTES, keySerializer, subStageGetter, keyExtLength);
+		return new DatabaseMapDictionaryDeep<>(dictionary,
+				dictionary.getAllocator().buffer(0),
+				keySerializer,
+				subStageGetter,
+				keyExtLength
+		);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(LLDictionary dictionary,
@@ -240,10 +239,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			this.keyPrefixLength = keyPrefix.readableBytes();
 			this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
 			this.keyExtLength = keyExtLength;
-			if (!keyPrefix.isDirect()) {
-				throw new IllegalArgumentException("KeyPrefix must be a direct buffer");
-			}
-			assert keyPrefix.isDirect();
 			ByteBuf firstKey = firstRangeKey(alloc,
 					keyPrefix.retain(),
 					keyPrefixLength,
@@ -260,13 +255,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				try {
 					assert keyPrefix.refCnt() > 0;
 					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
-					assert firstKey.isDirect();
-					assert nextRangeKey.isDirect();
-					assert firstKey.nioBuffer().isDirect();
-					assert nextRangeKey.nioBuffer().isDirect();
 					this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.retain(), nextRangeKey.retain());
-					assert range == null || !range.hasMin() || range.getMin().isDirect();
-					assert range == null || !range.hasMax() || range.getMax().isDirect();
 					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
 				} finally {
 					nextRangeKey.release();
@@ -330,7 +319,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected ByteBuf toKeyWithoutExt(ByteBuf suffixKey) {
 		try {
 			assert suffixKey.readableBytes() == keySuffixLength;
-			ByteBuf result = LLUtils.directCompositeBuffer(alloc, keyPrefix.retain(), suffixKey.retain());
+			ByteBuf result = LLUtils.compositeBuffer(alloc, keyPrefix.retain(), suffixKey.retain());
 			assert keyPrefix.refCnt() > 0;
 			try {
 				assert result.readableBytes() == keyPrefixLength + keySuffixLength;

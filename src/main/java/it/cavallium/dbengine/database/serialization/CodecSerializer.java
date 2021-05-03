@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.serialization;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufInputStream;
 import io.netty.buffer.ByteBufOutputStream;
 import io.netty.buffer.PooledByteBufAllocator;
@@ -12,6 +13,7 @@ import org.warp.commonutils.error.IndexOutOfBoundsException;
 
 public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
 
+	private final ByteBufAllocator allocator;
 	private final Codecs<A> deserializationCodecs;
 	private final Codec<A> serializationCodec;
 	private final int serializationCodecId;
@@ -21,10 +23,13 @@ public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
 	 *
 	 * @param microCodecs if true, allow only codecs with a value from 0 to 255 to save disk space
 	 */
-	public CodecSerializer(Codecs<A> deserializationCodecs,
+	public CodecSerializer(
+			ByteBufAllocator allocator,
+			Codecs<A> deserializationCodecs,
 			Codec<A> serializationCodec,
 			int serializationCodecId,
 			boolean microCodecs) {
+		this.allocator = allocator;
 		this.deserializationCodecs = deserializationCodecs;
 		this.serializationCodec = serializationCodec;
 		this.serializationCodecId = serializationCodecId;
@@ -55,7 +60,7 @@ public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
 
 	@Override
 	public @NotNull ByteBuf serialize(@NotNull A deserialized) {
-		ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer();
+		ByteBuf buf = allocator.buffer();
 		try (var os = new ByteBufOutputStream(buf)) {
 			if (microCodecs) {
 				os.writeByte(serializationCodecId);

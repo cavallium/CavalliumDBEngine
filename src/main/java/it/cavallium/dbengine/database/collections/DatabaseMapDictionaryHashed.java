@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import static it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep.EMPTY_BYTES;
-
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -83,10 +81,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			try {
 				ByteBuf value = valueSerializer.serialize(deserialized.getValue());
 				try {
-					ByteBuf keySuffixLen = alloc.directBuffer(Integer.BYTES, Integer.BYTES);
+					ByteBuf keySuffixLen = alloc.buffer(Integer.BYTES);
 					try {
 						keySuffixLen.writeInt(keySuffix.readableBytes());
-						return LLUtils.directCompositeBuffer(alloc, keySuffixLen.retain(), keySuffix.retain(), value.retain());
+						return LLUtils.compositeBuffer(alloc, keySuffixLen.retain(), keySuffix.retain(), value.retain());
 					} finally {
 						keySuffixLen.release();
 					}
@@ -123,8 +121,9 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			Serializer<U, ByteBuf> valueSerializer,
 			Function<T, UH> keyHashFunction,
 			SerializerFixedBinaryLength<UH, ByteBuf> keyHashSerializer) {
-		return new DatabaseMapDictionaryHashed<>(dictionary,
-				EMPTY_BYTES,
+		return new DatabaseMapDictionaryHashed<>(
+				dictionary,
+				dictionary.getAllocator().buffer(0),
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,

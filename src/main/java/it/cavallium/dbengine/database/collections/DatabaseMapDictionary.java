@@ -9,14 +9,12 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
-import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -40,7 +38,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
 			Serializer<U, ByteBuf> valueSerializer) {
-		return new DatabaseMapDictionary<>(dictionary, EMPTY_BYTES, keySerializer, valueSerializer);
+		return new DatabaseMapDictionary<>(dictionary, dictionary.getAllocator().buffer(0), keySerializer, valueSerializer);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
@@ -53,7 +51,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	private ByteBuf toKey(ByteBuf suffixKey) {
 		try {
 			assert suffixKeyConsistency(suffixKey.readableBytes());
-			return LLUtils.directCompositeBuffer(dictionary.getAllocator(), keyPrefix.retain(), suffixKey.retain());
+			return LLUtils.compositeBuffer(dictionary.getAllocator(), keyPrefix.retain(), suffixKey.retain());
 		} finally {
 			suffixKey.release();
 		}

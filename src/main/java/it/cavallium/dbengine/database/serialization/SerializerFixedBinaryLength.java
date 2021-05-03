@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.serialization;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
 import java.io.NotSerializableException;
@@ -49,7 +50,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 		};
 	}
 
-	static SerializerFixedBinaryLength<String, ByteBuf> utf8(int length) {
+	static SerializerFixedBinaryLength<String, ByteBuf> utf8(ByteBufAllocator allocator, int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
 			public @NotNull String deserialize(@NotNull ByteBuf serialized) {
@@ -70,7 +71,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 			@Override
 			public @NotNull ByteBuf serialize(@NotNull String deserialized) {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
-				ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(ByteBufUtil.utf8MaxBytes(deserialized));
+				ByteBuf buf = allocator.buffer(ByteBufUtil.utf8MaxBytes(deserialized));
 				try {
 					ByteBufUtil.writeUtf8(buf, deserialized);
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
@@ -91,7 +92,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 		};
 	}
 
-	static SerializerFixedBinaryLength<Integer, ByteBuf> intSerializer() {
+	static SerializerFixedBinaryLength<Integer, ByteBuf> intSerializer(ByteBufAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
 			public @NotNull Integer deserialize(@NotNull ByteBuf serialized) {
@@ -109,7 +110,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 			@Override
 			public @NotNull ByteBuf serialize(@NotNull Integer deserialized) {
-				ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(Integer.BYTES, Integer.BYTES);
+				ByteBuf buf = allocator.directBuffer(Integer.BYTES);
 				return buf.writeInt(deserialized);
 			}
 
@@ -120,7 +121,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 		};
 	}
 
-	static SerializerFixedBinaryLength<Long, ByteBuf> longSerializer() {
+	static SerializerFixedBinaryLength<Long, ByteBuf> longSerializer(ByteBufAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
 			public @NotNull Long deserialize(@NotNull ByteBuf serialized) {
@@ -138,7 +139,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 			@Override
 			public @NotNull ByteBuf serialize(@NotNull Long deserialized) {
-				ByteBuf buf = PooledByteBufAllocator.DEFAULT.directBuffer(Integer.BYTES, Integer.BYTES);
+				ByteBuf buf = allocator.directBuffer(Long.BYTES);
 				return buf.writeLong(deserialized);
 			}
 

@@ -91,7 +91,7 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	public synchronized void put(ColumnFamilyHandle columnFamilyHandle, ByteBuf key, ByteBuf value) throws RocksDBException {
-		if (USE_FAST_DIRECT_BUFFERS) {
+		if (USE_FAST_DIRECT_BUFFERS && key.isDirect() && value.isDirect()) {
 			buffersToRelease.add(key);
 			buffersToRelease.add(value);
 			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);

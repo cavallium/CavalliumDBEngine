@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
 import java.nio.charset.StandardCharsets;
@@ -41,6 +42,8 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 	}
 
 	Mono<Long> getProperty(String propertyName);
+
+	ByteBufAllocator getAllocator();
 
 	Mono<Void> close();
 }

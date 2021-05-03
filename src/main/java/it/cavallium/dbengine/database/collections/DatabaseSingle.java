@@ -22,9 +22,6 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	public DatabaseSingle(LLDictionary dictionary, ByteBuf key, Serializer<U, ByteBuf> serializer) {
 		try {
 			this.dictionary = dictionary;
-			if (!key.isDirect()) {
-				throw new IllegalArgumentException("Key must be direct");
-			}
 			this.key = key.retain();
 			this.serializer = serializer;
 		} finally {

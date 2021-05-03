@@ -7,10 +7,11 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.CompositeByteBuf;
-import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.Unpooled;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.function.ToIntFunction;
@@ -31,9 +32,6 @@ import org.apache.lucene.search.SortedNumericSortField;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
-
-import static io.netty.buffer.Unpooled.wrappedBuffer;
-import static it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep.EMPTY_BYTES;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -69,7 +67,7 @@ public class LLUtils {
 	}
 
 	public static ByteBuf booleanToResponseByteBuffer(boolean bool) {
-		return wrappedBuffer(booleanToResponse(bool));
+		return Unpooled.wrappedBuffer(booleanToResponse(bool));
 	}
 
 	@Nullable
@@ -197,9 +195,13 @@ public class LLUtils {
 	}
 
 	public static byte[] toArray(ByteBuf key) {
-		byte[] keyBytes = new byte[key.readableBytes()];
-		key.getBytes(key.readerIndex(), keyBytes, 0, key.readableBytes());
-		return keyBytes;
+		if (key.hasArray()) {
+			return Arrays.copyOfRange(key.array(), key.arrayOffset() + key.readerIndex(), key.arrayOffset() + key.writerIndex());
+		} else {
+			byte[] keyBytes = new byte[key.readableBytes()];
+			key.getBytes(key.readerIndex(), keyBytes, 0, key.readableBytes());
+			return keyBytes;
+		}
 	}
 
 	public static List<byte[]> toArray(List<ByteBuf> input) {
@@ -231,7 +233,7 @@ public class LLUtils {
 				nioBuffer = null;
 			}
 			if ((mustBeCopied != null && mustBeCopied) || nioBuffer == null) {
-				directBuffer = LLUtils.toDirectCopy(buffer.retain());
+				directBuffer = buffer;
 				nioBuffer = directBuffer.nioBuffer(0, directBuffer.capacity());
 				mustBeCopied = true;
 			} else {
@@ -293,19 +295,21 @@ public class LLUtils {
 		return result;
 	}
 
+	/*
 	public static ByteBuf toDirectCopy(ByteBuf buffer) {
 		try {
-			ByteBuf directCopyBuf = buffer.alloc().directBuffer(buffer.capacity(), buffer.maxCapacity());
+			ByteBuf directCopyBuf = buffer.alloc().buffer(buffer.capacity(), buffer.maxCapacity());
 			directCopyBuf.writeBytes(buffer, 0, buffer.writerIndex());
 			return directCopyBuf;
 		} finally {
 			buffer.release();
 		}
 	}
+	 */
 
 	public static ByteBuf convertToDirectByteBuf(AbstractByteBufAllocator alloc, ByteBuf buffer) {
 		ByteBuf result;
-		ByteBuf directCopyBuf = alloc.directBuffer(buffer.capacity(), buffer.maxCapacity());
+		ByteBuf directCopyBuf = alloc.buffer(buffer.capacity(), buffer.maxCapacity());
 		directCopyBuf.writeBytes(buffer, 0, buffer.writerIndex());
 		directCopyBuf.readerIndex(buffer.readerIndex());
 		result = directCopyBuf;
@@ -324,24 +328,18 @@ public class LLUtils {
 		return buffer;
 	}
 
-	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer) {
-		assert buffer.isDirect();
-		assert buffer.nioBuffer().isDirect();
+	public static ByteBuf compositeBuffer(ByteBufAllocator alloc, ByteBuf buffer) {
 		return buffer;
 	}
 
-	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2) {
+	public static ByteBuf compositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2) {
 		try {
-			assert buffer1.isDirect();
-			assert buffer1.nioBuffer().isDirect();
-			assert buffer2.isDirect();
-			assert buffer2.nioBuffer().isDirect();
 			if (buffer1.readableBytes() == 0) {
-				return directCompositeBuffer(alloc, buffer2.retain());
+				return compositeBuffer(alloc, buffer2.retain());
 			} else if (buffer2.readableBytes() == 0) {
-				return directCompositeBuffer(alloc, buffer1.retain());
+				return compositeBuffer(alloc, buffer1.retain());
 			}
-			CompositeByteBuf result = alloc.compositeDirectBuffer(2);
+			CompositeByteBuf result = alloc.compositeBuffer(2);
 			try {
 				result.addComponent(true, buffer1.retain());
 				result.addComponent(true, buffer2.retain());
@@ -355,16 +353,16 @@ public class LLUtils {
 		}
 	}
 
-	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2, ByteBuf buffer3) {
+	public static ByteBuf compositeBuffer(ByteBufAllocator alloc, ByteBuf buffer1, ByteBuf buffer2, ByteBuf buffer3) {
 		try {
 			if (buffer1.readableBytes() == 0) {
-				return directCompositeBuffer(alloc, buffer2.retain(), buffer3.retain());
+				return compositeBuffer(alloc, buffer2.retain(), buffer3.retain());
 			} else if (buffer2.readableBytes() == 0) {
-				return directCompositeBuffer(alloc, buffer1.retain(), buffer3.retain());
+				return compositeBuffer(alloc, buffer1.retain(), buffer3.retain());
 			} else if (buffer3.readableBytes() == 0) {
-				return directCompositeBuffer(alloc, buffer1.retain(), buffer2.retain());
+				return compositeBuffer(alloc, buffer1.retain(), buffer2.retain());
 			}
-			CompositeByteBuf result = alloc.compositeDirectBuffer(3);
+			CompositeByteBuf result = alloc.compositeBuffer(3);
 			try {
 				result.addComponent(true, buffer1.retain());
 				result.addComponent(true, buffer2.retain());
@@ -380,19 +378,19 @@ public class LLUtils {
 		}
 	}
 
-	public static ByteBuf directCompositeBuffer(ByteBufAllocator alloc, ByteBuf... buffers) {
+	public static ByteBuf compositeBuffer(ByteBufAllocator alloc, ByteBuf... buffers) {
 		try {
 			switch (buffers.length) {
 				case 0:
-					return EMPTY_BYTES;
+					return alloc.buffer(0);
 				case 1:
-					return directCompositeBuffer(alloc, buffers[0].retain().retain());
+					return compositeBuffer(alloc, buffers[0].retain().retain());
 				case 2:
-					return directCompositeBuffer(alloc, buffers[0].retain(), buffers[1].retain());
+					return compositeBuffer(alloc, buffers[0].retain(), buffers[1].retain());
 				case 3:
-					return directCompositeBuffer(alloc, buffers[0].retain(), buffers[1].retain(), buffers[2].retain());
+					return compositeBuffer(alloc, buffers[0].retain(), buffers[1].retain(), buffers[2].retain());
 				default:
-					CompositeByteBuf result = alloc.compositeDirectBuffer(buffers.length);
+					CompositeByteBuf result = alloc.compositeBuffer(buffers.length);
 					try {
 						for (ByteBuf buffer : buffers) {
 							result.addComponent(true, buffer.retain());

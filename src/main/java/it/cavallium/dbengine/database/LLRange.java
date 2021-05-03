@@ -20,12 +20,6 @@ public class LLRange {
 	private LLRange(ByteBuf min, ByteBuf max) {
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
-		if (min != null && !min.isDirect()) {
-			throw new IllegalArgumentException("Min buffer must be direct");
-		}
-		if (max != null && !max.isDirect()) {
-			throw new IllegalArgumentException("Min buffer must be direct");
-		}
 		this.min = min;
 		this.max = max;
 	}

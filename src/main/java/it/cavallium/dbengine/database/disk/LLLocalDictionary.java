@@ -123,7 +123,9 @@ public class LLLocalDictionary implements LLDictionary {
 	private final UpdateMode updateMode;
 	private final ByteBufAllocator alloc;
 
-	public LLLocalDictionary(@NotNull RocksDB db,
+	public LLLocalDictionary(
+			ByteBufAllocator allocator,
+			@NotNull RocksDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
 			Scheduler dbScheduler,
@@ -137,7 +139,7 @@ public class LLLocalDictionary implements LLDictionary {
 		this.dbScheduler = dbScheduler;
 		this.snapshotResolver = snapshotResolver;
 		this.updateMode = updateMode;
-		alloc = PooledByteBufAllocator.DEFAULT;
+		alloc = allocator;
 	}
 
 	@Override
@@ -204,7 +206,7 @@ public class LLLocalDictionary implements LLDictionary {
 						if (logger.isTraceEnabled()) {
 							logger.trace("Reading {}", LLUtils.toString(key));
 						}
-						return dbGet(cfh, resolveSnapshot(snapshot), key.retain());
+						return dbGet(cfh, resolveSnapshot(snapshot), key.retain(), existsAlmostCertainly);
 					} finally {
 						if (updateMode == UpdateMode.ALLOW) {
 							lock.unlockRead(stamp);
@@ -216,78 +218,110 @@ public class LLLocalDictionary implements LLDictionary {
 				.doFinally(s -> key.release());
 	}
 
-	private ByteBuf dbGet(ColumnFamilyHandle cfh, @Nullable ReadOptions readOptions, ByteBuf key) throws RocksDBException {
-		//todo: implement keyMayExist if existsAlmostCertainly is false.
-		// Unfortunately it's not feasible until RocksDB implements keyMayExist with buffers
-
-		// Create the key nio buffer to pass to RocksDB
-		if (!key.isDirect()) {
-			throw new RocksDBException("Key buffer must be direct");
-		}
+	private ByteBuf dbGet(ColumnFamilyHandle cfh,
+			@Nullable ReadOptions readOptions,
+			ByteBuf key,
+			boolean existsAlmostCertainly) throws RocksDBException {
 		try {
-			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
-			assert keyNioBuffer.isDirect();
-			// Create a direct result buffer because RocksDB works only with direct buffers
-			ByteBuf resultBuf = alloc.directBuffer();
-			try {
-				int valueSize;
-				int assertionReadData = -1;
-				ByteBuffer resultNioBuf;
-				do {
-					// Create the result nio buffer to pass to RocksDB
-					resultNioBuf = resultBuf.nioBuffer(0, resultBuf.capacity());
-					assert keyNioBuffer.isDirect();
-					assert resultNioBuf.isDirect();
-					valueSize = db.get(cfh, Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS), keyNioBuffer, resultNioBuf);
-					if (valueSize != RocksDB.NOT_FOUND) {
-						// todo: check if position is equal to data that have been read
-						// todo: check if limit is equal to value size or data that have been read
-						assert valueSize <= 0 || resultNioBuf.limit() > 0;
+			if (key.isDirect()) {
 
-						// If the locking is enabled the data is safe, so since we are appending data to the end,
-						// we need to check if it has been appended correctly or it it has been overwritten.
-						// We must not do this check otherwise because if there is no locking the data can be
-						// overwritten with a smaller value the next time.
-						if (updateMode == UpdateMode.ALLOW) {
-							// Check if read data is larger than previously read data.
-							// If it's smaller or equals it means that RocksDB is overwriting the beginning of the result buffer.
-							assert resultNioBuf.limit() > assertionReadData;
-							if (ASSERTIONS_ENABLED) {
-								assertionReadData = resultNioBuf.limit();
-							}
-						}
+				//todo: implement keyMayExist if existsAlmostCertainly is false.
+				// Unfortunately it's not feasible until RocksDB implements keyMayExist with buffers
 
-						// Check if read data is not bigger than the total value size.
-						// If it's bigger it means that RocksDB is writing the start of the result into the result
-						// buffer more than once.
-						assert resultNioBuf.limit() <= valueSize;
+				// Create the key nio buffer to pass to RocksDB
+				if (!key.isDirect()) {
+					throw new RocksDBException("Key buffer must be direct");
+				}
+				ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
+				assert keyNioBuffer.isDirect();
+				// Create a direct result buffer because RocksDB works only with direct buffers
+				ByteBuf resultBuf = alloc.directBuffer();
+				try {
+					int valueSize;
+					int assertionReadData = -1;
+					ByteBuffer resultNioBuf;
+					do {
+						// Create the result nio buffer to pass to RocksDB
+						resultNioBuf = resultBuf.nioBuffer(0, resultBuf.capacity());
+						assert keyNioBuffer.isDirect();
+						assert resultNioBuf.isDirect();
+						valueSize = db.get(cfh,
+								Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS),
+								keyNioBuffer,
+								resultNioBuf
+						);
+						if (valueSize != RocksDB.NOT_FOUND) {
+							// todo: check if position is equal to data that have been read
+							// todo: check if limit is equal to value size or data that have been read
+							assert valueSize <= 0 || resultNioBuf.limit() > 0;
 
-						if (valueSize <= resultNioBuf.limit()) {
-							// Return the result ready to be read
-							return resultBuf.setIndex(0, valueSize).retain();
-						} else {
-							// If the locking is enabled the data is safe, so we can append the next read data.
-							// Otherwise we need to re-read everything.
+							// If the locking is enabled the data is safe, so since we are appending data to the end,
+							// we need to check if it has been appended correctly or it it has been overwritten.
+							// We must not do this check otherwise because if there is no locking the data can be
+							// overwritten with a smaller value the next time.
 							if (updateMode == UpdateMode.ALLOW) {
-								// Update the resultBuf writerIndex with the new position
-								resultBuf.writerIndex(resultNioBuf.limit());
+								// Check if read data is larger than previously read data.
+								// If it's smaller or equals it means that RocksDB is overwriting the beginning of the result buffer.
+								assert resultNioBuf.limit() > assertionReadData;
+								if (ASSERTIONS_ENABLED) {
+									assertionReadData = resultNioBuf.limit();
+								}
 							}
-							//noinspection UnusedAssignment
-							resultNioBuf = null;
+
+							// Check if read data is not bigger than the total value size.
+							// If it's bigger it means that RocksDB is writing the start of the result into the result
+							// buffer more than once.
+							assert resultNioBuf.limit() <= valueSize;
+
+							if (valueSize <= resultNioBuf.limit()) {
+								// Return the result ready to be read
+								return resultBuf.setIndex(0, valueSize).retain();
+							} else {
+								// If the locking is enabled the data is safe, so we can append the next read data.
+								// Otherwise we need to re-read everything.
+								if (updateMode == UpdateMode.ALLOW) {
+									// Update the resultBuf writerIndex with the new position
+									resultBuf.writerIndex(resultNioBuf.limit());
+								}
+								//noinspection UnusedAssignment
+								resultNioBuf = null;
+							}
+							// Rewind the keyNioBuf position, making it readable again for the next loop iteration
+							keyNioBuffer.rewind();
+							if (resultBuf.capacity() < valueSize) {
+								// Expand the resultBuf size if the result is bigger than the current result buffer size
+								resultBuf.capacity(valueSize);
+							}
 						}
-						// Rewind the keyNioBuf position, making it readable again for the next loop iteration
-						keyNioBuffer.rewind();
-						if (resultBuf.capacity() < valueSize) {
-							// Expand the resultBuf size if the result is bigger than the current result buffer size
-							resultBuf.capacity(valueSize);
+						// Repeat if the result has been found but it's still not finished
+					} while (valueSize != RocksDB.NOT_FOUND);
+					// If the value is not found return null
+					return null;
+				} finally {
+					resultBuf.release();
+				}
+			} else {
+				byte[] keyArray = LLUtils.toArray(key);
+				Objects.requireNonNull(keyArray);
+				Holder<byte[]> data = existsAlmostCertainly ? null : new Holder<>();
+				if (existsAlmostCertainly || db.keyMayExist(cfh,
+						Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS),
+						keyArray,
+						data
+				)) {
+					if (!existsAlmostCertainly && data.getValue() != null) {
+						return wrappedBuffer(data.getValue());
+					} else {
+						byte[] result = db.get(cfh, Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS), keyArray);
+						if (result == null) {
+							return null;
+						} else {
+							return wrappedBuffer(result);
 						}
 					}
-					// Repeat if the result has been found but it's still not finished
-				} while (valueSize != RocksDB.NOT_FOUND);
-				// If the value is not found return null
-				return null;
-			} finally {
-				resultBuf.release();
+				} else {
+					return null;
+				}
 			}
 		} finally {
 			key.release();
@@ -296,20 +330,24 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private void dbPut(ColumnFamilyHandle cfh, @Nullable WriteOptions writeOptions, ByteBuf key, ByteBuf value)
 			throws RocksDBException {
-		if (!key.isDirect()) {
-			throw new RocksDBException("Key buffer must be direct");
-		}
-		if (!value.isDirect()) {
-			throw new RocksDBException("Value buffer must be direct");
-		}
 		try {
-			var keyNioBuffer = LLUtils.toDirect(key);
-			assert keyNioBuffer.isDirect();
+			if (key.isDirect() && value.isDirect()) {
+				if (!key.isDirect()) {
+					throw new RocksDBException("Key buffer must be direct");
+				}
+				if (!value.isDirect()) {
+					throw new RocksDBException("Value buffer must be direct");
+				}
+					var keyNioBuffer = LLUtils.toDirect(key);
+					assert keyNioBuffer.isDirect();
 
 
-			var valueNioBuffer = LLUtils.toDirect(value);
-			assert valueNioBuffer.isDirect();
-			db.put(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), keyNioBuffer, valueNioBuffer);
+					var valueNioBuffer = LLUtils.toDirect(value);
+					assert valueNioBuffer.isDirect();
+					db.put(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), keyNioBuffer, valueNioBuffer);
+			} else {
+				db.put(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), LLUtils.toArray(key), LLUtils.toArray(value));
+			}
 		} finally {
 			key.release();
 			value.release();
@@ -337,20 +375,32 @@ public class LLLocalDictionary implements LLDictionary {
 					readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 					readOpts.setFillCache(false);
 					if (range.hasMin()) {
-						readOpts.setIterateLowerBound(new DirectSlice(Objects.requireNonNull(LLUtils.toDirect(range.getMin()),
-								"This range must use direct buffers"
-						)));
+						if (range.getMin().isDirect()) {
+							readOpts.setIterateLowerBound(new DirectSlice(Objects.requireNonNull(LLUtils.toDirect(range.getMin()),
+									"This range must use direct buffers"
+							)));
+						} else {
+							readOpts.setIterateLowerBound(new Slice(LLUtils.toArray(range.getMin())));
+						}
 					}
 					if (range.hasMax()) {
-						readOpts.setIterateUpperBound(new DirectSlice(Objects.requireNonNull(LLUtils.toDirect(range.getMax()),
-								"This range must use direct buffers"
-						)));
+						if (range.getMax().isDirect()) {
+							readOpts.setIterateUpperBound(new DirectSlice(Objects.requireNonNull(LLUtils.toDirect(range.getMax()),
+									"This range must use direct buffers"
+							)));
+						} else {
+							readOpts.setIterateUpperBound(new Slice(LLUtils.toArray(range.getMax())));
+						}
 					}
 					try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
 						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-							rocksIterator.seek(Objects.requireNonNull(LLUtils.toDirect(range.getMin()),
-									"This range must use direct buffers"
-							));
+							if (range.getMin().isDirect()) {
+								rocksIterator.seek(Objects.requireNonNull(LLUtils.toDirect(range.getMin()),
+										"This range must use direct buffers"
+								));
+							} else {
+								rocksIterator.seek(LLUtils.toArray(range.getMin()));
+							}
 						} else {
 							rocksIterator.seekToFirst();
 						}
@@ -400,16 +450,6 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<ByteBuf> put(ByteBuf key, ByteBuf value, LLDictionaryResultType resultType) {
-		if (!key.isDirect()) {
-			return Mono.fromCallable(() -> {
-				throw new IllegalArgumentException("Key must not be direct");
-			});
-		}
-		if (!value.isDirect()) {
-			return Mono.fromCallable(() -> {
-				throw new IllegalArgumentException("Value must not be direct");
-			});
-		}
 		return Mono
 				.defer(() -> getPreviousData(key.retain(), resultType))
 				.concatWith(Mono
@@ -427,12 +467,6 @@ public class LLLocalDictionary implements LLDictionary {
 							try {
 								if (logger.isTraceEnabled()) {
 									logger.trace("Writing {}: {}", LLUtils.toString(key), LLUtils.toString(value));
-								}
-								if (!key.isDirect()) {
-									throw new IllegalArgumentException("Key must not be direct");
-								}
-								if (!value.isDirect()) {
-									throw new IllegalArgumentException("Value must not be direct");
 								}
 								dbPut(cfh, null, key.retain(), value.retain());
 								return null;
@@ -491,7 +525,7 @@ public class LLLocalDictionary implements LLDictionary {
 										prevData = null;
 									}
 								} else {
-									prevData = dbGet(cfh, null, key.retain());
+									prevData = dbGet(cfh, null, key.retain(), existsAlmostCertainly);
 								}
 							} else {
 								prevData = null;
@@ -574,11 +608,15 @@ public class LLLocalDictionary implements LLDictionary {
 	private void dbDelete(ColumnFamilyHandle cfh, @Nullable WriteOptions writeOptions, ByteBuf key)
 			throws RocksDBException {
 		try {
-			if (!key.isDirect()) {
-				throw new IllegalArgumentException("Key must be a direct buffer");
+			if (key.isDirect()) {
+				if (!key.isDirect()) {
+					throw new IllegalArgumentException("Key must be a direct buffer");
+				}
+				var keyNioBuffer = LLUtils.toDirect(key);
+				db.delete(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), keyNioBuffer);
+			} else {
+				db.delete(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), LLUtils.toArray(key));
 			}
-			var keyNioBuffer = LLUtils.toDirect(key);
-			db.delete(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), keyNioBuffer);
 		} finally {
 			key.release();
 		}
@@ -654,7 +692,7 @@ public class LLLocalDictionary implements LLDictionary {
 													return wrappedBuffer(data.getValue());
 												} else {
 													try {
-														return dbGet(cfh, null, key.retain());
+														return dbGet(cfh, null, key.retain(), true);
 													} finally {
 														assert key.refCnt() > 0;
 													}
@@ -1076,12 +1114,6 @@ public class LLLocalDictionary implements LLDictionary {
 					.subscribeOn(dbScheduler)
 					.thenMany(entries
 							.window(MULTI_GET_WINDOW)
-							.doOnDiscard(Entry.class, discardedEntry -> {
-								//noinspection unchecked
-								var entry = (Entry<ByteBuf, ByteBuf>) discardedEntry;
-								entry.getKey().release();
-								entry.getValue().release();
-							})
 					)
 					.flatMap(keysWindowFlux -> keysWindowFlux
 							.collectList()
@@ -1131,12 +1163,6 @@ public class LLLocalDictionary implements LLDictionary {
 							)
 					)
 					.then()
-					.doOnDiscard(Entry.class, discardedEntry -> {
-						//noinspection unchecked
-						var entry = (Entry<ByteBuf, ByteBuf>) discardedEntry;
-						entry.getKey().release();
-						entry.getValue().release();
-					})
 					.onErrorMap(cause -> new IOException("Failed to write range", cause))
 					.doFinally(s -> range.release());
 		} else {
@@ -1250,9 +1276,15 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private static void rocksIterSeekTo(RocksIterator rocksIterator, ByteBuf buffer) {
 		try {
-			ByteBuffer nioBuffer = LLUtils.toDirect(buffer);
-			assert nioBuffer.isDirect();
-			rocksIterator.seek(nioBuffer);
+			if (buffer.isDirect()) {
+				ByteBuffer nioBuffer = LLUtils.toDirect(buffer);
+				assert nioBuffer.isDirect();
+				rocksIterator.seek(nioBuffer);
+			} else if (buffer.hasArray() && buffer.array().length == buffer.readableBytes()) {
+				rocksIterator.seek(buffer.array());
+			} else {
+				rocksIterator.seek(LLUtils.toArray(buffer));
+			}
 		} finally {
 			buffer.release();
 		}
@@ -1260,24 +1292,29 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private static ReleasableSlice setIterateBound(ReadOptions readOpts, IterateBound boundType, ByteBuf buffer) {
 		try {
+			Objects.requireNonNull(buffer);
 			AbstractSlice<?> slice;
-			ByteBuffer nioBuffer;
-			if (LLLocalDictionary.USE_DIRECT_BUFFER_BOUNDS) {
-				nioBuffer = LLUtils.toDirect(buffer);
+			if (LLLocalDictionary.USE_DIRECT_BUFFER_BOUNDS && buffer.isDirect()) {
+				ByteBuffer nioBuffer = LLUtils.toDirect(buffer);
 				assert nioBuffer.isDirect();
 				slice = new DirectSlice(nioBuffer, buffer.readableBytes());
 				assert slice.size() == buffer.readableBytes();
 				assert slice.compare(new Slice(LLUtils.toArray(buffer))) == 0;
+				if (boundType == IterateBound.LOWER) {
+					readOpts.setIterateLowerBound(slice);
+				} else {
+					readOpts.setIterateUpperBound(slice);
+				}
+				return new ReleasableSlice(slice, buffer.retain(), nioBuffer);
 			} else {
-				nioBuffer = null;
-				slice = new Slice(LLUtils.toArray(buffer));
+				slice = new Slice(Objects.requireNonNull(LLUtils.toArray(buffer)));
+				if (boundType == IterateBound.LOWER) {
+					readOpts.setIterateLowerBound(slice);
+				} else {
+					readOpts.setIterateUpperBound(slice);
+				}
+				return new ReleasableSlice(slice, null, null);
 			}
-			if (boundType == IterateBound.LOWER) {
-				readOpts.setIterateLowerBound(slice);
-			} else {
-				readOpts.setIterateUpperBound(slice);
-			}
-			return new ReleasableSlice(slice, buffer.retain(), nioBuffer);
 		} finally {
 			buffer.release();
 		}

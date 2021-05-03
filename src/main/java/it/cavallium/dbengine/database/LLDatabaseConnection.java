@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.time.Duration;
@@ -8,6 +9,8 @@ import reactor.core.publisher.Mono;
 
 @SuppressWarnings("UnusedReturnValue")
 public interface LLDatabaseConnection {
+
+	ByteBufAllocator getAllocator();
 
 	Mono<? extends LLDatabaseConnection> connect();
 

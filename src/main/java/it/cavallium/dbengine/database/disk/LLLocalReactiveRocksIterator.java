@@ -61,7 +61,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								if (readValues) {
 									value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 								} else {
-									value = DatabaseMapDictionaryDeep.EMPTY_BYTES;
+									value = alloc.buffer(0);
 								}
 								try {
 									rocksIterator.next();

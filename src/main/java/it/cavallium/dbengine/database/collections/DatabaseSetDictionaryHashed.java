@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import static it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep.EMPTY_BYTES;
-
 import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -37,7 +35,7 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
-				EMPTY_BYTES,
+				dictionary.getAllocator().buffer(0),
 				keySerializer,
 				keyHashFunction,
 				keyHashSerializer

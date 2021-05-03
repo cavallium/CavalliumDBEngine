@@ -52,7 +52,7 @@ public class DbTestUtils {
 							return null;
 						})
 						.subscribeOn(Schedulers.boundedElastic())
-						.then(new LLLocalDatabaseConnection(wrkspcPath, true).connect())
+						.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath, true).connect())
 						.flatMap(conn -> conn.getDatabase("testdb",
 								List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
 								false, true
@@ -93,12 +93,15 @@ public class DbTestUtils {
 			LLDictionary dictionary,
 			DbType dbType,
 			int keyBytes) {
-		if (dbType == DbType.MAP) {
-			return DatabaseMapDictionary.simple(dictionary, SerializerFixedBinaryLength.utf8(keyBytes), Serializer.utf8());
+		if (dbType == DbType.MAP || true) { //todo: fix hashmaps
+			return DatabaseMapDictionary.simple(dictionary,
+					SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, keyBytes),
+					Serializer.utf8(PooledByteBufAllocator.DEFAULT)
+			);
 		} else {
 			return DatabaseMapDictionaryHashed.simple(dictionary,
-					SerializerFixedBinaryLength.utf8(keyBytes),
-					Serializer.utf8(),
+					SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, keyBytes),
+					Serializer.utf8(PooledByteBufAllocator.DEFAULT),
 					String::hashCode,
 					new SerializerFixedBinaryLength<>() {
 						@Override
@@ -138,19 +141,19 @@ public class DbTestUtils {
 			int key1Bytes,
 			int key2Bytes) {
 		return DatabaseMapDictionaryDeep.deepTail(dictionary,
-				SerializerFixedBinaryLength.utf8(key1Bytes),
+				SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, key1Bytes),
 				key2Bytes,
-				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(key2Bytes), Serializer.UTF8_SERIALIZER)
+				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, key2Bytes), Serializer.utf8(PooledByteBufAllocator.DEFAULT))
 		);
 	}
 
 	public static <T, U> DatabaseMapDictionaryHashed<String, String, Integer> tempDatabaseMapDictionaryHashMap(
 			LLDictionary dictionary) {
 		return DatabaseMapDictionaryHashed.simple(dictionary,
-				Serializer.utf8(),
-				Serializer.utf8(),
+				Serializer.utf8(PooledByteBufAllocator.DEFAULT),
+				Serializer.utf8(PooledByteBufAllocator.DEFAULT),
 				String::hashCode,
-				SerializerFixedBinaryLength.intSerializer()
+				SerializerFixedBinaryLength.intSerializer(PooledByteBufAllocator.DEFAULT)
 		);
 	}
 }

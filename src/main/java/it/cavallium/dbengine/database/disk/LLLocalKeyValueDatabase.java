@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -57,6 +58,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 
+	private final ByteBufAllocator allocator;
 	private final Scheduler dbScheduler;
 	private final Path dbPath;
 	private final boolean inMemory;
@@ -66,8 +68,15 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 
-	public LLLocalKeyValueDatabase(String name, Path path, List<Column> columns, List<ColumnFamilyHandle> handles,
-			boolean crashIfWalError, boolean lowMemory, boolean inMemory) throws IOException {
+	public LLLocalKeyValueDatabase(ByteBufAllocator allocator,
+			String name,
+			Path path,
+			List<Column> columns,
+			List<ColumnFamilyHandle> handles,
+			boolean crashIfWalError,
+			boolean lowMemory,
+			boolean inMemory) throws IOException {
+		this.allocator = allocator;
 		Options options = openRocksDb(path, crashIfWalError, lowMemory);
 		try {
 			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
@@ -378,7 +387,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<LLLocalDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
 		return Mono
-				.fromCallable(() -> new LLLocalDictionary(db,
+				.fromCallable(() -> new LLLocalDictionary(
+						allocator,
+						db,
 						handles.get(Column.special(Column.toString(columnName))),
 						name,
 						dbScheduler,
@@ -393,6 +404,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
 				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
 				.subscribeOn(dbScheduler);
+	}
+
+	@Override
+	public ByteBufAllocator getAllocator() {
+		return allocator;
 	}
 
 	@Override

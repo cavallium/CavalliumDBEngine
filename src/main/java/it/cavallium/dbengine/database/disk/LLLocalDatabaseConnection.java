@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -17,15 +18,22 @@ import reactor.core.scheduler.Schedulers;
 public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
 	static {
-		JMXNettyMonitoringManager.start();
+		JMXNettyMonitoringManager.initialize();
 	}
 
+	private final ByteBufAllocator allocator;
 	private final Path basePath;
 	private final boolean crashIfWalError;
 
-	public LLLocalDatabaseConnection(Path basePath, boolean crashIfWalError) {
+	public LLLocalDatabaseConnection(ByteBufAllocator allocator, Path basePath, boolean crashIfWalError) {
+		this.allocator = allocator;
 		this.basePath = basePath;
 		this.crashIfWalError = crashIfWalError;
+	}
+
+	@Override
+	public ByteBufAllocator getAllocator() {
+		return allocator;
 	}
 
 	@Override
@@ -46,7 +54,9 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 			boolean lowMemory,
 			boolean inMemory) {
 		return Mono
-				.fromCallable(() -> new LLLocalKeyValueDatabase(name,
+				.fromCallable(() -> new LLLocalKeyValueDatabase(
+						allocator,
+						name,
 						basePath.resolve("database_" + name),
 						columns,
 						new LinkedList<>(),

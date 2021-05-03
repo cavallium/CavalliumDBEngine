@@ -1005,22 +1005,34 @@ public class LLLocalDictionary implements LLDictionary {
 					.<Void>fromCallable(() -> {
 						if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
 							var opts = new ReadOptions(EMPTY_READ_OPTIONS);
+							ReleasableSlice minBound;
 							if (range.hasMin()) {
-								setIterateBound(opts, IterateBound.LOWER, range.getMin().retain());
+								minBound = setIterateBound(opts, IterateBound.LOWER, range.getMin().retain());
+							} else {
+								minBound = emptyReleasableSlice();
 							}
-							if (range.hasMax()) {
-								setIterateBound(opts, IterateBound.UPPER, range.getMax().retain());
-							}
-							try (RocksIterator it = db.newIterator(cfh, opts)) {
-								if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
-									rocksIterSeekTo(it, range.getMin().retain());
+							try {
+								ReleasableSlice maxBound;
+								if (range.hasMax()) {
+									maxBound = setIterateBound(opts, IterateBound.UPPER, range.getMax().retain());
 								} else {
-									it.seekToFirst();
+									maxBound = emptyReleasableSlice();
 								}
-								while (it.isValid()) {
-									db.delete(cfh, it.key());
-									it.next();
+								try (RocksIterator it = db.newIterator(cfh, opts)) {
+									if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
+										rocksIterSeekTo(it, range.getMin().retain());
+									} else {
+										it.seekToFirst();
+									}
+									while (it.isValid()) {
+										db.delete(cfh, it.key());
+										it.next();
+									}
+								} finally {
+									maxBound.release();
 								}
+							} finally {
+								minBound.release();
 							}
 						} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
 							try (var batch = new CappedWriteBatch(db,
@@ -1146,72 +1158,84 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private void deleteSmallRangeWriteBatch(CappedWriteBatch writeBatch, LLRange range)
 			throws RocksDBException {
-		var readOpts = getReadOptions(null);
-		readOpts.setFillCache(false);
-		ReleasableSlice minBound;
-		if (range.hasMin()) {
-			minBound = setIterateBound(readOpts, IterateBound.LOWER, range.getMin().retain());
-		} else {
-			minBound = emptyReleasableSlice();
-		}
-		ReleasableSlice maxBound;
-		if (range.hasMax()) {
-			maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
-		} else {
-			maxBound = emptyReleasableSlice();
-		}
-		try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-			if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-				rocksIterSeekTo(rocksIterator, range.getMin().retain());
+		try {
+			var readOpts = getReadOptions(null);
+			readOpts.setFillCache(false);
+			ReleasableSlice minBound;
+			if (range.hasMin()) {
+				minBound = setIterateBound(readOpts, IterateBound.LOWER, range.getMin().retain());
 			} else {
-				rocksIterator.seekToFirst();
+				minBound = emptyReleasableSlice();
 			}
-			while (rocksIterator.isValid()) {
-				writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
-				rocksIterator.next();
+			try {
+				ReleasableSlice maxBound;
+				if (range.hasMax()) {
+					maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
+				} else {
+					maxBound = emptyReleasableSlice();
+				}
+				try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+						rocksIterSeekTo(rocksIterator, range.getMin().retain());
+					} else {
+						rocksIterator.seekToFirst();
+					}
+					while (rocksIterator.isValid()) {
+						writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
+						rocksIterator.next();
+					}
+				} finally {
+					maxBound.release();
+				}
+			} finally {
+				minBound.release();
 			}
 		} finally {
-			minBound.release();
-			maxBound.release();
 			range.release();
 		}
 	}
 
 	private void deleteSmallRangeWriteBatch(WriteBatch writeBatch, LLRange range)
 			throws RocksDBException {
-		var readOpts = getReadOptions(null);
-		readOpts.setFillCache(false);
-		ReleasableSlice minBound;
-		if (range.hasMin()) {
-			var arr = LLUtils.toArray(range.getMin());
-			var minSlice = new Slice(arr);
-			readOpts.setIterateLowerBound(minSlice);
-			minBound = new ReleasableSlice(minSlice, null, arr);
-		} else {
-			minBound = emptyReleasableSlice();
-		}
-		ReleasableSlice maxBound;
-		if (range.hasMax()) {
-			var arr = LLUtils.toArray(range.getMax());
-			var maxSlice = new Slice(arr);
-			readOpts.setIterateUpperBound(maxSlice);
-			maxBound = new ReleasableSlice(maxSlice, null, arr);
-		} else {
-			maxBound = emptyReleasableSlice();
-		}
-		try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-			if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-				rocksIterator.seek(LLUtils.toArray(range.getMin()));
+		try {
+			var readOpts = getReadOptions(null);
+			readOpts.setFillCache(false);
+			ReleasableSlice minBound;
+			if (range.hasMin()) {
+				var arr = LLUtils.toArray(range.getMin());
+				var minSlice = new Slice(arr);
+				readOpts.setIterateLowerBound(minSlice);
+				minBound = new ReleasableSlice(minSlice, null, arr);
 			} else {
-				rocksIterator.seekToFirst();
+				minBound = emptyReleasableSlice();
 			}
-			while (rocksIterator.isValid()) {
-				writeBatch.delete(cfh, rocksIterator.key());
-				rocksIterator.next();
+			try {
+				ReleasableSlice maxBound;
+				if (range.hasMax()) {
+					var arr = LLUtils.toArray(range.getMax());
+					var maxSlice = new Slice(arr);
+					readOpts.setIterateUpperBound(maxSlice);
+					maxBound = new ReleasableSlice(maxSlice, null, arr);
+				} else {
+					maxBound = emptyReleasableSlice();
+				}
+				try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+						rocksIterator.seek(LLUtils.toArray(range.getMin()));
+					} else {
+						rocksIterator.seekToFirst();
+					}
+					while (rocksIterator.isValid()) {
+						writeBatch.delete(cfh, rocksIterator.key());
+						rocksIterator.next();
+					}
+				} finally {
+					maxBound.release();
+				}
+			} finally {
+				minBound.release();
 			}
 		} finally {
-			minBound.release();
-			maxBound.release();
 			range.release();
 		}
 	}
@@ -1350,33 +1374,36 @@ public class LLLocalDictionary implements LLDictionary {
 						} else {
 							minBound = emptyReleasableSlice();
 						}
-						ReleasableSlice maxBound;
-						if (range.hasMax()) {
-							maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
-						} else {
-							maxBound = emptyReleasableSlice();
-						}
 						try {
-							if (fast) {
-								readOpts.setIgnoreRangeDeletions(true);
-
+							ReleasableSlice maxBound;
+							if (range.hasMax()) {
+								maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
+							} else {
+								maxBound = emptyReleasableSlice();
 							}
-							try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-								if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-									rocksIterSeekTo(rocksIterator, range.getMin().retain());
-								} else {
-									rocksIterator.seekToFirst();
+							try {
+								if (fast) {
+									readOpts.setIgnoreRangeDeletions(true);
+
 								}
-								long i = 0;
-								while (rocksIterator.isValid()) {
-									rocksIterator.next();
-									i++;
+								try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+										rocksIterSeekTo(rocksIterator, range.getMin().retain());
+									} else {
+										rocksIterator.seekToFirst();
+									}
+									long i = 0;
+									while (rocksIterator.isValid()) {
+										rocksIterator.next();
+										i++;
+									}
+									return i;
 								}
-								return i;
+							} finally {
+								maxBound.release();
 							}
 						} finally {
 							minBound.release();
-							maxBound.release();
 						}
 					})
 					.onErrorMap(cause -> new IOException("Failed to get size of range "
@@ -1397,36 +1424,39 @@ public class LLLocalDictionary implements LLDictionary {
 					} else {
 						minBound = emptyReleasableSlice();
 					}
-					ReleasableSlice maxBound;
-					if (range.hasMax()) {
-						maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
-					} else {
-						maxBound = emptyReleasableSlice();
-					}
-					try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-							rocksIterSeekTo(rocksIterator, range.getMin().retain());
+					try {
+						ReleasableSlice maxBound;
+						if (range.hasMax()) {
+							maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
 						} else {
-							rocksIterator.seekToFirst();
+							maxBound = emptyReleasableSlice();
 						}
-						if (rocksIterator.isValid()) {
-							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-							try {
-								ByteBuf value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
-								try {
-									return Map.entry(key.retain(), value.retain());
-								} finally {
-									value.release();
-								}
-							} finally {
-								key.release();
+						try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+								rocksIterSeekTo(rocksIterator, range.getMin().retain());
+							} else {
+								rocksIterator.seekToFirst();
 							}
-						} else {
-							return null;
+							if (rocksIterator.isValid()) {
+								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+								try {
+									ByteBuf value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+									try {
+										return Map.entry(key.retain(), value.retain());
+									} finally {
+										value.release();
+									}
+								} finally {
+									key.release();
+								}
+							} else {
+								return null;
+							}
+						} finally {
+							maxBound.release();
 						}
 					} finally {
 						minBound.release();
-						maxBound.release();
 					}
 				})
 				.subscribeOn(dbScheduler)
@@ -1444,28 +1474,31 @@ public class LLLocalDictionary implements LLDictionary {
 					} else {
 						minBound = emptyReleasableSlice();
 					}
-					ReleasableSlice maxBound;
-					if (range.hasMax()) {
-						maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
-					} else {
-						maxBound = emptyReleasableSlice();
-					}
-					try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-							rocksIterSeekTo(rocksIterator, range.getMin().retain());
+					try {
+						ReleasableSlice maxBound;
+						if (range.hasMax()) {
+							maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
 						} else {
-							rocksIterator.seekToFirst();
+							maxBound = emptyReleasableSlice();
 						}
-						ByteBuf key;
-						if (rocksIterator.isValid()) {
-							key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-							return key;
-						} else {
-							return null;
+						try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+								rocksIterSeekTo(rocksIterator, range.getMin().retain());
+							} else {
+								rocksIterator.seekToFirst();
+							}
+							ByteBuf key;
+							if (rocksIterator.isValid()) {
+								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+								return key;
+							} else {
+								return null;
+							}
+						} finally {
+							maxBound.release();
 						}
 					} finally {
 						minBound.release();
-						maxBound.release();
 					}
 				})
 				.subscribeOn(dbScheduler)
@@ -1584,28 +1617,31 @@ public class LLLocalDictionary implements LLDictionary {
 					} else {
 						minBound = emptyReleasableSlice();
 					}
-					ReleasableSlice maxBound;
-					if (range.hasMax()) {
-						maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
-					} else {
-						maxBound = emptyReleasableSlice();
-					}
-					try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
-						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-							rocksIterSeekTo(rocksIterator, range.getMin().retain());
+					try {
+						ReleasableSlice maxBound;
+						if (range.hasMax()) {
+							maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
 						} else {
-							rocksIterator.seekToFirst();
+							maxBound = emptyReleasableSlice();
 						}
-						if (!rocksIterator.isValid()) {
-							return null;
+						try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
+							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+								rocksIterSeekTo(rocksIterator, range.getMin().retain());
+							} else {
+								rocksIterator.seekToFirst();
+							}
+							if (!rocksIterator.isValid()) {
+								return null;
+							}
+							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+							ByteBuf value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+							dbDelete(cfh, null, key);
+							return Map.entry(key, value);
+						} finally {
+							maxBound.release();
 						}
-						ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-						ByteBuf value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
-						dbDelete(cfh, null, key);
-						return Map.entry(key, value);
 					} finally {
 						minBound.release();
-						maxBound.release();
 					}
 				})
 				.onErrorMap(cause -> new IOException("Failed to delete " + range.toString(), cause))

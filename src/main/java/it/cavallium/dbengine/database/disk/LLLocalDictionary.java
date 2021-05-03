@@ -796,7 +796,7 @@ public class LLLocalDictionary implements LLDictionary {
 													batch.close();
 												} else {
 													for (Entry<ByteBuf, ByteBuf> entry : entriesWindow) {
-														db.put(cfh, LLUtils.toArray(entry.getKey()), LLUtils.toArray(entry.getValue()));
+														db.put(cfh, EMPTY_WRITE_OPTIONS, entry.getKey().nioBuffer(), entry.getValue().nioBuffer());
 													}
 												}
 												return null;
@@ -1191,8 +1191,7 @@ public class LLLocalDictionary implements LLDictionary {
 						rocksIterator.seekToFirst();
 					}
 					while (rocksIterator.isValid()) {
-						var b = LLUtils.toArray(LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
-						writeBatch.delete(cfh, b);
+						writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
 						rocksIterator.next();
 					}
 				} finally {
@@ -1213,26 +1212,20 @@ public class LLLocalDictionary implements LLDictionary {
 			readOpts.setFillCache(false);
 			ReleasableSlice minBound;
 			if (range.hasMin()) {
-				var arr = LLUtils.toArray(range.getMin());
-				var minSlice = new Slice(arr);
-				readOpts.setIterateLowerBound(minSlice);
-				minBound = new ReleasableSlice(minSlice, null, arr);
+				minBound = setIterateBound(readOpts, IterateBound.LOWER, range.getMin().retain());
 			} else {
 				minBound = emptyReleasableSlice();
 			}
 			try {
 				ReleasableSlice maxBound;
 				if (range.hasMax()) {
-					var arr = LLUtils.toArray(range.getMax());
-					var maxSlice = new Slice(arr);
-					readOpts.setIterateUpperBound(maxSlice);
-					maxBound = new ReleasableSlice(maxSlice, null, arr);
+					maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
 				} else {
 					maxBound = emptyReleasableSlice();
 				}
 				try (var rocksIterator = db.newIterator(cfh, readOpts)) {
 					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-						rocksIterator.seek(LLUtils.toArray(range.getMin()));
+						rocksIterSeekTo(rocksIterator, range.getMin().retain());
 					} else {
 						rocksIterator.seekToFirst();
 					}

@@ -30,6 +30,7 @@ import org.rocksdb.BloomFilter;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
+import org.rocksdb.CompactionPriority;
 import org.rocksdb.CompactionStyle;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
@@ -40,6 +41,7 @@ import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
+import org.rocksdb.TableFormatConfig;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.warp.commonutils.log.Logger;
@@ -181,7 +183,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force compact
 	}
 
-	@SuppressWarnings("CommentedOutCode")
+	@SuppressWarnings({"CommentedOutCode", "PointlessArithmeticExpression"})
 	private static Options openRocksDb(Path path, boolean crashIfWalError, boolean lowMemory)
 			throws IOException {
 		// Get databases directory path
@@ -224,7 +226,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		if (lowMemory) {
 			// LOW MEMORY
 			options
-					.setBytesPerSync(1024 * 1024)
+					.setBytesPerSync(512 * 1024) // 512KiB
 					.setWalBytesPerSync(1024 * 1024)
 					.setIncreaseParallelism(1)
 					.setMaxOpenFiles(2)
@@ -245,8 +247,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setAllowConcurrentMemtableWrite(true)
 					.setEnableWriteThreadAdaptiveYield(true)
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
-					.setBytesPerSync(10 * 1024 * 1024)
+					.setBytesPerSync(1 * 1024 * 1024) // 1MiB
 					.setWalBytesPerSync(10 * 1024 * 1024)
+					.setMaxOpenFiles(15)
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
@@ -257,13 +260,18 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 									600L * 1024L * 1024L * 1024L))) // 600GiB
 			;
-			tableOptions.setBlockCache(new LRUCache(256L * 1024L * 1024L)); // 256MiB
-			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(256L * 1024L * 1024L))); // 256MiB
+			tableOptions.setBlockCache(new LRUCache(128L * 1024L * 1024L)); // 128MiB
+			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(128L * 1024L * 1024L))); // 128MiB
 		}
 
 		final BloomFilter bloomFilter = new BloomFilter(10, false);
+		tableOptions.setOptimizeFiltersForMemory(true);
 		tableOptions.setFilterPolicy(bloomFilter);
+		tableOptions.setBlockSize(16 * 1024); // 16MiB
+		tableOptions.setCacheIndexAndFilterBlocks(true);
+		tableOptions.setPinL0FilterAndIndexBlocksInCache(true);
 		options.setTableFormatConfig(tableOptions);
+		options.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 
 		return options;
 	}

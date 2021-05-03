@@ -600,7 +600,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					}
 				})
-				.onErrorMap(cause -> new IOException("Failed to read or write " + LLUtils.toString(key), cause))
+				.onErrorMap(cause -> new IOException("Failed to read or write " + (key.refCnt() > 0 ? LLUtils.toString(key) : "(released)"), cause))
 				.subscribeOn(dbScheduler)
 				.doFinally(s -> key.release());
 	}

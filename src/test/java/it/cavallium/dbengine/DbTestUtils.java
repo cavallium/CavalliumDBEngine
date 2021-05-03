@@ -1,6 +1,7 @@
 package it.cavallium.dbengine;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -33,6 +34,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
+	public static final ByteBufAllocator ALLOCATOR = new PooledByteBufAllocator(true);
 	public static final AtomicInteger dbId = new AtomicInteger(0);
 
 	public static <U> Flux<U> tempDb(Function<LLKeyValueDatabase, Publisher<U>> action) {
@@ -52,7 +54,7 @@ public class DbTestUtils {
 							return null;
 						})
 						.subscribeOn(Schedulers.boundedElastic())
-						.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath, true).connect())
+						.then(new LLLocalDatabaseConnection(DbTestUtils.ALLOCATOR, wrkspcPath, true).connect())
 						.flatMap(conn -> conn.getDatabase("testdb",
 								List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
 								false, true
@@ -93,15 +95,15 @@ public class DbTestUtils {
 			LLDictionary dictionary,
 			DbType dbType,
 			int keyBytes) {
-		if (dbType == DbType.MAP || true) { //todo: fix hashmaps
+		if (dbType == DbType.MAP) {
 			return DatabaseMapDictionary.simple(dictionary,
-					SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, keyBytes),
-					Serializer.utf8(PooledByteBufAllocator.DEFAULT)
+					SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, keyBytes),
+					Serializer.utf8(DbTestUtils.ALLOCATOR)
 			);
 		} else {
 			return DatabaseMapDictionaryHashed.simple(dictionary,
-					SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, keyBytes),
-					Serializer.utf8(PooledByteBufAllocator.DEFAULT),
+					SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, keyBytes),
+					Serializer.utf8(DbTestUtils.ALLOCATOR),
 					String::hashCode,
 					new SerializerFixedBinaryLength<>() {
 						@Override
@@ -112,8 +114,9 @@ public class DbTestUtils {
 						@Override
 						public @NotNull Integer deserialize(@NotNull ByteBuf serialized) {
 							try {
+								var prevReaderIdx = serialized.readerIndex();
 								var val = serialized.readInt();
-								serialized.readerIndex(serialized.readerIndex() + keyBytes);
+								serialized.readerIndex(prevReaderIdx + keyBytes);
 								return val;
 							} finally {
 								serialized.release();
@@ -122,7 +125,7 @@ public class DbTestUtils {
 
 						@Override
 						public @NotNull ByteBuf serialize(@NotNull Integer deserialized) {
-							var out = PooledByteBufAllocator.DEFAULT.directBuffer(keyBytes);
+							var out = DbTestUtils.ALLOCATOR.directBuffer(keyBytes);
 							try {
 								out.writeInt(deserialized);
 								out.writerIndex(keyBytes);
@@ -141,19 +144,19 @@ public class DbTestUtils {
 			int key1Bytes,
 			int key2Bytes) {
 		return DatabaseMapDictionaryDeep.deepTail(dictionary,
-				SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, key1Bytes),
+				SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key1Bytes),
 				key2Bytes,
-				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(PooledByteBufAllocator.DEFAULT, key2Bytes), Serializer.utf8(PooledByteBufAllocator.DEFAULT))
+				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key2Bytes), Serializer.utf8(DbTestUtils.ALLOCATOR))
 		);
 	}
 
 	public static <T, U> DatabaseMapDictionaryHashed<String, String, Integer> tempDatabaseMapDictionaryHashMap(
 			LLDictionary dictionary) {
 		return DatabaseMapDictionaryHashed.simple(dictionary,
-				Serializer.utf8(PooledByteBufAllocator.DEFAULT),
-				Serializer.utf8(PooledByteBufAllocator.DEFAULT),
+				Serializer.utf8(DbTestUtils.ALLOCATOR),
+				Serializer.utf8(DbTestUtils.ALLOCATOR),
 				String::hashCode,
-				SerializerFixedBinaryLength.intSerializer(PooledByteBufAllocator.DEFAULT)
+				SerializerFixedBinaryLength.intSerializer(DbTestUtils.ALLOCATOR)
 		);
 	}
 }

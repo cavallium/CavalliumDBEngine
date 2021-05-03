@@ -66,8 +66,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		public @NotNull Entry<T, U> deserialize(@NotNull ByteBuf serialized) {
 			try {
 				int keySuffixLength = serialized.readInt();
-				T keySuffix = keySuffixSerializer.deserialize(serialized.retainedSlice(serialized.readerIndex(), keySuffixLength));
-				U value = valueSerializer.deserialize(serialized.retain());
+				int initialReaderIndex = serialized.readerIndex();
+				T keySuffix = keySuffixSerializer.deserialize(serialized.retain());
+				assert serialized.readerIndex() <= initialReaderIndex + keySuffixLength;
+				U value = valueSerializer.deserialize(serialized.readerIndex(initialReaderIndex + keySuffixLength).retain());
 				return Map.entry(keySuffix, value);
 			} finally {
 				serialized.release();

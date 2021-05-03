@@ -64,7 +64,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), range.retain(), existsAlmostCertainly)
 				.collectMap(
-						entry -> deserializeSuffix(stripPrefix(entry.getKey())),
+						entry -> deserializeSuffix(stripPrefix(entry.getKey(), false)),
 						entry -> deserialize(entry.getValue()),
 						HashMap::new)
 				.filter(map -> !map.isEmpty());
@@ -251,7 +251,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					}
 				})), existsAlmostCertainly)
 				.flatMap(entry -> Mono
-						.fromCallable(() -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey())), deserialize(entry.getValue())))
+						.fromCallable(() -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey(), false)), deserialize(entry.getValue())))
 				);
 	}
 
@@ -274,12 +274,13 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var serializedEntries = entries
 				.flatMap(entry -> Mono
 						.fromCallable(() -> serializeEntry(entry.getKey(), entry.getValue()))
-				).doOnDiscard(Entry.class, entry -> {
-					//noinspection unchecked
-					var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
-					castedEntry.getKey().release();
-					castedEntry.getValue().release();
-				});
+						.doOnDiscard(Entry.class, uncastedEntry -> {
+							//noinspection unchecked
+							var castedEntry = (Entry<ByteBuf, ByteBuf>) uncastedEntry;
+							castedEntry.getKey().release();
+							castedEntry.getValue().release();
+						})
+				);
 		return dictionary
 				.putMulti(serializedEntries, false)
 				.then();
@@ -290,15 +291,17 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), range.retain())
 				.map(key -> {
+					ByteBuf keySuffixWithExt = stripPrefix(key, false);
+					// Don't use "key" under this point ---
 					try {
-						return Map.entry(deserializeSuffix(stripPrefix(key.retain())),
+						return Map.entry(deserializeSuffix(keySuffixWithExt.retainedSlice()),
 								new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary,
-										toKey(stripPrefix(key.retain())),
+										toKey(keySuffixWithExt.retainedSlice()),
 										Serializer.noop()
 								), valueSerializer)
 						);
 					} finally {
-						key.release();
+						keySuffixWithExt.release();
 					}
 				});
 	}
@@ -308,7 +311,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), range.retain())
 				.map(serializedEntry -> Map.entry(
-						deserializeSuffix(stripPrefix(serializedEntry.getKey())),
+						deserializeSuffix(stripPrefix(serializedEntry.getKey(), false)),
 						valueSerializer.deserialize(serializedEntry.getValue())
 				))
 				.doOnDiscard(Entry.class, entry -> {

@@ -297,9 +297,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	/**
 	 * Keep only suffix and ext
 	 */
-	protected ByteBuf stripPrefix(ByteBuf key) {
+	protected ByteBuf stripPrefix(ByteBuf key, boolean slice) {
 		try {
-			return key.retainedSlice(this.keyPrefixLength, key.readableBytes() - this.keyPrefixLength);
+			if (slice) {
+				return key.retainedSlice(this.keyPrefixLength, key.readableBytes() - this.keyPrefixLength);
+			} else {
+				return key.retain().readerIndex(key.readerIndex() + keyPrefixLength);
+			}
 		} finally {
 			key.release();
 		}
@@ -308,9 +312,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	/**
 	 * Remove ext from full key
 	 */
-	protected ByteBuf removeExtFromFullKey(ByteBuf key) {
+	protected ByteBuf removeExtFromFullKey(ByteBuf key, boolean slice) {
 		try {
-			return key.slice(key.readerIndex(), keyPrefixLength + keySuffixLength).retain();
+			if (slice) {
+				return key.retainedSlice(key.readerIndex(), keyPrefixLength + keySuffixLength);
+			} else {
+				return key.retain().writerIndex(key.writerIndex() - (keyPrefixLength + keySuffixLength));
+			}
 		} finally {
 			key.release();
 		}
@@ -438,9 +446,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 							.using(
 									() -> {
 										assert this.subStageGetter.isMultiKey() || rangeKeys.size() == 1;
-										ByteBuf groupKeyWithExt = rangeKeys.get(0).retain();
-										ByteBuf groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt.retain());
-										ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain());
+										ByteBuf groupKeyWithExt = rangeKeys.get(0).retainedSlice();
+										ByteBuf groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt.retain(), true);
+										ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain(), true);
 										return new GroupBuffers(groupKeyWithExt, groupKeyWithoutExt, groupSuffix);
 									},
 									buffers -> Mono
@@ -482,7 +490,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 									keyPrefixLength + keySuffixLength)
 					)
 					.flatMapSequential(groupKeyWithoutExt -> {
-						ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain());
+						ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain(), true);
 						assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
 						return this.subStageGetter
 								.subStage(dictionary,

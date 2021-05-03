@@ -67,9 +67,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			try {
 				int keySuffixLength = serialized.readInt();
 				int initialReaderIndex = serialized.readerIndex();
-				T keySuffix = keySuffixSerializer.deserialize(serialized.retain());
-				assert serialized.readerIndex() <= initialReaderIndex + keySuffixLength;
-				U value = valueSerializer.deserialize(serialized.readerIndex(initialReaderIndex + keySuffixLength).retain());
+				int initialWriterIndex = serialized.writerIndex();
+				T keySuffix = keySuffixSerializer.deserialize(serialized.setIndex(initialReaderIndex, initialReaderIndex + keySuffixLength).retain());
+				assert serialized.readerIndex() == initialReaderIndex + keySuffixLength;
+				U value = valueSerializer.deserialize(serialized.setIndex(initialReaderIndex + keySuffixLength, initialWriterIndex).retain());
 				return Map.entry(keySuffix, value);
 			} finally {
 				serialized.release();
@@ -79,18 +80,21 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		@Override
 		public @NotNull ByteBuf serialize(@NotNull Entry<T, U> deserialized) {
 			ByteBuf keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
-			ByteBuf value = valueSerializer.serialize(deserialized.getValue());
 			try {
-				ByteBuf keySuffixLen = alloc.directBuffer(Integer.BYTES, Integer.BYTES);
+				ByteBuf value = valueSerializer.serialize(deserialized.getValue());
 				try {
-					keySuffixLen.writeInt(keySuffix.readableBytes());
-					return LLUtils.directCompositeBuffer(alloc, keySuffixLen.retain(), keySuffix.retain(), value.retain());
+					ByteBuf keySuffixLen = alloc.directBuffer(Integer.BYTES, Integer.BYTES);
+					try {
+						keySuffixLen.writeInt(keySuffix.readableBytes());
+						return LLUtils.directCompositeBuffer(alloc, keySuffixLen.retain(), keySuffix.retain(), value.retain());
+					} finally {
+						keySuffixLen.release();
+					}
 				} finally {
-					keySuffixLen.release();
+					value.release();
 				}
 			} finally {
 				keySuffix.release();
-				value.release();
 			}
 		}
 	}

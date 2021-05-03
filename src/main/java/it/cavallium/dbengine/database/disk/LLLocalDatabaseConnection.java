@@ -5,6 +5,7 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
+import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -14,6 +15,10 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class LLLocalDatabaseConnection implements LLDatabaseConnection {
+
+	static {
+		JMXNettyMonitoringManager.start();
+	}
 
 	private final Path basePath;
 	private final boolean crashIfWalError;

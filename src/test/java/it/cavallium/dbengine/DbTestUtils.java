@@ -1,5 +1,7 @@
 package it.cavallium.dbengine;
 
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -7,6 +9,8 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryHashed;
+import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
+import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
@@ -21,6 +25,7 @@ import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
+import org.jetbrains.annotations.NotNull;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -78,10 +83,54 @@ public class DbTestUtils {
 		return database.getDictionary(name, updateMode);
 	}
 
-	public static DatabaseMapDictionary<String, String> tempDatabaseMapDictionaryMap(
+
+	public enum DbType {
+		MAP,
+		HASH_MAP
+	}
+
+	public static DatabaseStageMap<String, String, DatabaseStageEntry<String>> tempDatabaseMapDictionaryMap(
 			LLDictionary dictionary,
+			DbType dbType,
 			int keyBytes) {
-		return DatabaseMapDictionary.simple(dictionary, SerializerFixedBinaryLength.utf8(keyBytes), Serializer.utf8());
+		if (dbType == DbType.MAP) {
+			return DatabaseMapDictionary.simple(dictionary, SerializerFixedBinaryLength.utf8(keyBytes), Serializer.utf8());
+		} else {
+			return DatabaseMapDictionaryHashed.simple(dictionary,
+					SerializerFixedBinaryLength.utf8(keyBytes),
+					Serializer.utf8(),
+					String::hashCode,
+					new SerializerFixedBinaryLength<>() {
+						@Override
+						public int getSerializedBinaryLength() {
+							return keyBytes;
+						}
+
+						@Override
+						public @NotNull Integer deserialize(@NotNull ByteBuf serialized) {
+							try {
+								var val = serialized.readInt();
+								serialized.readerIndex(serialized.readerIndex() + keyBytes);
+								return val;
+							} finally {
+								serialized.release();
+							}
+						}
+
+						@Override
+						public @NotNull ByteBuf serialize(@NotNull Integer deserialized) {
+							var out = PooledByteBufAllocator.DEFAULT.directBuffer(keyBytes);
+							try {
+								out.writeInt(deserialized);
+								out.writerIndex(keyBytes);
+								return out.retain();
+							} finally {
+								out.release();
+							}
+						}
+					}
+			);
+		}
 	}
 
 	public static <T, U> DatabaseMapDictionaryDeep<String, Map<String, String>, DatabaseMapDictionary<String, String>> tempDatabaseMapDictionaryDeepMap(

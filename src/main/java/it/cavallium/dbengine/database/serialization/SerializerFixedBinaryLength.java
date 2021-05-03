@@ -59,7 +59,9 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
 										+ serialized.readableBytes() + " bytes instead");
 					}
-					return serialized.toString(StandardCharsets.UTF_8);
+					var result = serialized.toString(StandardCharsets.UTF_8);
+					serialized.readerIndex(serialized.writerIndex());
+					return result;
 				} finally {
 					serialized.release();
 				}

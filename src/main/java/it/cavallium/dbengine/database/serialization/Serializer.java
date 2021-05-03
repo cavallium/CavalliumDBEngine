@@ -36,7 +36,9 @@ public interface Serializer<A, B> {
 		@Override
 		public @NotNull String deserialize(@NotNull ByteBuf serialized) {
 			try {
-				return serialized.toString(StandardCharsets.UTF_8);
+				var result = serialized.toString(StandardCharsets.UTF_8);
+				serialized.readerIndex(serialized.writerIndex());
+				return result;
 			} finally {
 				serialized.release();
 			}

@@ -752,17 +752,21 @@ public class LLLocalDictionary implements LLDictionary {
 		return entries
 				.window(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.doOnDiscard(Entry.class, entry -> {
-					//noinspection unchecked
-					var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
-					castedEntry.getKey().release();
-					castedEntry.getValue().release();
+					if (entry.getKey() instanceof ByteBuf && entry.getValue() instanceof ByteBuf) {
+						//noinspection unchecked
+						var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
+						castedEntry.getKey().release();
+						castedEntry.getValue().release();
+					}
 				})
 				.flatMap(Flux::collectList)
 				.doOnDiscard(Entry.class, entry -> {
-					//noinspection unchecked
-					var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
-					castedEntry.getKey().release();
-					castedEntry.getValue().release();
+					if (entry.getKey() instanceof ByteBuf && entry.getValue() instanceof ByteBuf) {
+						//noinspection unchecked
+						var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
+						castedEntry.getKey().release();
+						castedEntry.getValue().release();
+					}
 				})
 				.flatMap(ew -> Mono
 						.using(

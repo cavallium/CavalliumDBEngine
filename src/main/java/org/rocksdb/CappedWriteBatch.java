@@ -20,7 +20,7 @@ public class CappedWriteBatch extends WriteBatch {
 	/**
 	 * Default: true, Use false to debug problems with direct buffers
 	 */
-	private static final boolean USE_FAST_DIRECT_BUFFERS = false;
+	private static final boolean USE_FAST_DIRECT_BUFFERS = true;
 	private final RocksDB db;
 	private final int cap;
 	private final WriteOptions writeOptions;

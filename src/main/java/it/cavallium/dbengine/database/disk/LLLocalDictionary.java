@@ -75,13 +75,17 @@ public class LLLocalDictionary implements LLDictionary {
 	static final boolean VERIFY_CHECKSUMS_WHEN_NOT_NEEDED = false;
 	public static final boolean DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED = true;
 	/**
+	 * Default: true. Use false to debug problems with windowing.
+	 */
+	static final boolean USE_WINDOW_IN_SET_RANGE = true;
+	/**
 	 * Default: true. Use false to debug problems with write batches.
 	 */
 	static final boolean USE_WRITE_BATCHES_IN_SET_RANGE = false;
 	/**
 	 * Default: true. Use false to debug problems with capped write batches.
 	 */
-	static final boolean USE_CAPPED_WRITE_BATCH_IN_SET_RANGE = false;
+	static final boolean USE_CAPPED_WRITE_BATCH_IN_SET_RANGE = true;
 	static final boolean PARALLEL_EXACT_SIZE = true;
 
 	private static final int STRIPES = 512;
@@ -996,9 +1000,65 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Void> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries) {
-		if (USE_WRITE_BATCHES_IN_SET_RANGE) {
-			return entries
-					.window(MULTI_GET_WINDOW)
+		if (USE_WINDOW_IN_SET_RANGE) {
+			return Mono
+					.<Void>fromCallable(() -> {
+						if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
+							var opts = new ReadOptions(EMPTY_READ_OPTIONS);
+							if (range.hasMin()) {
+								setIterateBound(opts, IterateBound.LOWER, range.getMin().retain());
+							}
+							if (range.hasMax()) {
+								setIterateBound(opts, IterateBound.UPPER, range.getMax().retain());
+							}
+							try (RocksIterator it = db.newIterator(cfh, opts)) {
+								if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
+									rocksIterSeekTo(it, range.getMin().retain());
+								} else {
+									it.seekToFirst();
+								}
+								while (it.isValid()) {
+									db.delete(cfh, it.key());
+									it.next();
+								}
+							}
+						} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
+							try (var batch = new CappedWriteBatch(db,
+									CAPPED_WRITE_BATCH_CAP,
+									RESERVED_WRITE_BATCH_SIZE,
+									MAX_WRITE_BATCH_SIZE,
+									BATCH_WRITE_OPTIONS
+							)) {
+								if (range.isSingle()) {
+									batch.delete(cfh, range.getSingle().retain());
+								} else {
+									deleteSmallRangeWriteBatch(batch, range.retain());
+								}
+								batch.writeToDbAndClose();
+							}
+						} else {
+							try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
+								if (range.isSingle()) {
+									batch.delete(cfh, LLUtils.toArray(range.getSingle()));
+								} else {
+									deleteSmallRangeWriteBatch(batch, range.retain());
+								}
+								db.write(EMPTY_WRITE_OPTIONS, batch);
+								batch.clear();
+							}
+						}
+						return null;
+					})
+					.subscribeOn(dbScheduler)
+					.thenMany(entries
+							.window(MULTI_GET_WINDOW)
+							.doOnDiscard(Entry.class, discardedEntry -> {
+								//noinspection unchecked
+								var entry = (Entry<ByteBuf, ByteBuf>) discardedEntry;
+								entry.getKey().release();
+								entry.getValue().release();
+							})
+					)
 					.flatMap(keysWindowFlux -> keysWindowFlux
 							.collectList()
 							.doOnDiscard(Entry.class, discardedEntry -> {
@@ -1010,33 +1070,23 @@ public class LLLocalDictionary implements LLDictionary {
 							.flatMap(entriesList -> Mono
 									.<Void>fromCallable(() -> {
 										try {
-											if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
+											if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
+												for (Entry<ByteBuf, ByteBuf> entry : entriesList) {
+													db.put(cfh, EMPTY_WRITE_OPTIONS, entry.getKey().nioBuffer(), entry.getValue().nioBuffer());
+												}
+											} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
 												try (var batch = new CappedWriteBatch(db,
 														CAPPED_WRITE_BATCH_CAP,
 														RESERVED_WRITE_BATCH_SIZE,
 														MAX_WRITE_BATCH_SIZE,
 														BATCH_WRITE_OPTIONS
 												)) {
-													if (range.isSingle()) {
-														batch.delete(cfh, range.getSingle().retain());
-													} else {
-														deleteSmallRangeWriteBatch(batch, range.retain());
-													}
 													for (Entry<ByteBuf, ByteBuf> entry : entriesList) {
 														batch.put(cfh, entry.getKey().retain(), entry.getValue().retain());
 													}
 													batch.writeToDbAndClose();
 												}
 											} else {
-												try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
-													if (range.isSingle()) {
-														batch.delete(cfh, LLUtils.toArray(range.getSingle()));
-													} else {
-														deleteSmallRangeWriteBatch(batch, range.retain());
-													}
-													db.write(EMPTY_WRITE_OPTIONS, batch);
-													batch.clear();
-												}
 												try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
 													for (Entry<ByteBuf, ByteBuf> entry : entriesList) {
 														batch.put(cfh, LLUtils.toArray(entry.getKey()), LLUtils.toArray(entry.getValue()));
@@ -1066,6 +1116,11 @@ public class LLLocalDictionary implements LLDictionary {
 					.onErrorMap(cause -> new IOException("Failed to write range", cause))
 					.doFinally(s -> range.release());
 		} else {
+			if (USE_WRITE_BATCHES_IN_SET_RANGE) {
+				return Mono.fromCallable(() -> {
+					throw new UnsupportedOperationException("Can't use write batches in setRange without window. Please fix params");
+				});
+			}
 			return Flux
 					.defer(() -> this.getRange(null, range.retain(), false))
 					.flatMap(oldValue -> Mono

@@ -127,11 +127,15 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		ByteBuf keySuffixBuf = serializeSuffix(keySuffix);
 		ByteBuf keyBuf = toKey(keySuffixBuf.retain());
 		ByteBuf valueBuf = serialize(value);
-		return dictionary.put(keyBuf.retain(), valueBuf.retain(), LLDictionaryResultType.VOID).doFinally(s -> {
-			keyBuf.release();
-			keySuffixBuf.release();
-			valueBuf.release();
-		}).then();
+		return dictionary
+				.put(keyBuf.retain(), valueBuf.retain(), LLDictionaryResultType.VOID)
+				.doOnNext(ReferenceCounted::release)
+				.doFinally(s -> {
+					keyBuf.release();
+					keySuffixBuf.release();
+					valueBuf.release();
+				})
+				.then();
 	}
 
 	@Override
@@ -201,7 +205,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return Mono
 				.using(
 						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary.remove(keyBuf.retain(), LLDictionaryResultType.VOID).then(),
+						keyBuf -> dictionary
+								.remove(keyBuf.retain(), LLDictionaryResultType.VOID)
+								.doOnNext(ReferenceCounted::release)
+								.then(),
 						ReferenceCounted::release
 				);
 	}
@@ -335,6 +342,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		} else if (range.isSingle()) {
 			return dictionary
 					.remove(range.getSingle().retain(), LLDictionaryResultType.VOID)
+					.doOnNext(ReferenceCounted::release)
 					.then();
 		} else {
 			return dictionary

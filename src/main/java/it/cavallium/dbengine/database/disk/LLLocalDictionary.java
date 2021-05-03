@@ -81,11 +81,19 @@ public class LLLocalDictionary implements LLDictionary {
 	/**
 	 * Default: true. Use false to debug problems with write batches.
 	 */
-	static final boolean USE_WRITE_BATCHES_IN_SET_RANGE = false;
+	static final boolean USE_WRITE_BATCHES_IN_PUT_MULTI = true;
+	/**
+	 * Default: true. Use false to debug problems with write batches.
+	 */
+	static final boolean USE_WRITE_BATCHES_IN_SET_RANGE = true;
 	/**
 	 * Default: true. Use false to debug problems with capped write batches.
 	 */
 	static final boolean USE_CAPPED_WRITE_BATCH_IN_SET_RANGE = true;
+	/**
+	 * Default: true. Use false to debug problems with write batches deletes.
+	 */
+	static final boolean USE_WRITE_BATCH_IN_SET_RANGE_DELETE = false;
 	static final boolean PARALLEL_EXACT_SIZE = true;
 
 	private static final int STRIPES = 512;
@@ -774,7 +782,7 @@ public class LLLocalDictionary implements LLDictionary {
 												stamps = null;
 											}
 											try {
-												if (USE_WRITE_BATCHES_IN_SET_RANGE) {
+												if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
 													var batch = new CappedWriteBatch(db,
 															CAPPED_WRITE_BATCH_CAP,
 															RESERVED_WRITE_BATCH_SIZE,
@@ -1003,7 +1011,7 @@ public class LLLocalDictionary implements LLDictionary {
 		if (USE_WINDOW_IN_SET_RANGE) {
 			return Mono
 					.<Void>fromCallable(() -> {
-						if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
+						if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
 							var opts = new ReadOptions(EMPTY_READ_OPTIONS);
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
@@ -1149,6 +1157,7 @@ public class LLLocalDictionary implements LLDictionary {
 					)
 					.then(entries
 							.flatMap(entry -> this.put(entry.getKey(), entry.getValue(), LLDictionaryResultType.VOID))
+							.doOnNext(ReferenceCounted::release)
 							.then(Mono.<Void>empty())
 					)
 					.onErrorMap(cause -> new IOException("Failed to write range", cause))
@@ -1156,6 +1165,7 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	//todo: this is broken, check why
 	private void deleteSmallRangeWriteBatch(CappedWriteBatch writeBatch, LLRange range)
 			throws RocksDBException {
 		try {
@@ -1181,7 +1191,8 @@ public class LLLocalDictionary implements LLDictionary {
 						rocksIterator.seekToFirst();
 					}
 					while (rocksIterator.isValid()) {
-						writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
+						var b = LLUtils.toArray(LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
+						writeBatch.delete(cfh, b);
 						rocksIterator.next();
 					}
 				} finally {

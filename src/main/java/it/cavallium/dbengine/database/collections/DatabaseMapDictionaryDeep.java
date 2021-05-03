@@ -537,6 +537,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			return Mono
 					.defer(() -> dictionary
 							.remove(range.getSingle().retain(), LLDictionaryResultType.VOID)
+							.doOnNext(ReferenceCounted::release)
 					)
 					.then();
 		} else {

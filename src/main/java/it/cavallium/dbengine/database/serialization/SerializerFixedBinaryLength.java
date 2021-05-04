@@ -110,7 +110,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 			@Override
 			public @NotNull ByteBuf serialize(@NotNull Integer deserialized) {
-				ByteBuf buf = allocator.directBuffer(Integer.BYTES);
+				ByteBuf buf = allocator.buffer(Integer.BYTES);
 				return buf.writeInt(deserialized);
 			}
 
@@ -139,7 +139,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 
 			@Override
 			public @NotNull ByteBuf serialize(@NotNull Long deserialized) {
-				ByteBuf buf = allocator.directBuffer(Long.BYTES);
+				ByteBuf buf = allocator.buffer(Long.BYTES);
 				return buf.writeLong(deserialized);
 			}
 

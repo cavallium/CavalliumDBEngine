@@ -105,6 +105,7 @@ public class LLLocalDictionary implements LLDictionary {
 	 * Default: true
 	 */
 	private static final boolean USE_DIRECT_BUFFER_BOUNDS = true;
+	private static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
 
 	static {
 		boolean assertionsEnabled = false;
@@ -235,7 +236,7 @@ public class LLLocalDictionary implements LLDictionary {
 				ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
 				assert keyNioBuffer.isDirect();
 				// Create a direct result buffer because RocksDB works only with direct buffers
-				ByteBuf resultBuf = alloc.directBuffer();
+				ByteBuf resultBuf = alloc.directBuffer(LLLocalDictionary.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
 				try {
 					int valueSize;
 					int assertionReadData = -1;

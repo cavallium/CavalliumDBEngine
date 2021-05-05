@@ -229,7 +229,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setBytesPerSync(512 * 1024) // 512KiB
 					.setWalBytesPerSync(1024 * 1024)
 					.setIncreaseParallelism(1)
-					.setMaxOpenFiles(2)
+					.setMaxOpenFiles(15)
 					.optimizeLevelStyleCompaction(1024 * 1024) // 1MiB of ram will be used for level style compaction
 					.setWriteBufferSize(1024 * 1024) // 1MB
 					.setWalSizeLimitMB(16) // 16MB
@@ -249,7 +249,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
 					.setBytesPerSync(1 * 1024 * 1024) // 1MiB
 					.setWalBytesPerSync(10 * 1024 * 1024)
-					.setMaxOpenFiles(15)
+					.setMaxOpenFiles(150)
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB

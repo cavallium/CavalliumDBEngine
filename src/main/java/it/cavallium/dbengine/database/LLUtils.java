@@ -307,7 +307,7 @@ public class LLUtils {
 	}
 	 */
 
-	public static ByteBuf convertToDirectByteBuf(AbstractByteBufAllocator alloc, ByteBuf buffer) {
+	public static ByteBuf convertToDirectByteBuf(ByteBufAllocator alloc, ByteBuf buffer) {
 		ByteBuf result;
 		ByteBuf directCopyBuf = alloc.buffer(buffer.capacity(), buffer.maxCapacity());
 		directCopyBuf.writeBytes(buffer, 0, buffer.writerIndex());
@@ -316,6 +316,12 @@ public class LLUtils {
 		assert result.isDirect();
 		assert result.capacity() == buffer.capacity();
 		assert buffer.readerIndex() == result.readerIndex();
+		return result;
+	}
+
+	public static ByteBuf fromByteArray(ByteBufAllocator alloc, byte[] array) {
+		ByteBuf result = alloc.buffer(array.length);
+		result.writeBytes(array);
 		return result;
 	}
 

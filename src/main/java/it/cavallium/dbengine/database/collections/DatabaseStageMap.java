@@ -1,7 +1,11 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import java.util.HashMap;
@@ -14,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuple3;
 import reactor.util.function.Tuples;
 
 @SuppressWarnings("unused")
@@ -39,18 +44,40 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	Mono<UpdateMode> getUpdateMode();
 
-	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
+	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
 		return this
 				.at(null, key)
 				.single()
 				.flatMap(v -> v
-						.update(updater, existsAlmostCertainly)
+						.update(updater, updateReturnMode, existsAlmostCertainly)
 						.doFinally(s -> v.release())
 				);
 	}
 
+	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, Function<@Nullable U, @Nullable U> updater) {
+		return updateValue(key, updateReturnMode, false, updater);
+	}
+
 	default Mono<Boolean> updateValue(T key, Function<@Nullable U, @Nullable U> updater) {
-		return updateValue(key, false, updater);
+		return updateValueAndGetDelta(key, false, updater).map(LLUtils::isDeltaChanged).single();
+	}
+
+	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
+		return updateValueAndGetDelta(key, existsAlmostCertainly, updater).map(LLUtils::isDeltaChanged).single();
+	}
+
+	default Mono<Delta<U>> updateValueAndGetDelta(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
+		return this
+				.at(null, key)
+				.single()
+				.flatMap(v -> v
+						.updateAndGetDelta(updater, existsAlmostCertainly)
+						.doFinally(s -> v.release())
+				);
+	}
+
+	default Mono<Delta<U>> updateValueAndGetDelta(T key, Function<@Nullable U, @Nullable U> updater) {
+		return updateValueAndGetDelta(key, false, updater);
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
@@ -156,7 +183,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater, boolean existsAlmostCertainly) {
+	default Mono<Delta<Map<T, U>>> updateAndGetDelta(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater,
+			boolean existsAlmostCertainly) {
 		return this
 				.getUpdateMode()
 				.single()
@@ -166,7 +194,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 								.getAllValues(null)
 								.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
 								.single()
-								.<Tuple2<Optional<Map<T, U>>, Boolean>>handle((v, sink) -> {
+								.<Tuple2<Optional<Map<T, U>>, Optional<Map<T, U>>>>handle((v, sink) -> {
 									if (v.isEmpty()) {
 										v = null;
 									}
@@ -174,13 +202,12 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 									if (result != null && result.isEmpty()) {
 										result = null;
 									}
-									boolean changed = !Objects.equals(v, result);
-									sink.next(Tuples.of(Optional.ofNullable(result), changed));
+									sink.next(Tuples.of(Optional.ofNullable(v), Optional.ofNullable(result)));
 								})
 								.flatMap(result -> Mono
-										.justOrEmpty(result.getT1())
+										.justOrEmpty(result.getT2())
 										.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
-										.thenReturn(result.getT2())
+										.thenReturn(Delta.of(result.getT1().orElse(null), result.getT2().orElse(null)))
 								);
 					} else if (updateMode == UpdateMode.ALLOW) {
 						return Mono.fromCallable(() -> {

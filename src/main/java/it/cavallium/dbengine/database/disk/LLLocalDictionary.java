@@ -4,12 +4,14 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.util.ReferenceCounted;
+import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
@@ -165,7 +167,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private int getLockIndex(ByteBuf key) {
-		return Math.abs(key.hashCode() % STRIPES);
+		return Math.abs(LLUtils.hashCode(key) % STRIPES);
 	}
 
 	private IntArrayList getLockIndices(List<ByteBuf> keys) {
@@ -248,7 +250,7 @@ public class LLLocalDictionary implements LLDictionary {
 						assert resultNioBuf.isDirect();
 						valueSize = db.get(cfh,
 								Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS),
-								keyNioBuffer,
+								keyNioBuffer.position(0),
 								resultNioBuf
 						);
 						if (valueSize != RocksDB.NOT_FOUND) {
@@ -492,13 +494,18 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.fromSupplier(() -> updateMode);
 	}
 
+	// Remember to change also updateAndGetDelta() if you are modifying this function
+	@SuppressWarnings("DuplicatedCode")
 	@Override
-	public Mono<Boolean> update(ByteBuf key,
+	public Mono<ByteBuf> update(ByteBuf key,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return Mono
 				.fromCallable(() -> {
-					if (updateMode == UpdateMode.DISALLOW) throw new UnsupportedOperationException("update() is disallowed");
+					if (updateMode == UpdateMode.DISALLOW) {
+						throw new UnsupportedOperationException("update() is disallowed");
+					}
 					StampedLock lock;
 					long stamp;
 					if (updateMode == UpdateMode.ALLOW) {
@@ -514,7 +521,6 @@ public class LLLocalDictionary implements LLDictionary {
 							logger.trace("Reading {}", LLUtils.toString(key));
 						}
 						while (true) {
-							boolean changed = false;
 							@Nullable ByteBuf prevData;
 							var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
 							if (existsAlmostCertainly || db.keyMayExist(cfh, LLUtils.toArray(key), prevDataHolder)) {
@@ -561,7 +567,6 @@ public class LLLocalDictionary implements LLDictionary {
 										if (logger.isTraceEnabled()) {
 											logger.trace("Deleting {}", LLUtils.toString(key));
 										}
-										changed = true;
 										dbDelete(cfh, null, key.retain());
 									} else if (newData != null
 											&& (prevData == null || !LLUtils.equals(prevData, newData))) {
@@ -580,10 +585,134 @@ public class LLLocalDictionary implements LLDictionary {
 										if (logger.isTraceEnabled()) {
 											logger.trace("Writing {}: {}", LLUtils.toString(key), LLUtils.toString(newData));
 										}
-										changed = true;
 										dbPut(cfh, null, key.retain(), newData.retain());
 									}
-									return changed;
+									switch (updateReturnMode) {
+										case GET_NEW_VALUE:
+											return newData != null ? newData.retain() : null;
+										case GET_OLD_VALUE:
+											return prevData != null ? prevData.retain() : null;
+										case NOTHING:
+											return null;
+										default:
+											throw new IllegalArgumentException();
+									}
+								} finally {
+									if (newData != null) {
+										newData.release();
+									}
+								}
+							} finally {
+								if (prevData != null) {
+									prevData.release();
+								}
+							}
+						}
+					} finally {
+						if (updateMode == UpdateMode.ALLOW) {
+							lock.unlock(stamp);
+						}
+					}
+				})
+				.onErrorMap(cause -> new IOException("Failed to read or write " + (key.refCnt() > 0 ? LLUtils.toString(key) : "(released)"), cause))
+				.subscribeOn(dbScheduler)
+				.doFinally(s -> key.release());
+	}
+
+	// Remember to change also update() if you are modifying this function
+	@SuppressWarnings("DuplicatedCode")
+	@Override
+	public Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
+			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			boolean existsAlmostCertainly) {
+		return Mono
+				.fromCallable(() -> {
+					if (updateMode == UpdateMode.DISALLOW) throw new UnsupportedOperationException("update() is disallowed");
+					StampedLock lock;
+					long stamp;
+					if (updateMode == UpdateMode.ALLOW) {
+						lock = itemsLock.getAt(getLockIndex(key));
+
+						stamp = lock.readLock();
+					} else {
+						lock = null;
+						stamp = 0;
+					}
+					try {
+						if (logger.isTraceEnabled()) {
+							logger.trace("Reading {}", LLUtils.toString(key));
+						}
+						while (true) {
+							@Nullable ByteBuf prevData;
+							var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
+							if (existsAlmostCertainly || db.keyMayExist(cfh, LLUtils.toArray(key), prevDataHolder)) {
+								if (!existsAlmostCertainly && prevDataHolder.getValue() != null) {
+									byte @Nullable [] prevDataBytes = prevDataHolder.getValue();
+									if (prevDataBytes != null) {
+										prevData = wrappedBuffer(prevDataBytes);
+									} else {
+										prevData = null;
+									}
+								} else {
+									prevData = dbGet(cfh, null, key.retain(), existsAlmostCertainly);
+								}
+							} else {
+								prevData = null;
+							}
+							try {
+								@Nullable ByteBuf newData;
+								ByteBuf prevDataToSendToUpdater = prevData == null ? null : prevData.retainedSlice();
+								try {
+									newData = updater.apply(prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.retain());
+									assert prevDataToSendToUpdater == null
+											|| prevDataToSendToUpdater.readerIndex() == 0
+											|| !prevDataToSendToUpdater.isReadable();
+								} finally {
+									if (prevDataToSendToUpdater != null) {
+										prevDataToSendToUpdater.release();
+									}
+								}
+								try {
+									if (prevData != null && newData == null) {
+										//noinspection DuplicatedCode
+										if (updateMode == UpdateMode.ALLOW) {
+											var ws = lock.tryConvertToWriteLock(stamp);
+											if (ws != 0) {
+												stamp = ws;
+											} else {
+												lock.unlockRead(stamp);
+
+												stamp = lock.writeLock();
+												continue;
+											}
+										}
+										if (logger.isTraceEnabled()) {
+											logger.trace("Deleting {}", LLUtils.toString(key));
+										}
+										dbDelete(cfh, null, key.retain());
+									} else if (newData != null
+											&& (prevData == null || !LLUtils.equals(prevData, newData))) {
+										//noinspection DuplicatedCode
+										if (updateMode == UpdateMode.ALLOW) {
+											var ws = lock.tryConvertToWriteLock(stamp);
+											if (ws != 0) {
+												stamp = ws;
+											} else {
+												lock.unlockRead(stamp);
+
+												stamp = lock.writeLock();
+												continue;
+											}
+										}
+										if (logger.isTraceEnabled()) {
+											logger.trace("Writing {}: {}", LLUtils.toString(key), LLUtils.toString(newData));
+										}
+										dbPut(cfh, null, key.retain(), newData.retain());
+									}
+									return Delta.of(
+											prevData != null ? prevData.retain() : null,
+											newData != null ? newData.retain() : null
+									);
 								} finally {
 									if (newData != null) {
 										newData.release();

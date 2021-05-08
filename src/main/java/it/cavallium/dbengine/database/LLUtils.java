@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty.buffer.AbstractByteBufAllocator;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
@@ -14,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -32,6 +33,7 @@ import org.apache.lucene.search.SortedNumericSortField;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
+import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -411,5 +413,57 @@ public class LLUtils {
 				buffer.release();
 			}
 		}
+	}
+
+	public static <T> Mono<T> resolveDelta(Mono<Delta<T>> prev, UpdateReturnMode updateReturnMode) {
+		return prev.handle((delta, sink) -> {
+			switch (updateReturnMode) {
+				case GET_NEW_VALUE:
+					var current = delta.getCurrent();
+					if (current != null) {
+						sink.next(current);
+					} else {
+						sink.complete();
+					}
+					break;
+				case GET_OLD_VALUE:
+					var previous = delta.getPrevious();
+					if (previous != null) {
+						sink.next(previous);
+					} else {
+						sink.complete();
+					}
+					break;
+				case NOTHING:
+					sink.complete();
+					break;
+				default:
+					sink.error(new IllegalStateException());
+			}
+		});
+	}
+
+	public static <T, U> Mono<Delta<U>> mapDelta(Mono<Delta<T>> mono, Function<@NotNull T, @Nullable U> mapper) {
+		return mono.map(delta -> {
+			T prev = delta.getPrevious();
+			T curr = delta.getCurrent();
+			U newPrev;
+			U newCurr;
+			if (prev != null) {
+				newPrev = mapper.apply(prev);
+			} else {
+				newPrev = null;
+			}
+			if (curr != null) {
+				newCurr = mapper.apply(curr);
+			} else {
+				newCurr = null;
+			}
+			return Delta.of(newPrev, newCurr);
+		});
+	}
+
+	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {
+		return !Objects.equals(delta.getPrevious(), delta.getCurrent());
 	}
 }

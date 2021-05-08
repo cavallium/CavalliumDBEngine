@@ -3,10 +3,12 @@ package it.cavallium.dbengine.database.collections;
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.HashMap;
@@ -142,26 +144,56 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Boolean> updateValue(T keySuffix,
+	public Mono<U> updateValue(T keySuffix,
+			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly,
 			Function<@Nullable U, @Nullable U> updater) {
 		return Mono
 				.using(
 						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary.update(keyBuf.retain(), oldSerialized -> {
-							try {
-								var result = updater.apply(oldSerialized == null ? null : this.deserialize(oldSerialized.retain()));
-								if (result == null) {
-									return null;
-								} else {
-									return this.serialize(result);
-								}
-							} finally {
-								if (oldSerialized != null) {
-									oldSerialized.release();
-								}
-							}
-						}, existsAlmostCertainly),
+						keyBuf -> dictionary
+								.update(keyBuf.retain(), oldSerialized -> {
+									try {
+										var result = updater.apply(oldSerialized == null ? null : this.deserialize(oldSerialized.retain()));
+										if (result == null) {
+											return null;
+										} else {
+											return this.serialize(result);
+										}
+									} finally {
+										if (oldSerialized != null) {
+											oldSerialized.release();
+										}
+									}
+								}, updateReturnMode, existsAlmostCertainly)
+								.map(this::deserialize),
+						ReferenceCounted::release
+				);
+	}
+
+	@Override
+	public Mono<Delta<U>> updateValueAndGetDelta(T keySuffix,
+			boolean existsAlmostCertainly,
+			Function<@Nullable U, @Nullable U> updater) {
+		return Mono
+				.using(
+						() -> toKey(serializeSuffix(keySuffix)),
+						keyBuf -> dictionary
+								.updateAndGetDelta(keyBuf.retain(), oldSerialized -> {
+									try {
+										var result = updater.apply(oldSerialized == null ? null : this.deserialize(oldSerialized.retain()));
+										if (result == null) {
+											return null;
+										} else {
+											return this.serialize(result);
+										}
+									} finally {
+										if (oldSerialized != null) {
+											oldSerialized.release();
+										}
+									}
+								}, existsAlmostCertainly)
+								.transform(mono -> LLUtils.mapDelta(mono, this::deserialize)),
 						ReferenceCounted::release
 				);
 	}

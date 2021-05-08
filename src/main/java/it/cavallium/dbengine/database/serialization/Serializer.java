@@ -42,8 +42,9 @@ public interface Serializer<A, B> {
 			@Override
 			public @NotNull String deserialize(@NotNull ByteBuf serialized) {
 				try {
-					var result = serialized.toString(StandardCharsets.UTF_8);
-					serialized.readerIndex(serialized.writerIndex());
+					var length = serialized.readInt();
+					var result = serialized.toString(serialized.readerIndex(), length, StandardCharsets.UTF_8);
+					serialized.readerIndex(serialized.readerIndex() + length);
 					return result;
 				} finally {
 					serialized.release();
@@ -53,7 +54,9 @@ public interface Serializer<A, B> {
 			@Override
 			public @NotNull ByteBuf serialize(@NotNull String deserialized) {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
-				ByteBuf buf = allocator.buffer(ByteBufUtil.utf8MaxBytes(deserialized));
+				int length = ByteBufUtil.utf8Bytes(deserialized);
+				ByteBuf buf = allocator.buffer(Integer.BYTES + length);
+				buf.writeInt(length);
 				ByteBufUtil.writeUtf8(buf, deserialized);
 				return buf;
 			}

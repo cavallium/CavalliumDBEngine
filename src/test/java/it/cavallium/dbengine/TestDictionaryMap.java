@@ -4,6 +4,7 @@ import static it.cavallium.dbengine.DbTestUtils.*;
 
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -36,25 +37,25 @@ public class TestDictionaryMap {
 			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789";
 
 	private static Stream<Arguments> provideArgumentsPut() {
-		var goodKeys = Set.of("12345");
-		Set<String> badKeys;
+		var goodKeys = List.of("12345");
+		List<String> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of("", "aaaa", "aaaaaa");
+			badKeys = List.of("", "aaaa", "aaaaaa");
 		} else {
-			badKeys = Set.of();
+			badKeys = List.of();
 		}
-		Set<Tuple2<String, Boolean>> keys = Stream.concat(
+		List<Tuple2<String, Boolean>> keys = Stream.concat(
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
-		).collect(Collectors.toSet());
-		var values = Set.of("", "\0", BIG_STRING);
+		).collect(Collectors.toList());
+		var values = List.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()
 				.flatMap(keyTuple -> {
 					Stream<String> strm;
 					if (keyTuple.getT2()) {
-						strm = values.stream().limit(1);
+						strm = values.stream().findFirst().stream();
 					} else {
 						strm = values.stream();
 					}
@@ -72,8 +73,9 @@ public class TestDictionaryMap {
 				), Tuples.of(DbType.HASH_MAP, entryTuple.getT1(),
 						entryTuple.getT2(),
 						entryTuple.getT3(),
-						entryTuple.getT4()
+						false
 				)))
+				.filter(tuple -> !(tuple.getT1() == DbType.HASH_MAP && tuple.getT2() != UpdateMode.ALLOW))
 				.map(fullTuple -> Arguments.of(fullTuple.getT1(), fullTuple.getT2(), fullTuple.getT3(), fullTuple.getT4(), fullTuple.getT5()));
 	}
 
@@ -290,18 +292,18 @@ public class TestDictionaryMap {
 	}
 
 	private static Stream<Arguments> provideArgumentsPutMulti() {
-		var goodKeys = Set.of(Set.of("12345", "67890"), Set.<String>of());
-		Set<Set<String>> badKeys;
+		var goodKeys = List.of(List.of("12345", "67890"), List.<String>of());
+		List<List<String>> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of(Set.of("", "12345"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
+			badKeys = List.of(List.of("", "12345"), List.of("45678", "aaaa"), List.of("aaaaaa", "capra"));
 		} else {
-			badKeys = Set.of();
+			badKeys = List.of();
 		}
-		Set<Tuple2<Set<String>, Boolean>> keys = Stream.concat(
+		List<Tuple2<List<String>, Boolean>> keys = Stream.concat(
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
-		).collect(Collectors.toSet());
-		var values = Set.of("", "\0", BIG_STRING);
+		).collect(Collectors.toList());
+		var values = List.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()
@@ -319,8 +321,9 @@ public class TestDictionaryMap {
 						entryTuple.getT3()
 				), Tuples.of(DbType.HASH_MAP, entryTuple.getT1(),
 						entryTuple.getT2(),
-						entryTuple.getT3()
+						false
 				)))
+				.filter(tuple -> !(tuple.getT1() == DbType.HASH_MAP && tuple.getT2() != UpdateMode.ALLOW))
 				.map(fullTuple -> Arguments.of(fullTuple.getT1(), fullTuple.getT2(), fullTuple.getT3(), fullTuple.getT4()));
 	}
 
@@ -438,7 +441,7 @@ public class TestDictionaryMap {
 							if (entries.isEmpty()) {
 								removalMono = Mono.empty();
 							} else {
-								removalMono = map.remove(entries.keySet().stream().findAny().orElseThrow());
+								removalMono = map.remove(entries.keySet().stream().findFirst().orElseThrow());
 							}
 							return Flux
 									.concat(
@@ -609,9 +612,10 @@ public class TestDictionaryMap {
 								)
 								.doFinally(s -> map.release())
 						)
+						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
 				));
 		if (shouldFail) {
-			stpVer.expectNext(true).verifyError();
+			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(true, entries.isEmpty()).verifyComplete();
 		}
@@ -634,9 +638,10 @@ public class TestDictionaryMap {
 								)
 								.doFinally(s -> map.release())
 						)
+						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
 				));
 		if (shouldFail) {
-			stpVer.expectNext(true).verifyError();
+			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(true, entries.isEmpty(), true).verifyComplete();
 		}

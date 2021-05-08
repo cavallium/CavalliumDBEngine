@@ -102,21 +102,21 @@ public class DbTestUtils {
 			);
 		} else {
 			return DatabaseMapDictionaryHashed.simple(dictionary,
-					SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, keyBytes),
 					Serializer.utf8(DbTestUtils.ALLOCATOR),
-					String::hashCode,
+					Serializer.utf8(DbTestUtils.ALLOCATOR),
+					s -> (short) s.hashCode(),
 					new SerializerFixedBinaryLength<>() {
 						@Override
 						public int getSerializedBinaryLength() {
-							return keyBytes;
+							return Short.BYTES;
 						}
 
 						@Override
-						public @NotNull Integer deserialize(@NotNull ByteBuf serialized) {
+						public @NotNull Short deserialize(@NotNull ByteBuf serialized) {
 							try {
 								var prevReaderIdx = serialized.readerIndex();
-								var val = serialized.readInt();
-								serialized.readerIndex(prevReaderIdx + keyBytes);
+								var val = serialized.readShort();
+								serialized.readerIndex(prevReaderIdx + Short.BYTES);
 								return val;
 							} finally {
 								serialized.release();
@@ -124,11 +124,11 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull ByteBuf serialize(@NotNull Integer deserialized) {
-							var out = DbTestUtils.ALLOCATOR.directBuffer(keyBytes);
+						public @NotNull ByteBuf serialize(@NotNull Short deserialized) {
+							var out = DbTestUtils.ALLOCATOR.directBuffer(Short.BYTES);
 							try {
-								out.writeInt(deserialized);
-								out.writerIndex(keyBytes);
+								out.writeShort(deserialized);
+								out.writerIndex(Short.BYTES);
 								return out.retain();
 							} finally {
 								out.release();
@@ -139,14 +139,32 @@ public class DbTestUtils {
 		}
 	}
 
-	public static <T, U> DatabaseMapDictionaryDeep<String, Map<String, String>, DatabaseMapDictionary<String, String>> tempDatabaseMapDictionaryDeepMap(
+	public static <T, U> DatabaseMapDictionaryDeep<String, Map<String, String>,
+			DatabaseMapDictionary<String, String>> tempDatabaseMapDictionaryDeepMap(
 			LLDictionary dictionary,
 			int key1Bytes,
 			int key2Bytes) {
 		return DatabaseMapDictionaryDeep.deepTail(dictionary,
 				SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key1Bytes),
 				key2Bytes,
-				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key2Bytes), Serializer.utf8(DbTestUtils.ALLOCATOR))
+				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key2Bytes),
+						Serializer.utf8(DbTestUtils.ALLOCATOR)
+				)
+		);
+	}
+
+	public static <T, U> DatabaseMapDictionaryDeep<String, Map<String, String>,
+			DatabaseMapDictionaryHashed<String, String, Integer>> tempDatabaseMapDictionaryDeepMapHashMap(
+			LLDictionary dictionary,
+			int key1Bytes) {
+		return DatabaseMapDictionaryDeep.deepTail(dictionary,
+				SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key1Bytes),
+				Integer.BYTES,
+				new SubStageGetterHashMap<>(Serializer.utf8(DbTestUtils.ALLOCATOR),
+						Serializer.utf8(DbTestUtils.ALLOCATOR),
+						String::hashCode,
+						SerializerFixedBinaryLength.intSerializer(DbTestUtils.ALLOCATOR)
+				)
 		);
 	}
 

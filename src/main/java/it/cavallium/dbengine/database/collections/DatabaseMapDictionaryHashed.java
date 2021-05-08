@@ -3,16 +3,20 @@ package it.cavallium.dbengine.database.collections;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -23,9 +27,8 @@ import reactor.core.publisher.Mono;
 public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
 	private final ByteBufAllocator alloc;
-	private final DatabaseMapDictionary<TH, Entry<T, U>> subDictionary;
+	private final DatabaseMapDictionary<TH, Set<Entry<T, U>>> subDictionary;
 	private final Function<T, TH> keySuffixHashFunction;
-	private final Function<T, ValueMapper<T, U>> valueMapper;
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
 			ByteBuf prefixKey,
@@ -34,85 +37,22 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH, ByteBuf> keySuffixHashSerializer) {
 		try {
-			ValueWithHashSerializer<T, U> valueWithHashSerializer = new ValueWithHashSerializer<>(keySuffixSerializer,
-					valueSerializer
-			);
+			if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
+				throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
+			}
 			this.alloc = dictionary.getAllocator();
-			this.valueMapper = ValueMapper::new;
+			ValueWithHashSerializer<T, U> valueWithHashSerializer
+					= new ValueWithHashSerializer<>(alloc, keySuffixSerializer, valueSerializer);
+			ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
+					= new ValuesSetSerializer<>(alloc, valueWithHashSerializer);
 			this.subDictionary = DatabaseMapDictionary.tail(dictionary,
 					prefixKey.retain(),
 					keySuffixHashSerializer,
-					valueWithHashSerializer
+					valuesSetSerializer
 			);
 			this.keySuffixHashFunction = keySuffixHashFunction;
 		} finally {
 			prefixKey.release();
-		}
-	}
-
-	private class ValueWithHashSerializer<T, U> implements Serializer<Entry<T, U>, ByteBuf> {
-
-		private final Serializer<T, ByteBuf> keySuffixSerializer;
-		private final Serializer<U, ByteBuf> valueSerializer;
-
-		private ValueWithHashSerializer(Serializer<T, ByteBuf> keySuffixSerializer, Serializer<U, ByteBuf> valueSerializer) {
-			this.keySuffixSerializer = keySuffixSerializer;
-			this.valueSerializer = valueSerializer;
-		}
-
-		@Override
-		public @NotNull Entry<T, U> deserialize(@NotNull ByteBuf serialized) {
-			try {
-				int keySuffixLength = serialized.readInt();
-				int initialReaderIndex = serialized.readerIndex();
-				int initialWriterIndex = serialized.writerIndex();
-				T keySuffix = keySuffixSerializer.deserialize(serialized.setIndex(initialReaderIndex, initialReaderIndex + keySuffixLength).retain());
-				assert serialized.readerIndex() == initialReaderIndex + keySuffixLength;
-				U value = valueSerializer.deserialize(serialized.setIndex(initialReaderIndex + keySuffixLength, initialWriterIndex).retain());
-				return Map.entry(keySuffix, value);
-			} finally {
-				serialized.release();
-			}
-		}
-
-		@Override
-		public @NotNull ByteBuf serialize(@NotNull Entry<T, U> deserialized) {
-			ByteBuf keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
-			try {
-				ByteBuf value = valueSerializer.serialize(deserialized.getValue());
-				try {
-					ByteBuf keySuffixLen = alloc.buffer(Integer.BYTES);
-					try {
-						keySuffixLen.writeInt(keySuffix.readableBytes());
-						return LLUtils.compositeBuffer(alloc, keySuffixLen.retain(), keySuffix.retain(), value.retain());
-					} finally {
-						keySuffixLen.release();
-					}
-				} finally {
-					value.release();
-				}
-			} finally {
-				keySuffix.release();
-			}
-		}
-	}
-
-	private static class ValueMapper<T, U> implements Serializer<U, Entry<T, U>> {
-
-		private final T key;
-
-		public ValueMapper(T key) {
-			this.key = key;
-		}
-
-		@Override
-		public @NotNull U deserialize(@NotNull Entry<T, U> serialized) {
-			return serialized.getValue();
-		}
-
-		@Override
-		public @NotNull Entry<T, U> serialize(@NotNull U deserialized) {
-			return Map.entry(key, deserialized);
 		}
 	}
 
@@ -146,15 +86,21 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		);
 	}
 
-	private Map<TH, Entry<T, U>> serializeMap(Map<T, U> map) {
-		var newMap = new HashMap<TH, Entry<T, U>>(map.size());
-		map.forEach((key, value) -> newMap.put(keySuffixHashFunction.apply(key), Map.entry(key, value)));
+	private Map<TH, Set<Entry<T, U>>> serializeMap(Map<T, U> map) {
+		var newMap = new HashMap<TH, Set<Entry<T, U>>>(map.size());
+		map.forEach((key, value) -> newMap.compute(keySuffixHashFunction.apply(key), (hash, prev) -> {
+			if (prev == null) {
+				prev = new HashSet<>();
+			}
+			prev.add(Map.entry(key, value));
+			return prev;
+		}));
 		return newMap;
 	}
 
-	private Map<T, U> deserializeMap(Map<TH, Entry<T, U>> map) {
+	private Map<T, U> deserializeMap(Map<TH, Set<Entry<T, U>>> map) {
 		var newMap = new HashMap<T, U>(map.size());
-		map.forEach((key, value) -> newMap.put(value.getKey(), value.getValue()));
+		map.forEach((hash, set) -> set.forEach(entry -> newMap.put(entry.getKey(), entry.getValue())));
 		return newMap;
 	}
 
@@ -176,18 +122,6 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	@Override
 	public Mono<Boolean> setAndGetChanged(Map<T, U> map) {
 		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::setAndGetChanged).single();
-	}
-
-	@Override
-	public Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater) {
-		return subDictionary.update(old -> {
-			var result = updater.apply(old == null ? null : this.deserializeMap(old));
-			if (result == null) {
-				return null;
-			} else {
-				return this.serializeMap(result);
-			}
-		});
 	}
 
 	@Override
@@ -217,33 +151,15 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T key) {
+		return this
+				.atPrivate(snapshot, key, keySuffixHashFunction.apply(key))
+				.map(cast -> cast);
+	}
+
+	private Mono<DatabaseSingleBucket<T, U, TH>> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
 		return subDictionary
-				.at(snapshot, keySuffixHashFunction.apply(key))
-				.map(entry -> new DatabaseSingleMapped<>(entry, valueMapper.apply(key)));
-	}
-
-	@Override
-	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
-		return subDictionary
-				.getValue(snapshot, keySuffixHashFunction.apply(key), existsAlmostCertainly)
-				.map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
-		return subDictionary.getValue(snapshot, keySuffixHashFunction.apply(key)).map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<U> getValueOrDefault(@Nullable CompositeSnapshot snapshot, T key, Mono<U> defaultValue) {
-		return subDictionary
-				.getValueOrDefault(snapshot, keySuffixHashFunction.apply(key), defaultValue.map(v -> Map.entry(key, v)))
-				.map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<Void> putValue(T key, U value) {
-		return subDictionary.putValue(keySuffixHashFunction.apply(key), Map.entry(key, value));
+				.at(snapshot, hash)
+				.map(entry -> new DatabaseSingleBucket<>(entry, key));
 	}
 
 	@Override
@@ -252,108 +168,34 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
-		return subDictionary.updateValue(keySuffixHashFunction.apply(key), existsAlmostCertainly, old -> {
-			var result = updater.apply(old == null ? null : old.getValue());
-			if (result == null) {
-				return null;
-			} else {
-				return Map.entry(key, result);
-			}
-		});
-	}
-
-	@Override
-	public Mono<Boolean> updateValue(T key, Function<@Nullable U, @Nullable U> updater) {
-		return subDictionary.updateValue(keySuffixHashFunction.apply(key), old -> {
-			var result = updater.apply(old == null ? null : old.getValue());
-			if (result == null) {
-				return null;
-			} else {
-				return Map.entry(key, result);
-			}
-		});
-	}
-
-	@Override
-	public Mono<U> putValueAndGetPrevious(T key, U value) {
-		return subDictionary
-				.putValueAndGetPrevious(keySuffixHashFunction.apply(key), Map.entry(key, value))
-				.map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<Boolean> putValueAndGetChanged(T key, U value) {
-		return subDictionary
-				.putValueAndGetChanged(keySuffixHashFunction.apply(key), Map.entry(key, value));
-	}
-
-	@Override
-	public Mono<Void> remove(T key) {
-		return subDictionary.remove(keySuffixHashFunction.apply(key));
-	}
-
-	@Override
-	public Mono<U> removeAndGetPrevious(T key) {
-		return subDictionary.removeAndGetPrevious(keySuffixHashFunction.apply(key)).map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<Boolean> removeAndGetStatus(T key) {
-		return subDictionary.removeAndGetStatus(keySuffixHashFunction.apply(key));
-	}
-
-	@Override
-	public Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		return subDictionary
-				.getMulti(snapshot, keys.map(keySuffixHashFunction), existsAlmostCertainly)
-				.map(Entry::getValue);
-	}
-
-	@Override
-	public Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
-		return subDictionary
-				.getMulti(snapshot, keys.map(keySuffixHashFunction))
-				.map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
-		return subDictionary
-				.putMulti(entries.map(entry -> Map.entry(keySuffixHashFunction.apply(entry.getKey()),
-						Map.entry(entry.getKey(), entry.getValue())
-				)));
-	}
-
-	@Override
 	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		return subDictionary
-				.getAllStages(snapshot)
-				.flatMap(hashEntry -> hashEntry
-						.getValue()
-						.get(snapshot)
-						.map(entry -> Map.entry(entry.getKey(),
-								new DatabaseSingleMapped<>(hashEntry.getValue(), valueMapper.apply(entry.getKey()))
-						))
+				.getAllValues(snapshot)
+				.flatMap(bucket -> Flux
+						.fromIterable(bucket.getValue())
+						.map(Entry::getKey)
+						.flatMap(key -> this
+								.at(snapshot, key)
+								.flatMap(stage -> Mono.just(Map.entry(key, stage)).doFinally(s -> stage.release()))
+						)
 				);
 	}
 
 	@Override
 	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
-		return subDictionary.getAllValues(snapshot).map(Entry::getValue);
-	}
-
-	@Override
-	public Mono<Void> setAllValues(Flux<Entry<T, U>> entries) {
-		return subDictionary
-				.setAllValues(entries.map(entry -> Map.entry(keySuffixHashFunction.apply(entry.getKey()), entry)));
+		return subDictionary.getAllValues(snapshot).flatMap(s -> Flux.fromIterable(s.getValue()));
 	}
 
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		return subDictionary
-				.setAllValuesAndGetPrevious(entries.map(entry -> Map.entry(keySuffixHashFunction.apply(entry.getKey()), entry)))
-				.map(Entry::getValue);
+		return entries
+				.flatMap(entry -> this
+				.at(null, entry.getKey())
+				.flatMap(stage -> stage
+						.setAndGetPrevious(entry.getValue())
+						.map(prev -> Map.entry(entry.getKey(), prev))
+						.doFinally(s -> stage.release()))
+				);
 	}
 
 	@Override
@@ -362,43 +204,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Mono<Void> replaceAllValues(boolean canKeysChange, Function<Entry<T, U>, Mono<Entry<T, U>>> entriesReplacer) {
-		return subDictionary.replaceAllValues(canKeysChange,
-				entry -> entriesReplacer
-						.apply(entry.getValue())
-						.map(result -> Map.entry(keySuffixHashFunction.apply(result.getKey()), result))
-		);
-	}
-
-	@Override
-	public Mono<Void> replaceAll(Function<Entry<T, DatabaseStageEntry<U>>, Mono<Void>> entriesReplacer) {
-		return subDictionary.replaceAll(hashEntry -> hashEntry
-				.getValue()
-				.get(null)
-				.flatMap(entry -> entriesReplacer.apply(Map.entry(entry.getKey(),
-						new DatabaseSingleMapped<>(hashEntry.getValue(), valueMapper.apply(entry.getKey()))
-				))));
-	}
-
-	@Override
 	public Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
 		return Mono
 				.fromSupplier(() -> this.serializeMap(value))
 				.flatMap(subDictionary::setAndGetPrevious)
 				.map(this::deserializeMap);
-	}
-
-	@Override
-	public Mono<Boolean> update(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater,
-			boolean existsAlmostCertainly) {
-		return subDictionary.update(item -> {
-			var result = updater.apply(item == null ? null : this.deserializeMap(item));
-			if (result == null) {
-				return null;
-			} else {
-				return this.serializeMap(result);
-			}
-		}, existsAlmostCertainly);
 	}
 
 	@Override
@@ -422,13 +232,61 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	@Override
 	public ValueGetterBlocking<T, U> getDbValueGetter(@Nullable CompositeSnapshot snapshot) {
-		ValueGetterBlocking<TH, Entry<T, U>> getter = subDictionary.getDbValueGetter(snapshot);
-		return key -> getter.get(keySuffixHashFunction.apply(key)).getValue();
+		ValueGetterBlocking<TH, Set<Entry<T, U>>> getter = subDictionary.getDbValueGetter(snapshot);
+		return key -> extractValue(getter.get(keySuffixHashFunction.apply(key)), key);
 	}
 
 	@Override
 	public ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {
-		ValueGetter<TH, Entry<T, U>> getter = subDictionary.getAsyncDbValueGetter(snapshot);
-		return key -> getter.get(keySuffixHashFunction.apply(key)).map(Entry::getValue);
+		ValueGetter<TH, Set<Entry<T, U>>> getter = subDictionary.getAsyncDbValueGetter(snapshot);
+		return key -> getter
+				.get(keySuffixHashFunction.apply(key))
+				.flatMap(set -> this.extractValueTransformation(set, key));
+	}
+
+	private Mono<U> extractValueTransformation(Set<Entry<T, U>> entries, T key) {
+		return Mono.fromCallable(() -> extractValue(entries, key));
+	}
+
+	@Nullable
+	private U extractValue(Set<Entry<T, U>> entries, T key) {
+		if (entries == null) return null;
+		for (Entry<T, U> entry : entries) {
+			if (Objects.equals(entry.getKey(), key)) {
+				return entry.getValue();
+			}
+		}
+		return null;
+	}
+
+	@NotNull
+	private Set<Entry<T, U>> insertValueOrCreate(@Nullable Set<Entry<T, U>> entries, T key, U value) {
+		if (entries != null) {
+			entries.add(Map.entry(key, value));
+			return entries;
+		} else {
+			return new ObjectArraySet<>(new Object[] {Map.entry(key, value)});
+		}
+	}
+
+	@Nullable
+	private Set<Entry<T, U>> removeValueOrDelete(@Nullable Set<Entry<T, U>> entries, T key) {
+		if (entries != null) {
+			var it = entries.iterator();
+			while (it.hasNext()) {
+				var entry = it.next();
+				if (Objects.equals(entry.getKey(), key)) {
+					it.remove();
+					break;
+				}
+			}
+			if (entries.size() == 0) {
+				return null;
+			} else {
+				return entries;
+			}
+		} else {
+			return null;
+		}
 	}
 }

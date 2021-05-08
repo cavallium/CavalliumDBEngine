@@ -9,6 +9,7 @@ import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 @SuppressWarnings("unused")
 @NotAtomic
@@ -26,10 +27,28 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<UpdateMode> getUpdateMode();
 
-	Mono<Boolean> update(ByteBuf key, Function<@Nullable ByteBuf, @Nullable ByteBuf> updater, boolean existsAlmostCertainly);
+	default Mono<ByteBuf> update(ByteBuf key,
+			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			UpdateReturnMode updateReturnMode,
+			boolean existsAlmostCertainly) {
+		return this
+				.updateAndGetDelta(key, updater, existsAlmostCertainly)
+				.transform(prev -> LLUtils.resolveDelta(prev, updateReturnMode));
+	}
 
-	default Mono<Boolean> update(ByteBuf key, Function<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
-		return update(key, updater, false);
+	default Mono<ByteBuf> update(ByteBuf key,
+			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			UpdateReturnMode returnMode) {
+		return update(key, updater, returnMode, false);
+	}
+
+	Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
+			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			boolean existsAlmostCertainly);
+
+	default Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
+			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
+		return updateAndGetDelta(key, updater, false);
 	}
 
 	Mono<Void> clear();

@@ -1,6 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -43,7 +46,9 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	@Override
-	public Mono<Boolean> update(Function<@Nullable A, @Nullable A> updater, boolean existsAlmostCertainly) {
+	public Mono<A> update(Function<@Nullable A, @Nullable A> updater,
+			UpdateReturnMode updateReturnMode,
+			boolean existsAlmostCertainly) {
 		return serializedSingle.update(oldValue -> {
 			var result = updater.apply(oldValue == null ? null : this.deserialize(oldValue));
 			if (result == null) {
@@ -51,7 +56,20 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 			} else {
 				return this.serialize(result);
 			}
-		}, existsAlmostCertainly);
+		}, updateReturnMode, existsAlmostCertainly).map(this::deserialize);
+	}
+
+	@Override
+	public Mono<Delta<A>> updateAndGetDelta(Function<@Nullable A, @Nullable A> updater,
+			boolean existsAlmostCertainly) {
+		return serializedSingle.updateAndGetDelta(oldValue -> {
+			var result = updater.apply(oldValue == null ? null : this.deserialize(oldValue));
+			if (result == null) {
+				return null;
+			} else {
+				return this.serialize(result);
+			}
+		}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::deserialize));
 	}
 
 	@Override

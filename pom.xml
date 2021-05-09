@@ -65,6 +65,17 @@
       <groupId>uk.org.lidalia</groupId>
       <artifactId>lidalia-slf4j-ext</artifactId>
       <version>1.0.0</version>
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>com.google.guava</groupId>
+      <artifactId>guava</artifactId>
+      <version>30.1.1-jre</version>
     </dependency>
     <dependency>
       <groupId>org.warp</groupId>

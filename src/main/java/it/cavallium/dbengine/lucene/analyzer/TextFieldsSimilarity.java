@@ -13,7 +13,6 @@ public enum TextFieldsSimilarity {
 	NGramBM11Plus,
 	Classic,
 	NGramClassic,
-	SweetSpot,
 	LTC,
 	LDP,
 	LDPNoLength,

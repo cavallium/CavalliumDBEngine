@@ -32,7 +32,6 @@ import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.misc.SweetSpotSimilarity;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
@@ -73,7 +72,6 @@ public class LuceneUtils {
 	private static final Similarity luceneBM11PlusNGramSimilarityInstance = NGramSimilarity.bm11(BM25Model.PLUS);
 	private static final Similarity luceneClassicSimilarityInstance = new ClassicSimilarity();
 	private static final Similarity luceneClassicNGramSimilarityInstance = NGramSimilarity.classic();
-	private static final Similarity luceneSweetSpotSimilarityInstance = new SweetSpotSimilarity();
 	private static final Similarity luceneLTCSimilarityInstance = new LtcSimilarity();
 	private static final Similarity luceneLDPSimilarityInstance = new LdpSimilarity();
 	private static final Similarity luceneLDPNoLengthSimilarityInstance = new LdpSimilarity(0, 0.5f);
@@ -139,8 +137,6 @@ public class LuceneUtils {
 				return luceneBM11PlusSimilarityInstance;
 			case NGramBM11Plus:
 				return luceneBM11PlusNGramSimilarityInstance;
-			case SweetSpot:
-				return luceneSweetSpotSimilarityInstance;
 			case LTC:
 				return luceneLTCSimilarityInstance;
 			case LDP:

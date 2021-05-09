@@ -210,7 +210,7 @@
     <dependency>
       <groupId>it.cavallium</groupId>
       <artifactId>data-generator</artifactId>
-      <version>0.9.0-SNAPSHOT</version>
+      <version>[0.9.23,)</version>
     </dependency>
   </dependencies>
   <build>

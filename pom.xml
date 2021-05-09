@@ -26,6 +26,18 @@
       <url>https://mvn.mchv.eu/repository/mchv-snapshot</url>
     </repository>
   </repositories>
+  <pluginRepositories>
+    <pluginRepository>
+      <id>mchv-release</id>
+      <name>MCHV Release Apache Maven Packages</name>
+      <url>https://mvn.mchv.eu/repository/mchv</url>
+    </pluginRepository>
+    <pluginRepository>
+      <id>mchv-snapshot</id>
+      <name>MCHV Snapshot Apache Maven Packages</name>
+      <url>https://mvn.mchv.eu/repository/mchv-snapshot</url>
+    </pluginRepository>
+  </pluginRepositories>
   <distributionManagement>
     <repository>
       <id>mchv-release-distribution</id>
@@ -205,12 +217,12 @@
     <dependency>
       <groupId>org.novasearch</groupId>
       <artifactId>lucene-relevance</artifactId>
-      <version>8.0.0.0.5</version>
+      <version>8.0.0.0.15</version>
     </dependency>
     <dependency>
       <groupId>it.cavallium</groupId>
       <artifactId>data-generator</artifactId>
-      <version>[0.9.23,)</version>
+      <version>0.9.23</version>
     </dependency>
   </dependencies>
   <build>
@@ -267,7 +279,7 @@
       <plugin>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator</artifactId>
-        <version>0.9.0-SNAPSHOT</version>
+        <version>0.9.23</version>
         <executions>
           <execution>
             <id>generate-lucene-query-sources</id>

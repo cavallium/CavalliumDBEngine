@@ -55,7 +55,6 @@ import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.store.RAMDirectory;
-import org.apache.solr.core.RAMDirectoryFactory;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;

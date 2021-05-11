@@ -50,7 +50,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						.flatMap(entry -> indicizer
 								.toDocument(entry.getKey(), entry.getValue())
 								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
-						.groupBy(Entry::getKey, Entry::getValue)
+						.collectMap(Entry::getKey, Entry::getValue)
 				);
 	}
 
@@ -74,7 +74,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						.flatMap(entry -> indicizer
 								.toDocument(entry.getKey(), entry.getValue())
 								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
-						.groupBy(Entry::getKey, Entry::getValue)
+						.collectMap(Entry::getKey, Entry::getValue)
 				);
 	}
 

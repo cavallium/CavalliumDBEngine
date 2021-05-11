@@ -38,6 +38,7 @@ import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.LRUCache;
 import org.rocksdb.Options;
+import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
@@ -200,8 +201,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCompactionStyle(CompactionStyle.LEVEL);
 		options.setLevelCompactionDynamicLevelBytes(true);
 		options.setTargetFileSizeBase(64 * 1024 * 1024); // 64MiB sst file
-		options.setMaxBytesForLevelBase(4 * 256 * 1024 * 1024); // 4 times the sst file
-		options.setCompressionType(CompressionType.SNAPPY_COMPRESSION);
+		options.setTargetFileSizeMultiplier(2); // Each level is 2 times the previous level
+		options.setCompressionPerLevel(List.of(CompressionType.NO_COMPRESSION,
+				CompressionType.SNAPPY_COMPRESSION,
+				CompressionType.SNAPPY_COMPRESSION
+		));
+		//options.setMaxBytesForLevelBase(4 * 256 * 1024 * 1024); // 4 times the sst file
 		options.setManualWalFlush(false);
 		options.setMinWriteBufferNumberToMerge(3);
 		options.setMaxWriteBufferNumber(4);
@@ -217,6 +222,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setAllowMmapReads(true);
 		options.setAllowMmapWrites(true);
 		options.setAllowFAllocate(true);
+		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
+		options.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
+								50L * 1024L * 1024L * 1024L), // 50GiB
+				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
+						400L * 1024L * 1024L * 1024L), // 400GiB
+				new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
+						600L * 1024L * 1024L * 1024L))); // 600GiB
 		// Direct I/O parameters. Removed because they use too much disk.
 		//options.setUseDirectReads(true);
 		//options.setUseDirectIoForFlushAndCompaction(true);
@@ -234,10 +246,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWriteBufferSize(1024 * 1024) // 1MB
 					.setWalSizeLimitMB(16) // 16MB
 					.setMaxTotalWalSize(1024L * 1024L * 1024L) // 1GiB max wal directory size
-					.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-									400L * 1024L * 1024L * 1024L), // 400GiB
-							new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
-									600L * 1024L * 1024L * 1024L))) // 600GiB
 			;
 			tableOptions.setBlockCache(new LRUCache(8L * 1024L * 1024L)); // 8MiB
 			options.setWriteBufferManager(new WriteBufferManager(8L * 1024L * 1024L, new LRUCache(8L * 1024L * 1024L))); // 8MiB
@@ -255,10 +263,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
 					.setWalSizeLimitMB(1024) // 1024MB
 					.setMaxTotalWalSize(2L * 1024L * 1024L * 1024L) // 2GiB max wal directory size
-					.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-									400L * 1024L * 1024L * 1024L), // 400GiB
-							new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
-									600L * 1024L * 1024L * 1024L))) // 600GiB
 			;
 			tableOptions.setBlockCache(new LRUCache(128L * 1024L * 1024L)); // 128MiB
 			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(128L * 1024L * 1024L))); // 128MiB

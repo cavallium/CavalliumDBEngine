@@ -17,6 +17,9 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -168,8 +171,22 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
-		return documents.flatMap(docs -> getLuceneIndex(docs.key()).addDocuments(documents)).then();
+	public Mono<Void> addDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
+		return documents
+				.flatMapMany(map -> {
+					var sortedMap = new HashMap<LLLocalLuceneIndex, Map<LLTerm, LLDocument>>();
+					map.forEach((key, value) -> sortedMap
+							.computeIfAbsent(getLuceneIndex(key), _unused -> new HashMap<>())
+							.put(key, value)
+					);
+					return Flux.fromIterable(sortedMap.entrySet());
+				})
+				.flatMap(luceneIndexWithNewDocuments -> {
+					var luceneIndex = luceneIndexWithNewDocuments.getKey();
+					var docs = luceneIndexWithNewDocuments.getValue();
+					return luceneIndex.addDocuments(Mono.just(docs));
+				})
+				.then();
 	}
 
 	@Override
@@ -183,8 +200,22 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
-		return documents.flatMap(docs -> getLuceneIndex(docs.key()).updateDocuments(documents)).then();
+	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
+		return documents
+				.flatMapMany(map -> {
+					var sortedMap = new HashMap<LLLocalLuceneIndex, Map<LLTerm, LLDocument>>();
+					map.forEach((key, value) -> sortedMap
+							.computeIfAbsent(getLuceneIndex(key), _unused -> new HashMap<>())
+							.put(key, value)
+					);
+					return Flux.fromIterable(sortedMap.entrySet());
+				})
+				.flatMap(luceneIndexWithNewDocuments -> {
+					var luceneIndex = luceneIndexWithNewDocuments.getKey();
+					var docs = luceneIndexWithNewDocuments.getValue();
+					return luceneIndex.updateDocuments(Mono.just(docs));
+				})
+				.then();
 	}
 
 	@Override

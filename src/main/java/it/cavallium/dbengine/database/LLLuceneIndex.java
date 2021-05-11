@@ -6,6 +6,8 @@ import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.ScoreMode;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -19,13 +21,13 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	Mono<Void> addDocument(LLTerm id, LLDocument doc);
 
-	Mono<Void> addDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents);
+	Mono<Void> addDocuments(Mono<Map<LLTerm, LLDocument>> documents);
 
 	Mono<Void> deleteDocument(LLTerm id);
 
 	Mono<Void> updateDocument(LLTerm id, LLDocument document);
 
-	Mono<Void> updateDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents);
+	Mono<Void> updateDocuments(Mono<Map<LLTerm, LLDocument>> documents);
 
 	Mono<Void> deleteAll();
 

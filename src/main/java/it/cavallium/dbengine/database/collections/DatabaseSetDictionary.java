@@ -12,12 +12,12 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseSetDictionary<T> extends DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>> {
+public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> {
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
 			ByteBuf prefixKey,
 			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer) {
-		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.createSubStageGetter(), 0);
+		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.NOTHING_SERIALIZER);
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,

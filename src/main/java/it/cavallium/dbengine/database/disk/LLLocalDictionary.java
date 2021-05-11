@@ -72,7 +72,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int MULTI_GET_WINDOW = 500;
 	static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new WriteOptions();
-	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions().setLowPri(true);
+	static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions();
 	static final boolean PREFER_SEEK_TO_FIRST = false;
 	static final boolean VERIFY_CHECKSUMS_WHEN_NOT_NEEDED = false;
 	public static final boolean DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED = true;
@@ -982,6 +982,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 										})
+										.subscribeOn(dbScheduler)
 
 										// Prepend everything to get previous elements
 										.transformDeferred(transformer -> {

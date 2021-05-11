@@ -26,6 +26,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -234,18 +235,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
+	public Mono<Void> addDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
 		return documents
-				.flatMap(group -> group
-						.collectList()
-						.flatMap(docs -> Mono
-								.<Void>fromCallable(() -> {
-									indexWriter.addDocuments(LLUtils.toDocuments(docs));
-									return null;
-								})
-								.subscribeOn(Schedulers.boundedElastic()))
-				)
-				.then();
+				.flatMap(documentsMap -> Mono
+						.<Void>fromCallable(() -> {
+							indexWriter.addDocuments(LLUtils.toDocuments(documentsMap.values()));
+							return null;
+						})
+						.subscribeOn(Schedulers.boundedElastic())
+				);
 	}
 
 
@@ -266,21 +264,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Flux<GroupedFlux<LLTerm, LLDocument>> documents) {
+	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
 		return documents.flatMap(this::updateDocuments).then();
 	}
 
-	private Mono<Void> updateDocuments(GroupedFlux<LLTerm, LLDocument> documents) {
-		return documents
-				.map(LLUtils::toDocument)
-				.collectList()
-				.flatMap(luceneDocuments -> Mono
-						.<Void>fromCallable(() -> {
-							indexWriter.updateDocuments(LLUtils.toTerm(documents.key()), luceneDocuments);
-							return null;
-						})
-						.subscribeOn(Schedulers.boundedElastic())
-				);
+	private Mono<Void> updateDocuments(Map<LLTerm, LLDocument> documentsMap) {
+		return Mono
+				.<Void>fromCallable(() -> {
+					for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
+						LLTerm key = entry.getKey();
+						LLDocument value = entry.getValue();
+						indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
+					}
+					return null;
+				})
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override

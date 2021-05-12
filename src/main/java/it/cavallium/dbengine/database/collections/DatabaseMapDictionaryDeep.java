@@ -365,12 +365,17 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return Mono.defer(() -> dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast));
+		return Mono
+				.defer(() -> dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast))
+				.doFirst(() -> range.retain())
+				.doFinally(s -> range.release());
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return Mono.defer(() -> dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain()));
+		return Mono.defer(() -> dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain()))
+				.doFirst(() -> range.retain())
+				.doFinally(s -> range.release());
 	}
 
 	@Override

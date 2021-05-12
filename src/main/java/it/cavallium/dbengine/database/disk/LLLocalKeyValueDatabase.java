@@ -224,9 +224,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setAllowFAllocate(true);
 		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
 		options.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-								50L * 1024L * 1024L * 1024L), // 50GiB
+								10L * 1024L * 1024L * 1024L), // 10GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
-						400L * 1024L * 1024L * 1024L), // 400GiB
+						100L * 1024L * 1024L * 1024L), // 100GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
 						600L * 1024L * 1024L * 1024L))); // 600GiB
 		// Direct I/O parameters. Removed because they use too much disk.

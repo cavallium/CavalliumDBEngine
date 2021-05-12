@@ -37,7 +37,11 @@ public class LLRange {
 	}
 
 	public static LLRange single(ByteBuf single) {
-		return new LLRange(single, single);
+		try {
+			return new LLRange(single.retain(), single.retain());
+		} finally {
+			single.release();
+		}
 	}
 
 	public static LLRange of(ByteBuf min, ByteBuf max) {

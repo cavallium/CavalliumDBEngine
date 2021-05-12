@@ -33,25 +33,30 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf keyPrefix,
 			List<ByteBuf> debuggingKeys) {
-		return Mono
-				.fromCallable(() -> {
-					try {
-						for (ByteBuf key : debuggingKeys) {
-							if (!LLUtils.equals(keyPrefix, key)) {
-								throw new IndexOutOfBoundsException("Found more than one element!");
+		try {
+			return Mono
+					.fromCallable(() -> {
+						try {
+							for (ByteBuf key : debuggingKeys) {
+								if (!LLUtils.equals(keyPrefix, key)) {
+									throw new IndexOutOfBoundsException("Found more than one element!");
+								}
+							}
+							return null;
+						} finally {
+							for (ByteBuf key : debuggingKeys) {
+								key.release();
 							}
 						}
-						return null;
-					} finally {
-						for (ByteBuf key : debuggingKeys) {
-							key.release();
-						}
-					}
-				})
-				.then(Mono
-						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
-				)
-				.doFinally(s -> keyPrefix.release());
+					})
+					.then(Mono
+							.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
+					)
+					.doFirst(() -> keyPrefix.retain())
+					.doFinally(s -> keyPrefix.release());
+		} finally {
+			keyPrefix.release();
+		}
 	}
 
 	@Override

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -42,61 +43,91 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	@Override
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return dictionary.get(resolveSnapshot(snapshot), key.retain(), existsAlmostCertainly).map(this::deserialize);
+		return Mono
+				.defer(() -> dictionary.get(resolveSnapshot(snapshot), key.retain(), existsAlmostCertainly))
+				.map(this::deserialize)
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
-		ByteBuf valueByteBuf = serialize(value);
-		return dictionary
-				.put(key.retain(), valueByteBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
-				.map(this::deserialize)
-				.doFinally(s -> valueByteBuf.release());
+		return Mono
+				.using(
+						() -> serialize(value),
+						valueByteBuf -> dictionary
+								.put(key.retain(), valueByteBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
+								.map(this::deserialize),
+						ReferenceCounted::release
+				)
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	@Override
 	public Mono<U> update(Function<@Nullable U, @Nullable U> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
-		return dictionary.update(key.retain(), (oldValueSer) -> {
-			var result = updater.apply(oldValueSer == null ? null : this.deserialize(oldValueSer));
-			if (result == null) {
-				return null;
-			} else {
-				return this.serialize(result);
-			}
-		}, updateReturnMode, existsAlmostCertainly).map(this::deserialize);
+		return Mono
+				.defer(() -> dictionary.update(key.retain(), (oldValueSer) -> {
+					var result = updater.apply(oldValueSer == null ? null : this.deserialize(oldValueSer));
+					if (result == null) {
+						return null;
+					} else {
+						return this.serialize(result);
+					}
+				}, updateReturnMode, existsAlmostCertainly))
+				.map(this::deserialize)
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	@Override
 	public Mono<Delta<U>> updateAndGetDelta(Function<@Nullable U, @Nullable U> updater,
 			boolean existsAlmostCertainly) {
-		return dictionary.updateAndGetDelta(key.retain(), (oldValueSer) -> {
-			var result = updater.apply(oldValueSer == null ? null : this.deserialize(oldValueSer));
-			if (result == null) {
-				return null;
-			} else {
-				return this.serialize(result);
-			}
-		}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::deserialize));
+		return Mono
+				.defer(() -> dictionary.updateAndGetDelta(key.retain(), (oldValueSer) -> {
+					var result = updater.apply(oldValueSer == null ? null : this.deserialize(oldValueSer));
+					if (result == null) {
+						return null;
+					} else {
+						return this.serialize(result);
+					}
+				}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::deserialize)))
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	@Override
 	public Mono<U> clearAndGetPrevious() {
-		return dictionary.remove(key.retain(), LLDictionaryResultType.PREVIOUS_VALUE).map(this::deserialize);
+		return Mono
+				.defer(() -> dictionary
+						.remove(key.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
+				)
+				.map(this::deserialize)
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()))
-				.map(empty -> empty ? 0L : 1L);
+		return Mono
+				.defer(() -> dictionary
+						.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()))
+				)
+				.map(empty -> empty ? 0L : 1L)
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()));
+		return Mono
+				.defer(() -> dictionary
+						.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()))
+				)
+				.doFirst(() -> key.retain())
+				.doFinally(s -> key.release());
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

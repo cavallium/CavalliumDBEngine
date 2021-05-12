@@ -176,7 +176,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 						.map(Entry::getKey)
 						.flatMap(key -> this
 								.at(snapshot, key)
-								.flatMap(stage -> Mono.just(Map.entry(key, stage)).doFinally(s -> stage.release()))
+								.flatMap(stage -> Mono.just(Map.entry(key, stage)).doAfterTerminate(stage::release))
 						)
 				);
 	}
@@ -194,7 +194,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 				.flatMap(stage -> stage
 						.setAndGetPrevious(entry.getValue())
 						.map(prev -> Map.entry(entry.getKey(), prev))
-						.doFinally(s -> stage.release()))
+						.doAfterTerminate(stage::release))
 				);
 	}
 

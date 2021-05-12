@@ -68,8 +68,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						entry -> deserialize(entry.getValue()),
 						HashMap::new)
 				.filter(map -> !map.isEmpty())
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
@@ -87,8 +87,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 												)
 								)
 				)
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
@@ -99,27 +99,26 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return Mono.defer(() -> dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast))
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+		return Mono
+				.defer(() -> dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast))
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return Mono.defer(() -> dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain()))
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+		return Mono
+				.defer(() -> dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain()))
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> Mono
-								.fromSupplier(() -> new DatabaseSingle<>(dictionary, keyBuf.retain(), Serializer.noop()))
-								.<DatabaseStageEntry<U>>map(entry -> new DatabaseSingleMapped<>(entry, valueSerializer)),
-						ReferenceCounted::release
+				.fromSupplier(() -> new DatabaseSingleMapped<>(
+						new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), Serializer.noop())
+						, valueSerializer)
 				);
 	}
 
@@ -279,41 +278,41 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<U> removeAndGetPrevious(T keySuffix) {
-		ByteBuf keySuffixBuf = serializeSuffix(keySuffix);
-		ByteBuf keyBuf = toKey(keySuffixBuf.retain());
-		return dictionary
-				.remove(keyBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
-				.map(this::deserialize)
-				.doFinally(s -> {
-					keyBuf.release();
-					keySuffixBuf.release();
-				});
+		return Mono
+				.using(
+						() -> toKey(serializeSuffix(keySuffix)),
+						keyBuf -> dictionary
+								.remove(keyBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
+								.map(this::deserialize),
+						ReferenceCounted::release
+				);
 	}
 
 	@Override
 	public Mono<Boolean> removeAndGetStatus(T keySuffix) {
-		ByteBuf keySuffixBuf = serializeSuffix(keySuffix);
-		ByteBuf keyBuf = toKey(keySuffixBuf.retain());
-		return dictionary
-				.remove(keyBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE)
-				.map(LLUtils::responseToBoolean)
-				.doFinally(s -> {
-					keyBuf.release();
-					keySuffixBuf.release();
-				});
+		return Mono
+				.using(
+						() -> toKey(serializeSuffix(keySuffix)),
+						keyBuf -> dictionary
+								.remove(keyBuf.retain(), LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE)
+								.map(LLUtils::responseToBoolean),
+						ReferenceCounted::release
+				);
 	}
 
 	@Override
 	public Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		return dictionary
-				.getMulti(resolveSnapshot(snapshot), keys.flatMap(keySuffix -> Mono.fromCallable(() -> {
-					ByteBuf keySuffixBuf = serializeSuffix(keySuffix);
-					try {
-						return toKey(keySuffixBuf.retain());
-					} finally {
-						keySuffixBuf.release();
-					}
-				})), existsAlmostCertainly)
+		return Flux
+				.defer(() -> dictionary
+						.getMulti(resolveSnapshot(snapshot), keys.flatMap(keySuffix -> Mono.fromCallable(() -> {
+							ByteBuf keySuffixBuf = serializeSuffix(keySuffix);
+							try {
+								return toKey(keySuffixBuf.retain());
+							} finally {
+								keySuffixBuf.release();
+							}
+						})), existsAlmostCertainly)
+				)
 				.flatMap(entry -> Mono
 						.fromCallable(() -> Map.entry(deserializeSuffix(stripPrefix(entry.getKey(), false)), deserialize(entry.getValue())))
 				);
@@ -352,28 +351,33 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		return Flux.defer(() -> dictionary.getRangeKeys(resolveSnapshot(snapshot), range.retain()))
+		return Flux
+				.defer(() -> dictionary.getRangeKeys(resolveSnapshot(snapshot), range.retain()))
 				.<Entry<T, DatabaseStageEntry<U>>>map(key -> {
-					ByteBuf keySuffixWithExt = stripPrefix(key, false);
-					// Don't use "key" under this point ---
+					ByteBuf keySuffixWithExt = stripPrefix(key.retain(), false);
 					try {
-						return Map.entry(deserializeSuffix(keySuffixWithExt.retainedSlice()),
-								new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary,
-										toKey(keySuffixWithExt.retainedSlice()),
-										Serializer.noop()
-								), valueSerializer)
-						);
+						try {
+							return Map.entry(deserializeSuffix(keySuffixWithExt.retainedSlice()),
+									new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary,
+											toKey(keySuffixWithExt.retainedSlice()),
+											Serializer.noop()
+									), valueSerializer)
+							);
+						} finally {
+							keySuffixWithExt.release();
+						}
 					} finally {
-						keySuffixWithExt.release();
+						key.release();
 					}
 				})
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
 	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
-		return Flux.defer(() -> dictionary.getRange(resolveSnapshot(snapshot), range.retain()))
+		return Flux
+				.defer(() -> dictionary.getRange(resolveSnapshot(snapshot), range.retain()))
 				.map(serializedEntry -> Map.entry(
 						deserializeSuffix(stripPrefix(serializedEntry.getKey(), false)),
 						valueSerializer.deserialize(serializedEntry.getValue())
@@ -384,8 +388,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					castedEntry.getKey().release();
 					castedEntry.getValue().release();
 				})
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
@@ -401,28 +405,27 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 										)
 								)
 				)
-				.doFirst(() -> range.retain())
-				.doFinally(s -> range.release());
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	@Override
 	public Mono<Void> clear() {
-		if (range.isAll()) {
-			return dictionary
-					.clear();
-		} else if (range.isSingle()) {
-			return Mono
-					.defer(() -> dictionary.remove(range.getSingle().retain(), LLDictionaryResultType.VOID))
-					.doOnNext(ReferenceCounted::release)
-					.then()
-					.doFirst(() -> range.getSingle().retain())
-					.doFinally(s -> range.getSingle().release());
-		} else {
-			return Mono
-					.defer(() -> dictionary.setRange(range.retain(), Flux.empty()))
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
-		}
+		return Mono
+				.defer(() -> {
+					if (range.isAll()) {
+						return dictionary.clear();
+					} else if (range.isSingle()) {
+						return dictionary
+								.remove(range.getSingle().retain(), LLDictionaryResultType.VOID)
+								.doOnNext(ReferenceCounted::release)
+								.then();
+					} else {
+						return dictionary.setRange(range.retain(), Flux.empty());
+					}
+				})
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	/**

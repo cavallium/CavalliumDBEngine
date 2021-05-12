@@ -46,8 +46,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 		return Mono
 				.defer(() -> dictionary.get(resolveSnapshot(snapshot), key.retain(), existsAlmostCertainly))
 				.map(this::deserialize)
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	@Override
@@ -60,8 +60,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 								.map(this::deserialize),
 						ReferenceCounted::release
 				)
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	@Override
@@ -78,8 +78,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 					}
 				}, updateReturnMode, existsAlmostCertainly))
 				.map(this::deserialize)
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	@Override
@@ -94,8 +94,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 						return this.serialize(result);
 					}
 				}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::deserialize)))
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	@Override
@@ -105,8 +105,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 						.remove(key.retain(), LLDictionaryResultType.PREVIOUS_VALUE)
 				)
 				.map(this::deserialize)
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	@Override
@@ -116,8 +116,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 						.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()))
 				)
 				.map(empty -> empty ? 0L : 1L)
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	@Override
@@ -126,8 +126,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 				.defer(() -> dictionary
 						.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key.retain()))
 				)
-				.doFirst(() -> key.retain())
-				.doFinally(s -> key.release());
+				.doFirst(key::retain)
+				.doAfterTerminate(key::release);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers

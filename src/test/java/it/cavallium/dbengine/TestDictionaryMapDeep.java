@@ -155,7 +155,7 @@ public class TestDictionaryMapDeep {
 						.flatMap(map -> map
 								.putValue(key, value)
 								.then(map.getValue(null, key))
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -177,7 +177,7 @@ public class TestDictionaryMapDeep {
 						.flatMapMany(map -> map
 								.putValue(key, value)
 								.thenMany(map.getAllValues(null))
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -198,13 +198,13 @@ public class TestDictionaryMapDeep {
 								.at(null, key)
 								.flatMap(v -> v
 										.set(value)
-										.doFinally(s -> v.release())
+										.doAfterTerminate(v::release)
 								)
 								.then(map
 										.at(null, "capra")
 										.flatMap(v -> v
 												.set(Map.of("normal", "123", "ormaln", "456"))
-												.doFinally(s -> v.release())
+												.doAfterTerminate(v::release)
 										)
 								)
 								.thenMany(map
@@ -212,10 +212,10 @@ public class TestDictionaryMapDeep {
 										.flatMap(v -> v.getValue()
 												.getAllValues(null)
 												.map(result -> Tuples.of(v.getKey(), result.getKey(), result.getValue()))
-												.doFinally(s -> v.getValue().release())
+												.doAfterTerminate(() -> v.getValue().release())
 										)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -239,9 +239,9 @@ public class TestDictionaryMapDeep {
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMap(map -> map
-								.at(null, key1).flatMap(v -> v.putValue(key2, value).doFinally(s -> v.release()))
-								.then(map.at(null, key1).flatMap(v -> v.getValue(null, key2).doFinally(s -> v.release())))
-								.doFinally(s -> map.release())
+								.at(null, key1).flatMap(v -> v.putValue(key2, value).doAfterTerminate(v::release))
+								.then(map.at(null, key1).flatMap(v -> v.getValue(null, key2).doAfterTerminate(v::release)))
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -265,7 +265,7 @@ public class TestDictionaryMapDeep {
 										map.putValueAndGetPrevious(key, value),
 										map.putValueAndGetPrevious(key, value)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -287,22 +287,22 @@ public class TestDictionaryMapDeep {
 												.at(null, key1)
 												.flatMap(v -> v
 														.putValueAndGetPrevious(key2, "error?")
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.putValueAndGetPrevious(key2, value)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.putValueAndGetPrevious(key2, value)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -324,7 +324,7 @@ public class TestDictionaryMapDeep {
 										map.putValue(key, value).then(map.removeAndGetPrevious(key)),
 										map.removeAndGetPrevious(key)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -347,22 +347,22 @@ public class TestDictionaryMapDeep {
 												.flatMap(v -> v
 														.putValue(key2, "error?")
 														.then(v.removeAndGetPrevious(key2))
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.putValue(key2, value)
 														.then(v.removeAndGetPrevious(key2))
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v.removeAndGetPrevious(key2)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -384,7 +384,7 @@ public class TestDictionaryMapDeep {
 										map.putValue(key, value).then(map.removeAndGetStatus(key)),
 										map.removeAndGetStatus(key)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -407,22 +407,22 @@ public class TestDictionaryMapDeep {
 												.flatMap(v -> v
 														.putValue(key2, "error?")
 														.then(v.removeAndGetStatus(key2))
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.putValue(key2, value)
 														.then(v.removeAndGetStatus(key2))
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v.removeAndGetStatus(key2)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -464,7 +464,7 @@ public class TestDictionaryMapDeep {
 											return value;
 										})
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (updateMode != UpdateMode.ALLOW_UNSAFE || shouldFail) {
@@ -489,28 +489,28 @@ public class TestDictionaryMapDeep {
 												.at(null, key1)
 												.flatMap(v -> v
 														.updateValue(key2, prev -> prev)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.updateValue(key2, prev -> value)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.updateValue(key2, prev -> value)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
 												.flatMap(v -> v
 														.updateValue(key2, prev -> null)
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
@@ -552,7 +552,7 @@ public class TestDictionaryMapDeep {
 											return value;
 										}).then(map.getValue(null, key))
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (updateMode != UpdateMode.ALLOW_UNSAFE || shouldFail) {
@@ -579,7 +579,7 @@ public class TestDictionaryMapDeep {
 														.updateValue(key2, prev -> prev)
 														.then(v.getValue(null, key2))
 														.defaultIfEmpty("empty")
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
@@ -587,7 +587,7 @@ public class TestDictionaryMapDeep {
 														.updateValue(key2, prev -> value)
 														.then(v.getValue(null, key2))
 														.defaultIfEmpty("empty")
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
@@ -595,7 +595,7 @@ public class TestDictionaryMapDeep {
 														.updateValue(key2, prev -> value)
 														.then(v.getValue(null, key2))
 														.defaultIfEmpty("empty")
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												),
 										map
 												.at(null, key1)
@@ -603,10 +603,10 @@ public class TestDictionaryMapDeep {
 														.updateValue(key2, prev -> null)
 														.then(v.getValue(null, key2))
 														.defaultIfEmpty("empty")
-														.doFinally(s -> v.release())
+														.doAfterTerminate(v::release)
 												)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
@@ -630,7 +630,7 @@ public class TestDictionaryMapDeep {
 										map.remove(key),
 										map.putValueAndGetChanged(key, Map.of("error?", "error.")).single()
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -683,7 +683,7 @@ public class TestDictionaryMapDeep {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.getMulti(null, Flux.fromIterable(entries.keySet()))
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -707,7 +707,7 @@ public class TestDictionaryMapDeep {
 						.flatMapMany(map -> map
 								.setAllValues(Flux.fromIterable(entries.entrySet()))
 								.thenMany(map.getMulti(null, Flux.fromIterable(entries.keySet())))
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -733,7 +733,7 @@ public class TestDictionaryMapDeep {
 										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet())),
 										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet()))
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -759,7 +759,7 @@ public class TestDictionaryMapDeep {
 										map.set(entries).then(Mono.empty()),
 										map.getMulti(null, Flux.fromIterable(entries.keySet()))
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -793,7 +793,7 @@ public class TestDictionaryMapDeep {
 											removalMono.then(Mono.empty()),
 											map.setAndGetChanged(entries).single()
 									)
-									.doFinally(s -> map.release());
+									.doAfterTerminate(map::release);
 						})
 				));
 		if (shouldFail) {
@@ -817,7 +817,7 @@ public class TestDictionaryMapDeep {
 								)
 								.map(Map::entrySet)
 								.flatMap(Flux::fromIterable)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -842,7 +842,7 @@ public class TestDictionaryMapDeep {
 								.concat(map.set(entries).then(Mono.empty()), map.clearAndGetPrevious(), map.get(null))
 								.map(Map::entrySet)
 								.flatMap(Flux::fromIterable)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -868,7 +868,7 @@ public class TestDictionaryMapDeep {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.getAllValues(null)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -896,7 +896,7 @@ public class TestDictionaryMapDeep {
 										.map(Map::entrySet)
 										.flatMapMany(Flux::fromIterable)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -926,10 +926,10 @@ public class TestDictionaryMapDeep {
 														.getValue()
 														.get(null)
 														.map(val -> Map.entry(stage.getKey(), val))
-														.doFinally(s -> stage.getValue().release())
+														.doAfterTerminate(() -> stage.getValue().release())
 												)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -955,7 +955,7 @@ public class TestDictionaryMapDeep {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.isEmpty(null)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {
@@ -979,7 +979,7 @@ public class TestDictionaryMapDeep {
 										map.clear().then(Mono.empty()),
 										map.isEmpty(null)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {

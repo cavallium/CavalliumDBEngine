@@ -283,6 +283,6 @@ public class LuceneUtils {
 			DatabaseMapDictionaryDeep<T, Map<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
 		return entry -> dictionaryDeep
 				.at(snapshot, entry.getKey())
-				.flatMap(sub -> sub.getValue(snapshot, entry.getValue()).doFinally(s -> sub.release()));
+				.flatMap(sub -> sub.getValue(snapshot, entry.getValue()).doAfterTerminate(sub::release));
 	}
 }

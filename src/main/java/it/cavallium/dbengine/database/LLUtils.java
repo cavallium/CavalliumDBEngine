@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -154,6 +155,18 @@ public class LLUtils {
 
 	public static it.cavallium.dbengine.database.LLKeyScore toKeyScore(LLKeyScore hit) {
 		return new it.cavallium.dbengine.database.LLKeyScore(hit.getKey(), hit.getScore());
+	}
+
+	public static String toStringSafe(ByteBuf key) {
+		try {
+			if (key.refCnt() > 0) {
+				return toString(key);
+			} else {
+				return "(released)";
+			}
+		} catch (IllegalReferenceCountException ex) {
+			return "(released)";
+		}
 	}
 
 	public static String toString(ByteBuf key) {

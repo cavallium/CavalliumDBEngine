@@ -38,9 +38,7 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 			return Mono
 					.defer(() -> {
 						if (assertsEnabled) {
-							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys)
-									.doFirst(() -> prefixKey.retain())
-									.doFinally(s -> prefixKey.release());
+							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
 						} else {
 							return Mono
 									.fromCallable(() -> {
@@ -60,8 +58,8 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 									)
 							)
 					)
-					.doFirst(() -> prefixKey.retain())
-					.doFinally(s -> prefixKey.release());
+					.doFirst(prefixKey::retain)
+					.doAfterTerminate(prefixKey::release);
 		} finally {
 			prefixKey.release();
 		}
@@ -78,20 +76,26 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {
-		return Mono
-				.fromCallable(() -> {
-					try {
-						for (ByteBuf key : keys) {
-							assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+		try {
+			return Mono
+					.<Void>fromCallable(() -> {
+						try {
+							for (ByteBuf key : keys) {
+								assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
+							}
+						} finally {
+							prefixKey.release();
+							for (ByteBuf key : keys) {
+								key.release();
+							}
 						}
-					} finally {
-						prefixKey.release();
-						for (ByteBuf key : keys) {
-							key.release();
-						}
-					}
-					return null;
-				});
+						return null;
+					})
+					.doFirst(prefixKey::retain)
+					.doAfterTerminate(prefixKey::release);
+		} finally {
+			prefixKey.release();
+		}
 	}
 
 	public int getKeyBinaryLength() {

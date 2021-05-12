@@ -27,7 +27,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
-		return this.at(snapshot, key).flatMap(v -> v.get(snapshot, existsAlmostCertainly).doFinally(s -> v.release()));
+		return this.at(snapshot, key).flatMap(v -> v.get(snapshot, existsAlmostCertainly).doAfterTerminate(v::release));
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
@@ -39,7 +39,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.set(value).doFinally(s -> v.release()));
+		return at(null, key).single().flatMap(v -> v.set(value).doAfterTerminate(v::release));
 	}
 
 	Mono<UpdateMode> getUpdateMode();
@@ -50,7 +50,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				.single()
 				.flatMap(v -> v
 						.update(updater, updateReturnMode, existsAlmostCertainly)
-						.doFinally(s -> v.release())
+						.doAfterTerminate(v::release)
 				);
 	}
 
@@ -72,7 +72,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				.single()
 				.flatMap(v -> v
 						.updateAndGetDelta(updater, existsAlmostCertainly)
-						.doFinally(s -> v.release())
+						.doAfterTerminate(v::release)
 				);
 	}
 
@@ -81,7 +81,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.setAndGetPrevious(value).doFinally(s -> v.release()));
+		return at(null, key).single().flatMap(v -> v.setAndGetPrevious(value).doAfterTerminate(v::release));
 	}
 
 	/**
@@ -91,7 +91,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	 * @return true if the key was associated with any value, false if the key didn't exist.
 	 */
 	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.setAndGetChanged(value).doFinally(s -> v.release())).single();
+		return at(null, key).single().flatMap(v -> v.setAndGetChanged(value).doAfterTerminate(v::release)).single();
 	}
 
 	default Mono<Void> remove(T key) {
@@ -99,7 +99,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return at(null, key).flatMap(v -> v.clearAndGetPrevious().doFinally(s -> v.release()));
+		return at(null, key).flatMap(v -> v.clearAndGetPrevious().doAfterTerminate(v::release));
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {
@@ -129,7 +129,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 						.getValue()
 						.get(snapshot, true)
 						.map(value -> Map.entry(entry.getKey(), value))
-						.doFinally(s -> entry.getValue().release())
+						.doAfterTerminate(() -> entry.getValue().release())
 				);
 	}
 
@@ -152,7 +152,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 					.flatMap(entriesReplacer)
 					.flatMap(replacedEntry -> this
 							.at(null, replacedEntry.getKey())
-							.flatMap(v -> v.set(replacedEntry.getValue()).doFinally(s -> v.release())))
+							.flatMap(v -> v.set(replacedEntry.getValue()).doAfterTerminate(v::release)))
 					.then();
 		}
 	}
@@ -162,7 +162,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				.getAllStages(null)
 				.flatMap(stage -> Mono
 						.defer(() -> entriesReplacer.apply(stage))
-						.doFinally(s -> stage.getValue().release())
+						.doAfterTerminate(() -> stage.getValue().release())
 				)
 				.then();
 	}

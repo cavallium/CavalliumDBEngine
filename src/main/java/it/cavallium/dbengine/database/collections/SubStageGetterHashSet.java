@@ -44,31 +44,36 @@ public class SubStageGetterHashSet<T, TH> implements
 			@Nullable CompositeSnapshot snapshot,
 			ByteBuf prefixKey,
 			List<ByteBuf> debuggingKeys) {
-		return Mono
-				.defer(() -> {
-					if (assertsEnabled) {
-						return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
-					} else {
-						return Mono
-								.fromCallable(() -> {
-									for (ByteBuf key : debuggingKeys) {
-										key.release();
-									}
-									return null;
-								});
-					}
-				})
-				.then(Mono
-						.fromSupplier(() -> DatabaseSetDictionaryHashed
-								.tail(dictionary,
-										prefixKey.retain(),
-										keySerializer,
-										keyHashFunction,
-										keyHashSerializer
-								)
-						)
-				)
-				.doFinally(s -> prefixKey.release());
+		try {
+			return Mono
+					.defer(() -> {
+						if (assertsEnabled) {
+							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
+						} else {
+							return Mono
+									.fromCallable(() -> {
+										for (ByteBuf key : debuggingKeys) {
+											key.release();
+										}
+										return null;
+									});
+						}
+					})
+					.then(Mono
+							.fromSupplier(() -> DatabaseSetDictionaryHashed
+									.tail(dictionary,
+											prefixKey.retain(),
+											keySerializer,
+											keyHashFunction,
+											keyHashSerializer
+									)
+							)
+					)
+					.doFirst(prefixKey::retain)
+					.doAfterTerminate(prefixKey::release);
+		} finally {
+			prefixKey.release();
+		}
 	}
 
 	@Override

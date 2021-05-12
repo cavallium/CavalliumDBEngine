@@ -52,8 +52,8 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 					.then(Mono
 							.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
 					)
-					.doFirst(() -> keyPrefix.retain())
-					.doFinally(s -> keyPrefix.release());
+					.doFirst(keyPrefix::retain)
+					.doAfterTerminate(keyPrefix::release);
 		} finally {
 			keyPrefix.release();
 		}

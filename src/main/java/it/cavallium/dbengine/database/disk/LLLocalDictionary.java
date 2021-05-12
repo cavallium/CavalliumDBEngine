@@ -208,7 +208,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try {
 							if (logger.isTraceEnabled()) {
-								logger.trace("Reading {}", LLUtils.toString(key));
+								logger.trace("Reading {}", LLUtils.toStringSafe(key));
 							}
 							return dbGet(cfh, resolveSnapshot(snapshot), key.retain(), existsAlmostCertainly);
 						} finally {
@@ -217,10 +217,10 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						}
 					})
-					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toString(key), cause))
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -368,16 +368,14 @@ public class LLLocalDictionary implements LLDictionary {
 			return Mono
 					.defer(() -> {
 						if (range.isSingle()) {
-							return this
-									.containsKey(snapshot, range.getSingle().retain());
+							return this.containsKey(snapshot, range.getSingle().retain());
 						} else {
-							return this
-									.containsRange(snapshot, range.retain());
+							return this.containsRange(snapshot, range.retain());
 						}
 					})
 					.map(isContained -> !isContained)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -425,8 +423,8 @@ public class LLLocalDictionary implements LLDictionary {
 					})
 					.onErrorMap(cause -> new IOException("Failed to read range " + range.toString(), cause))
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -464,10 +462,10 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						}
 					})
-					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toString(key), cause))
+					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -492,7 +490,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								try {
 									if (logger.isTraceEnabled()) {
-										logger.trace("Writing {}: {}", LLUtils.toString(key), LLUtils.toString(value));
+										logger.trace("Writing {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(value));
 									}
 									dbPut(cfh, null, key.retain(), value.retain());
 									return null;
@@ -503,14 +501,14 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							})
 							.subscribeOn(dbScheduler)
-							.onErrorMap(cause -> new IOException("Failed to write " + LLUtils.toString(key), cause))
+							.onErrorMap(cause -> new IOException("Failed to write " + LLUtils.toStringSafe(key), cause))
 					)
 					.singleOrEmpty()
 					.doFirst(() -> {
 						key.retain();
 						value.retain();
 					})
-					.doFinally(s -> {
+					.doAfterTerminate(() -> {
 						key.release();
 						value.release();
 					});
@@ -550,7 +548,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try {
 							if (logger.isTraceEnabled()) {
-								logger.trace("Reading {}", LLUtils.toString(key));
+								logger.trace("Reading {}", LLUtils.toStringSafe(key));
 							}
 							while (true) {
 								@Nullable ByteBuf prevData;
@@ -597,7 +595,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Deleting {}", LLUtils.toString(key));
+												logger.trace("Deleting {}", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.retain());
 										} else if (newData != null
@@ -615,7 +613,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Writing {}: {}", LLUtils.toString(key), LLUtils.toString(newData));
+												logger.trace("Writing {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
 											}
 											dbPut(cfh, null, key.retain(), newData.retain());
 										}
@@ -646,10 +644,10 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						}
 					})
-					.onErrorMap(cause -> new IOException("Failed to read or write " + (key.refCnt() > 0 ? LLUtils.toString(key) : "(released)"), cause))
+					.onErrorMap(cause -> new IOException("Failed to read or write " + LLUtils.toStringSafe(key), cause))
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -677,7 +675,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try {
 							if (logger.isTraceEnabled()) {
-								logger.trace("Reading {}", LLUtils.toString(key));
+								logger.trace("Reading {}", LLUtils.toStringSafe(key));
 							}
 							while (true) {
 								@Nullable ByteBuf prevData;
@@ -724,7 +722,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Deleting {}", LLUtils.toString(key));
+												logger.trace("Deleting {}", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.retain());
 										} else if (newData != null
@@ -742,7 +740,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Writing {}: {}", LLUtils.toString(key), LLUtils.toString(newData));
+												logger.trace("Writing {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
 											}
 											dbPut(cfh, null, key.retain(), newData.retain());
 										}
@@ -767,10 +765,10 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						}
 					})
-					.onErrorMap(cause -> new IOException("Failed to read or write " + (key.refCnt() > 0 ? LLUtils.toString(key) : "(released)"), cause))
+					.onErrorMap(cause -> new IOException("Failed to read or write " + LLUtils.toStringSafe(key), cause))
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 			} finally {
 			key.release();
 		}
@@ -812,7 +810,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								try {
 									if (logger.isTraceEnabled()) {
-										logger.trace("Deleting {}", LLUtils.toString(key));
+										logger.trace("Deleting {}", LLUtils.toStringSafe(key));
 									}
 									dbDelete(cfh, null, key.retain());
 									return null;
@@ -822,13 +820,13 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 							})
-							.onErrorMap(cause -> new IOException("Failed to delete " + LLUtils.toString(key), cause))
+							.onErrorMap(cause -> new IOException("Failed to delete " + LLUtils.toStringSafe(key), cause))
 							.subscribeOn(dbScheduler)
 							.then(Mono.empty())
 					)
 					.singleOrEmpty()
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -844,7 +842,7 @@ public class LLLocalDictionary implements LLDictionary {
 										.containsKey(null, key.retain())
 										.single()
 										.map(LLUtils::booleanToResponseByteBuffer)
-										.doFinally(s -> {
+										.doAfterTerminate(() -> {
 											assert key.refCnt() > 0;
 										});
 							case PREVIOUS_VALUE:
@@ -884,7 +882,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 										})
-										.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toString(key), cause))
+										.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
 										.subscribeOn(dbScheduler);
 							case VOID:
 								return Mono.empty();
@@ -892,8 +890,8 @@ public class LLLocalDictionary implements LLDictionary {
 								return Mono.error(new IllegalStateException("Unexpected value: " + resultType));
 						}
 					})
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -956,7 +954,7 @@ public class LLLocalDictionary implements LLDictionary {
 								.flatMapMany(Flux::fromIterable)
 								.onErrorMap(cause -> new IOException("Failed to read keys "
 										+ Arrays.deepToString(keysWindow.toArray(ByteBuf[]::new)), cause))
-								.doFinally(s -> keysWindow.forEach(ReferenceCounted::release))
+								.doAfterTerminate(() -> keysWindow.forEach(ReferenceCounted::release))
 						)
 				)
 				.doOnDiscard(Entry.class, discardedEntry -> {
@@ -1081,8 +1079,8 @@ public class LLLocalDictionary implements LLDictionary {
 							return getRangeMulti(snapshot, range.retain());
 						}
 					})
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1101,8 +1099,8 @@ public class LLLocalDictionary implements LLDictionary {
 							return getRangeMultiGrouped(snapshot, range.retain(), prefixLength);
 						}
 					})
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1114,8 +1112,8 @@ public class LLLocalDictionary implements LLDictionary {
 					.defer(() -> this.get(snapshot, key.retain(), existsAlmostCertainly))
 					.map(value -> Map.entry(key.retain(), value))
 					.flux()
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -1136,8 +1134,8 @@ public class LLLocalDictionary implements LLDictionary {
 						castedEntry.getValue().release();
 					})
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1159,8 +1157,8 @@ public class LLLocalDictionary implements LLDictionary {
 							LLLocalGroupedReactiveRocksIterator::release
 					)
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1177,8 +1175,8 @@ public class LLLocalDictionary implements LLDictionary {
 							return this.getRangeKeysMulti(snapshot, range.retain());
 						}
 					})
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1201,8 +1199,8 @@ public class LLLocalDictionary implements LLDictionary {
 							LLLocalGroupedReactiveRocksIterator::release
 					)
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1226,8 +1224,8 @@ public class LLLocalDictionary implements LLDictionary {
 							LLLocalKeyPrefixReactiveRocksIterator::release
 					)
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1246,8 +1244,8 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					})
 					.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
-					.doFirst(() -> key.retain())
-					.doFinally(s -> key.release());
+					.doFirst(key::retain)
+					.doAfterTerminate(key::release);
 		} finally {
 			key.release();
 		}
@@ -1263,8 +1261,8 @@ public class LLLocalDictionary implements LLDictionary {
 					)
 					.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1387,8 +1385,8 @@ public class LLLocalDictionary implements LLDictionary {
 						)
 						.then()
 						.onErrorMap(cause -> new IOException("Failed to write range", cause))
-						.doFirst(() -> range.retain())
-						.doFinally(s -> range.release());
+						.doFirst(range::retain)
+						.doAfterTerminate(range::release);
 			} else {
 				if (USE_WRITE_BATCHES_IN_SET_RANGE) {
 					return Mono.fromCallable(() -> {
@@ -1415,8 +1413,8 @@ public class LLLocalDictionary implements LLDictionary {
 								.then(Mono.<Void>empty())
 						)
 						.onErrorMap(cause -> new IOException("Failed to write range", cause))
-						.doFirst(() -> range.retain())
-						.doFinally(s -> range.release());
+						.doFirst(range::retain)
+						.doAfterTerminate(range::release);
 			}
 		} finally {
 			range.release();
@@ -1630,61 +1628,64 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast) {
 		try {
-			Mono<Long> result;
-			if (range.isAll()) {
-				result = Mono
-						.fromCallable(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
-						.onErrorMap(IOException::new)
-						.subscribeOn(dbScheduler);
-			} else {
-				result = Mono
-						.fromCallable(() -> {
-							var readOpts = resolveSnapshot(snapshot);
-							readOpts.setFillCache(false);
-							readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
-							ReleasableSlice minBound;
-							if (range.hasMin()) {
-								minBound = setIterateBound(readOpts, IterateBound.LOWER, range.getMin().retain());
-							} else {
-								minBound = emptyReleasableSlice();
-							}
-							try {
-								ReleasableSlice maxBound;
-								if (range.hasMax()) {
-									maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
-								} else {
-									maxBound = emptyReleasableSlice();
-								}
-								try {
-									if (fast) {
-										readOpts.setIgnoreRangeDeletions(true);
-
-									}
-									try (var rocksIterator = db.newIterator(cfh, readOpts)) {
-										if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-											rocksIterSeekTo(rocksIterator, range.getMin().retain());
+			return Mono
+					.defer(() -> {
+						if (range.isAll()) {
+							return Mono
+									.fromCallable(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
+									.onErrorMap(IOException::new)
+									.subscribeOn(dbScheduler);
+						} else {
+							return Mono
+									.fromCallable(() -> {
+										var readOpts = resolveSnapshot(snapshot);
+										readOpts.setFillCache(false);
+										readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
+										ReleasableSlice minBound;
+										if (range.hasMin()) {
+											minBound = setIterateBound(readOpts, IterateBound.LOWER, range.getMin().retain());
 										} else {
-											rocksIterator.seekToFirst();
+											minBound = emptyReleasableSlice();
 										}
-										long i = 0;
-										while (rocksIterator.isValid()) {
-											rocksIterator.next();
-											i++;
+										try {
+											ReleasableSlice maxBound;
+											if (range.hasMax()) {
+												maxBound = setIterateBound(readOpts, IterateBound.UPPER, range.getMax().retain());
+											} else {
+												maxBound = emptyReleasableSlice();
+											}
+											try {
+												if (fast) {
+													readOpts.setIgnoreRangeDeletions(true);
+
+												}
+												try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+													if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+														rocksIterSeekTo(rocksIterator, range.getMin().retain());
+													} else {
+														rocksIterator.seekToFirst();
+													}
+													long i = 0;
+													while (rocksIterator.isValid()) {
+														rocksIterator.next();
+														i++;
+													}
+													return i;
+												}
+											} finally {
+												maxBound.release();
+											}
+										} finally {
+											minBound.release();
 										}
-										return i;
-									}
-								} finally {
-									maxBound.release();
-								}
-							} finally {
-								minBound.release();
-							}
-						})
-						.onErrorMap(cause -> new IOException("Failed to get size of range "
-								+ range.toString(), cause))
-						.subscribeOn(dbScheduler);
-			}
-			return result.doFirst(() -> range.retain()).doFinally(s -> range.release());
+									})
+									.onErrorMap(cause -> new IOException("Failed to get size of range "
+											+ range.toString(), cause))
+									.subscribeOn(dbScheduler);
+						}
+					})
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1738,8 +1739,8 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					})
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1785,8 +1786,8 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					})
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}
@@ -1934,8 +1935,8 @@ public class LLLocalDictionary implements LLDictionary {
 					})
 					.onErrorMap(cause -> new IOException("Failed to delete " + range.toString(), cause))
 					.subscribeOn(dbScheduler)
-					.doFirst(() -> range.retain())
-					.doFinally(s -> range.release());
+					.doFirst(range::retain)
+					.doAfterTerminate(range::release);
 		} finally {
 			range.release();
 		}

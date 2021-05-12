@@ -101,14 +101,14 @@ public class TestDictionaryMapDeepHashMap {
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMapHashMap(dict, 5))
 						.flatMapMany(map -> map
-								.at(null, key1).flatMap(v -> v.putValue(key2, value).doFinally(s -> v.release()))
+								.at(null, key1).flatMap(v -> v.putValue(key2, value).doAfterTerminate(v::release))
 								.thenMany(map
 										.getAllValues(null)
 										.map(Entry::getValue)
 										.flatMap(maps -> Flux.fromIterable(maps.entrySet()))
 										.map(Entry::getValue)
 								)
-								.doFinally(s -> map.release())
+								.doAfterTerminate(map::release)
 						)
 				));
 		if (shouldFail) {

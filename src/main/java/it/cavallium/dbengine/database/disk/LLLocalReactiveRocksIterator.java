@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSlice;
+import org.jetbrains.annotations.NotNull;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -43,7 +44,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 
 	public Flux<T> flux() {
 		return Flux
-				.generate(() -> {
+				.<T, @NotNull Tuple3<RocksIterator, ReleasableSlice, ReleasableSlice>>generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					if (!range.hasMin() || !range.hasMax()) {
 						readOptions.setReadaheadSize(2 * 1024 * 1024);
@@ -84,7 +85,9 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 					rocksIterator.close();
 					tuple.getT2().release();
 					tuple.getT3().release();
-				});
+				})
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	public abstract T getEntry(ByteBuf key, ByteBuf value);

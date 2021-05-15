@@ -84,7 +84,6 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 								assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
 							}
 						} finally {
-							prefixKey.release();
 							for (ByteBuf key : keys) {
 								key.release();
 							}

@@ -769,7 +769,7 @@ public class LLLocalDictionary implements LLDictionary {
 					.subscribeOn(dbScheduler)
 					.doFirst(key::retain)
 					.doAfterTerminate(key::release);
-			} finally {
+		} finally {
 			key.release();
 		}
 	}

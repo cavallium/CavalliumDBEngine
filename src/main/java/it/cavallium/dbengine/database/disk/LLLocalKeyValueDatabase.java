@@ -199,7 +199,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		var options = new Options();
 		options.setCreateIfMissing(true);
 		options.setCompactionStyle(CompactionStyle.LEVEL);
-		options.setLevelCompactionDynamicLevelBytes(true);
 		options.setTargetFileSizeBase(64 * 1024 * 1024); // 64MiB sst file
 		options.setTargetFileSizeMultiplier(2); // Each level is 2 times the previous level
 		options.setCompressionPerLevel(List.of(CompressionType.NO_COMPRESSION,
@@ -210,7 +209,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setManualWalFlush(false);
 		options.setMinWriteBufferNumberToMerge(3);
 		options.setMaxWriteBufferNumber(4);
-		options.setWalTtlSeconds(30); // flush wal after 30 seconds
 		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(false); // Flush all WALs during startup
 		options.setWalRecoveryMode(crashIfWalError
@@ -219,8 +217,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
 		options.setPreserveDeletes(false);
 		options.setKeepLogFileNum(10);
-		options.setAllowMmapReads(true);
-		options.setAllowMmapWrites(true);
 		options.setAllowFAllocate(true);
 		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
 		options.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
@@ -238,20 +234,31 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		if (lowMemory) {
 			// LOW MEMORY
 			options
-					.setBytesPerSync(512 * 1024) // 512KiB
-					.setWalBytesPerSync(1024 * 1024)
+					.setLevelCompactionDynamicLevelBytes(false)
+					.setAllowMmapReads(false)
+					.setAllowMmapWrites(false)
+					.setBytesPerSync(0) // default
+					.setWalBytesPerSync(0) // default
 					.setIncreaseParallelism(1)
 					.setMaxOpenFiles(15)
 					.optimizeLevelStyleCompaction(1024 * 1024) // 1MiB of ram will be used for level style compaction
 					.setWriteBufferSize(1024 * 1024) // 1MB
-					.setWalSizeLimitMB(16) // 16MB
-					.setMaxTotalWalSize(1024L * 1024L * 1024L) // 1GiB max wal directory size
+					.setWalTtlSeconds(0)
+					.setWalSizeLimitMB(0) // 16MB
+					.setMaxTotalWalSize(0) // automatic
 			;
-			tableOptions.setBlockCache(new LRUCache(8L * 1024L * 1024L)); // 8MiB
+			tableOptions
+					.setBlockCache(new LRUCache(8L * 1024L * 1024L)) // 8MiB
+					.setCacheIndexAndFilterBlocks(false)
+					.setPinL0FilterAndIndexBlocksInCache(false)
+			;
 			options.setWriteBufferManager(new WriteBufferManager(8L * 1024L * 1024L, new LRUCache(8L * 1024L * 1024L))); // 8MiB
 		} else {
 			// HIGH MEMORY
 			options
+					.setLevelCompactionDynamicLevelBytes(true)
+					.setAllowMmapReads(true)
+					.setAllowMmapWrites(true)
 					.setAllowConcurrentMemtableWrite(true)
 					.setEnableWriteThreadAdaptiveYield(true)
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
@@ -261,19 +268,22 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
+					.setWalTtlSeconds(30) // flush wal after 30 seconds
 					.setWalSizeLimitMB(1024) // 1024MB
 					.setMaxTotalWalSize(2L * 1024L * 1024L * 1024L) // 2GiB max wal directory size
 			;
-			tableOptions.setBlockCache(new LRUCache(128L * 1024L * 1024L)); // 128MiB
+			tableOptions
+					.setBlockCache(new LRUCache(128L * 1024L * 1024L)) // 128MiB
+					.setCacheIndexAndFilterBlocks(true)
+					.setPinL0FilterAndIndexBlocksInCache(true)
+					;
+			final BloomFilter bloomFilter = new BloomFilter(10, false);
+			tableOptions.setOptimizeFiltersForMemory(true);
+			tableOptions.setFilterPolicy(bloomFilter);
 			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(128L * 1024L * 1024L))); // 128MiB
 		}
 
-		final BloomFilter bloomFilter = new BloomFilter(10, false);
-		tableOptions.setOptimizeFiltersForMemory(true);
-		tableOptions.setFilterPolicy(bloomFilter);
 		tableOptions.setBlockSize(16 * 1024); // 16MiB
-		tableOptions.setCacheIndexAndFilterBlocks(true);
-		tableOptions.setPinL0FilterAndIndexBlocksInCache(true);
 		options.setTableFormatConfig(tableOptions);
 		options.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 

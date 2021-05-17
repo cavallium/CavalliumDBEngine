@@ -265,7 +265,9 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			entries.add(Map.entry(key, value));
 			return entries;
 		} else {
-			return new ObjectArraySet<>(new Object[] {Map.entry(key, value)});
+			var oas = new ObjectArraySet<Entry<T, U>>(1);
+			oas.add(Map.entry(key, value));
+			return oas;
 		}
 	}
 

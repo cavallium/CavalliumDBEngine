@@ -154,7 +154,9 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 			entries.add(Map.entry(key, value));
 			return entries;
 		} else {
-			return new ObjectArraySet<>(new Object[] {Map.entry(key, value)});
+			var oas = new ObjectArraySet<Entry<K, V>>(1);
+			oas.add(Map.entry(key, value));
+			return oas;
 		}
 	}
 

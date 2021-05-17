@@ -26,7 +26,7 @@ class ValuesSetSerializer<X> implements Serializer<Set<X>, ByteBuf> {
 				X entry = entrySerializer.deserialize(serialized.retain());
 				values[i] = entry;
 			}
-			return new ObjectArraySet<>(values);
+			return new ObjectArraySet<>(values, values.length);
 		} finally {
 			serialized.release();
 		}

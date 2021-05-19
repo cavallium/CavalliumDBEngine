@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBloc
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectSets;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -265,7 +266,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			entries.add(Map.entry(key, value));
 			return entries;
 		} else {
-			var oas = new ObjectArraySet<Entry<T, U>>(1);
+			var oas = new HashSet<Entry<T, U>>(1);
 			oas.add(Map.entry(key, value));
 			return oas;
 		}

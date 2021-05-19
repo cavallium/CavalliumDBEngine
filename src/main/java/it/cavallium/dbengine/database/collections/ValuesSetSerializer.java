@@ -4,6 +4,8 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectSets;
+import java.util.HashSet;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 
@@ -21,12 +23,12 @@ class ValuesSetSerializer<X> implements Serializer<Set<X>, ByteBuf> {
 	public @NotNull Set<X> deserialize(@NotNull ByteBuf serialized) {
 		try {
 			int entriesLength = serialized.readInt();
-			Object[] values = new Object[entriesLength];
+			var set = new HashSet<X>();
 			for (int i = 0; i < entriesLength; i++) {
 				X entry = entrySerializer.deserialize(serialized.retain());
-				values[i] = entry;
+				set.add(entry);
 			}
-			return new ObjectArraySet<>(values, values.length);
+			return set;
 		} finally {
 			serialized.release();
 		}

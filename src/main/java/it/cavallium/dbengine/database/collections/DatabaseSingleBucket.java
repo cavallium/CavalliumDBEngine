@@ -5,6 +5,8 @@ import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectSets;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -154,7 +156,7 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 			entries.add(Map.entry(key, value));
 			return entries;
 		} else {
-			var oas = new ObjectArraySet<Entry<K, V>>(1);
+			var oas = new HashSet<Entry<K, V>>(1);
 			oas.add(Map.entry(key, value));
 			return oas;
 		}

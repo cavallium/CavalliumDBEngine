@@ -235,6 +235,12 @@
       <artifactId>data-generator</artifactId>
       <version>[0.9.26,)</version>
     </dependency>
+    <dependency>
+      <groupId>io.soabase.record-builder</groupId>
+      <artifactId>record-builder-core</artifactId>
+      <version>1.19</version>
+      <scope>provided</scope>
+    </dependency>
   </dependencies>
   <build>
     <testSourceDirectory>src/test/java</testSourceDirectory>
@@ -283,13 +289,24 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>3.8.1</version>
         <configuration>
-          <release>11</release>
+          <release>16</release>
+          <annotationProcessorPaths>
+            <annotationProcessorPath>
+              <groupId>io.soabase.record-builder</groupId>
+              <artifactId>record-builder-processor</artifactId>
+              <version>1.19</version>
+            </annotationProcessorPath>
+          </annotationProcessorPaths>
+          <annotationProcessors>
+            <annotationProcessor>io.soabase.recordbuilder.processor.RecordBuilderProcessor</annotationProcessor>
+          </annotationProcessors>
           <useIncrementalCompilation>false</useIncrementalCompilation>
         </configuration>
       </plugin>
       <plugin>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator</artifactId>
+        <version>0.9.0-SNAPSHOT</version>
         <executions>
           <execution>
             <id>generate-lucene-query-sources</id>

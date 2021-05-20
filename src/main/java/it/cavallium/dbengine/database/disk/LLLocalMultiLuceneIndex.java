@@ -28,7 +28,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import lombok.Value;
 import org.apache.lucene.search.CollectionStatistics;
 import org.apache.lucene.search.IndexSearcher;
 import org.jetbrains.annotations.Nullable;
@@ -41,7 +40,6 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
-@SuppressWarnings("UnstableApiUsage")
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	private final Long2ObjectMap<LLSnapshot[]> registeredSnapshots = new Long2ObjectOpenHashMap<>();
@@ -287,21 +285,21 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 										queryParams,
 										keyFieldName,
 										mltDocumentFieldsShared,
-										distributedSearch.getActionId(),
-										distributedSearch.getScoreDivisor()
+										distributedSearch.actionId(),
+										distributedSearch.scoreDivisor()
 								)
 						)
 						.reduce(LLSearchResult.accumulator())
 						.map(result -> {
-							if (distributedSearch.getActionId() != -1) {
+							if (distributedSearch.actionId() != -1) {
 								Flux<LLSearchResultShard> resultsWithTermination = result
-										.getResults()
+										.results()
 										.map(flux -> new LLSearchResultShard(Flux
 												.using(
-														distributedSearch::getActionId,
-														actionId -> flux.getResults(),
+														distributedSearch::actionId,
+														actionId -> flux.results(),
 														this::completedAction
-												), flux.getTotalHitsCount())
+												), flux.totalHitsCount())
 										);
 								return new LLSearchResult(resultsWithTermination);
 							} else {
@@ -309,18 +307,14 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							}
 						})
 						.doOnError(ex -> {
-							if (distributedSearch.getActionId() != -1) {
-								completedAction(distributedSearch.getActionId());
+							if (distributedSearch.actionId() != -1) {
+								completedAction(distributedSearch.actionId());
 							}
 						})
 				);
 	}
 
-	@Value
-	private static class DistributedSearch {
-		long actionId;
-		int scoreDivisor;
-	}
+	private static record DistributedSearch(long actionId, int scoreDivisor) {}
 
 	@Override
 	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
@@ -366,20 +360,20 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 								.distributedSearch(tuple.getT2().orElse(null),
 										queryParams,
 										keyFieldName,
-										distributedSearch.getActionId(),
-										distributedSearch.getScoreDivisor()
+										distributedSearch.actionId(),
+										distributedSearch.scoreDivisor()
 								))
 						.reduce(LLSearchResult.accumulator())
 						.map(result -> {
-							if (distributedSearch.getActionId() != -1) {
+							if (distributedSearch.actionId() != -1) {
 								Flux<LLSearchResultShard> resultsWithTermination = result
-										.getResults()
+										.results()
 										.map(flux -> new LLSearchResultShard(Flux
 												.using(
-														distributedSearch::getActionId,
-														actionId -> flux.getResults(),
+														distributedSearch::actionId,
+														actionId -> flux.results(),
 														this::completedAction
-												), flux.getTotalHitsCount())
+												), flux.totalHitsCount())
 										);
 								return new LLSearchResult(resultsWithTermination);
 							} else {
@@ -387,8 +381,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							}
 						})
 						.doOnError(ex -> {
-							if (distributedSearch.getActionId() != -1) {
-								completedAction(distributedSearch.getActionId());
+							if (distributedSearch.actionId() != -1) {
+								completedAction(distributedSearch.actionId());
 							}
 						})
 				);

@@ -1,85 +1,56 @@
 package it.cavallium.dbengine.client.query;
 
+import io.soabase.recordbuilder.core.RecordBuilder;
 import it.cavallium.data.generator.nativedata.Nullablefloat;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.QueryParamsBuilder;
 import it.cavallium.dbengine.client.query.current.data.ScoreMode;
 import it.cavallium.dbengine.database.LLScoreMode;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Builder.Default;
-import lombok.Data;
-import lombok.EqualsAndHashCode;
-import lombok.NonNull;
-import lombok.ToString;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-@EqualsAndHashCode
-@AllArgsConstructor(
-		staticName = "of"
-)
-@Data
-@Builder
-@ToString
-public final class ClientQueryParams<T> {
+@RecordBuilder
+public final record ClientQueryParams<T>(@Nullable CompositeSnapshot snapshot,
+																				 @NotNull Query query,
+																				 long offset,
+																				 long limit,
+																				 @Nullable Float minCompetitiveScore,
+																				 @Nullable MultiSort<T> sort,
+																				 @NotNull LLScoreMode scoreMode) {
 
-	@Nullable
-	@Default
-	private CompositeSnapshot snapshot = null;
-
-	@NotNull
-	@NonNull
-	private Query query;
-
-	@Default
-	private long offset = 0;
-
-	@Default
-	private long limit = Long.MAX_VALUE;
-
-	@Nullable
-	@Default
-	private Float minCompetitiveScore = null;
-
-	@Nullable
-	@Default
-	private MultiSort<T> sort = null;
-
-	@NotNull
-	@NonNull
-	@Default
-	private LLScoreMode scoreMode = LLScoreMode.COMPLETE;
+	public static <T> ClientQueryParamsBuilder<T> builder() {
+		return ClientQueryParamsBuilder
+				.<T>builder()
+				.snapshot(null)
+				.offset(0)
+				.limit(Long.MAX_VALUE)
+				.minCompetitiveScore(null)
+				.sort(null)
+				.scoreMode(LLScoreMode.COMPLETE);
+	}
 
 	public ScoreMode toScoreMode() {
-		ScoreMode scoreMode;
-		switch (getScoreMode()) {
-			case COMPLETE:
-				scoreMode = ScoreMode.of(false, true);
-				break;
-			case COMPLETE_NO_SCORES:
-				scoreMode = ScoreMode.of(false, false);
-				break;
-			case TOP_SCORES:
-				scoreMode = ScoreMode.of(true, true);
-				break;
-			default:
-				throw new IllegalArgumentException();
-		}
-		return scoreMode;
+		return switch (this.scoreMode()) {
+			case COMPLETE -> ScoreMode.of(false, true);
+			case COMPLETE_NO_SCORES -> ScoreMode.of(false, false);
+			case TOP_SCORES -> ScoreMode.of(true, true);
+			//noinspection UnnecessaryDefault
+			default -> throw new IllegalArgumentException();
+		};
 	}
 
 	public QueryParams toQueryParams() {
-		return QueryParams
+		return QueryParamsBuilder
 				.builder()
-				.query(getQuery())
-				.sort(getSort() != null ? getSort().getQuerySort() : NoSort.of())
-				.minCompetitiveScore(Nullablefloat.ofNullable(getMinCompetitiveScore()))
-				.offset(getOffset())
-				.limit(getLimit())
+				.query(query())
+				.sort(sort() != null ? sort().getQuerySort() : NoSort.of())
+				.minCompetitiveScore(Nullablefloat.ofNullable(minCompetitiveScore()))
+				.offset(offset())
+				.limit(limit())
 				.scoreMode(toScoreMode())
 				.build();
 	}

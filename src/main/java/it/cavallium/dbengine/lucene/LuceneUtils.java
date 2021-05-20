@@ -243,11 +243,11 @@ public class LuceneUtils {
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResultKeys<>(Flux.empty(), 0L),
-				(a, b) -> new SearchResultKeys<>(LuceneUtils.mergeStream(Flux.just(a.getResults(), b.getResults()),
+				(a, b) -> new SearchResultKeys<>(LuceneUtils.mergeStream(Flux.just(a.results(), b.results()),
 						sort,
 						offset,
 						limit
-				), a.getTotalHitsCount() + b.getTotalHitsCount())
+				), a.totalHitsCount() + b.totalHitsCount())
 		);
 	}
 
@@ -257,11 +257,11 @@ public class LuceneUtils {
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResult<>(Flux.empty(), 0L),
-				(a, b) -> new SearchResult<>(LuceneUtils.mergeStream(Flux.just(a.getResults(), b.getResults()),
+				(a, b) -> new SearchResult<>(LuceneUtils.mergeStream(Flux.just(a.results(), b.results()),
 						sort,
 						offset,
 						limit
-				), a.getTotalHitsCount() + b.getTotalHitsCount())
+				), a.totalHitsCount() + b.totalHitsCount())
 		);
 	}
 
@@ -272,8 +272,8 @@ public class LuceneUtils {
 		return mappedKeys.reduce(
 				new LLSearchResultShard(Flux.empty(), 0),
 				(s1, s2) -> new LLSearchResultShard(
-						LuceneUtils.mergeStream(Flux.just(s1.getResults(), s2.getResults()), mappedSort, offset, limit),
-						s1.getTotalHitsCount() + s2.getTotalHitsCount()
+						LuceneUtils.mergeStream(Flux.just(s1.results(), s2.results()), mappedSort, offset, limit),
+						s1.totalHitsCount() + s2.totalHitsCount()
 				)
 		);
 	}

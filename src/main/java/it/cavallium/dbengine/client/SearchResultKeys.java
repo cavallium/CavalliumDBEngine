@@ -1,15 +1,10 @@
 package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
-import lombok.Value;
 import reactor.core.publisher.Flux;
 
 @SuppressWarnings("unused")
-@Value
-public class SearchResultKeys<T> {
-
-	Flux<SearchResultKey<T>> results;
-	long totalHitsCount;
+public record SearchResultKeys<T>(Flux<SearchResultKey<T>> results, long totalHitsCount) {
 
 	public static <T, U> SearchResultKeys<T> empty() {
 		return new SearchResultKeys<>(Flux.empty(), 0L);

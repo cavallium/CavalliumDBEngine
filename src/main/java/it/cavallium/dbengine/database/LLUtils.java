@@ -432,7 +432,7 @@ public class LLUtils {
 		return prev.handle((delta, sink) -> {
 			switch (updateReturnMode) {
 				case GET_NEW_VALUE:
-					var current = delta.getCurrent();
+					var current = delta.current();
 					if (current != null) {
 						sink.next(current);
 					} else {
@@ -440,7 +440,7 @@ public class LLUtils {
 					}
 					break;
 				case GET_OLD_VALUE:
-					var previous = delta.getPrevious();
+					var previous = delta.previous();
 					if (previous != null) {
 						sink.next(previous);
 					} else {
@@ -458,8 +458,8 @@ public class LLUtils {
 
 	public static <T, U> Mono<Delta<U>> mapDelta(Mono<Delta<T>> mono, Function<@NotNull T, @Nullable U> mapper) {
 		return mono.map(delta -> {
-			T prev = delta.getPrevious();
-			T curr = delta.getCurrent();
+			T prev = delta.previous();
+			T curr = delta.current();
 			U newPrev;
 			U newCurr;
 			if (prev != null) {
@@ -472,11 +472,11 @@ public class LLUtils {
 			} else {
 				newCurr = null;
 			}
-			return Delta.of(newPrev, newCurr);
+			return new Delta<>(newPrev, newCurr);
 		});
 	}
 
 	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {
-		return !Objects.equals(delta.getPrevious(), delta.getCurrent());
+		return !Objects.equals(delta.previous(), delta.current());
 	}
 }

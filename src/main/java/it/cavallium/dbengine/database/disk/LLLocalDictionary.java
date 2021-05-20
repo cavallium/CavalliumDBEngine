@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.disk;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -30,8 +29,6 @@ import java.util.concurrent.locks.StampedLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
-import lombok.AllArgsConstructor;
-import lombok.Data;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -617,16 +614,13 @@ public class LLLocalDictionary implements LLDictionary {
 											}
 											dbPut(cfh, null, key.retain(), newData.retain());
 										}
-										switch (updateReturnMode) {
-											case GET_NEW_VALUE:
-												return newData != null ? newData.retain() : null;
-											case GET_OLD_VALUE:
-												return prevData != null ? prevData.retain() : null;
-											case NOTHING:
-												return null;
-											default:
-												throw new IllegalArgumentException();
-										}
+										return switch (updateReturnMode) {
+											case GET_NEW_VALUE -> newData != null ? newData.retain() : null;
+											case GET_OLD_VALUE -> prevData != null ? prevData.retain() : null;
+											case NOTHING -> null;
+											//noinspection UnnecessaryDefault
+											default -> throw new IllegalArgumentException();
+										};
 									} finally {
 										if (newData != null) {
 											newData.release();
@@ -744,7 +738,7 @@ public class LLLocalDictionary implements LLDictionary {
 											}
 											dbPut(cfh, null, key.retain(), newData.retain());
 										}
-										return Delta.of(
+										return new Delta<>(
 												prevData != null ? prevData.retain() : null,
 												newData != null ? newData.retain() : null
 										);
@@ -1531,7 +1525,7 @@ public class LLLocalDictionary implements LLDictionary {
 				} else {
 					readOpts.setIterateUpperBound(slice);
 				}
-				return new ReleasableSlice(slice, buffer.retain(), nioBuffer);
+				return new ReleasableSliceImpl(slice, buffer.retain(), nioBuffer);
 			} else {
 				slice = new Slice(Objects.requireNonNull(LLUtils.toArray(buffer)));
 				if (boundType == IterateBound.LOWER) {
@@ -1539,7 +1533,7 @@ public class LLLocalDictionary implements LLDictionary {
 				} else {
 					readOpts.setIterateUpperBound(slice);
 				}
-				return new ReleasableSlice(slice, null, null);
+				return new ReleasableSliceImpl(slice, null, null);
 			}
 		} finally {
 			buffer.release();
@@ -1548,20 +1542,17 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private static ReleasableSlice emptyReleasableSlice() {
 		var arr = new byte[0];
-		return new ReleasableSlice(new Slice(arr), null, arr) {
-			@Override
-			public void release() {
-			}
-		};
+
+		return new SimpleSliceWithoutRelease(new Slice(arr), null, arr);
 	}
 
-	@Data
-	@AllArgsConstructor
-	public static class ReleasableSlice {
-		AbstractSlice<?> slice;
-		@Nullable ByteBuf byteBuf;
-		private @Nullable Object additionalData;
+	public static record SimpleSliceWithoutRelease(AbstractSlice<?> slice, @Nullable ByteBuf byteBuf,
+																								 @Nullable Object additionalData) implements ReleasableSlice {}
 
+	public static record ReleasableSliceImpl(AbstractSlice<?> slice, @Nullable ByteBuf byteBuf,
+																					 @Nullable Object additionalData) implements ReleasableSlice {
+
+		@Override
 		public void release() {
 			slice.clear();
 			if (byteBuf != null) {

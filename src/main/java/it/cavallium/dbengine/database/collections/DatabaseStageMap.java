@@ -207,7 +207,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 								.flatMap(result -> Mono
 										.justOrEmpty(result.getT2())
 										.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
-										.thenReturn(Delta.of(result.getT1().orElse(null), result.getT2().orElse(null)))
+										.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
 								);
 					} else if (updateMode == UpdateMode.ALLOW) {
 						return Mono.fromCallable(() -> {

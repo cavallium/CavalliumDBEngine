@@ -199,7 +199,7 @@ public class LuceneUtils {
 				if (limit == null || limit == Long.MAX_VALUE) {
 					return offsetedFlux;
 				} else {
-					return offsetedFlux.limitRequest(limit);
+					return offsetedFlux.take(limit, true);
 				}
 			});
 		}

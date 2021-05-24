@@ -41,6 +41,7 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
+import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.queries.mlt.MoreLikeThis;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
@@ -52,10 +53,14 @@ import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
+import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.MMapDirectory;
-import org.apache.lucene.store.RAMDirectory;
+import org.apache.lucene.store.NIOFSDirectory;
+import org.apache.lucene.store.NRTCachingDirectory;
+import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
@@ -121,7 +126,36 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			throw new IOException("Empty lucene database name");
 		}
 		Path directoryPath = luceneBasePath.resolve(name + ".lucene.db");
-		this.directory = inMemory ? new RAMDirectory() : FSDirectory.open(directoryPath);
+		if (!MMapDirectory.UNMAP_SUPPORTED) {
+			logger.error("Unmap is unsupported, lucene will run slower: {}", MMapDirectory.UNMAP_NOT_SUPPORTED_REASON);
+		} else {
+			logger.debug("Lucene MMap is supported");
+		}
+		if (inMemory) {
+			this.directory = new ByteBuffersDirectory();
+		} else {
+			Directory directory;
+			{
+				FSDirectory fsDirectory = FSDirectory.open(directoryPath);
+				if (Constants.LINUX || Constants.MAC_OS_X) {
+					if (!lowMemory) {
+						directory = new DirectIODirectory(fsDirectory, 5 * 1024 * 1024, 60 * 1024 * 1024);
+					} else {
+						directory = new DirectIODirectory(fsDirectory);
+					}
+				} else {
+					directory = fsDirectory;
+				}
+			}
+
+			if (!lowMemory) {
+				directory = new NRTCachingDirectory(directory, 5.0, 60.0);
+			} else {
+				directory = new NRTCachingDirectory(directory, 1.0, 6.0);
+			}
+
+			this.directory = directory;
+		}
 		this.luceneIndexName = name;
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;
@@ -640,7 +674,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					scheduledTasksLifecycle.startScheduledTask();
 					try {
 						//noinspection BlockingMethodInNonBlockingContext
-						searcherManager.maybeRefreshBlocking();
+						searcherManager.maybeRefresh();
 					} finally {
 						scheduledTasksLifecycle.endScheduledTask();
 					}

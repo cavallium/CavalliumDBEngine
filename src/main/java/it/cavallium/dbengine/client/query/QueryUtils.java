@@ -16,6 +16,8 @@ import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.util.QueryBuilder;
 import org.jetbrains.annotations.NotNull;
@@ -68,7 +70,7 @@ public class QueryUtils {
 				}
 				queryParts.add(BooleanQueryPart.of(transformQuery(field, queryPartQuery), occur));
 			}
-			return BooleanQuery.of(queryParts.toArray(BooleanQueryPart[]::new), booleanQuery.getMinimumNumberShouldMatch());
+			return BooleanQuery.of(List.copyOf(queryParts), booleanQuery.getMinimumNumberShouldMatch());
 		}
 		if (luceneQuery instanceof org.apache.lucene.search.PhraseQuery) {
 			var phraseQuery = (org.apache.lucene.search.PhraseQuery) luceneQuery;
@@ -81,7 +83,7 @@ public class QueryUtils {
 				var position = positions[i];
 				termPositions[i] = TermPosition.of(QueryParser.toQueryTerm(term), position);
 			}
-			return PhraseQuery.of(termPositions, slop);
+			return PhraseQuery.of(List.of(termPositions), slop);
 		}
 		org.apache.lucene.search.SynonymQuery synonymQuery = (org.apache.lucene.search.SynonymQuery) luceneQuery;
 		return SynonymQuery.of(field,
@@ -89,7 +91,7 @@ public class QueryUtils {
 						.getTerms()
 						.stream()
 						.map(term -> TermAndBoost.of(QueryParser.toQueryTerm(term), 1))
-						.toArray(TermAndBoost[]::new)
+						.toList()
 		);
 	}
 }

@@ -25,6 +25,13 @@
       <name>MCHV Snapshot Apache Maven Packages</name>
       <url>https://mvn.mchv.eu/repository/mchv-snapshot</url>
     </repository>
+    <repository>
+      <id>mulesoft-public-snapshots</id>
+      <name>MuleSoft public snapshots</name>
+      <url>https://repository.mulesoft.org/nexus/content/repositories/public</url>
+      <releases><enabled>false</enabled></releases>
+      <snapshots><enabled>true</enabled></snapshots>
+    </repository>
   </repositories>
   <pluginRepositories>
     <pluginRepository>

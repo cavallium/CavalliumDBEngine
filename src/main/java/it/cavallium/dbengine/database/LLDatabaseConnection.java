@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database;
 
 import io.netty.buffer.ByteBufAllocator;
+import it.cavallium.dbengine.client.IndicizerAnalyzers;
+import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.time.Duration;
@@ -18,8 +20,8 @@ public interface LLDatabaseConnection {
 
 	Mono<? extends LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
-			TextFieldsAnalyzer textFieldsAnalyzer,
-			TextFieldsSimilarity textFieldsSimilarity,
+			IndicizerAnalyzers indicizerAnalyzers,
+			IndicizerSimilarities indicizerSimilarities,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory,

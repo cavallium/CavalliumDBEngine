@@ -11,6 +11,7 @@ public enum TextFieldsAnalyzer {
 	N3To5GramPartialStringEdge,
 	Standard,
 	WordSimple,
+	ICUCollationKey,
 	WordWithStopwordsStripping,
 	WordWithStemming,
 	FullText,

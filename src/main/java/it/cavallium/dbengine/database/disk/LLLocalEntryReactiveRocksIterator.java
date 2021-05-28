@@ -15,8 +15,9 @@ public class LLLocalEntryReactiveRocksIterator extends LLLocalReactiveRocksItera
 			ByteBufAllocator alloc,
 			ColumnFamilyHandle cfh,
 			LLRange range,
-			ReadOptions readOptions) {
-		super(db, alloc, cfh, range, readOptions, true);
+			ReadOptions readOptions,
+			String debugName) {
+		super(db, alloc, cfh, range, readOptions, true, debugName);
 	}
 
 	@Override

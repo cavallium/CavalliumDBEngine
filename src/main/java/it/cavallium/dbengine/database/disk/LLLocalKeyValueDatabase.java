@@ -414,6 +414,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						db,
 						handles.get(Column.special(Column.toString(columnName))),
 						name,
+						Column.toString(columnName),
 						dbScheduler,
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						updateMode

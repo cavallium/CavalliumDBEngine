@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.netty.buffer.ByteBufAllocator;
+import it.cavallium.dbengine.client.IndicizerAnalyzers;
+import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -70,8 +72,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	@Override
 	public Mono<LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,
-			TextFieldsAnalyzer textFieldsAnalyzer,
-			TextFieldsSimilarity textFieldsSimilarity,
+			IndicizerAnalyzers indicizerAnalyzers,
+			IndicizerSimilarities indicizerSimilarities,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory,
@@ -82,8 +84,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						return new LLLocalMultiLuceneIndex(basePath.resolve("lucene"),
 								name,
 								instancesCount,
-								textFieldsAnalyzer,
-								textFieldsSimilarity,
+								indicizerAnalyzers,
+								indicizerSimilarities,
 								queryRefreshDebounceTime,
 								commitDebounceTime,
 								lowMemory,
@@ -92,8 +94,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 					} else {
 						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
 								name,
-								textFieldsAnalyzer,
-								textFieldsSimilarity,
+								indicizerAnalyzers,
+								indicizerSimilarities,
 								queryRefreshDebounceTime,
 								commitDebounceTime,
 								lowMemory,

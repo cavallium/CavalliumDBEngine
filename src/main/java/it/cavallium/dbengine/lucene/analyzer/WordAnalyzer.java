@@ -1,31 +1,47 @@
 package it.cavallium.dbengine.lucene.analyzer;
 
+import com.ibm.icu.text.Collator;
+import com.ibm.icu.util.ULocale;
 import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.icu.ICUCollationAttributeFactory;
+import org.apache.lucene.analysis.icu.ICUCollationKeyAnalyzer;
+import org.apache.lucene.analysis.miscellaneous.LengthFilter;
 import org.apache.lucene.analysis.standard.StandardTokenizer;
 
 public class WordAnalyzer extends Analyzer {
 
+	private final boolean icu;
 	private final boolean removeStopWords;
 	private final boolean stem;
 
-	public WordAnalyzer(boolean removeStopWords, boolean stem) {
+	public WordAnalyzer(boolean icu, boolean removeStopWords, boolean stem) {
+		this.icu = icu;
 		this.removeStopWords = removeStopWords;
 		this.stem = stem;
 	}
 
 	@Override
 	protected TokenStreamComponents createComponents(final String fieldName) {
-		Tokenizer tokenizer = new StandardTokenizer();
+		Tokenizer tokenizer;
+		if (icu) {
+			tokenizer = new StandardTokenizer(new ICUCollationAttributeFactory(Collator.getInstance(ULocale.ROOT)));
+		} else {
+			tokenizer = new StandardTokenizer();
+		}
 		TokenStream tokenStream = tokenizer;
-		//tokenStream = new LengthFilter(tokenStream, 1, 100);
+		if (stem) {
+			tokenStream = new LengthFilter(tokenStream, 1, 120);
+		}
+		if (!icu) {
+			tokenStream = LuceneUtils.newCommonFilter(tokenStream, stem);
+		}
 		if (removeStopWords) {
 			tokenStream = new EnglishItalianStopFilter(tokenStream);
 		}
-		tokenStream = LuceneUtils.newCommonFilter(tokenStream, stem);
 
 		return new TokenStreamComponents(tokenizer, tokenStream);
 	}

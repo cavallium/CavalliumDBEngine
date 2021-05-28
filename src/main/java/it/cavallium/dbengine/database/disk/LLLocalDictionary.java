@@ -122,12 +122,15 @@ public class LLLocalDictionary implements LLDictionary {
 	private final Striped<StampedLock> itemsLock = Striped.readWriteStampedLock(STRIPES);
 	private final UpdateMode updateMode;
 	private final ByteBufAllocator alloc;
+	private final String getRangeMultiDebugName;
+	private final String getRangeKeysMultiDebugName;
 
 	public LLLocalDictionary(
 			ByteBufAllocator allocator,
 			@NotNull RocksDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
+			String columnDisplayName,
 			Scheduler dbScheduler,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			UpdateMode updateMode) {
@@ -139,6 +142,8 @@ public class LLLocalDictionary implements LLDictionary {
 		this.dbScheduler = dbScheduler;
 		this.snapshotResolver = snapshotResolver;
 		this.updateMode = updateMode;
+		this.getRangeMultiDebugName = databaseName + "(" + columnDisplayName + ")" + "::getRangeMulti";
+		this.getRangeKeysMultiDebugName = databaseName + "(" + columnDisplayName + ")" + "::getRangeKeysMulti";
 		alloc = allocator;
 	}
 
@@ -1113,12 +1118,19 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	@SuppressWarnings("Convert2MethodRef")
 	private Flux<Entry<ByteBuf, ByteBuf>> getRangeMulti(LLSnapshot snapshot, LLRange range) {
 		try {
 			return Flux
 					.using(
-							() -> new LLLocalEntryReactiveRocksIterator(db, alloc, cfh, range.retain(), resolveSnapshot(snapshot)),
-							LLLocalReactiveRocksIterator::flux,
+							() -> new LLLocalEntryReactiveRocksIterator(db,
+									alloc,
+									cfh,
+									range.retain(),
+									resolveSnapshot(snapshot),
+									getRangeMultiDebugName
+							),
+							llLocalEntryReactiveRocksIterator -> llLocalEntryReactiveRocksIterator.flux(),
 							LLLocalReactiveRocksIterator::release
 					)
 					.doOnDiscard(Entry.class, entry -> {
@@ -1135,6 +1147,7 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	@SuppressWarnings("Convert2MethodRef")
 	private Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeMultiGrouped(LLSnapshot snapshot, LLRange range, int prefixLength) {
 		try {
 			return Flux
@@ -1147,7 +1160,7 @@ public class LLLocalDictionary implements LLDictionary {
 									resolveSnapshot(snapshot),
 									"getRangeMultiGrouped"
 							),
-							LLLocalGroupedReactiveRocksIterator::flux,
+							llLocalGroupedEntryReactiveRocksIterator -> llLocalGroupedEntryReactiveRocksIterator.flux(),
 							LLLocalGroupedReactiveRocksIterator::release
 					)
 					.subscribeOn(dbScheduler)
@@ -1245,12 +1258,19 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	@SuppressWarnings("Convert2MethodRef")
 	private Flux<ByteBuf> getRangeKeysMulti(LLSnapshot snapshot, LLRange range) {
 		try {
 			return Flux
 					.using(
-							() -> new LLLocalKeyReactiveRocksIterator(db, alloc, cfh, range.retain(), resolveSnapshot(snapshot)),
-							LLLocalReactiveRocksIterator::flux,
+							() -> new LLLocalKeyReactiveRocksIterator(db,
+									alloc,
+									cfh,
+									range.retain(),
+									resolveSnapshot(snapshot),
+									getRangeKeysMultiDebugName
+							),
+							llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux(),
 							LLLocalReactiveRocksIterator::release
 					)
 					.doOnDiscard(ByteBuf.class, ReferenceCounted::release)

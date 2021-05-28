@@ -3,6 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
+import it.cavallium.dbengine.client.IndicizerAnalyzers;
+import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -14,12 +16,15 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectArrayMap;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -55,8 +60,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public LLLocalMultiLuceneIndex(Path lucene,
 			String name,
 			int instancesCount,
-			TextFieldsAnalyzer textFieldsAnalyzer,
-			TextFieldsSimilarity textFieldsSimilarity,
+			IndicizerAnalyzers indicizerAnalyzers,
+			IndicizerSimilarities indicizerSimilarities,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory, boolean inMemory) throws IOException {
@@ -76,8 +81,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			}
 			luceneIndices[i] = new LLLocalLuceneIndex(lucene,
 					instanceName,
-					textFieldsAnalyzer,
-					textFieldsSimilarity,
+					indicizerAnalyzers,
+					indicizerSimilarities,
 					queryRefreshDebounceTime,
 					commitDebounceTime,
 					lowMemory, inMemory, (indexSearcher, field, distributedPre, actionId) -> distributedCustomCollectionStatistics(finalI,
@@ -168,21 +173,37 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return getLuceneIndex(id).addDocument(id, doc);
 	}
 
+	@SuppressWarnings({"unchecked"})
 	@Override
-	public Mono<Void> addDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
+	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
 		return documents
-				.flatMapMany(map -> {
-					var sortedMap = new HashMap<LLLocalLuceneIndex, Map<LLTerm, LLDocument>>();
-					map.forEach((key, value) -> sortedMap
-							.computeIfAbsent(getLuceneIndex(key), _unused -> new HashMap<>())
-							.put(key, value)
-					);
-					return Flux.fromIterable(sortedMap.entrySet());
-				})
-				.flatMap(luceneIndexWithNewDocuments -> {
-					var luceneIndex = luceneIndexWithNewDocuments.getKey();
-					var docs = luceneIndexWithNewDocuments.getValue();
-					return luceneIndex.addDocuments(Mono.just(docs));
+				.bufferTimeout(512, Duration.ofSeconds(2))
+				.flatMap(inputEntries -> {
+					List<Entry<LLTerm, LLDocument>>[] sortedEntries = new List[luceneIndices.length];
+					Mono<Void>[] results = new Mono[luceneIndices.length];
+
+					// Sort entries
+					for(var inputEntry : inputEntries) {
+						int luceneIndexId = getLuceneIndexId(inputEntry.getKey());
+						if (sortedEntries[luceneIndexId] == null) {
+							sortedEntries[luceneIndexId] = new ArrayList<>();
+						}
+						sortedEntries[luceneIndexId].add(inputEntry);
+					}
+
+					// Add documents
+					int luceneIndexId = 0;
+					for (List<Entry<LLTerm, LLDocument>> docs : sortedEntries) {
+						if (docs != null && !docs.isEmpty()) {
+							LLLocalLuceneIndex luceneIndex = luceneIndices[luceneIndexId];
+							results[luceneIndexId] = luceneIndex.addDocuments(Flux.fromIterable(docs));
+						} else {
+							results[luceneIndexId] = Mono.empty();
+						}
+						luceneIndexId++;
+					}
+
+					return Mono.when(results);
 				})
 				.then();
 	}

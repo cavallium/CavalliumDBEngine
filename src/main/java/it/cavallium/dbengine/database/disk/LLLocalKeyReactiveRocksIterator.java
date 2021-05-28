@@ -13,8 +13,9 @@ public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterato
 			ByteBufAllocator alloc,
 			ColumnFamilyHandle cfh,
 			LLRange range,
-			ReadOptions readOptions) {
-		super(db, alloc, cfh, range, readOptions, false);
+			ReadOptions readOptions,
+			String debugName) {
+		super(db, alloc, cfh, range, readOptions, false, debugName);
 	}
 
 	@Override

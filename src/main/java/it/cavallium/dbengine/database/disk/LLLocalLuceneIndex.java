@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.client.IndicizerAnalyzers;
+import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.EnglishItalianStopFilter;
@@ -24,7 +26,11 @@ import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+import java.time.temporal.TemporalUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -36,6 +42,8 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -110,15 +118,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private final ConcurrentHashMap<Long, LuceneIndexSnapshot> snapshots = new ConcurrentHashMap<>();
 	private final boolean lowMemory;
-	private final TextFieldsSimilarity similarity;
+	private final Similarity similarity;
 
 	private final ScheduledTaskLifecycle scheduledTasksLifecycle;
 	private final @Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter;
 
 	public LLLocalLuceneIndex(Path luceneBasePath,
 			String name,
-			TextFieldsAnalyzer analyzer,
-			TextFieldsSimilarity similarity,
+			IndicizerAnalyzers indicizerAnalyzers,
+			IndicizerSimilarities indicizerSimilarities,
 			Duration queryRefreshDebounceTime,
 			Duration commitDebounceTime,
 			boolean lowMemory, boolean inMemory, @Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter) throws IOException {
@@ -159,9 +167,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.luceneIndexName = name;
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;
-		this.similarity = similarity;
+		this.similarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 		this.distributedCollectionStatisticsGetter = distributedCollectionStatisticsGetter;
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(LuceneUtils.getAnalyzer(analyzer));
+		;
+		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers));
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
@@ -186,7 +195,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private Similarity getSimilarity() {
-		return LuceneUtils.getSimilarity(similarity);
+		return similarity;
 	}
 
 	private void registerScheduledFixedTask(Runnable task, Duration duration) {
@@ -269,11 +278,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
+	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
 		return documents
-				.flatMap(documentsMap -> Mono
+				.collectList()
+				.flatMap(documentsList -> Mono
 						.<Void>fromCallable(() -> {
-							indexWriter.addDocuments(LLUtils.toDocuments(documentsMap.values()));
+							indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
 							return null;
 						})
 						.subscribeOn(Schedulers.boundedElastic())

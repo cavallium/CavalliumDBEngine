@@ -1,6 +1,10 @@
 package it.cavallium.dbengine.lucene;
 
+import com.ibm.icu.text.Collator;
+import com.ibm.icu.util.ULocale;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.IndicizerAnalyzers;
+import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.client.SearchResult;
 import it.cavallium.dbengine.client.SearchResultItem;
@@ -8,6 +12,7 @@ import it.cavallium.dbengine.client.SearchResultKey;
 import it.cavallium.dbengine.client.SearchResultKeys;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLSearchResultShard;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
@@ -20,6 +25,7 @@ import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.ResultItemConsumer;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -28,13 +34,16 @@ import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
 import org.apache.lucene.analysis.en.KStemFilter;
+import org.apache.lucene.analysis.icu.ICUCollationKeyAnalyzer;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
+import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.apache.lucene.search.similarities.Similarity;
 import org.jetbrains.annotations.Nullable;
 import org.novasearch.lucene.search.similarities.BM25Similarity;
@@ -56,10 +65,11 @@ public class LuceneUtils {
 	private static final Analyzer lucene3To5GramWordsAnalyzerInstance = new NCharGramAnalyzer(true, 3, 5);
 	private static final Analyzer lucene3To5GramStringAnalyzerInstance = new NCharGramAnalyzer(false, 3, 5);
 	private static final Analyzer luceneStandardAnalyzerInstance = new StandardAnalyzer();
-	private static final Analyzer luceneWordAnalyzerStopWordsAndStemInstance = new WordAnalyzer(true, true);
-	private static final Analyzer luceneWordAnalyzerStopWordsInstance = new WordAnalyzer(true, false);
-	private static final Analyzer luceneWordAnalyzerStemInstance = new WordAnalyzer(false, true);
-	private static final Analyzer luceneWordAnalyzerSimpleInstance = new WordAnalyzer(false, false);
+	private static final Analyzer luceneWordAnalyzerStopWordsAndStemInstance = new WordAnalyzer(false,true, true);
+	private static final Analyzer luceneWordAnalyzerStopWordsInstance = new WordAnalyzer(false, true, false);
+	private static final Analyzer luceneWordAnalyzerStemInstance = new WordAnalyzer(false, false, true);
+	private static final Analyzer luceneWordAnalyzerSimpleInstance = new WordAnalyzer(false, false, false);
+	private static final Analyzer luceneICUCollationKeyInstance = new WordAnalyzer(false, true, true);
 	private static final Similarity luceneBM25ClassicSimilarityInstance = new BM25Similarity(BM25Model.CLASSIC);
 	private static final Similarity luceneBM25PlusSimilarityInstance = new BM25Similarity(BM25Model.PLUS);
 	private static final Similarity luceneBM25LSimilarityInstance = new BM25Similarity(BM25Model.L);
@@ -78,78 +88,51 @@ public class LuceneUtils {
 	private static final Similarity luceneBooleanSimilarityInstance = new BooleanSimilarity();
 	private static final Similarity luceneRobertsonSimilarityInstance = new RobertsonSimilarity();
 
+	@SuppressWarnings("DuplicatedCode")
 	public static Analyzer getAnalyzer(TextFieldsAnalyzer analyzer) {
-		switch (analyzer) {
-			case N4GramPartialWords:
-				return lucene4GramWordsAnalyzerInstance;
-			case N4GramPartialString:
-				return lucene4GramStringAnalyzerInstance;
-			case N4GramPartialWordsEdge:
-				return lucene4GramWordsAnalyzerEdgeInstance;
-			case N4GramPartialStringEdge:
-				return lucene4GramStringAnalyzerEdgeInstance;
-			case N3To5GramPartialWords:
-				return lucene3To5GramWordsAnalyzerInstance;
-			case N3To5GramPartialString:
-				return lucene3To5GramStringAnalyzerInstance;
-			case N3To5GramPartialWordsEdge:
-				return lucene3To5GramWordsAnalyzerEdgeInstance;
-			case N3To5GramPartialStringEdge:
-				return lucene3To5GramStringAnalyzerEdgeInstance;
-			case Standard:
-				return luceneStandardAnalyzerInstance;
-			case FullText:
-				return luceneWordAnalyzerStopWordsAndStemInstance;
-			case WordWithStopwordsStripping:
-				return luceneWordAnalyzerStopWordsInstance;
-			case WordWithStemming:
-				return luceneWordAnalyzerStemInstance;
-			case WordSimple:
-				return luceneWordAnalyzerSimpleInstance;
-			default:
-				throw new UnsupportedOperationException("Unknown analyzer: " + analyzer);
-		}
+		return switch (analyzer) {
+			case N4GramPartialWords -> lucene4GramWordsAnalyzerInstance;
+			case N4GramPartialString -> lucene4GramStringAnalyzerInstance;
+			case N4GramPartialWordsEdge -> lucene4GramWordsAnalyzerEdgeInstance;
+			case N4GramPartialStringEdge -> lucene4GramStringAnalyzerEdgeInstance;
+			case N3To5GramPartialWords -> lucene3To5GramWordsAnalyzerInstance;
+			case N3To5GramPartialString -> lucene3To5GramStringAnalyzerInstance;
+			case N3To5GramPartialWordsEdge -> lucene3To5GramWordsAnalyzerEdgeInstance;
+			case N3To5GramPartialStringEdge -> lucene3To5GramStringAnalyzerEdgeInstance;
+			case Standard -> luceneStandardAnalyzerInstance;
+			case FullText -> luceneWordAnalyzerStopWordsAndStemInstance;
+			case WordWithStopwordsStripping -> luceneWordAnalyzerStopWordsInstance;
+			case WordWithStemming -> luceneWordAnalyzerStemInstance;
+			case WordSimple -> luceneWordAnalyzerSimpleInstance;
+			case ICUCollationKey -> luceneICUCollationKeyInstance;
+			//noinspection UnnecessaryDefault
+			default -> throw new UnsupportedOperationException("Unknown analyzer: " + analyzer);
+		};
 	}
 
+	@SuppressWarnings("DuplicatedCode")
 	public static Similarity getSimilarity(TextFieldsSimilarity similarity) {
-		switch (similarity) {
-			case BM25Classic:
-				return luceneBM25ClassicSimilarityInstance;
-			case NGramBM25Classic:
-				return luceneBM25ClassicNGramSimilarityInstance;
-			case BM25L:
-				return luceneBM25LSimilarityInstance;
-			case NGramBM25L:
-				return luceneBM25LNGramSimilarityInstance;
-			case Classic:
-				return luceneClassicSimilarityInstance;
-			case NGramClassic:
-				return luceneClassicNGramSimilarityInstance;
-			case BM25Plus:
-				return luceneBM25PlusSimilarityInstance;
-			case NGramBM25Plus:
-				return luceneBM25PlusNGramSimilarityInstance;
-			case BM15Plus:
-				return luceneBM15PlusSimilarityInstance;
-			case NGramBM15Plus:
-				return luceneBM15PlusNGramSimilarityInstance;
-			case BM11Plus:
-				return luceneBM11PlusSimilarityInstance;
-			case NGramBM11Plus:
-				return luceneBM11PlusNGramSimilarityInstance;
-			case LTC:
-				return luceneLTCSimilarityInstance;
-			case LDP:
-				return luceneLDPSimilarityInstance;
-			case LDPNoLength:
-				return luceneLDPNoLengthSimilarityInstance;
-			case Robertson:
-				return luceneRobertsonSimilarityInstance;
-			case Boolean:
-				return luceneBooleanSimilarityInstance;
-			default:
-				throw new IllegalStateException("Unknown similarity: " + similarity);
-		}
+		return switch (similarity) {
+			case BM25Classic -> luceneBM25ClassicSimilarityInstance;
+			case NGramBM25Classic -> luceneBM25ClassicNGramSimilarityInstance;
+			case BM25L -> luceneBM25LSimilarityInstance;
+			case NGramBM25L -> luceneBM25LNGramSimilarityInstance;
+			case Classic -> luceneClassicSimilarityInstance;
+			case NGramClassic -> luceneClassicNGramSimilarityInstance;
+			case BM25Plus -> luceneBM25PlusSimilarityInstance;
+			case NGramBM25Plus -> luceneBM25PlusNGramSimilarityInstance;
+			case BM15Plus -> luceneBM15PlusSimilarityInstance;
+			case NGramBM15Plus -> luceneBM15PlusNGramSimilarityInstance;
+			case BM11Plus -> luceneBM11PlusSimilarityInstance;
+			case NGramBM11Plus -> luceneBM11PlusNGramSimilarityInstance;
+			case LTC -> luceneLTCSimilarityInstance;
+			case LDP -> luceneLDPSimilarityInstance;
+			case LDPNoLength -> luceneLDPNoLengthSimilarityInstance;
+			case Robertson -> luceneRobertsonSimilarityInstance;
+			case Boolean -> luceneBooleanSimilarityInstance;
+			//noinspection UnnecessaryDefault
+			default -> throw new IllegalStateException("Unknown similarity: " + similarity);
+		};
 	}
 
 	/**
@@ -284,5 +267,28 @@ public class LuceneUtils {
 		return entry -> dictionaryDeep
 				.at(snapshot, entry.getKey())
 				.flatMap(sub -> sub.getValue(snapshot, entry.getValue()).doAfterTerminate(sub::release));
+	}
+
+	public static PerFieldAnalyzerWrapper toPerFieldAnalyzerWrapper(IndicizerAnalyzers indicizerAnalyzers) {
+		HashMap<String, Analyzer> perFieldAnalyzer = new HashMap<>();
+		indicizerAnalyzers
+				.fieldAnalyzer()
+				.forEach((key, value) -> perFieldAnalyzer.put(key, LuceneUtils.getAnalyzer(value)));
+		return new PerFieldAnalyzerWrapper(LuceneUtils.getAnalyzer(indicizerAnalyzers.defaultAnalyzer()), perFieldAnalyzer);
+	}
+
+	public static PerFieldSimilarityWrapper toPerFieldSimilarityWrapper(IndicizerSimilarities indicizerSimilarities) {
+		HashMap<String, Similarity> perFieldSimilarity = new HashMap<>();
+		indicizerSimilarities
+				.fieldSimilarity()
+				.forEach((key, value) -> perFieldSimilarity.put(key, LuceneUtils.getSimilarity(value)));
+		var defaultSimilarity = LuceneUtils.getSimilarity(indicizerSimilarities.defaultSimilarity());
+		return new PerFieldSimilarityWrapper() {
+
+			@Override
+			public Similarity get(String name) {
+				return perFieldSimilarity.getOrDefault(name, defaultSimilarity);
+			}
+		};
 	}
 }

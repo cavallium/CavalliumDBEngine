@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.NotNull;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
@@ -17,6 +18,7 @@ import reactor.core.publisher.Flux;
 import reactor.util.function.Tuple3;
 
 import static io.netty.buffer.Unpooled.*;
+import static it.cavallium.dbengine.database.disk.LLLocalDictionary.logger;
 
 public abstract class LLLocalReactiveRocksIterator<T> {
 
@@ -26,19 +28,22 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	private final LLRange range;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
+	private final String debugName;
 
 	public LLLocalReactiveRocksIterator(RocksDB db,
 			ByteBufAllocator alloc,
 			ColumnFamilyHandle cfh,
 			LLRange range,
 			ReadOptions readOptions,
-			boolean readValues) {
+			boolean readValues,
+			String debugName) {
 		this.db = db;
 		this.alloc = alloc;
 		this.cfh = cfh;
 		this.range = range;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
+		this.debugName = debugName;
 	}
 
 	public Flux<T> flux() {
@@ -46,7 +51,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 				.<T, @NotNull Tuple3<RocksIterator, ReleasableSlice, ReleasableSlice>>generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					if (!range.hasMin() || !range.hasMax()) {
-						readOptions.setReadaheadSize(2 * 1024 * 1024);
+						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(false);
 					}
 					return getRocksIterator(readOptions, range.retain(), db, cfh);

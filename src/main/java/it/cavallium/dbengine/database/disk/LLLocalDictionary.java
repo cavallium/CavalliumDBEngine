@@ -574,9 +574,14 @@ public class LLLocalDictionary implements LLDictionary {
 									ByteBuf prevDataToSendToUpdater = prevData == null ? null : prevData.retainedSlice();
 									try {
 										newData = updater.apply(prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.retain());
-										assert prevDataToSendToUpdater == null
+										if (!(prevDataToSendToUpdater == null
 												|| prevDataToSendToUpdater.readerIndex() == 0
-												|| !prevDataToSendToUpdater.isReadable();
+												|| !prevDataToSendToUpdater.isReadable())) {
+											throw new IllegalStateException("The updater has read the previous data partially"
+													+ " (read bytes: " + prevDataToSendToUpdater.readerIndex()
+													+ " unread bytes: " + prevDataToSendToUpdater.readableBytes() + ")."
+													+ " The only allowed options are reading the data fully or not reading it at all");
+										}
 									} finally {
 										if (prevDataToSendToUpdater != null) {
 											prevDataToSendToUpdater.release();

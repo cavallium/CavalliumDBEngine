@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -81,7 +82,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						b -> dictionary
 								.setRange(range.retain(),
 										Flux
-												.fromIterable(value.entrySet())
+												.fromIterable(Collections.unmodifiableMap(value).entrySet())
 												.map(entry -> Map
 														.entry(this.toKey(serializeSuffix(entry.getKey())), serialize(entry.getValue()))
 												)

@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import it.unimi.dsi.fastutil.objects.ObjectSets;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -172,8 +173,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
 		return subDictionary
 				.getAllValues(snapshot)
+				.map(Entry::getValue)
+				.map(Collections::unmodifiableSet)
 				.flatMap(bucket -> Flux
-						.fromIterable(bucket.getValue())
+						.fromIterable(bucket)
 						.map(Entry::getKey)
 						.flatMap(key -> this
 								.at(snapshot, key)
@@ -184,7 +187,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	@Override
 	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
-		return subDictionary.getAllValues(snapshot).flatMap(s -> Flux.fromIterable(s.getValue()));
+		return subDictionary
+				.getAllValues(snapshot)
+				.map(Entry::getValue)
+				.map(Collections::unmodifiableSet)
+				.flatMap(Flux::fromIterable);
 	}
 
 	@Override

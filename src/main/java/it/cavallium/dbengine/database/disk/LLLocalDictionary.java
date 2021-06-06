@@ -18,6 +18,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -955,7 +956,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								})
 								.subscribeOn(dbScheduler)
-								.flatMapMany(Flux::fromIterable)
+								.flatMapMany(entries -> Flux.fromIterable(entries))
 								.onErrorMap(cause -> new IOException("Failed to read keys "
 										+ Arrays.deepToString(keysWindow.toArray(ByteBuf[]::new)), cause))
 								.doAfterTerminate(() -> keysWindow.forEach(ReferenceCounted::release))
@@ -990,6 +991,7 @@ public class LLLocalDictionary implements LLDictionary {
 						castedEntry.getValue().release();
 					}
 				})
+				.map(Collections::unmodifiableList)
 				.flatMap(ew -> Mono
 						.using(
 								() -> ew,

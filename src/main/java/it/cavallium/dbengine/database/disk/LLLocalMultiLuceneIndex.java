@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -227,7 +228,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							.computeIfAbsent(getLuceneIndex(key), _unused -> new HashMap<>())
 							.put(key, value)
 					);
-					return Flux.fromIterable(sortedMap.entrySet());
+					return Flux.fromIterable(Collections.unmodifiableMap(sortedMap).entrySet());
 				})
 				.flatMap(luceneIndexWithNewDocuments -> {
 					var luceneIndex = luceneIndexWithNewDocuments.getKey();

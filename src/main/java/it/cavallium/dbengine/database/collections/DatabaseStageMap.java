@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -170,7 +171,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	@Override
 	default Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
 		return this
-				.setAllValuesAndGetPrevious(Flux.fromIterable(value.entrySet()))
+				.setAllValuesAndGetPrevious(Flux.fromIterable(Collections.unmodifiableMap(value).entrySet()))
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
 	}
 
@@ -206,7 +207,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 								})
 								.flatMap(result -> Mono
 										.justOrEmpty(result.getT2())
-										.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
+										.flatMap(values -> this.setAllValues(Flux.fromIterable(Collections.unmodifiableMap(values).entrySet())))
 										.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
 								);
 					} else if (updateMode == UpdateMode.ALLOW) {

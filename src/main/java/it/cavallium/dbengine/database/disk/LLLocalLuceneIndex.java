@@ -164,12 +164,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 			this.directory = directory;
 		}
+
 		this.luceneIndexName = name;
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;
 		this.similarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 		this.distributedCollectionStatisticsGetter = distributedCollectionStatisticsGetter;
-		;
+
 		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers));
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
@@ -183,8 +184,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
-		this.searcherManager
-				= new SearcherManager(indexWriter, false, false, null);
+		this.searcherManager = new SearcherManager(indexWriter, false, false, null);
 
 		// Create scheduled tasks lifecycle manager
 		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();

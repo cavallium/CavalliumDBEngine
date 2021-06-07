@@ -250,7 +250,7 @@
     <dependency>
       <groupId>it.cavallium</groupId>
       <artifactId>data-generator</artifactId>
-      <version>0.9.0-SNAPSHOT</version>
+      <version>[0.9.35,)</version>
     </dependency>
     <dependency>
       <groupId>io.soabase.record-builder</groupId>
@@ -323,7 +323,7 @@
       <plugin>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator</artifactId>
-        <version>0.9.0-SNAPSHOT</version>
+        <version>[0.9.35,)</version>
         <executions>
           <execution>
             <id>generate-lucene-query-sources</id>

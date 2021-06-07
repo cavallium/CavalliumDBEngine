@@ -2,9 +2,11 @@ package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
 import java.util.Map.Entry;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -18,9 +20,25 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> deleteDocument(T key);
 
-	Mono<Void> updateDocument(T key, U value);
+	Mono<Void> updateDocument(T key, @NotNull U value);
 
 	Mono<Void> updateDocuments(Flux<Entry<T, U>> entries);
+
+	default Mono<Void> updateOrDeleteDocument(T key, @Nullable U value) {
+		if (value == null) {
+			return deleteDocument(key);
+		} else {
+			return updateDocument(key, value);
+		}
+	}
+
+	default Mono<Void> updateOrDeleteDocumentIfModified(T key, @NotNull Delta<U> delta) {
+		if (delta.isModified()) {
+			return updateOrDeleteDocument(key, delta.current());
+		} else {
+			return Mono.empty();
+		}
+	}
 
 	Mono<Void> deleteAll();
 

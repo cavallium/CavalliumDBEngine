@@ -14,6 +14,7 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -61,7 +62,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Void> updateDocument(T key, U value) {
+	public Mono<Void> updateDocument(T key, @NotNull U value) {
 		return indicizer
 				.toDocument(key, value)
 				.flatMap(doc -> luceneIndex.updateDocument(indicizer.toIndex(key), doc));

@@ -107,6 +107,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			);
 
 			createIfNotExists(descriptors, options, inMemory, this.dbPath, dbPathString);
+
 			// Create all column families that don't exist
 			createAllColumns(descriptors, options, inMemory, dbPathString);
 
@@ -219,12 +220,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setKeepLogFileNum(10);
 		options.setAllowFAllocate(true);
 		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
-		options.setDbPaths(List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-								10L * 1024L * 1024L * 1024L), // 10GiB
+		var paths = List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
+						10L * 1024L * 1024L * 1024L), // 10GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 						100L * 1024L * 1024L * 1024L), // 100GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
-						600L * 1024L * 1024L * 1024L))); // 600GiB
+						600L * 1024L * 1024L * 1024L)); // 600GiB
+		options.setDbPaths(paths);
+		options.setCfPaths(paths);
 		// Direct I/O parameters. Removed because they use too much disk.
 		//options.setUseDirectReads(true);
 		//options.setUseDirectIoForFlushAndCompaction(true);

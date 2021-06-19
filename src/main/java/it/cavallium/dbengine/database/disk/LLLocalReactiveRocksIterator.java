@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.NotNull;
 import org.rocksdb.ColumnFamilyHandle;
@@ -22,6 +23,7 @@ import static it.cavallium.dbengine.database.disk.LLLocalDictionary.logger;
 
 public abstract class LLLocalReactiveRocksIterator<T> {
 
+	private final AtomicBoolean released = new AtomicBoolean(false);
 	private final RocksDB db;
 	private final ByteBufAllocator alloc;
 	private final ColumnFamilyHandle cfh;
@@ -97,6 +99,10 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	public abstract T getEntry(ByteBuf key, ByteBuf value);
 
 	public void release() {
-		range.release();
+		if (released.compareAndSet(false, true)) {
+			range.release();
+		} else {
+			throw new IllegalStateException("Already released");
+		}
 	}
 }

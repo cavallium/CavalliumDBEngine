@@ -61,7 +61,7 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 		return bucketStage
 				.update(oldBucket -> {
 					V oldValue = extractValue(oldBucket);
-					V newValue = updater.apply(oldValue);
+ 					V newValue = updater.apply(oldValue);
 					
 					if (newValue == null) {
 						return this.removeValueOrDelete(oldBucket);

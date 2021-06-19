@@ -7,6 +7,7 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
 import java.util.Arrays;
 import java.util.StringJoiner;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Range of data, from min (inclusive),to max (exclusive)
@@ -16,7 +17,7 @@ public class LLRange {
 	private static final LLRange RANGE_ALL = new LLRange(null, null);
 	private final ByteBuf min;
 	private final ByteBuf max;
-	private volatile int refCnt = 1;
+	private final AtomicInteger refCnt = new AtomicInteger(1);
 
 	private LLRange(ByteBuf min, ByteBuf max) {
 		assert min == null || min.refCnt() > 0;
@@ -50,18 +51,14 @@ public class LLRange {
 	}
 
 	public boolean isAll() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		return min == null && max == null;
 	}
 
 	public boolean isSingle() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		if (min == null || max == null) return false;
@@ -69,18 +66,14 @@ public class LLRange {
 	}
 
 	public boolean hasMin() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		return min != null;
 	}
 
 	public ByteBuf getMin() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		assert min != null;
@@ -88,18 +81,14 @@ public class LLRange {
 	}
 
 	public boolean hasMax() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		return max != null;
 	}
 
 	public ByteBuf getMax() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		assert max != null;
@@ -107,13 +96,17 @@ public class LLRange {
 	}
 
 	public ByteBuf getSingle() {
-		if (refCnt <= 0) {
-			throw new IllegalStateException("Released");
-		}
+		checkReleased();
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		assert isSingle();
 		return min;
+	}
+
+	private void checkReleased() {
+		if (refCnt.get() <= 0) {
+			throw new IllegalStateException("Released");
+		}
 	}
 
 	@Override
@@ -144,7 +137,7 @@ public class LLRange {
 	}
 
 	public LLRange retain() {
-		if (refCnt <= 0) {
+		if (refCnt.updateAndGet(refCnt -> refCnt <= 0 ? 0 : (refCnt + 1)) <= 0) {
 			throw new IllegalStateException("Released");
 		}
 		if (min != null) {
@@ -157,8 +150,7 @@ public class LLRange {
 	}
 
 	public void release() {
-		refCnt--;
-		if (refCnt < 0) {
+		if (refCnt.decrementAndGet() < 0) {
 			throw new IllegalStateException("Already released");
 		}
 		if (min != null) {

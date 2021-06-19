@@ -57,7 +57,7 @@ public class DbTestUtils {
 						.then(new LLLocalDatabaseConnection(DbTestUtils.ALLOCATOR, wrkspcPath, true).connect())
 						.flatMap(conn -> conn.getDatabase("testdb",
 								List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-								false, true
+								Map.of(), false, true
 						)),
 				action,
 				db -> db.close().then(Mono.fromCallable(() -> {

@@ -132,7 +132,7 @@ public class OldDatabaseTests {
 				})
 				.subscribeOn(Schedulers.boundedElastic())
 				.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath, true).connect())
-				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), false, true));
+				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), Map.of(), false, true));
 	}
 
 	private static final ByteBuf DUMMY_VALUE;

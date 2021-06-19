@@ -14,6 +14,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -53,6 +54,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	@Override
 	public Mono<LLLocalKeyValueDatabase> getDatabase(String name,
 			List<Column> columns,
+			Map<String, String> extraFlags,
 			boolean lowMemory,
 			boolean inMemory) {
 		return Mono
@@ -62,6 +64,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						basePath.resolve("database_" + name),
 						columns,
 						new LinkedList<>(),
+						extraFlags,
 						crashIfWalError,
 						lowMemory,
 						inMemory

@@ -16,16 +16,16 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	@Deprecated
 	default Mono<? extends LLDictionary> getDeprecatedSet(String name, UpdateMode updateMode) {
-		return getDictionary(Column.deprecatedSet(name).getName().getBytes(StandardCharsets.US_ASCII), updateMode);
+		return getDictionary(Column.deprecatedSet(name).name().getBytes(StandardCharsets.US_ASCII), updateMode);
 	}
 
 	default Mono<? extends LLDictionary> getDictionary(String name, UpdateMode updateMode) {
-		return getDictionary(Column.dictionary(name).getName().getBytes(StandardCharsets.US_ASCII), updateMode);
+		return getDictionary(Column.dictionary(name).name().getBytes(StandardCharsets.US_ASCII), updateMode);
 	}
 
 	default Mono<DatabaseInt> getInteger(String singletonListName, String name, int defaultValue) {
 		return this
-				.getSingleton(Column.special(singletonListName).getName().getBytes(StandardCharsets.US_ASCII),
+				.getSingleton(Column.special(singletonListName).name().getBytes(StandardCharsets.US_ASCII),
 						name.getBytes(StandardCharsets.US_ASCII),
 						Ints.toByteArray(defaultValue)
 				)
@@ -34,7 +34,7 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	default Mono<DatabaseLong> getLong(String singletonListName, String name, long defaultValue) {
 		return this
-				.getSingleton(Column.special(singletonListName).getName().getBytes(StandardCharsets.US_ASCII),
+				.getSingleton(Column.special(singletonListName).name().getBytes(StandardCharsets.US_ASCII),
 						name.getBytes(StandardCharsets.US_ASCII),
 						Longs.toByteArray(defaultValue)
 				)

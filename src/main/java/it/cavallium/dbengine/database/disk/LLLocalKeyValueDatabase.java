@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -66,6 +67,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final Path dbPath;
 	private final boolean inMemory;
 	private final String name;
+	private final boolean enableColumnsBug;
 	private RocksDB db;
 	private final Map<Column, ColumnFamilyHandle> handles;
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
@@ -76,6 +78,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			Path path,
 			List<Column> columns,
 			List<ColumnFamilyHandle> handles,
+			Map<String, String> extraFlags,
 			boolean crashIfWalError,
 			boolean lowMemory,
 			boolean inMemory) throws IOException {
@@ -87,7 +90,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 			for (Column column : columns) {
 				descriptors
-						.add(new ColumnFamilyDescriptor(column.getName().getBytes(StandardCharsets.US_ASCII)));
+						.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII)));
 			}
 
 			// Get databases directory path
@@ -105,6 +108,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					60,
 					true
 			);
+			this.enableColumnsBug = "true".equals(extraFlags.getOrDefault("enableColumnBug", "false"));
 
 			createIfNotExists(descriptors, options, inMemory, this.dbPath, dbPathString);
 
@@ -119,8 +123,19 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			);
 			createInMemoryColumns(descriptors, inMemory, handles);
 			this.handles = new HashMap<>();
-			for (int i = 0; i < columns.size(); i++) {
-				this.handles.put(columns.get(i), handles.get(i));
+			if (enableColumnsBug) {
+				for (int i = 0; i < columns.size(); i++) {
+					this.handles.put(columns.get(i), handles.get(i));
+				}
+			} else {
+				handles: for (ColumnFamilyHandle handle : handles) {
+					for (Column column : columns) {
+						if (Arrays.equals(column.name().getBytes(StandardCharsets.US_ASCII), handle.getName())) {
+							this.handles.put(column, handle);
+							continue handles;
+						}
+					}
+				}
 			}
 
 			// compactDb(db, handles);
@@ -398,7 +413,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public Mono<LLLocalSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue) {
 		return Mono
 				.fromCallable(() -> new LLLocalSingleton(db,
-						handles.get(Column.special(Column.toString(singletonListColumnName))),
+						getCfh(singletonListColumnName),
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						LLLocalKeyValueDatabase.this.name,
 						name,
@@ -412,17 +427,27 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<LLLocalDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
 		return Mono
-				.fromCallable(() -> new LLLocalDictionary(
-						allocator,
-						db,
-						handles.get(Column.special(Column.toString(columnName))),
-						name,
-						Column.toString(columnName),
-						dbScheduler,
-						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
-						updateMode
-				))
+				.fromCallable(() -> {
+					return new LLLocalDictionary(
+							allocator,
+							db,
+							getCfh(columnName),
+							name,
+							Column.toString(columnName),
+							dbScheduler,
+							(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
+							updateMode
+					);
+				})
 				.subscribeOn(dbScheduler);
+	}
+
+	private ColumnFamilyHandle getCfh(byte[] columnName) throws RocksDBException {
+		ColumnFamilyHandle cfh = handles.get(Column.special(Column.toString(columnName)));
+		if (!enableColumnsBug) {
+			assert Arrays.equals(cfh.getName(), columnName);
+		}
+		return cfh;
 	}
 
 	@Override

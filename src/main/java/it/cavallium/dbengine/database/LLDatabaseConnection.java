@@ -7,6 +7,7 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("UnusedReturnValue")
@@ -16,7 +17,11 @@ public interface LLDatabaseConnection {
 
 	Mono<? extends LLDatabaseConnection> connect();
 
-	Mono<? extends LLKeyValueDatabase> getDatabase(String name, List<Column> columns, boolean lowMemory, boolean inMemory);
+	Mono<? extends LLKeyValueDatabase> getDatabase(String name,
+			List<Column> columns,
+			Map<String, String> extraFlags,
+			boolean lowMemory,
+			boolean inMemory);
 
 	Mono<? extends LLLuceneIndex> getLuceneIndex(String name,
 			int instancesCount,

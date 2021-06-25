@@ -32,6 +32,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.search.CollectionStatistics;
@@ -48,15 +50,16 @@ import reactor.util.function.Tuples;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
-	private final Long2ObjectMap<LLSnapshot[]> registeredSnapshots = new Long2ObjectOpenHashMap<>();
+	private final ConcurrentHashMap<Long, LLSnapshot[]> registeredSnapshots = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 	private final LLLocalLuceneIndex[] luceneIndices;
+
 
 	private final AtomicLong nextActionId = new AtomicLong(0);
 	private final ConcurrentHashMap<Long, Cache<String, Optional<CollectionStatistics>>[]> statistics = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<Long, AtomicInteger> completedStreams = new ConcurrentHashMap<>();
 
-	private final int maxQueueSize = 1000;
+
 
 	public LLLocalMultiLuceneIndex(Path lucene,
 			String name,
@@ -72,6 +75,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		}
 
 		LLLocalLuceneIndex[] luceneIndices = new LLLocalLuceneIndex[instancesCount];
+		ExecutorService[] luceneIndexExecutorServices = new ExecutorService[instancesCount];
 		for (int i = 0; i < instancesCount; i++) {
 			int finalI = i;
 			String instanceName;
@@ -93,8 +97,10 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							actionId
 					)
 			);
+			luceneIndexExecutorServices[i] = Executors.newSingleThreadExecutor();
 		}
 		this.luceneIndices = luceneIndices;
+		this.indexExecutorServices = luceneIndexExecutorServices;
 	}
 
 	private long newAction() {
@@ -437,42 +443,30 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
-				.fromCallable(() -> {
-					CopyOnWriteArrayList<LLSnapshot> instancesSnapshots
-							= new CopyOnWriteArrayList<>(new LLSnapshot[luceneIndices.length]);
-					var snapIndex = nextSnapshotNumber.getAndIncrement();
-
-					ParallelUtils.parallelizeIO((IOBiConsumer<LLLuceneIndex, Integer> s) -> {
-						for (int i = 0; i < luceneIndices.length; i++) {
-							s.consume(luceneIndices[i], i);
-						}
-					}, maxQueueSize, luceneIndices.length, 1, (instance, i) -> {
-						var instanceSnapshot = instance.takeSnapshot();
-						//todo: reimplement better (don't block and take them parallel)
-						instancesSnapshots.set(i, instanceSnapshot.block());
-					});
-
-					LLSnapshot[] instancesSnapshotsArray = instancesSnapshots.toArray(LLSnapshot[]::new);
-					registeredSnapshots.put(snapIndex, instancesSnapshotsArray);
-
-					return new LLSnapshot(snapIndex);
-				})
-				.subscribeOn(Schedulers.boundedElastic());
+				// Generate next snapshot index
+				.fromCallable(nextSnapshotNumber::getAndIncrement)
+				.flatMap(snapshotIndex -> Flux
+						.fromArray(luceneIndices)
+						.flatMapSequential(LLLocalLuceneIndex::takeSnapshot)
+						.collectList()
+						.map(list -> list.toArray(LLSnapshot[]::new))
+						.doOnNext(instancesSnapshotsArray -> registeredSnapshots.put(snapshotIndex, instancesSnapshotsArray))
+						.thenReturn(new LLSnapshot(snapshotIndex))
+				);
 	}
 
 	@Override
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return Mono
-				.<Void>fromCallable(() -> {
-					LLSnapshot[] instancesSnapshots = registeredSnapshots.remove(snapshot.getSequenceNumber());
-					for (int i = 0; i < luceneIndices.length; i++) {
-						LLLocalLuceneIndex luceneIndex = luceneIndices[i];
-						//todo: reimplement better (don't block and take them parallel)
-						luceneIndex.releaseSnapshot(instancesSnapshots[i]).block();
-					}
-					return null;
+				.fromCallable(() -> registeredSnapshots.remove(snapshot.getSequenceNumber()))
+				.flatMapMany(Flux::fromArray)
+				.index()
+				.flatMapSequential(tuple -> {
+					int index = (int) (long) tuple.getT1();
+					LLSnapshot instanceSnapshot = tuple.getT2();
+					return luceneIndices[index].releaseSnapshot(instanceSnapshot);
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.then();
 	}
 
 	@Override

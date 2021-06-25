@@ -44,10 +44,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
+import org.apache.lucene.index.MergeScheduler;
+import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.queries.mlt.MoreLikeThis;
@@ -176,11 +179,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
 		if (lowMemory) {
-			indexWriterConfig.setRAMBufferSizeMB(32);
+			indexWriterConfig.setRAMBufferSizeMB(8);
 			indexWriterConfig.setRAMPerThreadHardLimitMB(32);
+			var mergeScheduler = new SerialMergeScheduler();
+			indexWriterConfig.setMergeScheduler(mergeScheduler);
 		} else {
-			indexWriterConfig.setRAMBufferSizeMB(128);
+			indexWriterConfig.setRAMBufferSizeMB(16);
 			//indexWriterConfig.setRAMPerThreadHardLimitMB(512);
+			var mergeScheduler = new ConcurrentMergeScheduler();
+			mergeScheduler.enableAutoIOThrottle();
+			indexWriterConfig.setMergeScheduler(mergeScheduler);
 		}
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);

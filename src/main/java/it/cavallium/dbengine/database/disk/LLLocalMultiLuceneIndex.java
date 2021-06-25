@@ -75,7 +75,6 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		}
 
 		LLLocalLuceneIndex[] luceneIndices = new LLLocalLuceneIndex[instancesCount];
-		ExecutorService[] luceneIndexExecutorServices = new ExecutorService[instancesCount];
 		for (int i = 0; i < instancesCount; i++) {
 			int finalI = i;
 			String instanceName;
@@ -97,10 +96,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							actionId
 					)
 			);
-			luceneIndexExecutorServices[i] = Executors.newSingleThreadExecutor();
 		}
 		this.luceneIndices = luceneIndices;
-		this.indexExecutorServices = luceneIndexExecutorServices;
 	}
 
 	private long newAction() {

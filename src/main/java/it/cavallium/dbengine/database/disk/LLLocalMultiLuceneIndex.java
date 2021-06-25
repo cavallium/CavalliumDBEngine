@@ -60,7 +60,6 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final ConcurrentHashMap<Long, AtomicInteger> completedStreams = new ConcurrentHashMap<>();
 
 
-
 	public LLLocalMultiLuceneIndex(Path lucene,
 			String name,
 			int instancesCount,

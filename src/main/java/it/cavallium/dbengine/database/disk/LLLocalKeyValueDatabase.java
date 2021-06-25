@@ -58,6 +58,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		RocksDB.loadLibrary();
 	}
 
+	private static final boolean USE_DIRECT_IO = true;
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyValueDatabase.class);
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
@@ -115,12 +116,27 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			// Create all column families that don't exist
 			createAllColumns(descriptors, options, inMemory, dbPathString);
 
-			// a factory method that returns a RocksDB instance
-			this.db = RocksDB.open(new DBOptions(options),
-					dbPathString,
-					inMemory ? List.of(DEFAULT_COLUMN_FAMILY) : descriptors,
-					handles
-			);
+			while (true) {
+				try {
+					// a factory method that returns a RocksDB instance
+					this.db = RocksDB.open(new DBOptions(options),
+							dbPathString,
+							inMemory ? List.of(DEFAULT_COLUMN_FAMILY) : descriptors,
+							handles
+					);
+					break;
+				} catch (RocksDBException ex) {
+					switch (ex.getMessage()) {
+						case "Direct I/O is not supported by the specified DB." -> {
+							logger.warn(ex.getLocalizedMessage());
+							options
+									.setUseDirectReads(false)
+									.setUseDirectIoForFlushAndCompaction(false);
+						}
+						default -> throw ex;
+					}
+				}
+			}
 			createInMemoryColumns(descriptors, inMemory, handles);
 			this.handles = new HashMap<>();
 			if (enableColumnsBug) {
@@ -275,8 +291,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			// HIGH MEMORY
 			options
 					.setLevelCompactionDynamicLevelBytes(true)
-					.setAllowMmapReads(true)
-					.setAllowMmapWrites(true)
 					.setAllowConcurrentMemtableWrite(true)
 					.setEnableWriteThreadAdaptiveYield(true)
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
@@ -299,6 +313,22 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			tableOptions.setOptimizeFiltersForMemory(true);
 			tableOptions.setFilterPolicy(bloomFilter);
 			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(128L * 1024L * 1024L))); // 128MiB
+
+			if (USE_DIRECT_IO) {
+				options
+						.setUseDirectIoForFlushAndCompaction(true)
+						.setUseDirectReads(true)
+						// Option to enable readahead in compaction
+						// If not set, it will be set to 2MB internally
+						.setCompactionReadaheadSize(2 * 1024 * 1024) // recommend at least 2MB
+						// Option to tune write buffer for direct writes
+						.setWritableFileMaxBufferSize(1024 * 1024)
+				;
+			} else {
+				options
+						.setAllowMmapReads(true)
+						.setAllowMmapWrites(true);
+			}
 		}
 
 		tableOptions.setBlockSize(16 * 1024); // 16MiB

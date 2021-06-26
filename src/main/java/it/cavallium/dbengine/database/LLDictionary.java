@@ -15,6 +15,8 @@ import reactor.util.function.Tuple2;
 @NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
+	String getColumnName();
+
 	ByteBufAllocator getAllocator();
 
 	Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, ByteBuf key, boolean existsAlmostCertainly);

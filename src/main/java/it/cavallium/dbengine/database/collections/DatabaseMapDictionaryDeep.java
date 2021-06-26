@@ -3,7 +3,9 @@ package it.cavallium.dbengine.database.collections;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import io.netty.util.ReferenceCounted;
+import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
@@ -419,6 +421,15 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Override
 	public Mono<UpdateMode> getUpdateMode() {
 		return dictionary.getUpdateMode();
+	}
+
+	@Override
+	public Flux<BadBlock> badBlocks() {
+		return this
+				.getAllValues(null)
+				.flatMap(result -> Mono.<BadBlock>empty())
+				.onErrorResume(ex -> Mono.just(new BadBlock(dictionary.getDatabaseName(),
+						Column.special(dictionary.getColumnName()), null, ex)));
 	}
 
 	private static record GroupBuffers(ByteBuf groupKeyWithExt, ByteBuf groupKeyWithoutExt, ByteBuf groupSuffix) {}

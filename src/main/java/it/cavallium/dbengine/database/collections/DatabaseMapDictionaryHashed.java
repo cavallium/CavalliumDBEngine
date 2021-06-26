@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -144,6 +145,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	@Override
 	public DatabaseStageEntry<Map<T, U>> entry() {
 		return this;
+	}
+
+	@Override
+	public Flux<BadBlock> badBlocks() {
+		return this.subDictionary.badBlocks();
 	}
 
 	@Override

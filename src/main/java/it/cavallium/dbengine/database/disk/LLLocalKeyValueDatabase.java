@@ -48,6 +48,7 @@ import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -457,18 +458,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<LLLocalDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
 		return Mono
-				.fromCallable(() -> {
-					return new LLLocalDictionary(
-							allocator,
-							db,
-							getCfh(columnName),
-							name,
-							Column.toString(columnName),
-							dbScheduler,
-							(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
-							updateMode
-					);
-				})
+				.fromCallable(() -> new LLLocalDictionary(
+						allocator,
+						db,
+						getCfh(columnName),
+						name,
+						Column.toString(columnName),
+						dbScheduler,
+						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
+						updateMode
+				))
 				.subscribeOn(dbScheduler);
 	}
 

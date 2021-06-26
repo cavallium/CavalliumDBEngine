@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
+import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -16,6 +18,7 @@ import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.functional.TriFunction;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
@@ -120,6 +123,11 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	@Override
 	public DatabaseStageEntry<V> entry() {
 		return this;
+	}
+
+	@Override
+	public Flux<BadBlock> badBlocks() {
+		return bucketStage.badBlocks();
 	}
 
 	@Override

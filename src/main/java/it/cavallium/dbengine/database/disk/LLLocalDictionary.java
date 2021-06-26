@@ -118,6 +118,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private final RocksDB db;
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;
+	private final String columnName;
 	private final Scheduler dbScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final Striped<StampedLock> itemsLock = Striped.readWriteStampedLock(STRIPES);
@@ -131,7 +132,7 @@ public class LLLocalDictionary implements LLDictionary {
 			@NotNull RocksDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
-			String columnDisplayName,
+			String columnName,
 			Scheduler dbScheduler,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			UpdateMode updateMode) {
@@ -140,17 +141,22 @@ public class LLLocalDictionary implements LLDictionary {
 		Objects.requireNonNull(columnFamilyHandle);
 		this.cfh = columnFamilyHandle;
 		this.databaseName = databaseName;
+		this.columnName = columnName;
 		this.dbScheduler = dbScheduler;
 		this.snapshotResolver = snapshotResolver;
 		this.updateMode = updateMode;
-		this.getRangeMultiDebugName = databaseName + "(" + columnDisplayName + ")" + "::getRangeMulti";
-		this.getRangeKeysMultiDebugName = databaseName + "(" + columnDisplayName + ")" + "::getRangeKeysMulti";
+		this.getRangeMultiDebugName = databaseName + "(" + columnName + ")" + "::getRangeMulti";
+		this.getRangeKeysMultiDebugName = databaseName + "(" + columnName + ")" + "::getRangeKeysMulti";
 		alloc = allocator;
 	}
 
 	@Override
 	public String getDatabaseName() {
 		return databaseName;
+	}
+
+	public String getColumnName() {
+		return columnName;
 	}
 
 	/**

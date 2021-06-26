@@ -2,7 +2,9 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.util.ReferenceCounted;
+import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -11,9 +13,11 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import static io.netty.buffer.Unpooled.*;
 
@@ -143,5 +147,18 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	@Override
 	public void release() {
 		key.release();
+	}
+
+	@Override
+	public Flux<BadBlock> badBlocks() {
+		return this
+				.get(null, true)
+				.then(Mono.<BadBlock>empty())
+				.onErrorResume(ex -> Mono.just(new BadBlock(dictionary.getDatabaseName(),
+						Column.special(dictionary.getDatabaseName()),
+						ByteList.of(LLUtils.toArray(key)),
+						ex
+				)))
+				.flux();
 	}
 }

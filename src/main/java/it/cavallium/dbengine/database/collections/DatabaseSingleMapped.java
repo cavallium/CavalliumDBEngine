@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -7,6 +8,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
@@ -105,6 +107,11 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	@Override
 	public DatabaseStageEntry<A> entry() {
 		return this;
+	}
+
+	@Override
+	public Flux<BadBlock> badBlocks() {
+		return this.serializedSingle.badBlocks();
 	}
 
 	@Override

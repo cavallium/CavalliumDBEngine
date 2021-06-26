@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -7,6 +8,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
@@ -87,4 +89,6 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 	default Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
 		return leavesCount(snapshot, false).map(size -> size <= 0);
 	}
+
+	Flux<BadBlock> badBlocks();
 }

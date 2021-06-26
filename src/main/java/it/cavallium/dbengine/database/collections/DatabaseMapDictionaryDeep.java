@@ -13,6 +13,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary;
+import it.cavallium.dbengine.database.disk.ReleasableSlice;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Collection;
 import java.util.List;
@@ -427,7 +428,15 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public Flux<BadBlock> badBlocks() {
 		return this
 				.getAllValues(null)
-				.flatMap(result -> Mono.<BadBlock>empty())
+				.doOnNext(entry -> {
+					if (entry.getKey() instanceof ReferenceCounted referenceCounted) {
+						referenceCounted.release();
+					}
+					if (entry.getValue() instanceof ReferenceCounted referenceCounted) {
+						referenceCounted.release();
+					}
+				})
+				.concatMap(entry -> Mono.<BadBlock>empty())
 				.onErrorResume(ex -> Mono.just(new BadBlock(dictionary.getDatabaseName(),
 						Column.special(dictionary.getColumnName()), null, ex)));
 	}

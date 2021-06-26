@@ -153,6 +153,11 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	public Flux<BadBlock> badBlocks() {
 		return this
 				.get(null, true)
+				.doOnNext(entry -> {
+					if (entry instanceof ReferenceCounted referenceCounted) {
+						referenceCounted.release();
+					}
+				})
 				.then(Mono.<BadBlock>empty())
 				.onErrorResume(ex -> Mono.just(new BadBlock(dictionary.getDatabaseName(),
 						Column.special(dictionary.getDatabaseName()),

@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import it.cavallium.dbengine.client.BadBlock;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.function.Function;
@@ -87,6 +88,8 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
 
 	Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+
+	Flux<BadBlock> badBlocks(LLRange range);
 
 	Mono<Void> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries);
 

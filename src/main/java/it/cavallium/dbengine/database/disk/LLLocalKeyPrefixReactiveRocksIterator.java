@@ -9,6 +9,7 @@ import java.util.Arrays;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksMutableObject;
 import reactor.core.publisher.Flux;
 import static io.netty.buffer.Unpooled.*;
@@ -54,6 +55,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 					range.retain();
 					try {
 						var rocksIterator = tuple.getT1();
+						rocksIterator.status();
 						ByteBuf firstGroupKey = null;
 						try {
 							while (rocksIterator.isValid()) {
@@ -65,6 +67,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 										break;
 									}
 									rocksIterator.next();
+									rocksIterator.status();
 								} finally {
 									key.release();
 								}
@@ -80,10 +83,12 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 								firstGroupKey.release();
 							}
 						}
-						return tuple;
+					} catch (RocksDBException ex) {
+						sink.error(ex);
 					} finally {
 						range.release();
 					}
+					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();

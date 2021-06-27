@@ -426,19 +426,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<BadBlock> badBlocks() {
-		return this
-				.getAllValues(null)
-				.doOnNext(entry -> {
-					if (entry.getKey() instanceof ReferenceCounted referenceCounted) {
-						referenceCounted.release();
-					}
-					if (entry.getValue() instanceof ReferenceCounted referenceCounted) {
-						referenceCounted.release();
-					}
-				})
-				.concatMap(entry -> Mono.<BadBlock>empty())
-				.onErrorResume(ex -> Mono.just(new BadBlock(dictionary.getDatabaseName(),
-						Column.special(dictionary.getColumnName()), null, ex)));
+		return Flux
+				.defer(() -> dictionary.badBlocks(range.retain()))
+				.doFirst(range::retain)
+				.doAfterTerminate(range::release);
 	}
 
 	private static record GroupBuffers(ByteBuf groupKeyWithExt, ByteBuf groupKeyWithoutExt, ByteBuf groupSuffix) {}

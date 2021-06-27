@@ -13,6 +13,7 @@ import org.jetbrains.annotations.NotNull;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.RocksMutableObject;
 import reactor.core.publisher.Flux;
@@ -61,6 +62,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 					range.retain();
 					try {
 						var rocksIterator = tuple.getT1();
+						rocksIterator.status();
 						if (rocksIterator.isValid()) {
 							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 							try {
@@ -72,6 +74,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								}
 								try {
 									rocksIterator.next();
+									rocksIterator.status();
 									sink.next(getEntry(key.retain(), value.retain()));
 								} finally {
 									value.release();
@@ -82,10 +85,12 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						} else {
 							sink.complete();
 						}
-						return tuple;
+					} catch (RocksDBException ex) {
+						sink.error(ex);
 					} finally {
 						range.release();
 					}
+					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();

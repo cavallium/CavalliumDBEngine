@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksMutableObject;
 import reactor.core.publisher.Flux;
 import static io.netty.buffer.Unpooled.*;
@@ -57,6 +58,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						ObjectArrayList<T> values = new ObjectArrayList<>();
 						ByteBuf firstGroupKey = null;
 						try {
+							rocksIterator.status();
 							while (rocksIterator.isValid()) {
 								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 								try {
@@ -73,6 +75,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 									}
 									try {
 										rocksIterator.next();
+										rocksIterator.status();
 										T entry = getEntry(key.retain(), value.retain());
 										values.add(entry);
 									} finally {
@@ -92,10 +95,12 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						} else {
 							sink.complete();
 						}
-						return tuple;
+					} catch (RocksDBException ex) {
+						sink.error(ex);
 					} finally {
 						range.release();
 					}
+					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();

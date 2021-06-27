@@ -151,19 +151,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	@Override
 	public Flux<BadBlock> badBlocks() {
-		return this
-				.get(null, true)
-				.doOnNext(entry -> {
-					if (entry instanceof ReferenceCounted referenceCounted) {
-						referenceCounted.release();
-					}
-				})
-				.then(Mono.<BadBlock>empty())
-				.onErrorResume(ex -> Mono.just(new BadBlock(dictionary.getDatabaseName(),
-						Column.special(dictionary.getDatabaseName()),
-						ByteList.of(LLUtils.toArray(key)),
-						ex
-				)))
-				.flux();
+		return Flux
+				.defer(() -> dictionary.badBlocks(LLRange.single(key.retain())));
 	}
 }

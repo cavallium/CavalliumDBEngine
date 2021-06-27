@@ -10,7 +10,6 @@ public record Column(String name) {
 		return new Column("hash_map_" + name);
 	}
 
-	@Deprecated
 	public static Column deprecatedSet(String name) {
 		return new Column("hash_set_" + name);
 	}

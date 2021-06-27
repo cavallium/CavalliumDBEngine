@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
+import it.cavallium.dbengine.database.disk.DatabaseOptions;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -54,10 +55,10 @@ public class DbTestUtils {
 							return null;
 						})
 						.subscribeOn(Schedulers.boundedElastic())
-						.then(new LLLocalDatabaseConnection(DbTestUtils.ALLOCATOR, wrkspcPath, true).connect())
+						.then(new LLLocalDatabaseConnection(DbTestUtils.ALLOCATOR, wrkspcPath).connect())
 						.flatMap(conn -> conn.getDatabase("testdb",
 								List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-								Map.of(), false, true
+								new DatabaseOptions(Map.of(), true, false, true, false, true)
 						)),
 				action,
 				db -> db.close().then(Mono.fromCallable(() -> {

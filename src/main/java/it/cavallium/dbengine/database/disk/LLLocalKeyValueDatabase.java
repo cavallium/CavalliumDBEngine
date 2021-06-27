@@ -20,7 +20,6 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -43,12 +42,10 @@ import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
-import org.rocksdb.TableFormatConfig;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -59,33 +56,35 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		RocksDB.loadLibrary();
 	}
 
-	private static final boolean USE_DIRECT_IO = true;
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyValueDatabase.class);
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 
 	private final ByteBufAllocator allocator;
 	private final Scheduler dbScheduler;
+
+	// Configurations
+
 	private final Path dbPath;
-	private final boolean inMemory;
 	private final String name;
+	private final DatabaseOptions databaseOptions;
+
 	private final boolean enableColumnsBug;
 	private RocksDB db;
 	private final Map<Column, ColumnFamilyHandle> handles;
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 
+	@SuppressWarnings("SwitchStatementWithTooFewBranches")
 	public LLLocalKeyValueDatabase(ByteBufAllocator allocator,
 			String name,
 			Path path,
 			List<Column> columns,
 			List<ColumnFamilyHandle> handles,
-			Map<String, String> extraFlags,
-			boolean crashIfWalError,
-			boolean lowMemory,
-			boolean inMemory) throws IOException {
+			DatabaseOptions databaseOptions) throws IOException {
+		this.name = name;
 		this.allocator = allocator;
-		Options options = openRocksDb(path, crashIfWalError, lowMemory);
+		Options rocksdbOptions = openRocksDb(path, databaseOptions);
 		try {
 			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
 			descriptors
@@ -97,32 +96,38 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			// Get databases directory path
 			Path databasesDirPath = path.toAbsolutePath().getParent();
-
 			String dbPathString = databasesDirPath.toString() + File.separatorChar + path.getFileName();
 			Path dbPath = Paths.get(dbPathString);
 			this.dbPath = dbPath;
-			this.inMemory = inMemory;
-			this.name = name;
-			this.dbScheduler = Schedulers.newBoundedElastic(lowMemory ? Runtime.getRuntime().availableProcessors()
-							: Math.max(8, Runtime.getRuntime().availableProcessors()),
+
+			// Set options
+			this.databaseOptions = databaseOptions;
+
+			int threadCap;
+			if (databaseOptions.lowMemory()) {
+				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
+			} else {
+				threadCap = Runtime.getRuntime().availableProcessors();
+			}
+			this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
 					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 					"db-" + name,
 					60,
 					true
 			);
-			this.enableColumnsBug = "true".equals(extraFlags.getOrDefault("enableColumnBug", "false"));
+			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
-			createIfNotExists(descriptors, options, inMemory, this.dbPath, dbPathString);
+			createIfNotExists(descriptors, rocksdbOptions, databaseOptions, dbPath, dbPathString);
 
 			// Create all column families that don't exist
-			createAllColumns(descriptors, options, inMemory, dbPathString);
+			createAllColumns(descriptors, rocksdbOptions, databaseOptions, dbPathString);
 
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
-					this.db = RocksDB.open(new DBOptions(options),
+					this.db = RocksDB.open(new DBOptions(rocksdbOptions),
 							dbPathString,
-							inMemory ? List.of(DEFAULT_COLUMN_FAMILY) : descriptors,
+							databaseOptions.inMemory() ? List.of(DEFAULT_COLUMN_FAMILY) : descriptors,
 							handles
 					);
 					break;
@@ -130,19 +135,19 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					switch (ex.getMessage()) {
 						case "Direct I/O is not supported by the specified DB." -> {
 							logger.warn(ex.getLocalizedMessage());
-							options
+							rocksdbOptions
 									.setUseDirectReads(false)
 									.setUseDirectIoForFlushAndCompaction(false)
-									.setAllowMmapReads(true)
-									.setAllowMmapWrites(true);
+									.setAllowMmapReads(databaseOptions.allowMemoryMapping())
+									.setAllowMmapWrites(databaseOptions.allowMemoryMapping());
 						}
 						default -> throw ex;
 					}
 				}
 			}
-			createInMemoryColumns(descriptors, inMemory, handles);
+			createInMemoryColumns(descriptors, databaseOptions, handles);
 			this.handles = new HashMap<>();
-			if (enableColumnsBug) {
+			if (enableColumnsBug && !databaseOptions.inMemory()) {
 				for (int i = 0; i < columns.size(); i++) {
 					this.handles.put(columns.get(i), handles.get(i));
 				}
@@ -220,8 +225,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@SuppressWarnings({"CommentedOutCode", "PointlessArithmeticExpression"})
-	private static Options openRocksDb(Path path, boolean crashIfWalError, boolean lowMemory)
-			throws IOException {
+	private static Options openRocksDb(Path path, DatabaseOptions databaseOptions) throws IOException {
 		// Get databases directory path
 		Path databasesDirPath = path.toAbsolutePath().getParent();
 		// Create base directories
@@ -246,7 +250,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setMaxWriteBufferNumber(4);
 		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(false); // Flush all WALs during startup
-		options.setWalRecoveryMode(crashIfWalError
+		options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
 				? WALRecoveryMode.AbsoluteConsistency
 				: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted.Default: TolerateCorruptedTailRecords
 		options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
@@ -268,7 +272,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		//options.setWritableFileMaxBufferSize(1024 * 1024); // 1MB by default
 		//options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
-		if (lowMemory) {
+		if (databaseOptions.lowMemory()) {
 			// LOW MEMORY
 			options
 					.setLevelCompactionDynamicLevelBytes(false)
@@ -315,10 +319,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			tableOptions.setFilterPolicy(bloomFilter);
 			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(128L * 1024L * 1024L))); // 128MiB
 
-			if (USE_DIRECT_IO) {
+			if (databaseOptions.useDirectIO()) {
 				options
-						.setAllowMmapReads(false)
-						.setAllowMmapWrites(false)
+						.setAllowMmapReads(databaseOptions.allowMemoryMapping())
+						.setAllowMmapWrites(databaseOptions.allowMemoryMapping())
 						.setUseDirectIoForFlushAndCompaction(true)
 						.setUseDirectReads(true)
 						// Option to enable readahead in compaction
@@ -329,8 +333,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				;
 			} else {
 				options
-						.setAllowMmapReads(true)
-						.setAllowMmapWrites(true);
+						.setAllowMmapReads(databaseOptions.allowMemoryMapping())
+						.setAllowMmapWrites(databaseOptions.allowMemoryMapping());
 			}
 		}
 
@@ -341,8 +345,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return options;
 	}
 
-	private void createAllColumns(List<ColumnFamilyDescriptor> totalDescriptors, Options options, boolean inMemory, String dbPathString) throws RocksDBException {
-		if (inMemory) {
+	private void createAllColumns(List<ColumnFamilyDescriptor> totalDescriptors,
+			Options options,
+			DatabaseOptions databaseOptions,
+			String dbPathString) throws RocksDBException {
+		if (databaseOptions.inMemory()) {
 			return;
 		}
 		List<byte[]> columnFamiliesToCreate = new LinkedList<>();
@@ -385,10 +392,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	private void createInMemoryColumns(List<ColumnFamilyDescriptor> totalDescriptors,
-			boolean inMemory,
+			DatabaseOptions databaseOptions,
 			List<ColumnFamilyHandle> handles)
 			throws RocksDBException {
-		if (!inMemory) {
+		if (!databaseOptions.inMemory()) {
 			return;
 		}
 		List<byte[]> columnFamiliesToCreate = new LinkedList<>();
@@ -407,10 +414,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors,
 			Options options,
-			boolean inMemory,
+			DatabaseOptions databaseOptions,
 			Path dbPath,
 			String dbPathString) throws RocksDBException {
-		if (inMemory) {
+		if (databaseOptions.inMemory()) {
 			return;
 		}
 		if (Files.notExists(dbPath)) {
@@ -436,9 +443,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				handles.add(db.createColumnFamily(columnFamilyDescriptor));
 			}
 
-			if (!inMemory) {
-				flushAndCloseDb(db, handles);
-			}
+			flushAndCloseDb(db, handles);
 		}
 	}
 
@@ -479,6 +484,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			assert Arrays.equals(cfh.getName(), columnName);
 		}
 		return cfh;
+	}
+
+	public DatabaseOptions getDatabaseOptions() {
+		return databaseOptions;
 	}
 
 	@Override

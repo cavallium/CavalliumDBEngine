@@ -26,12 +26,10 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
 	private final ByteBufAllocator allocator;
 	private final Path basePath;
-	private final boolean crashIfWalError;
 
-	public LLLocalDatabaseConnection(ByteBufAllocator allocator, Path basePath, boolean crashIfWalError) {
+	public LLLocalDatabaseConnection(ByteBufAllocator allocator, Path basePath) {
 		this.allocator = allocator;
 		this.basePath = basePath;
-		this.crashIfWalError = crashIfWalError;
 	}
 
 	@Override
@@ -54,9 +52,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	@Override
 	public Mono<LLLocalKeyValueDatabase> getDatabase(String name,
 			List<Column> columns,
-			Map<String, String> extraFlags,
-			boolean lowMemory,
-			boolean inMemory) {
+			DatabaseOptions databaseOptions) {
 		return Mono
 				.fromCallable(() -> new LLLocalKeyValueDatabase(
 						allocator,
@@ -64,10 +60,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						basePath.resolve("database_" + name),
 						columns,
 						new LinkedList<>(),
-						extraFlags,
-						crashIfWalError,
-						lowMemory,
-						inMemory
+						databaseOptions
 				))
 				.subscribeOn(Schedulers.boundedElastic());
 	}

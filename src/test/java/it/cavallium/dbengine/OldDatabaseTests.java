@@ -13,6 +13,7 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
+import it.cavallium.dbengine.database.disk.DatabaseOptions;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -131,8 +132,11 @@ public class OldDatabaseTests {
 					return null;
 				})
 				.subscribeOn(Schedulers.boundedElastic())
-				.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath, true).connect())
-				.flatMap(conn -> conn.getDatabase("testdb", List.of(Column.dictionary("testmap")), Map.of(), false, true));
+				.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath).connect())
+				.flatMap(conn -> conn.getDatabase("testdb",
+						List.of(Column.dictionary("testmap")),
+						new DatabaseOptions(Map.of(), true, false, true, false, true)
+				));
 	}
 
 	private static final ByteBuf DUMMY_VALUE;

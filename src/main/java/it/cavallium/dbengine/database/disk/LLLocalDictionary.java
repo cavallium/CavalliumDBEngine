@@ -1251,8 +1251,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<BadBlock> badBlocks(LLRange range) {
 		return Flux
 				.<BadBlock>create(sink -> {
-					try {
-						var ro = new ReadOptions(getReadOptions(null));
+					try (var ro = new ReadOptions(getReadOptions(null))) {
 						ro.setFillCache(false);
 						if (!range.isSingle()) {
 							ro.setReadaheadSize(32 * 1024);
@@ -1666,53 +1665,54 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Void> clear() {
 		return Mono
 				.<Void>fromCallable(() -> {
-					var readOpts = getReadOptions(null);
-					readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
+					try (var readOpts = new ReadOptions(getReadOptions(null))) {
+						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
-					// readOpts.setIgnoreRangeDeletions(true);
-					readOpts.setFillCache(false);
-					readOpts.setReadaheadSize(32 * 1024); // 32KiB
-					try (CappedWriteBatch writeBatch = new CappedWriteBatch(db,
-							CAPPED_WRITE_BATCH_CAP,
-							RESERVED_WRITE_BATCH_SIZE,
-							MAX_WRITE_BATCH_SIZE,
-							BATCH_WRITE_OPTIONS
-					)) {
+						// readOpts.setIgnoreRangeDeletions(true);
+						readOpts.setFillCache(false);
+						readOpts.setReadaheadSize(32 * 1024); // 32KiB
+						try (CappedWriteBatch writeBatch = new CappedWriteBatch(db,
+								CAPPED_WRITE_BATCH_CAP,
+								RESERVED_WRITE_BATCH_SIZE,
+								MAX_WRITE_BATCH_SIZE,
+								BATCH_WRITE_OPTIONS
+						)) {
 
-						byte[] firstDeletedKey = null;
-						byte[] lastDeletedKey = null;
-						try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
-							rocksIterator.seekToLast();
+							byte[] firstDeletedKey = null;
+							byte[] lastDeletedKey = null;
+							try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
+								rocksIterator.seekToLast();
 
-							rocksIterator.status();
-							if (rocksIterator.isValid()) {
-								firstDeletedKey = FIRST_KEY;
-								lastDeletedKey = rocksIterator.key();
-								writeBatch.deleteRange(cfh, FIRST_KEY, rocksIterator.key());
-								writeBatch.delete(cfh, rocksIterator.key());
+								rocksIterator.status();
+								if (rocksIterator.isValid()) {
+									firstDeletedKey = FIRST_KEY;
+									lastDeletedKey = rocksIterator.key();
+									writeBatch.deleteRange(cfh, FIRST_KEY, rocksIterator.key());
+									writeBatch.delete(cfh, rocksIterator.key());
+								}
 							}
+
+							writeBatch.writeToDbAndClose();
+
+
+							// Compact range
+							db.suggestCompactRange(cfh);
+							if (firstDeletedKey != null && lastDeletedKey != null) {
+								db.compactRange(cfh,
+										firstDeletedKey,
+										lastDeletedKey,
+										new CompactRangeOptions()
+												.setAllowWriteStall(false)
+												.setExclusiveManualCompaction(false)
+												.setChangeLevel(false)
+								);
+							}
+
+							db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
+							db.flushWal(true);
 						}
-
-						writeBatch.writeToDbAndClose();
-
-
-						// Compact range
-						db.suggestCompactRange(cfh);
-						if (firstDeletedKey != null && lastDeletedKey != null) {
-							db.compactRange(cfh,
-									firstDeletedKey,
-									lastDeletedKey,
-									new CompactRangeOptions()
-											.setAllowWriteStall(false)
-											.setExclusiveManualCompaction(false)
-											.setChangeLevel(false)
-							);
-						}
-
-						db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
-						db.flushWal(true);
+						return null;
 					}
-					return null;
 				})
 				.onErrorMap(cause -> new IOException("Failed to clear", cause))
 				.subscribeOn(dbScheduler);

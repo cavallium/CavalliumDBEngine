@@ -24,4 +24,6 @@ public interface CompositeDatabase {
 	 * Find corrupted items
 	 */
 	Flux<BadBlock> badBlocks();
+
+	Mono<Void> verifyChecksum();
 }

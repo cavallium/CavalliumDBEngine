@@ -1263,7 +1263,7 @@ public class LLLocalDictionary implements LLDictionary {
 							try (var rocksIterator = rocksIteratorTuple.getT1()) {
 								rocksIterator.seekToFirst();
 								rocksIterator.status();
-								while (rocksIterator.isValid()) {
+								while (rocksIterator.isValid() && !sink.isCancelled()) {
 									try {
 										rocksIterator.status();
 										rocksIterator.key(DUMMY_WRITE_ONLY_BYTE_BUFFER);

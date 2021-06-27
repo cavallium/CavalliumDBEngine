@@ -44,6 +44,8 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	Mono<Long> getProperty(String propertyName);
 
+	Mono<Void> verifyChecksum();
+
 	ByteBufAllocator getAllocator();
 
 	Mono<Void> close();

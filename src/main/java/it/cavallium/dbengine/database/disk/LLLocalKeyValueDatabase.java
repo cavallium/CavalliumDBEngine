@@ -132,7 +132,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							logger.warn(ex.getLocalizedMessage());
 							options
 									.setUseDirectReads(false)
-									.setUseDirectIoForFlushAndCompaction(false);
+									.setUseDirectIoForFlushAndCompaction(false)
+									.setAllowMmapReads(true)
+									.setAllowMmapWrites(true);
 						}
 						default -> throw ex;
 					}
@@ -270,8 +272,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			// LOW MEMORY
 			options
 					.setLevelCompactionDynamicLevelBytes(false)
-					.setAllowMmapReads(false)
-					.setAllowMmapWrites(false)
 					.setBytesPerSync(0) // default
 					.setWalBytesPerSync(0) // default
 					.setIncreaseParallelism(1)
@@ -317,6 +317,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			if (USE_DIRECT_IO) {
 				options
+						.setAllowMmapReads(false)
+						.setAllowMmapWrites(false)
 						.setUseDirectIoForFlushAndCompaction(true)
 						.setUseDirectReads(true)
 						// Option to enable readahead in compaction
@@ -483,6 +485,18 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
 				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
+				.subscribeOn(dbScheduler);
+	}
+
+	@Override
+	public Mono<Void> verifyChecksum() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					db.verifyChecksum();
+					return null;
+				})
+				.onErrorMap(cause -> new IOException("Failed to verify checksum of database \""
+						+ getDatabaseName() + "\"", cause))
 				.subscribeOn(dbScheduler);
 	}
 

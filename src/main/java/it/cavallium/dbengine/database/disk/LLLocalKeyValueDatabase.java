@@ -105,9 +105,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			int threadCap;
 			if (databaseOptions.lowMemory()) {
-				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
-			} else {
 				threadCap = Runtime.getRuntime().availableProcessors();
+			} else {
+				// 8 or more
+				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
 			}
 			this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
 					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,

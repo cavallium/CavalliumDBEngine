@@ -322,8 +322,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			if (databaseOptions.useDirectIO()) {
 				options
-						.setAllowMmapReads(databaseOptions.allowMemoryMapping())
-						.setAllowMmapWrites(databaseOptions.allowMemoryMapping())
+						.setAllowMmapReads(false)
+						.setAllowMmapWrites(false)
 						.setUseDirectIoForFlushAndCompaction(true)
 						.setUseDirectReads(true)
 						// Option to enable readahead in compaction

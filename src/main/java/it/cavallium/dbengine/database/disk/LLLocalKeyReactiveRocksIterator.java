@@ -13,9 +13,10 @@ public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterato
 			ByteBufAllocator alloc,
 			ColumnFamilyHandle cfh,
 			LLRange range,
+			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, alloc, cfh, range, readOptions, false, debugName);
+		super(db, alloc, cfh, range, allowNettyDirect, readOptions, false, debugName);
 	}
 
 	@Override

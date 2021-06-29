@@ -135,7 +135,7 @@ public class OldDatabaseTests {
 				.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath).connect())
 				.flatMap(conn -> conn.getDatabase("testdb",
 						List.of(Column.dictionary("testmap")),
-						new DatabaseOptions(Map.of(), true, false, true, false, true)
+						new DatabaseOptions(Map.of(), true, false, true, false, true, true, true)
 				));
 	}
 

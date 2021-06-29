@@ -21,6 +21,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	private final ColumnFamilyHandle cfh;
 	private final int prefixLength;
 	private final LLRange range;
+	private final boolean allowNettyDirect;
 	private final ReadOptions readOptions;
 	private final boolean canFillCache;
 	private final String debugName;
@@ -28,6 +29,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
+			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean canFillCache,
 			String debugName) {
@@ -36,6 +38,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 		this.cfh = cfh;
 		this.prefixLength = prefixLength;
 		this.range = range;
+		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
 		this.canFillCache = canFillCache;
 		this.debugName = debugName;
@@ -50,7 +53,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(canFillCache);
 					}
-					return LLLocalDictionary.getRocksIterator(readOptions, range.retain(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
 					range.retain();
 					try {

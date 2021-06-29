@@ -15,9 +15,10 @@ public class LLLocalGroupedEntryReactiveRocksIterator extends
 	public LLLocalGroupedEntryReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
+			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, alloc, cfh, prefixLength, range, readOptions, false, true);
+		super(db, alloc, cfh, prefixLength, range, allowNettyDirect, readOptions, false, true);
 	}
 
 	@Override

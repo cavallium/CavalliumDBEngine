@@ -14,9 +14,10 @@ public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReacti
 			ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
+			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, alloc, cfh, prefixLength, range, readOptions, true, false);
+		super(db, alloc, cfh, prefixLength, range, allowNettyDirect, readOptions, true, false);
 	}
 
 	@Override

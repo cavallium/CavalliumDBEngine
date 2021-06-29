@@ -29,6 +29,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	private final ByteBufAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 	private final LLRange range;
+	private final boolean allowNettyDirect;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
 	private final String debugName;
@@ -37,6 +38,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 			ByteBufAllocator alloc,
 			ColumnFamilyHandle cfh,
 			LLRange range,
+			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean readValues,
 			String debugName) {
@@ -44,6 +46,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 		this.alloc = alloc;
 		this.cfh = cfh;
 		this.range = range;
+		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
 		this.debugName = debugName;
@@ -57,7 +60,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(false);
 					}
-					return getRocksIterator(readOptions, range.retain(), db, cfh);
+					return getRocksIterator(allowNettyDirect, readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
 					range.retain();
 					try {

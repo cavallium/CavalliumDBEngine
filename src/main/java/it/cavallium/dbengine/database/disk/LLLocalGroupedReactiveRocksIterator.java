@@ -24,6 +24,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	private final ColumnFamilyHandle cfh;
 	private final int prefixLength;
 	private final LLRange range;
+	private final boolean allowNettyDirect;
 	private final ReadOptions readOptions;
 	private final boolean canFillCache;
 	private final boolean readValues;
@@ -31,6 +32,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	public LLLocalGroupedReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
 			LLRange range,
+			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean canFillCache,
 			boolean readValues) {
@@ -39,6 +41,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 		this.cfh = cfh;
 		this.prefixLength = prefixLength;
 		this.range = range;
+		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
 		this.canFillCache = canFillCache;
 		this.readValues = readValues;
@@ -50,7 +53,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
-					return LLLocalDictionary.getRocksIterator(readOptions, range.retain(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.retain(), db, cfh);
 				}, (tuple, sink) -> {
 					range.retain();
 					try {

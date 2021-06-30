@@ -67,6 +67,7 @@ import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.FSLockFactory;
 import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
@@ -86,6 +87,8 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public class LLLocalLuceneIndex implements LLLuceneIndex {
+
+	private static final boolean ALLOW_MMAP = false;
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
 	private static final LuceneStreamSearcher streamSearcher = new AdaptiveStreamSearcher();
@@ -147,7 +150,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		} else {
 			Directory directory;
 			{
-				FSDirectory fsDirectory = FSDirectory.open(directoryPath);
+				FSDirectory fsDirectory = ALLOW_MMAP ? FSDirectory.open(directoryPath) : new NIOFSDirectory(directoryPath);
 				if (Constants.LINUX || Constants.MAC_OS_X) {
 					if (!lowMemory) {
 						directory = new DirectIODirectory(fsDirectory, 5 * 1024 * 1024, 60 * 1024 * 1024);

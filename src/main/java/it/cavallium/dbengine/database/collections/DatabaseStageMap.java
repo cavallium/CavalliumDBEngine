@@ -171,7 +171,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	@Override
 	default Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
 		return this
-				.setAllValuesAndGetPrevious(Flux.fromIterable(Collections.unmodifiableMap(value).entrySet()))
+				.setAllValuesAndGetPrevious(Flux.fromIterable(Map.copyOf(value).entrySet()))
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
 	}
 
@@ -207,7 +207,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 								})
 								.flatMap(result -> Mono
 										.justOrEmpty(result.getT2())
-										.flatMap(values -> this.setAllValues(Flux.fromIterable(Collections.unmodifiableMap(values).entrySet())))
+										.flatMap(values -> this.setAllValues(Flux.fromIterable(Map.copyOf(values).entrySet())))
 										.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
 								);
 					} else if (updateMode == UpdateMode.ALLOW) {

@@ -1,7 +1,10 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
+import it.cavallium.dbengine.client.LuceneOptions;
+import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.EnglishItalianStopFilter;
@@ -14,10 +17,9 @@ import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneSearchInstance;
@@ -26,11 +28,7 @@ import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.temporal.ChronoUnit;
-import java.time.temporal.TemporalUnit;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -42,14 +40,11 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
-import org.apache.lucene.document.Document;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
-import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
@@ -67,8 +62,6 @@ import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.FSLockFactory;
-import org.apache.lucene.store.IOContext;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NRTCachingDirectory;
@@ -79,7 +72,6 @@ import org.warp.commonutils.log.LoggerFactory;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
-import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -87,8 +79,6 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public class LLLocalLuceneIndex implements LLLuceneIndex {
-
-	private static final boolean ALLOW_MMAP = false;
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
 	private static final LuceneStreamSearcher streamSearcher = new AdaptiveStreamSearcher();
@@ -133,9 +123,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			String name,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			Duration queryRefreshDebounceTime,
-			Duration commitDebounceTime,
-			boolean lowMemory, boolean inMemory, @Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter) throws IOException {
+			LuceneOptions luceneOptions,
+			@Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter) throws IOException {
 		if (name.length() == 0) {
 			throw new IOException("Empty lucene database name");
 		}
@@ -145,27 +134,58 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		} else {
 			logger.debug("Lucene MMap is supported");
 		}
-		if (inMemory) {
+		boolean lowMemory = luceneOptions.lowMemory();
+		if (luceneOptions.inMemory()) {
 			this.directory = new ByteBuffersDirectory();
 		} else {
 			Directory directory;
 			{
-				FSDirectory fsDirectory = ALLOW_MMAP ? FSDirectory.open(directoryPath) : new NIOFSDirectory(directoryPath);
-				if (Constants.LINUX || Constants.MAC_OS_X) {
-					if (!lowMemory) {
-						directory = new DirectIODirectory(fsDirectory, 5 * 1024 * 1024, 60 * 1024 * 1024);
-					} else {
-						directory = new DirectIODirectory(fsDirectory);
-					}
+				Directory forcedDirectFsDirectory = null;
+				if (luceneOptions.directIOOptions().isPresent()) {
+					DirectIOOptions directIOOptions = luceneOptions.directIOOptions().get();
+						if (directIOOptions.alwaysForceDirectIO()) {
+							try {
+								forcedDirectFsDirectory = new AlwaysDirectIOFSDirectory(directoryPath);
+							} catch (UnsupportedOperationException ex) {
+								logger.warn("Failed to open FSDirectory with DIRECT flag", ex);
+							}
+						}
+				}
+				if (forcedDirectFsDirectory != null) {
+					directory = forcedDirectFsDirectory;
 				} else {
-					directory = fsDirectory;
+					FSDirectory fsDirectory;
+					if (luceneOptions.allowMemoryMapping()) {
+						fsDirectory = FSDirectory.open(directoryPath);
+					} else {
+						fsDirectory = new NIOFSDirectory(directoryPath);
+					}
+					if (Constants.LINUX || Constants.MAC_OS_X) {
+						try {
+							int mergeBufferSize;
+							long minBytesDirect;
+							if (luceneOptions.directIOOptions().isPresent()) {
+								var directIOOptions = luceneOptions.directIOOptions().get();
+								mergeBufferSize = directIOOptions.mergeBufferSize();
+								minBytesDirect = directIOOptions.minBytesDirect();
+							} else {
+								mergeBufferSize = DirectIODirectory.DEFAULT_MERGE_BUFFER_SIZE;
+								minBytesDirect = DirectIODirectory.DEFAULT_MIN_BYTES_DIRECT;
+							}
+							directory = new DirectIODirectory(fsDirectory, mergeBufferSize, minBytesDirect);
+						} catch (UnsupportedOperationException ex) {
+							logger.warn("Failed to open FSDirectory with DIRECT flag", ex);
+							directory = fsDirectory;
+						}
+					} else {
+						directory = fsDirectory;
+					}
 				}
 			}
 
-			if (!lowMemory) {
-				directory = new NRTCachingDirectory(directory, 5.0, 60.0);
-			} else {
-				directory = new NRTCachingDirectory(directory, 1.0, 6.0);
+			if (luceneOptions.nrtCachingOptions().isPresent()) {
+				NRTCachingOptions nrtCachingOptions = luceneOptions.nrtCachingOptions().get();
+				directory = new NRTCachingDirectory(directory, nrtCachingOptions.maxMergeSizeMB(), nrtCachingOptions.maxCachedMB());
 			}
 
 			this.directory = directory;
@@ -201,8 +221,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();
 
 		// Start scheduled tasks
-		registerScheduledFixedTask(this::scheduledCommit, commitDebounceTime);
-		registerScheduledFixedTask(this::scheduledQueryRefresh, queryRefreshDebounceTime);
+		registerScheduledFixedTask(this::scheduledCommit, luceneOptions.commitDebounceTime());
+		registerScheduledFixedTask(this::scheduledQueryRefresh, luceneOptions.queryRefreshDebounceTime());
 	}
 
 	private Similarity getSimilarity() {
@@ -210,14 +230,43 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private void registerScheduledFixedTask(Runnable task, Duration duration) {
-		scheduledTasksLifecycle.registerScheduledTask(luceneHeavyTasksScheduler.schedulePeriodically(() -> {
+		new PeriodicTask(task, duration).start();
+	}
+
+	private class PeriodicTask implements Runnable {
+
+		private final Runnable task;
+		private final Duration duration;
+		private volatile boolean cancelled = false;
+
+		public PeriodicTask(Runnable task, Duration duration) {
+			this.task = task;
+			this.duration = duration;
+		}
+
+		public void start() {
+			luceneHeavyTasksScheduler.schedule(this,
+					duration.toMillis(),
+					TimeUnit.MILLISECONDS
+			);
+		}
+
+		@Override
+		public void run() {
 			scheduledTasksLifecycle.startScheduledTask();
 			try {
+				if (scheduledTasksLifecycle.isCancelled() || cancelled) return;
 				task.run();
+				if (scheduledTasksLifecycle.isCancelled() || cancelled) return;
+				luceneHeavyTasksScheduler.schedule(this, duration.toMillis(), TimeUnit.MILLISECONDS);
 			} finally {
 				scheduledTasksLifecycle.endScheduledTask();
 			}
-		}, duration.toMillis(), duration.toMillis(), TimeUnit.MILLISECONDS));
+		}
+
+		public void cancel() {
+			cancelled = true;
+		}
 	}
 
 	@Override
@@ -250,10 +299,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.defer(() -> {
 							if (ex instanceof IllegalStateException && "No index commit to snapshot".equals(ex.getMessage())) {
 								return Mono.fromCallable(() -> {
-									//noinspection BlockingMethodInNonBlockingContext
-									indexWriter.commit();
-									//noinspection BlockingMethodInNonBlockingContext
-									return snapshotter.snapshot();
+									scheduledTasksLifecycle.startScheduledTask();
+									try {
+										//noinspection BlockingMethodInNonBlockingContext
+										indexWriter.commit();
+										//noinspection BlockingMethodInNonBlockingContext
+										return snapshotter.snapshot();
+									} finally {
+										scheduledTasksLifecycle.endScheduledTask();
+									}
 								}).subscribeOn(luceneHeavyTasksScheduler);
 							} else {
 								return Mono.error(ex);
@@ -265,26 +319,36 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return Mono.<Void>fromCallable(() -> {
-			var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
-			if (indexSnapshot == null) {
-				throw new IOException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
+			scheduledTasksLifecycle.startScheduledTask();
+			try {
+				var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
+				if (indexSnapshot == null) {
+					throw new IOException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
+				}
+
+				indexSnapshot.close();
+
+				var luceneIndexSnapshot = indexSnapshot.getSnapshot();
+				snapshotter.release(luceneIndexSnapshot);
+				// Delete unused files after releasing the snapshot
+				indexWriter.deleteUnusedFiles();
+				return null;
+			} finally {
+				scheduledTasksLifecycle.endScheduledTask();
 			}
-
-			indexSnapshot.close();
-
-			var luceneIndexSnapshot = indexSnapshot.getSnapshot();
-			snapshotter.release(luceneIndexSnapshot);
-			// Delete unused files after releasing the snapshot
-			indexWriter.deleteUnusedFiles();
-			return null;
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
 		return Mono.<Void>fromCallable(() -> {
-			indexWriter.addDocument(LLUtils.toDocument(doc));
-			return null;
+			scheduledTasksLifecycle.startScheduledTask();
+			try {
+				indexWriter.addDocument(LLUtils.toDocument(doc));
+				return null;
+			} finally {
+				scheduledTasksLifecycle.endScheduledTask();
+			}
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
@@ -294,8 +358,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.collectList()
 				.flatMap(documentsList -> Mono
 						.<Void>fromCallable(() -> {
-							indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
-							return null;
+							scheduledTasksLifecycle.startScheduledTask();
+							try {
+								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+								return null;
+							} finally {
+								scheduledTasksLifecycle.endScheduledTask();
+							}
 						})
 						.subscribeOn(Schedulers.boundedElastic())
 				);
@@ -305,15 +374,25 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
 		return Mono.<Void>fromCallable(() -> {
-			indexWriter.deleteDocuments(LLUtils.toTerm(id));
-			return null;
+			scheduledTasksLifecycle.startScheduledTask();
+			try {
+				indexWriter.deleteDocuments(LLUtils.toTerm(id));
+				return null;
+			} finally {
+				scheduledTasksLifecycle.endScheduledTask();
+			}
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
 	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
 		return Mono.<Void>fromCallable(() -> {
-			indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
+			scheduledTasksLifecycle.startScheduledTask();
+			try {
+				indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
+			} finally {
+				scheduledTasksLifecycle.endScheduledTask();
+			}
 			return null;
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
@@ -326,12 +405,17 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private Mono<Void> updateDocuments(Map<LLTerm, LLDocument> documentsMap) {
 		return Mono
 				.<Void>fromCallable(() -> {
-					for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
-						LLTerm key = entry.getKey();
-						LLDocument value = entry.getValue();
-						indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
+					scheduledTasksLifecycle.startScheduledTask();
+					try {
+						for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
+							LLTerm key = entry.getKey();
+							LLDocument value = entry.getValue();
+							indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
+						}
+						return null;
+					} finally {
+						scheduledTasksLifecycle.endScheduledTask();
 					}
-					return null;
 				})
 				.subscribeOn(Schedulers.boundedElastic());
 	}
@@ -339,13 +423,18 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> deleteAll() {
 		return Mono.<Void>fromCallable(() -> {
-			//noinspection BlockingMethodInNonBlockingContext
-			indexWriter.deleteAll();
-			//noinspection BlockingMethodInNonBlockingContext
-			indexWriter.forceMergeDeletes(true);
-			//noinspection BlockingMethodInNonBlockingContext
-			indexWriter.commit();
-			return null;
+			scheduledTasksLifecycle.startScheduledTask();
+			try {
+				//noinspection BlockingMethodInNonBlockingContext
+				indexWriter.deleteAll();
+				//noinspection BlockingMethodInNonBlockingContext
+				indexWriter.forceMergeDeletes(true);
+				//noinspection BlockingMethodInNonBlockingContext
+				indexWriter.commit();
+				return null;
+			} finally {
+				scheduledTasksLifecycle.endScheduledTask();
+			}
 		}).subscribeOn(luceneHeavyTasksScheduler);
 	}
 
@@ -431,7 +520,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			int scoreDivisor) {
 		Query luceneAdditionalQuery;
 		try {
-			luceneAdditionalQuery = QueryParser.toQuery(queryParams.getQuery());
+			luceneAdditionalQuery = QueryParser.toQuery(queryParams.query());
 		} catch (Exception e) {
 			return Mono.error(e);
 		}
@@ -479,14 +568,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									.subscribeOn(Schedulers.boundedElastic())
 									.map(luceneQuery -> luceneSearch(doDistributedPre,
 											indexSearcher,
-											queryParams.getOffset(),
-											queryParams.getLimit(),
-											queryParams.getMinCompetitiveScore().getNullable(),
+											queryParams.offset(),
+											queryParams.limit(),
+											queryParams.minCompetitiveScore().getNullable(),
 											keyFieldName,
 											scoreDivisor,
 											luceneQuery,
-											QueryParser.toSort(queryParams.getSort()),
-											QueryParser.toScoreMode(queryParams.getScoreMode()),
+											QueryParser.toSort(queryParams.sort()),
+											QueryParser.toScoreMode(queryParams.scoreMode()),
 											releaseSearcherWrapper(snapshot, indexSearcher)
 									))
 									.onErrorResume(ex -> releaseSearcherWrapper(snapshot, indexSearcher).then(Mono.error(ex)))
@@ -520,6 +609,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.then();
 	}
 
+	@SuppressWarnings("RedundantTypeArguments")
 	private Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams, String keyFieldName,
 			boolean doDistributedPre, long actionId, int scoreDivisor) {
@@ -527,10 +617,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
 				.flatMap(indexSearcher -> Mono
 						.fromCallable(() -> {
-							Objects.requireNonNull(queryParams.getScoreMode(), "ScoreMode must not be null");
-							Query luceneQuery = QueryParser.toQuery(queryParams.getQuery());
-							Sort luceneSort = QueryParser.toSort(queryParams.getSort());
-							org.apache.lucene.search.ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.getScoreMode());
+							Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
+							Query luceneQuery = QueryParser.toQuery(queryParams.query());
+							Sort luceneSort = QueryParser.toSort(queryParams.sort());
+							org.apache.lucene.search.ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.scoreMode());
 							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
 						})
 						.subscribeOn(Schedulers.boundedElastic())
@@ -542,9 +632,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 									return luceneSearch(doDistributedPre,
 											indexSearcher,
-											queryParams.getOffset(),
-											queryParams.getLimit(),
-											queryParams.getMinCompetitiveScore().getNullable(),
+											queryParams.offset(),
+											queryParams.limit(),
+											queryParams.minCompetitiveScore().getNullable(),
 											keyFieldName,
 											scoreDivisor,
 											luceneQuery,
@@ -678,6 +768,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.<Void>fromCallable(() -> {
 					scheduledTasksLifecycle.startScheduledTask();
 					try {
+						if (scheduledTasksLifecycle.isCancelled()) return null;
 						//noinspection BlockingMethodInNonBlockingContext
 						indexWriter.commit();
 					} finally {
@@ -694,6 +785,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.<Void>fromCallable(() -> {
 					scheduledTasksLifecycle.startScheduledTask();
 					try {
+						if (scheduledTasksLifecycle.isCancelled()) return null;
 						//noinspection BlockingMethodInNonBlockingContext
 						searcherManager.maybeRefresh();
 					} finally {

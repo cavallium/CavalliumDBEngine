@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.database.disk;
+package it.cavallium.dbengine.client;
 
 import io.soabase.recordbuilder.core.RecordBuilder;
 import it.cavallium.dbengine.database.Column;

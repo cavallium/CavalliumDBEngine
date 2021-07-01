@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateMode;
@@ -183,7 +184,22 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			handle.close();
 		}
 
-		db.closeE();
+		try {
+			db.closeE();
+		} catch (RocksDBException ex) {
+			if ("Cannot close DB with unreleased snapshot.".equals(ex.getMessage())) {
+				snapshotsHandles.forEach((id, snapshot) -> {;
+					try {
+						db.releaseSnapshot(snapshot);
+					} catch (Exception ex2) {
+						// ignore exception
+						logger.debug("Failed to release snapshot " + id, ex2);
+					}
+				});
+				db.closeE();
+			}
+			throw ex;
+		}
 	}
 
 	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {

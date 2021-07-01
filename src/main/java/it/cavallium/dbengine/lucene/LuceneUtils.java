@@ -24,7 +24,10 @@ import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.ResultItemConsumer;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
+import java.io.EOFException;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -290,5 +293,69 @@ public class LuceneUtils {
 				return perFieldSimilarity.getOrDefault(name, defaultSimilarity);
 			}
 		};
+	}
+
+	public static int alignUnsigned(int number, boolean expand) {
+		if (number % 4096 != 0) {
+			if (expand) {
+				return number + (4096 - (number % 4096));
+			} else {
+				return number - (number % 4096);
+			}
+		} else {
+			return number;
+		}
+	}
+
+	public static long alignUnsigned(long number, boolean expand) {
+		if (number % 4096L != 0) {
+			if (expand) {
+				return number + (4096L - (number % 4096L));
+			} else {
+				return number - (number % 4096L);
+			}
+		} else {
+			return number;
+		}
+	}
+
+	public static void readInternalAligned(Object ref, FileChannel channel, long pos, ByteBuffer b, int readLength, int usefulLength, long end) throws IOException {
+		int startBufPosition = b.position();
+		int readData = 0;
+		int i;
+		for(; readLength > 0; readLength -= i) {
+			int toRead = readLength;
+			b.limit(b.position() + toRead);
+
+			assert b.remaining() == toRead;
+
+			var beforeReadBufPosition = b.position();
+			channel.read(b, pos);
+			b.limit(Math.min(startBufPosition + usefulLength, b.position() + toRead));
+			var afterReadBufPosition = b.position();
+			i = (afterReadBufPosition - beforeReadBufPosition);
+			readData += i;
+
+			if (i < toRead && i > 0) {
+				if (readData < usefulLength) {
+					throw new EOFException("read past EOF: " + ref + " buffer: " + b + " chunkLen: " + toRead + " end: " + end);
+				}
+				if (readData == usefulLength) {
+					b.limit(b.position());
+					// File end reached
+					return;
+				}
+			}
+
+			if (i < 0) {
+				throw new EOFException("read past EOF: " + ref + " buffer: " + b + " chunkLen: " + toRead + " end: " + end);
+			}
+
+			assert i > 0 : "FileChannel.read with non zero-length bb.remaining() must always read at least one byte (FileChannel is in blocking mode, see spec of ReadableByteChannel)";
+
+			pos += (long)i;
+		}
+
+		assert readLength == 0;
 	}
 }

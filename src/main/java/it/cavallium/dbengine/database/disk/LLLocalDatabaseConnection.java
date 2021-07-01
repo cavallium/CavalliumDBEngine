@@ -3,18 +3,17 @@ package it.cavallium.dbengine.database.disk;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
+import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -70,10 +69,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			Duration queryRefreshDebounceTime,
-			Duration commitDebounceTime,
-			boolean lowMemory,
-			boolean inMemory) {
+			LuceneOptions luceneOptions) {
 		return Mono
 				.fromCallable(() -> {
 					if (instancesCount != 1) {
@@ -82,20 +78,14 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								instancesCount,
 								indicizerAnalyzers,
 								indicizerSimilarities,
-								queryRefreshDebounceTime,
-								commitDebounceTime,
-								lowMemory,
-								inMemory
+								luceneOptions
 						);
 					} else {
 						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
 								name,
 								indicizerAnalyzers,
 								indicizerSimilarities,
-								queryRefreshDebounceTime,
-								commitDebounceTime,
-								lowMemory,
-								inMemory,
+								luceneOptions,
 								null
 						);
 					}

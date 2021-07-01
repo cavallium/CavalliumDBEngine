@@ -5,6 +5,7 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
+import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -65,9 +66,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			Duration queryRefreshDebounceTime,
-			Duration commitDebounceTime,
-			boolean lowMemory, boolean inMemory) throws IOException {
+			LuceneOptions luceneOptions) throws IOException {
 
 		if (instancesCount <= 1 || instancesCount > 100) {
 			throw new IOException("Unsupported instances count: " + instancesCount);
@@ -86,9 +85,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					instanceName,
 					indicizerAnalyzers,
 					indicizerSimilarities,
-					queryRefreshDebounceTime,
-					commitDebounceTime,
-					lowMemory, inMemory, (indexSearcher, field, distributedPre, actionId) -> distributedCustomCollectionStatistics(finalI,
+					luceneOptions, (indexSearcher, field, distributedPre, actionId) -> distributedCustomCollectionStatistics(finalI,
 							indexSearcher,
 							field,
 							distributedPre,

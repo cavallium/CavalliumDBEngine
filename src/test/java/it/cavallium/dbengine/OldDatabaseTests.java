@@ -13,7 +13,7 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
-import it.cavallium.dbengine.database.disk.DatabaseOptions;
+import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;

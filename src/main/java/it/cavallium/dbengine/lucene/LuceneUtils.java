@@ -223,6 +223,47 @@ public class LuceneUtils {
 		return HandleResult.CONTINUE;
 	}
 
+	/**
+	 *
+	 * @return the key score, or null if the result is not relevant
+	 * @throws IOException if an error occurs
+	 */
+	@Nullable
+	public static LLKeyScore collectTopDoc(Logger logger, int docId, float score, Float minCompetitiveScore,
+			IndexSearcher indexSearcher, String keyFieldName) throws IOException {
+		if (minCompetitiveScore == null || score >= minCompetitiveScore) {
+			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
+			if (d.getFields().isEmpty()) {
+				StringBuilder sb = new StringBuilder();
+				sb.append("The document docId: ").append(docId).append(", score: ").append(score).append(" is empty.");
+				var realFields = indexSearcher.doc(docId).getFields();
+				if (!realFields.isEmpty()) {
+					sb.append("\n");
+					logger.error("Present fields:\n");
+					boolean first = true;
+					for (IndexableField field : realFields) {
+						if (first) {
+							first = false;
+						} else {
+							sb.append("\n");
+						}
+						sb.append(" - ").append(field.name());
+					}
+				}
+				throw new IOException(sb.toString());
+			} else {
+				var field = d.getField(keyFieldName);
+				if (field == null) {
+					throw new IOException("Can't get key of document docId: " + docId + ", score: " + score);
+				} else {
+					return new LLKeyScore(field.stringValue(), score);
+				}
+			}
+		} else {
+			return null;
+		}
+	}
+
 	public static <T> Mono<SearchResultKeys<T>> mergeSignalStreamKeys(Flux<SearchResultKeys<T>> mappedKeys,
 			MultiSort<SearchResultKey<T>> sort,
 			long offset,

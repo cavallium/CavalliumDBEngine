@@ -20,11 +20,12 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveReactiveSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneSearchInstance;
+import it.cavallium.dbengine.lucene.searcher.LuceneReactiveSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
+import it.cavallium.dbengine.lucene.searcher.SortedPagedLuceneReactiveSearcher;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -36,9 +37,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexCommit;
@@ -71,7 +70,6 @@ import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -82,6 +80,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
 	private static final LuceneStreamSearcher streamSearcher = new AdaptiveStreamSearcher();
+	private static final LuceneReactiveSearcher reactiveSearcher = new AdaptiveReactiveSearcher();
 	private static final AllowOnlyQueryParsingCollectorStreamSearcher allowOnlyQueryParsingCollectorStreamSearcher
 			= new AllowOnlyQueryParsingCollectorStreamSearcher();
 	/**
@@ -93,12 +92,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene",
 			Integer.MAX_VALUE,
-			true
+			false
 	);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
-	private static final Scheduler luceneSearcherScheduler = Schedulers
-			.fromExecutorService(Executors
-					.newCachedThreadPool(new ShortNamedThreadFactory("lucene-searcher")));
+	private final Scheduler luceneSearcherScheduler = Schedulers.newBoundedElastic(
+			4,
+			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+			"lucene-searcher",
+			60,
+			false
+	);
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -662,88 +665,47 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Sort luceneSort,
 			ScoreMode luceneScoreMode,
 			Mono<Void> successCleanup) {
-		return new LLSearchResult(Mono.<LLSearchResultShard>create(monoSink -> {
-				LuceneSearchInstance luceneSearchInstance;
-				long totalHitsCount;
-				try {
+		Flux<LLSearchResultShard> results = Mono
+				.defer(() -> {
 					if (doDistributedPre) {
-						allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
-						monoSink.success(new LLSearchResultShard(successCleanup.thenMany(Flux.empty()), 0));
-						return;
+						return Mono.<LLSearchResultShard>create(monoSink -> {
+							try {
+								//noinspection BlockingMethodInNonBlockingContext
+								allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
+								monoSink.success(new LLSearchResultShard(successCleanup.thenMany(Flux.empty()), 0));
+							} catch (Exception ex) {
+								monoSink.error(ex);
+							}
+						}).subscribeOn(luceneSearcherScheduler);
 					} else {
 						int boundedOffset = Math.max(0, offset > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) offset);
 						int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
-						luceneSearchInstance = streamSearcher.search(indexSearcher,
-								luceneQuery,
-								boundedOffset,
-								boundedLimit,
-								luceneSort,
-								luceneScoreMode,
-								minCompetitiveScore,
-								keyFieldName
-						);
-						totalHitsCount = luceneSearchInstance.getTotalHitsCount();
+						return reactiveSearcher
+								.search(indexSearcher,
+										luceneQuery,
+										boundedOffset,
+										boundedLimit,
+										luceneSort,
+										luceneScoreMode,
+										minCompetitiveScore,
+										keyFieldName,
+										luceneSearcherScheduler
+								)
+								.map(searchInstance -> new LLSearchResultShard(
+										Flux
+												.usingWhen(
+														Mono.just(true),
+														_unused -> searchInstance
+																.results()
+																.map(keyScore -> fixKeyScore(keyScore, scoreDivisor)),
+														_unused -> successCleanup
+												),
+										searchInstance.totalHitsCount()
+								));
 					}
-				} catch (Exception ex) {
-					monoSink.error(ex);
-					return;
-				}
-
-				AtomicBoolean alreadySubscribed = new AtomicBoolean(false);
-				var resultsFlux = Flux.<LLKeyScore>create(sink -> {
-
-					if (!alreadySubscribed.compareAndSet(false, true)) {
-						sink.error(new IllegalStateException("Already subscribed to results"));
-						return;
-					}
-
-					AtomicBoolean cancelled = new AtomicBoolean();
-					Semaphore requests = new Semaphore(0);
-					sink.onDispose(() -> cancelled.set(true));
-					sink.onCancel(() -> cancelled.set(true));
-					sink.onRequest(delta -> requests.release((int) Math.min(delta, Integer.MAX_VALUE)));
-
-					luceneSearcherScheduler
-							.schedule(() -> {
-								try {
-									luceneSearchInstance.getResults(keyScore -> {
-										try {
-											if (cancelled.get()) {
-												return HandleResult.HALT;
-											}
-											while (!requests.tryAcquire(500, TimeUnit.MILLISECONDS)) {
-												if (cancelled.get()) {
-													return HandleResult.HALT;
-												}
-											}
-											sink.next(fixKeyScore(keyScore, scoreDivisor));
-											if (cancelled.get()) {
-												return HandleResult.HALT;
-											} else {
-												return HandleResult.CONTINUE;
-											}
-										} catch (Exception ex) {
-											sink.error(ex);
-											cancelled.set(true);
-											requests.release(Integer.MAX_VALUE);
-											return HandleResult.HALT;
-										}
-									});
-									sink.complete();
-								} catch (Exception ex) {
-									sink.error(ex);
-								}
-							});
-
-				}, OverflowStrategy.ERROR).subscribeOn(Schedulers.boundedElastic());
-
-				monoSink.success(new LLSearchResultShard(Flux
-						.usingWhen(
-								Mono.just(true),
-								b -> resultsFlux,
-								b -> successCleanup),
-						totalHitsCount));
-		}).subscribeOn(Schedulers.boundedElastic()).flux());
+				})
+				.flux();
+		return new LLSearchResult(results);
 	}
 
 	@Override

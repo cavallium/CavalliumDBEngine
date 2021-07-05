@@ -40,7 +40,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 	}
 
 	@Override
-	public Mono<Void> searchOn(IndexSearcher indexSearcher, QueryParams queryParams, Scheduler scheduler) {
+	public Mono<Void> searchOn(IndexSearcher indexSearcher, LocalQueryParams queryParams, Scheduler scheduler) {
 		return Mono.<Void>fromCallable(() -> {
 			TopDocsCollector<? extends ScoreDoc> collector;
 			synchronized (lock) {
@@ -56,7 +56,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(QueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
 					TopDocs[] topDocs;
@@ -93,7 +93,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 										(s, sink) -> {
 											if (s.last() != null && s.remainingLimit() > 0 && s.currentPageLimit() > 0) {
 												Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
-												Query luceneQuery = QueryParser.toQuery(queryParams.query());
+												Query luceneQuery = queryParams.query();
 												UnsortedCollectorManager currentPageUnsortedCollectorManager = new UnsortedCollectorManager(() -> TopDocsSearcher.getTopDocsCollector(null,
 														s.currentPageLimit(),
 														s.last(),

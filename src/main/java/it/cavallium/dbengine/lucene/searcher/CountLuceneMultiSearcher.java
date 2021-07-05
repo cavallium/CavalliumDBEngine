@@ -12,25 +12,24 @@ import reactor.core.scheduler.Scheduler;
 public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(QueryParams queryParams) {
+	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
 					AtomicLong totalHits = new AtomicLong(0);
 					return new LuceneShardSearcher() {
 						@Override
-						public Mono<Void> searchOn(IndexSearcher indexSearcher, QueryParams queryParams, Scheduler scheduler) {
+						public Mono<Void> searchOn(IndexSearcher indexSearcher, LocalQueryParams queryParams, Scheduler scheduler) {
 							return Mono
 									.<Void>fromCallable(() -> {
-										Query luceneQuery = QueryParser.toQuery(queryParams.query());
 										//noinspection BlockingMethodInNonBlockingContext
-										totalHits.addAndGet(indexSearcher.count(luceneQuery));
+										totalHits.addAndGet(indexSearcher.count(queryParams.query()));
 										return null;
 									})
 									.subscribeOn(scheduler);
 						}
 
 						@Override
-						public Mono<LuceneSearchResult> collect(QueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 							return Mono.fromCallable(() -> new LuceneSearchResult(totalHits.get(), Flux.empty()));
 						}
 					};

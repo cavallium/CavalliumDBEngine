@@ -25,7 +25,7 @@ public interface LuceneMultiSearcher {
 	 * Do a lucene query, receiving the single results using a consumer
 	 * @param queryParams the query parameters
 	 */
-	Mono<LuceneShardSearcher> createShardSearcher(QueryParams queryParams);
+	Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams);
 
 	static Flux<LLKeyScore> convertHits(
 			ScoreDoc[] hits,

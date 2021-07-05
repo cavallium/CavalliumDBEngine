@@ -13,7 +13,7 @@ public interface LuceneShardSearcher {
 	 * @param scheduler a blocking scheduler
 	 */
 	Mono<Void> searchOn(IndexSearcher indexSearcher,
-			QueryParams queryParams,
+			LocalQueryParams queryParams,
 			Scheduler scheduler);
 
 	/**
@@ -21,5 +21,5 @@ public interface LuceneShardSearcher {
 	 * @param keyFieldName the name of the key field
 	 * @param scheduler a blocking scheduler
 	 */
-	Mono<LuceneSearchResult> collect(QueryParams queryParams, String keyFieldName, Scheduler scheduler);
+	Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler);
 }

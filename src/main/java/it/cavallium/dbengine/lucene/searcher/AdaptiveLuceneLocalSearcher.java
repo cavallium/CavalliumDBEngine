@@ -9,11 +9,17 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	private static final LuceneLocalSearcher localSearcher = new SimpleLuceneLocalSearcher();
 
+	private static final LuceneLocalSearcher countSearcher = new CountLuceneLocalSearcher();
+
 	@Override
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
-			QueryParams queryParams,
+			LocalQueryParams queryParams,
 			String keyFieldName,
 			Scheduler scheduler) {
-		return localSearcher.collect(indexSearcher, queryParams, keyFieldName, scheduler);
+		if (queryParams.limit() == 0) {
+			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, scheduler);
+		} else {
+			return localSearcher.collect(indexSearcher, queryParams, keyFieldName, scheduler);
+		}
 	}
 }

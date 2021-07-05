@@ -18,14 +18,11 @@ import reactor.core.publisher.Mono;
 public class SharedSortedLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(QueryParams queryParams) {
+	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
-					Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
-					Query luceneQuery = QueryParser.toQuery(queryParams.query());
-					Sort luceneSort = QueryParser.toSort(queryParams.sort());
-					ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.scoreMode());
-					if (luceneSort == null && luceneScoreMode.needsScores()) {
+					Sort luceneSort = queryParams.sort();
+					if (luceneSort == null && queryParams.scoreMode().needsScores()) {
 						luceneSort = Sort.RELEVANCE;
 					}
 					PaginationInfo paginationInfo;
@@ -36,7 +33,7 @@ public class SharedSortedLuceneMultiSearcher implements LuceneMultiSearcher {
 					}
 					CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager = TopFieldCollector
 							.createSharedManager(luceneSort, LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()), null, 1000);
-					return new FieldSimpleLuceneShardSearcher(sharedManager, luceneQuery, paginationInfo);
+					return new FieldSimpleLuceneShardSearcher(sharedManager, queryParams.query(), paginationInfo);
 				});
 	}
 

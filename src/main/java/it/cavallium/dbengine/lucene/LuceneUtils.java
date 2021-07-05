@@ -1,18 +1,10 @@
 package it.cavallium.dbengine.lucene;
 
-import com.ibm.icu.text.Collator;
-import com.ibm.icu.util.ULocale;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.MultiSort;
-import it.cavallium.dbengine.client.SearchResult;
-import it.cavallium.dbengine.client.SearchResultItem;
-import it.cavallium.dbengine.client.SearchResultKey;
-import it.cavallium.dbengine.client.SearchResultKeys;
-import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLSearchResultShard;
-import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
@@ -21,12 +13,12 @@ import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
+import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -36,7 +28,6 @@ import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
 import org.apache.lucene.analysis.en.KStemFilter;
-import org.apache.lucene.analysis.icu.ICUCollationKeyAnalyzer;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -44,7 +35,6 @@ import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.FieldDoc;
-import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
@@ -57,10 +47,6 @@ import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import org.warp.commonutils.log.Logger;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 public class LuceneUtils {
 	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
@@ -332,5 +318,15 @@ public class LuceneUtils {
 			return null;
 		}
 		return scoreDocs[scoreDocs.length - 1];
+	}
+
+	public static LocalQueryParams toLocalQueryParams(QueryParams queryParams) {
+		return new LocalQueryParams(QueryParser.toQuery(queryParams.query()),
+				safeLongToInt(queryParams.offset()),
+				safeLongToInt(queryParams.limit()),
+				queryParams.minCompetitiveScore().getNullable(),
+				QueryParser.toSort(queryParams.sort()),
+				QueryParser.toScoreMode(queryParams.scoreMode())
+		);
 	}
 }

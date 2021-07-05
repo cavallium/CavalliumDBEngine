@@ -14,7 +14,7 @@ public interface LuceneLocalSearcher {
 	 * @param scheduler     a blocking scheduler
 	 */
 	Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
-			QueryParams queryParams,
+			LocalQueryParams queryParams,
 			String keyFieldName,
 			Scheduler scheduler);
 }

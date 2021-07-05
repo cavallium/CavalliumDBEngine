@@ -43,7 +43,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	}
 
 	@Override
-	public Mono<Void> searchOn(IndexSearcher indexSearcher, QueryParams queryParams, Scheduler scheduler) {
+	public Mono<Void> searchOn(IndexSearcher indexSearcher, LocalQueryParams queryParams, Scheduler scheduler) {
 		return Mono.<Void>fromCallable(() -> {
 			TopFieldCollector collector;
 			synchronized (lock) {
@@ -59,7 +59,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(QueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
 					TopDocs[] topDocs;
@@ -95,11 +95,8 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 										() -> new CurrentPageInfo(LuceneUtils.getLastFieldDoc(result.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
 										(s, sink) -> {
 											if (s.last() != null && s.remainingLimit() > 0) {
-												Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
-												Query luceneQuery = QueryParser.toQuery(queryParams.query());
-												Sort luceneSort = QueryParser.toSort(queryParams.sort());
-												ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.scoreMode());
-												if (luceneSort == null && luceneScoreMode.needsScores()) {
+												Sort luceneSort = queryParams.sort();
+												if (luceneSort == null && queryParams.scoreMode().needsScores()) {
 													luceneSort = Sort.RELEVANCE;
 												}
 												CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager = TopFieldCollector

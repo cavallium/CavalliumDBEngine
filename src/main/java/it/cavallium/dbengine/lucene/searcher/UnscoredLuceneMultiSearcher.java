@@ -15,17 +15,13 @@ import reactor.core.publisher.Mono;
 public class UnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(QueryParams queryParams) {
+	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
-					Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
-					Query luceneQuery = QueryParser.toQuery(queryParams.query());
-					Sort luceneSort = QueryParser.toSort(queryParams.sort());
-					ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.scoreMode());
-					if (luceneScoreMode.needsScores()) {
+					if (queryParams.scoreMode().needsScores()) {
 						throw new UnsupportedOperationException("Can't use the unscored searcher to do a scored query");
 					}
-					if (luceneSort != null && luceneSort != Sort.RELEVANCE) {
+					if (queryParams.sort() != null && queryParams.sort() != Sort.RELEVANCE) {
 						throw new UnsupportedOperationException("Can't use the unscored searcher to do a sorted query");
 					}
 					PaginationInfo paginationInfo;
@@ -39,7 +35,7 @@ public class UnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
 							null,
 							1000
 					), queryParams.offset(), queryParams.limit());
-					return new UnscoredLuceneShardSearcher(unsortedCollectorManager, luceneQuery, paginationInfo);
+					return new UnscoredLuceneShardSearcher(unsortedCollectorManager, queryParams.query(), paginationInfo);
 				});
 	}
 }

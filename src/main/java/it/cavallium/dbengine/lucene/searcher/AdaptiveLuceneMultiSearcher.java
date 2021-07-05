@@ -14,11 +14,10 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 	private static final LuceneMultiSearcher countLuceneMultiSearcher = new CountLuceneMultiSearcher();
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(QueryParams queryParams) {
-		Sort luceneSort = QueryParser.toSort(queryParams.sort());
+	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		if (queryParams.limit() <= 0) {
 			return countLuceneMultiSearcher.createShardSearcher(queryParams);
-		} else if ((luceneSort != null && luceneSort != Sort.RELEVANCE) || queryParams.scoreMode().computeScores()) {
+		} else if ((queryParams.sort() != null && queryParams.sort() != Sort.RELEVANCE) || queryParams.scoreMode().needsScores()) {
 			return sharedSortedLuceneMultiSearcher.createShardSearcher(queryParams);
 		} else {
 			return unscoredLuceneMultiSearcher.createShardSearcher(queryParams);

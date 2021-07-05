@@ -262,7 +262,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
-		if (queryParams.getOffset() != 0) {
+		if (queryParams.offset() != 0) {
 			return Mono.error(new IllegalArgumentException("MultiLuceneIndex requires an offset equal to 0"));
 		}
 		Flux<Tuple2<String, Set<String>>> mltDocumentFieldsShared;
@@ -341,12 +341,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName) {
-		if (queryParams.getOffset() != 0) {
+		if (queryParams.offset() != 0) {
 			return Mono.error(new IllegalArgumentException("MultiLuceneIndex requires an offset equal to 0"));
 		}
 
 		Mono<DistributedSearch> distributedSearchMono;
-		if (luceneIndices.length <= 1 || !queryParams.getScoreMode().getComputeScores()) {
+		if (luceneIndices.length <= 1 || !queryParams.scoreMode().computeScores()) {
 			distributedSearchMono = Mono.just(new DistributedSearch(-1, 1));
 		} else {
 			var actionId = newAction();

@@ -87,7 +87,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		if (luceneIndex.supportsOffset()) {
 			return queryParams;
 		} else {
-			return queryParams.setOffset(0);
+			return queryParams.setOffset(0).setLimit(queryParams.limit() + queryParams.offset());
 		}
 	}
 

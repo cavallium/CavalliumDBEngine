@@ -21,9 +21,9 @@ import reactor.core.scheduler.Scheduler;
 
 public class PagedLuceneReactiveSearcher implements LuceneReactiveSearcher {
 
-	private static final int FIRST_PAGE_HITS_MAX_COUNT = 10;
-	private static final long MIN_HITS_PER_PAGE = 20;
-	private static final long MAX_HITS_PER_PAGE = 1000;
+	private static final int FIRST_PAGE_HITS_MAX_COUNT = 1;
+	private static final long MIN_HITS_PER_PAGE = 5;
+	private static final long MAX_HITS_PER_PAGE = 100;
 
 	@SuppressWarnings("BlockingMethodInNonBlockingContext")
 	@Override
@@ -36,32 +36,24 @@ public class PagedLuceneReactiveSearcher implements LuceneReactiveSearcher {
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Scheduler scheduler) {
-		// todo: check if offset and limit play well together.
-		//   check especially these cases:
-		//    - offset > limit
-		//    - offset > FIRST_PAGE_HITS_MAX_COUNT
-		//    - offset > MAX_HITS_PER_PAGE
 		return Mono
 				.fromCallable(() -> {
 					// Run the first page search
 					TopDocs firstTopDocsVal;
 					if (offset == 0) {
-						if (luceneSort != null) {
-							firstTopDocsVal = indexSearcher.search(query,
-									FIRST_PAGE_HITS_MAX_COUNT,
-									luceneSort,
-									scoreMode != ScoreMode.COMPLETE_NO_SCORES
-							);
-						} else {
-							firstTopDocsVal = indexSearcher.search(query,
-									FIRST_PAGE_HITS_MAX_COUNT
-							);
-						}
-					} else {
 						firstTopDocsVal = TopDocsSearcher.getTopDocs(indexSearcher,
 								query,
 								luceneSort,
 								FIRST_PAGE_HITS_MAX_COUNT,
+								null,
+								scoreMode != ScoreMode.COMPLETE_NO_SCORES,
+								1000
+						);
+					} else {
+						firstTopDocsVal = TopDocsSearcher.getTopDocs(indexSearcher,
+								query,
+								luceneSort,
+								offset + FIRST_PAGE_HITS_MAX_COUNT,
 								null,
 								scoreMode != ScoreMode.COMPLETE_NO_SCORES,
 								1000,
@@ -86,20 +78,14 @@ public class PagedLuceneReactiveSearcher implements LuceneReactiveSearcher {
 										}
 
 										try {
-											TopDocs lastTopDocs;
-											if (luceneSort != null) {
-												lastTopDocs = indexSearcher.searchAfter(s.lastItem(),
-														query,
-														s.hitsPerPage(),
-														luceneSort,
-														scoreMode != ScoreMode.COMPLETE_NO_SCORES
-												);
-											} else {
-												lastTopDocs = indexSearcher.searchAfter(s.lastItem(),
-														query,
-														s.hitsPerPage()
-												);
-											}
+											var lastTopDocs = TopDocsSearcher.getTopDocs(indexSearcher,
+													query,
+													luceneSort,
+													s.hitsPerPage(),
+													s.lastItem(),
+													scoreMode != ScoreMode.COMPLETE_NO_SCORES,
+													1000
+											);
 											if (lastTopDocs.scoreDocs.length > 0) {
 												ScoreDoc lastItem = getLastItem(lastTopDocs.scoreDocs);
 												var hitsList = LuceneReactiveSearcher.convertHits(
@@ -139,6 +125,9 @@ public class PagedLuceneReactiveSearcher implements LuceneReactiveSearcher {
 	}
 
 	private static ScoreDoc getLastItem(ScoreDoc[] scoreDocs) {
+		if (scoreDocs.length == 0) {
+			return null;
+		}
 		return scoreDocs[scoreDocs.length - 1];
 	}
 

@@ -32,20 +32,14 @@ public class SimpleLuceneReactiveSearcher implements LuceneReactiveSearcher {
 			Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
-					TopDocs topDocs;
-					if (luceneSort == null) {
-						//noinspection BlockingMethodInNonBlockingContext
-						topDocs = indexSearcher.search(query,
-								offset + limit
-						);
-					} else {
-						//noinspection BlockingMethodInNonBlockingContext
-						topDocs = indexSearcher.search(query,
-								offset + limit,
-								luceneSort,
-								scoreMode != ScoreMode.COMPLETE_NO_SCORES
-						);
-					}
+					TopDocs topDocs = TopDocsSearcher.getTopDocs(indexSearcher,
+							query,
+							luceneSort,
+							offset + limit,
+							null,
+							scoreMode != ScoreMode.COMPLETE_NO_SCORES,
+							1000,
+							offset, limit);
 					Flux<LLKeyScore> hitsMono = LuceneReactiveSearcher
 							.convertHits(
 									topDocs.scoreDocs,

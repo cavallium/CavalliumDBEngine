@@ -1,13 +1,20 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 
@@ -36,4 +43,27 @@ public interface LuceneReactiveSearcher {
 			@Nullable Float minCompetitiveScore,
 			String keyFieldName,
 			Scheduler scheduler);
+
+	static Flux<LLKeyScore> convertHits(
+			ScoreDoc[] hits,
+			IndexSearcher indexSearcher,
+			@Nullable Float minCompetitiveScore,
+			String keyFieldName,
+			Scheduler scheduler) {
+		return Flux
+				.fromArray(hits)
+				.map(hit -> {
+					int shardDocId = hit.doc;
+					float score = hit.score;
+					var keyMono = Mono.fromCallable(() -> {
+						if (!LuceneUtils.filterTopDoc(score, minCompetitiveScore)) {
+							return null;
+						}
+						//noinspection BlockingMethodInNonBlockingContext
+						@Nullable String collectedDoc = LuceneUtils.keyOfTopDoc(logger, shardDocId, indexSearcher, keyFieldName);
+						return collectedDoc;
+					}).subscribeOn(scheduler);
+					return new LLKeyScore(shardDocId, score, keyMono);
+				});
+	}
 }

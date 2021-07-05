@@ -11,11 +11,9 @@ public record SearchResultKeys<T>(Flux<SearchResultKey<T>> results, long totalHi
 	}
 
 	public <U> SearchResult<T, U> withValues(ValueGetter<T, U> valuesGetter) {
-		return new SearchResult<>(
-				results.flatMapSequential(item -> valuesGetter
-						.get(item.getKey())
-						.map(value -> new SearchResultItem<>(item.getKey(), value, item.getScore()))),
-				totalHitsCount
-		);
+		return new SearchResult<>(results.map(item -> new SearchResultItem<>(item.key(),
+				item.key().flatMap(valuesGetter::get),
+				item.score()
+		)), totalHitsCount);
 	}
 }

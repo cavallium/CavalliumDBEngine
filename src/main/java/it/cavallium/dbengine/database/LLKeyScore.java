@@ -1,24 +1,10 @@
 package it.cavallium.dbengine.database;
 
 import java.util.Objects;
+import java.util.StringJoiner;
+import reactor.core.publisher.Mono;
 
-public class LLKeyScore {
-
-	private final String key;
-	private final float score;
-
-	public LLKeyScore(String key, float score) {
-		this.key = key;
-		this.score = score;
-	}
-
-	public String getKey() {
-		return key;
-	}
-
-	public float getScore() {
-		return score;
-	}
+public record LLKeyScore(int docId, float score, Mono<String> key) {
 
 	@Override
 	public boolean equals(Object o) {
@@ -29,20 +15,19 @@ public class LLKeyScore {
 			return false;
 		}
 		LLKeyScore that = (LLKeyScore) o;
-		return score == that.score &&
-				Objects.equals(key, that.key);
+		return docId == that.docId && Float.compare(that.score, score) == 0;
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(key, score);
+		return Objects.hash(docId, score);
 	}
 
 	@Override
 	public String toString() {
-		return "LLKeyScore{" +
-				"key=" + key +
-				", score=" + score +
-				'}';
+		return new StringJoiner(", ", LLKeyScore.class.getSimpleName() + "[", "]")
+				.add("docId=" + docId)
+				.add("score=" + score)
+				.toString();
 	}
 }

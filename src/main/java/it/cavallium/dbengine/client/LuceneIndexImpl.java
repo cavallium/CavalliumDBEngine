@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.client.query.ClientQueryParams;
-import it.cavallium.dbengine.client.query.ClientQueryParamsBuilder;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -101,7 +100,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	private Mono<SearchResultKeys<T>> transformLuceneResult(LLSearchResult llSearchResult,
-			@Nullable MultiSort<SearchResultKey<T>> sort,
+			@Nullable MultiSort<SearchResultKey<T>, ?> sort,
 			LLScoreMode scoreMode,
 			long offset,
 			@Nullable Long limit) {
@@ -109,59 +108,39 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.results()
 				.map(flux -> new SearchResultKeys<>(flux
 						.results()
-						.map(signal -> new SearchResultKey<>(indicizer.getKey(signal.getKey()), signal.getScore())),
+						.map(signal -> new SearchResultKey<>(signal.key().map(indicizer::getKey), signal.score())),
 						flux.totalHitsCount()
 				));
-		MultiSort<SearchResultKey<T>> finalSort;
+		MultiSort<SearchResultKey<T>, ?> finalSort;
 		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
 			finalSort = MultiSort.topScore();
 		} else {
 			finalSort = sort;
 		}
-
-		MultiSort<SearchResultKey<T>> mappedSort;
-		if (finalSort != null) {
-			mappedSort = new MultiSort<>(
-					finalSort.getQuerySort(),
-					(signal1, signal2) -> finalSort.getResultSort().compare((signal1), signal2)
-			);
-		} else {
-			mappedSort = null;
-		}
-		return LuceneUtils.mergeSignalStreamKeys(mappedKeys, mappedSort, offset, limit);
+		return LuceneUtils.mergeSignalStreamKeys(mappedKeys, finalSort, offset, limit);
 	}
 
-	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResult llSearchResult,
-			@Nullable MultiSort<SearchResultItem<T, U>> sort,
+	private <V> Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResult llSearchResult,
+			@Nullable MultiSort<SearchResultItem<T, U>, V> sort,
 			LLScoreMode scoreMode,
 			long offset,
 			@Nullable Long limit,
 			ValueGetter<T, U> valueGetter) {
 		Flux<SearchResult<T, U>> mappedKeys = llSearchResult
 				.results()
-				.map(flux -> new SearchResult<>(flux.results().flatMapSequential(signal -> {
-						var key = indicizer.getKey(signal.getKey());
-						return valueGetter
-								.get(key)
-								.map(value -> new SearchResultItem<>(key, value, signal.getScore()));
-				}), flux.totalHitsCount()));
-		MultiSort<SearchResultItem<T, U>> finalSort;
+				.map(flux -> new SearchResult<>(flux
+						.results()
+						.map(signal -> {
+								var key = signal.key().map(indicizer::getKey);
+								return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
+						}), flux.totalHitsCount()));
+		MultiSort<SearchResultItem<T, U>, ?> finalSort;
 		if (scoreMode != LLScoreMode.COMPLETE_NO_SCORES && sort == null) {
 			finalSort = MultiSort.topScoreWithValues();
 		} else {
 			finalSort = sort;
 		}
-
-		MultiSort<SearchResultItem<T, U>> mappedSort;
-		if (finalSort != null) {
-			mappedSort = new MultiSort<>(
-					finalSort.getQuerySort(),
-					(signal1, signal2) -> finalSort.getResultSort().compare((signal1), signal2)
-			);
-		} else {
-			mappedSort = null;
-		}
-		return LuceneUtils.mergeSignalStreamItems(mappedKeys, mappedSort, offset, limit);
+		return LuceneUtils.mergeSignalStreamItems(mappedKeys, finalSort, offset, limit);
 	}
 
 	/**
@@ -172,7 +151,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	 * @return the collection has one or more flux
 	 */
 	@Override
-	public Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams,
+	public <V> Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>, V> queryParams,
 			T key,
 			U mltDocumentValue) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
@@ -197,7 +176,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	 * @return the collection has one or more flux
 	 */
 	@Override
-	public Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public <V> Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>, V> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueGetter<T, U> valueGetter) {
@@ -226,7 +205,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	 * @return the collection has one or more flux
 	 */
 	@Override
-	public Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams) {
+	public <V> Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>, V> queryParams) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()),
 						fixOffset(luceneIndex, queryParams.toQueryParams()),
@@ -248,7 +227,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	 * @return the collection has one or more flux
 	 */
 	@Override
-	public Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public <V> Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>, V> queryParams,
 			ValueGetter<T, U> valueGetter) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()), fixOffset(luceneIndex, queryParams.toQueryParams()), indicizer.getKeyFieldName())
@@ -263,7 +242,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
+		return this.search(ClientQueryParams.<SearchResultKey<T>, Object>builder().snapshot(snapshot).query(query).limit(0).build())
 				.map(SearchResultKeys::totalHitsCount);
 	}
 

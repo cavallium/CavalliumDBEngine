@@ -10,6 +10,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 @SuppressWarnings("unused")
 public interface LuceneIndex<T, U> extends LLSnapshottable {
@@ -42,16 +43,16 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> deleteAll();
 
-	Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams, T key, U mltDocumentValue);
+	<V> Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>, V> queryParams, T key, U mltDocumentValue);
 
-	Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	<V> Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>, V> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueGetter<T, U> valueGetter);
 
-	Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams);
+	<V> Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>, V> queryParams);
 
-	Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	<V> Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>, V> queryParams,
 			ValueGetter<T, U> valueGetter);
 
 	Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query);

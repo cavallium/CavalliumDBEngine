@@ -10,10 +10,11 @@ import reactor.core.scheduler.Scheduler;
 
 public class AdaptiveReactiveSearcher implements LuceneReactiveSearcher {
 
+	public static final int PAGED_THRESHOLD = 1000;
 	private static final LuceneReactiveSearcher count = new CountLuceneReactiveSearcher();
 
-	private static final LuceneReactiveSearcher sortedPaged = new SortedPagedLuceneReactiveSearcher();
-	private static final LuceneReactiveSearcher unsortedPaged = new UnsortedPagedLuceneReactiveSearcher();
+	private static final LuceneReactiveSearcher paged = new PagedLuceneReactiveSearcher();
+	private static final LuceneReactiveSearcher simple = new SimpleLuceneReactiveSearcher();
 
 	@Override
 	public Mono<LuceneReactiveSearchInstance> search(IndexSearcher indexSearcher,
@@ -37,8 +38,8 @@ public class AdaptiveReactiveSearcher implements LuceneReactiveSearcher {
 					scheduler
 			);
 		}
-		if (luceneSort != null) {
-			return sortedPaged.search(indexSearcher,
+		if (offset + limit > PAGED_THRESHOLD) {
+			return paged.search(indexSearcher,
 					query,
 					offset,
 					limit,
@@ -49,7 +50,7 @@ public class AdaptiveReactiveSearcher implements LuceneReactiveSearcher {
 					scheduler
 			);
 		} else {
-			return unsortedPaged.search(indexSearcher,
+			return simple.search(indexSearcher,
 					query,
 					offset,
 					limit,

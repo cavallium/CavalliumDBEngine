@@ -8,20 +8,16 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.util.IllegalReferenceCountException;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
-import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FloatPoint;
@@ -167,7 +163,7 @@ public class LLUtils {
 	}
 
 	public static it.cavallium.dbengine.database.LLKeyScore toKeyScore(LLKeyScore hit) {
-		return new it.cavallium.dbengine.database.LLKeyScore(hit.getKey(), hit.getScore());
+		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.score(), hit.key());
 	}
 
 	public static String toStringSafe(ByteBuf key) {

@@ -13,6 +13,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Mono;
 
 /**
  * Unsorted search (low latency and constant memory usage)
@@ -74,7 +75,8 @@ public class ParallelCollectorStreamSearcher implements LuceneStreamSearcher {
 							if (field == null) {
 								logger.error("Can't get key of document docId: {}", docId);
 							} else {
-								if (resultsConsumer.accept(new LLKeyScore(field.stringValue(), score)) == HandleResult.HALT) {
+								if (resultsConsumer.accept(new LLKeyScore(docId, score, Mono.just(field.stringValue())))
+										== HandleResult.HALT) {
 									return HandleResult.HALT;
 								}
 							}

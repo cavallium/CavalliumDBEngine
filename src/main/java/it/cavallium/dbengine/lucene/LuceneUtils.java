@@ -57,6 +57,8 @@ import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import org.warp.commonutils.log.Logger;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 public class LuceneUtils {
 	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
@@ -161,8 +163,9 @@ public class LuceneUtils {
 	/**
 	 * Merge streams together maintaining absolute order
 	 */
-	public static <T> Flux<T> mergeStream(Flux<Flux<T>> mappedMultiResults,
-			@Nullable MultiSort<T> sort,
+	@SuppressWarnings({"unchecked"})
+	public static <T, U> Flux<T> mergeStream(Flux<Flux<T>> mappedMultiResults,
+			@Nullable MultiSort<T, U> sort,
 			long offset,
 			@Nullable Long limit) {
 		if (limit != null && limit == 0) {
@@ -173,8 +176,15 @@ public class LuceneUtils {
 				if (sort == null) {
 					mergedFlux = Flux.merge(mappedMultiResultsList);
 				} else {
-					//noinspection unchecked
-					mergedFlux = Flux.mergeOrdered(32, sort.getResultSort(), mappedMultiResultsList.toArray(Flux[]::new));
+					mergedFlux = Flux
+							.mergeOrdered(32,
+									(a, b) -> sort.getResultSort().compare(a.getT2(), b.getT2()),
+									(Flux<Tuple2<T, U>>[]) mappedMultiResultsList.stream()
+											.map(flux -> flux.flatMapSequential(entry -> sort.getTransformer().apply(entry)
+													.map(transformed -> Tuples.of(entry, transformed))))
+											.toArray(Flux[]::new)
+							)
+							.map(Tuple2::getT1);
 				}
 				Flux<T> offsetedFlux;
 				if (offset > 0) {
@@ -214,7 +224,8 @@ public class LuceneUtils {
 				if (field == null) {
 					logger.error("Can't get key of document docId: {}, score: {}", docId, score);
 				} else {
-					if (resultsConsumer.accept(new LLKeyScore(field.stringValue(), score)) == HandleResult.HALT) {
+					if (resultsConsumer.accept(new LLKeyScore(docId, score, Mono.just(field.stringValue())))
+							== HandleResult.HALT) {
 						return HandleResult.HALT;
 					}
 				}
@@ -225,75 +236,71 @@ public class LuceneUtils {
 
 	/**
 	 *
-	 * @return the key score, or null if the result is not relevant
-	 * @throws IOException if an error occurs
+	 * @return false if the result is not relevant
 	 */
 	@Nullable
-	public static LLKeyScore collectTopDoc(Logger logger, int docId, float score, Float minCompetitiveScore,
-			IndexSearcher indexSearcher, String keyFieldName) throws IOException {
-		if (minCompetitiveScore == null || score >= minCompetitiveScore) {
-			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
-			if (d.getFields().isEmpty()) {
-				StringBuilder sb = new StringBuilder();
-				sb.append("The document docId: ").append(docId).append(", score: ").append(score).append(" is empty.");
-				var realFields = indexSearcher.doc(docId).getFields();
-				if (!realFields.isEmpty()) {
-					sb.append("\n");
-					logger.error("Present fields:\n");
-					boolean first = true;
-					for (IndexableField field : realFields) {
-						if (first) {
-							first = false;
-						} else {
-							sb.append("\n");
-						}
-						sb.append(" - ").append(field.name());
+	public static boolean filterTopDoc(float score, Float minCompetitiveScore) {
+		return minCompetitiveScore == null || score >= minCompetitiveScore;
+	}
+
+	@Nullable
+	public static String keyOfTopDoc(Logger logger, int docId, IndexSearcher indexSearcher,
+			String keyFieldName) throws IOException {
+		Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
+		if (d.getFields().isEmpty()) {
+			StringBuilder sb = new StringBuilder();
+			sb.append("The document docId: ").append(docId).append(" is empty.");
+			var realFields = indexSearcher.doc(docId).getFields();
+			if (!realFields.isEmpty()) {
+				sb.append("\n");
+				logger.error("Present fields:\n");
+				boolean first = true;
+				for (IndexableField field : realFields) {
+					if (first) {
+						first = false;
+					} else {
+						sb.append("\n");
 					}
-				}
-				throw new IOException(sb.toString());
-			} else {
-				var field = d.getField(keyFieldName);
-				if (field == null) {
-					throw new IOException("Can't get key of document docId: " + docId + ", score: " + score);
-				} else {
-					return new LLKeyScore(field.stringValue(), score);
+					sb.append(" - ").append(field.name());
 				}
 			}
+			throw new IOException(sb.toString());
 		} else {
-			return null;
+			var field = d.getField(keyFieldName);
+			if (field == null) {
+				throw new IOException("Can't get key of document docId: " + docId);
+			} else {
+				return field.stringValue();
+			}
 		}
 	}
 
-	public static <T> Mono<SearchResultKeys<T>> mergeSignalStreamKeys(Flux<SearchResultKeys<T>> mappedKeys,
-			MultiSort<SearchResultKey<T>> sort,
+	public static <T, V> Mono<SearchResultKeys<T>> mergeSignalStreamKeys(Flux<SearchResultKeys<T>> mappedKeys,
+			MultiSort<SearchResultKey<T>, V> sort,
 			long offset,
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResultKeys<>(Flux.empty(), 0L),
 				(a, b) -> new SearchResultKeys<>(LuceneUtils.mergeStream(Flux.just(a.results(), b.results()),
-						sort,
-						offset,
-						limit
+						sort, offset, limit
 				), a.totalHitsCount() + b.totalHitsCount())
 		);
 	}
 
-	public static <T, U> Mono<SearchResult<T, U>> mergeSignalStreamItems(Flux<SearchResult<T, U>> mappedKeys,
-			MultiSort<SearchResultItem<T, U>> sort,
+	public static <T, U, V> Mono<SearchResult<T, U>> mergeSignalStreamItems(Flux<SearchResult<T, U>> mappedKeys,
+			MultiSort<SearchResultItem<T, U>, V> sort,
 			long offset,
 			Long limit) {
 		return mappedKeys.reduce(
 				new SearchResult<>(Flux.empty(), 0L),
 				(a, b) -> new SearchResult<>(LuceneUtils.mergeStream(Flux.just(a.results(), b.results()),
-						sort,
-						offset,
-						limit
+						sort, offset, limit
 				), a.totalHitsCount() + b.totalHitsCount())
 		);
 	}
 
 	public static Mono<LLSearchResultShard> mergeSignalStreamRaw(Flux<LLSearchResultShard> mappedKeys,
-			MultiSort<LLKeyScore> mappedSort,
+			MultiSort<LLKeyScore, LLKeyScore> mappedSort,
 			long offset,
 			Long limit) {
 		return mappedKeys.reduce(

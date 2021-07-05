@@ -25,7 +25,6 @@ import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneReactiveSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
-import it.cavallium.dbengine.lucene.searcher.SortedPagedLuceneReactiveSearcher;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -36,7 +35,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
@@ -68,7 +66,6 @@ import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
-import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -554,7 +551,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 													+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
 										}
 
-										// Get the reference doc and apply it to MoreLikeThis, to generate the query
+										// Get the reference docId and apply it to MoreLikeThis, to generate the query
 										var mltQuery = mlt.like((Map) mltDocumentFields);
 										Query luceneQuery;
 										if (luceneAdditionalQuery != null) {
@@ -587,7 +584,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private LLKeyScore fixKeyScore(LLKeyScore keyScore, int scoreDivisor) {
-		return scoreDivisor == 1 ? keyScore : new LLKeyScore(keyScore.getKey(), keyScore.getScore() / (float) scoreDivisor);
+		return scoreDivisor == 1 ? keyScore
+				: new LLKeyScore(keyScore.docId(), keyScore.score() / (float) scoreDivisor, keyScore.key());
 	}
 
 	@Override

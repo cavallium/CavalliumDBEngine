@@ -14,17 +14,17 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 @RecordBuilder
-public final record ClientQueryParams<T>(@Nullable CompositeSnapshot snapshot,
+public final record ClientQueryParams<T, U>(@Nullable CompositeSnapshot snapshot,
 																				 @NotNull Query query,
 																				 long offset,
 																				 long limit,
 																				 @Nullable Float minCompetitiveScore,
-																				 @Nullable MultiSort<T> sort,
+																				 @Nullable MultiSort<T, U> sort,
 																				 @NotNull LLScoreMode scoreMode) {
 
-	public static <T> ClientQueryParamsBuilder<T> builder() {
+	public static <T, U> ClientQueryParamsBuilder<T, U> builder() {
 		return ClientQueryParamsBuilder
-				.<T>builder()
+				.<T, U>builder()
 				.snapshot(null)
 				.offset(0)
 				.limit(Long.MAX_VALUE)

@@ -21,13 +21,12 @@ import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
-import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.HandleResult;
-import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher.ResultItemConsumer;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -42,8 +41,11 @@ import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
@@ -161,80 +163,6 @@ public class LuceneUtils {
 	}
 
 	/**
-	 * Merge streams together maintaining absolute order
-	 */
-	@SuppressWarnings({"unchecked"})
-	public static <T, U> Flux<T> mergeStream(Flux<Flux<T>> mappedMultiResults,
-			@Nullable MultiSort<T, U> sort,
-			long offset,
-			@Nullable Long limit) {
-		if (limit != null && limit == 0) {
-			return mappedMultiResults.flatMap(f -> f).ignoreElements().flux();
-		} else {
-			return mappedMultiResults.collectList().flatMapMany(mappedMultiResultsList -> {
-				Flux<T> mergedFlux;
-				if (sort == null) {
-					mergedFlux = Flux.merge(mappedMultiResultsList);
-				} else {
-					mergedFlux = Flux
-							.mergeOrdered(32,
-									(a, b) -> sort.getResultSort().compare(a.getT2(), b.getT2()),
-									(Flux<Tuple2<T, U>>[]) mappedMultiResultsList.stream()
-											.map(flux -> flux.flatMapSequential(entry -> sort.getTransformer().apply(entry)
-													.map(transformed -> Tuples.of(entry, transformed))))
-											.toArray(Flux[]::new)
-							)
-							.map(Tuple2::getT1);
-				}
-				Flux<T> offsetedFlux;
-				if (offset > 0) {
-					offsetedFlux = mergedFlux.skip(offset);
-				} else {
-					offsetedFlux = mergedFlux;
-				}
-				if (limit == null || limit == Long.MAX_VALUE) {
-					return offsetedFlux;
-				} else {
-					return offsetedFlux.take(limit, true);
-				}
-			});
-		}
-	}
-
-	public static HandleResult collectTopDoc(Logger logger,
-			int docId,
-			float score,
-			Float minCompetitiveScore,
-			IndexSearcher indexSearcher,
-			String keyFieldName,
-			ResultItemConsumer resultsConsumer) throws IOException {
-		if (minCompetitiveScore == null || score >= minCompetitiveScore) {
-			Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
-			if (d.getFields().isEmpty()) {
-				logger.error("The document docId: {}, score: {} is empty.", docId, score);
-				var realFields = indexSearcher.doc(docId).getFields();
-				if (!realFields.isEmpty()) {
-					logger.error("Present fields:");
-					for (IndexableField field : realFields) {
-						logger.error(" - {}", field.name());
-					}
-				}
-			} else {
-				var field = d.getField(keyFieldName);
-				if (field == null) {
-					logger.error("Can't get key of document docId: {}, score: {}", docId, score);
-				} else {
-					if (resultsConsumer.accept(new LLKeyScore(docId, score, Mono.just(field.stringValue())))
-							== HandleResult.HALT) {
-						return HandleResult.HALT;
-					}
-				}
-			}
-		}
-		return HandleResult.CONTINUE;
-	}
-
-	/**
 	 *
 	 * @return false if the result is not relevant
 	 */
@@ -244,13 +172,17 @@ public class LuceneUtils {
 	}
 
 	@Nullable
-	public static String keyOfTopDoc(Logger logger, int docId, IndexSearcher indexSearcher,
+	public static String keyOfTopDoc(Logger logger, int docId, IndexReader indexReader,
 			String keyFieldName) throws IOException {
-		Document d = indexSearcher.doc(docId, Set.of(keyFieldName));
+		if (docId > indexReader.maxDoc()) {
+			logger.warn("Document " + docId + " > maxDoc (" +indexReader.maxDoc() + ")");
+			return null;
+		}
+		Document d = indexReader.document(docId, Set.of(keyFieldName));
 		if (d.getFields().isEmpty()) {
 			StringBuilder sb = new StringBuilder();
 			sb.append("The document docId: ").append(docId).append(" is empty.");
-			var realFields = indexSearcher.doc(docId).getFields();
+			var realFields = indexReader.document(docId).getFields();
 			if (!realFields.isEmpty()) {
 				sb.append("\n");
 				logger.error("Present fields:\n");
@@ -273,43 +205,6 @@ public class LuceneUtils {
 				return field.stringValue();
 			}
 		}
-	}
-
-	public static <T, V> Mono<SearchResultKeys<T>> mergeSignalStreamKeys(Flux<SearchResultKeys<T>> mappedKeys,
-			MultiSort<SearchResultKey<T>, V> sort,
-			long offset,
-			Long limit) {
-		return mappedKeys.reduce(
-				new SearchResultKeys<>(Flux.empty(), 0L),
-				(a, b) -> new SearchResultKeys<>(LuceneUtils.mergeStream(Flux.just(a.results(), b.results()),
-						sort, offset, limit
-				), a.totalHitsCount() + b.totalHitsCount())
-		);
-	}
-
-	public static <T, U, V> Mono<SearchResult<T, U>> mergeSignalStreamItems(Flux<SearchResult<T, U>> mappedKeys,
-			MultiSort<SearchResultItem<T, U>, V> sort,
-			long offset,
-			Long limit) {
-		return mappedKeys.reduce(
-				new SearchResult<>(Flux.empty(), 0L),
-				(a, b) -> new SearchResult<>(LuceneUtils.mergeStream(Flux.just(a.results(), b.results()),
-						sort, offset, limit
-				), a.totalHitsCount() + b.totalHitsCount())
-		);
-	}
-
-	public static Mono<LLSearchResultShard> mergeSignalStreamRaw(Flux<LLSearchResultShard> mappedKeys,
-			MultiSort<LLKeyScore, LLKeyScore> mappedSort,
-			long offset,
-			Long limit) {
-		return mappedKeys.reduce(
-				new LLSearchResultShard(Flux.empty(), 0),
-				(s1, s2) -> new LLSearchResultShard(
-						LuceneUtils.mergeStream(Flux.just(s1.results(), s2.results()), mappedSort, offset, limit),
-						s1.totalHitsCount() + s2.totalHitsCount()
-				)
-		);
 	}
 
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
@@ -405,5 +300,37 @@ public class LuceneUtils {
 		}
 
 		assert readLength == 0;
+	}
+
+	public static int safeLongToInt(long l) {
+		if (l > 2147483630) {
+			return 2147483630;
+		} else if (l < -2147483630) {
+			return -2147483630;
+		} else {
+			return (int) l;
+		}
+	}
+
+	@Nullable
+	public static FieldDoc getLastFieldDoc(ScoreDoc[] scoreDocs) {
+		if (scoreDocs == null) {
+			return null;
+		}
+		if (scoreDocs.length == 0) {
+			return null;
+		}
+		return (FieldDoc) scoreDocs[scoreDocs.length - 1];
+	}
+
+	@Nullable
+	public static ScoreDoc getLastScoreDoc(ScoreDoc[] scoreDocs) {
+		if (scoreDocs == null) {
+			return null;
+		}
+		if (scoreDocs.length == 0) {
+			return null;
+		}
+		return scoreDocs[scoreDocs.length - 1];
 	}
 }

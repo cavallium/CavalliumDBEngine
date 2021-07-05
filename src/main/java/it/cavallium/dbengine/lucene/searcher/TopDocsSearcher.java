@@ -91,11 +91,11 @@ class TopDocsSearcher {
 		return topDocs;
 	}
 
-	public static TopDocsCollector<?> getTopDocsCollector(Sort luceneSort,
+	public static TopDocsCollector<? extends ScoreDoc> getTopDocsCollector(Sort luceneSort,
 			int limit,
 			ScoreDoc after,
 			int totalHitsThreshold) {
-		TopDocsCollector<?> collector;
+		TopDocsCollector<? extends ScoreDoc> collector;
 		if (luceneSort == null) {
 			if (after == null) {
 				collector = TopScoreDocCollector.create(limit, totalHitsThreshold);

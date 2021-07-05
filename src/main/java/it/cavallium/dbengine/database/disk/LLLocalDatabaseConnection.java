@@ -85,8 +85,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								name,
 								indicizerAnalyzers,
 								indicizerSimilarities,
-								luceneOptions,
-								null
+								luceneOptions
 						);
 					}
 				})

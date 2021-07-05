@@ -11,7 +11,6 @@ import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLSearchCollectionStatisticsGetter;
 import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -20,11 +19,11 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveReactiveSearcher;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveStreamSearcher;
-import it.cavallium.dbengine.lucene.searcher.AllowOnlyQueryParsingCollectorStreamSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneReactiveSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneStreamSearcher;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneShardSearcher;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -37,6 +36,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.commons.lang3.NotImplementedException;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
@@ -76,10 +76,7 @@ import reactor.util.function.Tuples;
 public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
-	private static final LuceneStreamSearcher streamSearcher = new AdaptiveStreamSearcher();
-	private static final LuceneReactiveSearcher reactiveSearcher = new AdaptiveReactiveSearcher();
-	private static final AllowOnlyQueryParsingCollectorStreamSearcher allowOnlyQueryParsingCollectorStreamSearcher
-			= new AllowOnlyQueryParsingCollectorStreamSearcher();
+	private static final LuceneLocalSearcher localSearcher = new AdaptiveLuceneLocalSearcher();
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with
@@ -117,14 +114,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final Similarity similarity;
 
 	private final ScheduledTaskLifecycle scheduledTasksLifecycle;
-	private final @Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter;
 
 	public LLLocalLuceneIndex(Path luceneBasePath,
 			String name,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions,
-			@Nullable LLSearchCollectionStatisticsGetter distributedCollectionStatisticsGetter) throws IOException {
+			LuceneOptions luceneOptions) throws IOException {
 		if (name.length() == 0) {
 			throw new IOException("Empty lucene database name");
 		}
@@ -195,7 +190,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;
 		this.similarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
-		this.distributedCollectionStatisticsGetter = distributedCollectionStatisticsGetter;
 
 		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers));
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
@@ -438,7 +432,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}).subscribeOn(luceneHeavyTasksScheduler);
 	}
 
-	private Mono<IndexSearcher> acquireSearcherWrapper(LLSnapshot snapshot, boolean distributedPre, long actionId) {
+	private Mono<IndexSearcher> acquireSearcherWrapper(LLSnapshot snapshot) {
 		return Mono.fromCallable(() -> {
 			IndexSearcher indexSearcher;
 			if (snapshot == null) {
@@ -447,15 +441,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			} else {
 				indexSearcher = resolveSnapshot(snapshot).getIndexSearcher();
 			}
-			if (distributedCollectionStatisticsGetter != null && actionId != -1) {
-				return new LLIndexSearcherWithCustomCollectionStatistics(indexSearcher,
-						distributedCollectionStatisticsGetter,
-						distributedPre,
-						actionId
-				);
-			} else {
-				return indexSearcher;
-			}
+			return indexSearcher;
 		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
@@ -472,238 +458,33 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
-		return moreLikeThis(snapshot,
-				queryParams,
-				keyFieldName,
-				mltDocumentFieldsFlux,
-				false,
-				0,
-				1
-		);
-	}
-
-	public Mono<LLSearchResult> distributedMoreLikeThis(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
-			String keyFieldName,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			long actionId,
-			int scoreDivisor) {
-		return moreLikeThis(snapshot,
-				queryParams,
-				keyFieldName,
-				mltDocumentFieldsFlux,
-				false,
-				actionId,
-				scoreDivisor
-		);
-	}
-
-	public Mono<Void> distributedPreMoreLikeThis(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
-			String keyFieldName,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			 long actionId) {
-		return moreLikeThis(snapshot, queryParams, keyFieldName, mltDocumentFieldsFlux, true, actionId, 1).then();
-	}
-
-	@SuppressWarnings({"unchecked", "rawtypes"})
-	private Mono<LLSearchResult> moreLikeThis(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
-			String keyFieldName,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			boolean doDistributedPre,
-			long actionId,
-			int scoreDivisor) {
-		Query luceneAdditionalQuery;
-		try {
-			luceneAdditionalQuery = QueryParser.toQuery(queryParams.query());
-		} catch (Exception e) {
-			return Mono.error(e);
-		}
-		return mltDocumentFieldsFlux
-				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
-				.flatMap(mltDocumentFields -> {
-					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
-					if (mltDocumentFields.isEmpty()) {
-						return Mono.just(new LLSearchResult(Flux.empty()));
-					}
-
-					return acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
-							.flatMap(indexSearcher -> Mono
-									.fromCallable(() -> {
-										var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
-										mlt.setAnalyzer(indexWriter.getAnalyzer());
-										mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-										mlt.setMinTermFreq(1);
-										mlt.setMinDocFreq(3);
-										mlt.setMaxDocFreqPct(20);
-										mlt.setBoost(QueryParser.isScoringEnabled(queryParams));
-										mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
-										var similarity = getSimilarity();
-										if (similarity instanceof TFIDFSimilarity) {
-											mlt.setSimilarity((TFIDFSimilarity) similarity);
-										} else {
-											logger.trace("Using an unsupported similarity algorithm for MoreLikeThis:"
-													+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
-										}
-
-										// Get the reference docId and apply it to MoreLikeThis, to generate the query
-										var mltQuery = mlt.like((Map) mltDocumentFields);
-										Query luceneQuery;
-										if (luceneAdditionalQuery != null) {
-											luceneQuery = new BooleanQuery.Builder()
-													.add(mltQuery, Occur.MUST)
-													.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
-													.build();
-										} else {
-											luceneQuery = mltQuery;
-										}
-
-										return luceneQuery;
-									})
-									.subscribeOn(Schedulers.boundedElastic())
-									.map(luceneQuery -> luceneSearch(doDistributedPre,
-											indexSearcher,
-											queryParams.offset(),
-											queryParams.limit(),
-											queryParams.minCompetitiveScore().getNullable(),
-											keyFieldName,
-											scoreDivisor,
-											luceneQuery,
-											QueryParser.toSort(queryParams.sort()),
-											QueryParser.toScoreMode(queryParams.scoreMode()),
-											releaseSearcherWrapper(snapshot, indexSearcher)
-									))
-									.onErrorResume(ex -> releaseSearcherWrapper(snapshot, indexSearcher).then(Mono.error(ex)))
-							);
-				});
-	}
-
-	private LLKeyScore fixKeyScore(LLKeyScore keyScore, int scoreDivisor) {
-		return scoreDivisor == 1 ? keyScore
-				: new LLKeyScore(keyScore.docId(), keyScore.score() / (float) scoreDivisor, keyScore.key());
+		throw new NotImplementedException();
 	}
 
 	@Override
-	public Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName) {
-		return search(snapshot, queryParams, keyFieldName, false, 0, 1);
+	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName) {
+		return Mono
+				.usingWhen(
+						this.acquireSearcherWrapper(snapshot),
+						indexSearcher -> localSearcher.collect(indexSearcher, queryParams, keyFieldName, luceneSearcherScheduler),
+						indexSearcher -> releaseSearcherWrapper(snapshot, indexSearcher)
+				)
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount()));
 	}
 
-	public Mono<LLSearchResult> distributedSearch(@Nullable LLSnapshot snapshot,
+	public Mono<Void> distributedSearch(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
-			String keyFieldName,
-			long actionId,
-			int scoreDivisor) {
-		return search(snapshot, queryParams, keyFieldName, false, actionId, scoreDivisor);
-	}
-
-	public Mono<Void> distributedPreSearch(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
-			String keyFieldName,
-			long actionId) {
-		return this
-				.search(snapshot, queryParams, keyFieldName, true, actionId, 1)
-				.then();
-	}
-
-	@SuppressWarnings("RedundantTypeArguments")
-	private Mono<LLSearchResult> search(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams, String keyFieldName,
-			boolean doDistributedPre, long actionId, int scoreDivisor) {
-		return this
-				.acquireSearcherWrapper(snapshot, doDistributedPre, actionId)
-				.flatMap(indexSearcher -> Mono
-						.fromCallable(() -> {
-							Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
-							Query luceneQuery = QueryParser.toQuery(queryParams.query());
-							Sort luceneSort = QueryParser.toSort(queryParams.sort());
-							org.apache.lucene.search.ScoreMode luceneScoreMode = QueryParser.toScoreMode(queryParams.scoreMode());
-							return Tuples.of(luceneQuery, Optional.ofNullable(luceneSort), luceneScoreMode);
-						})
-						.subscribeOn(Schedulers.boundedElastic())
-						.<LLSearchResult>flatMap(tuple -> Mono
-								.fromSupplier(() -> {
-									Query luceneQuery = tuple.getT1();
-									Sort luceneSort = tuple.getT2().orElse(null);
-									ScoreMode luceneScoreMode = tuple.getT3();
-
-									return luceneSearch(doDistributedPre,
-											indexSearcher,
-											queryParams.offset(),
-											queryParams.limit(),
-											queryParams.minCompetitiveScore().getNullable(),
-											keyFieldName,
-											scoreDivisor,
-											luceneQuery,
-											luceneSort,
-											luceneScoreMode,
-											releaseSearcherWrapper(snapshot, indexSearcher)
-									);
-								})
-								.onErrorResume(ex -> releaseSearcherWrapper(snapshot, indexSearcher).then(Mono.error(ex)))
-						)
+			LuceneShardSearcher shardSearcher) {
+		return Mono
+				.usingWhen(
+						this.acquireSearcherWrapper(snapshot),
+						indexSearcher -> shardSearcher.searchOn(indexSearcher, queryParams, luceneSearcherScheduler),
+						indexSearcher -> releaseSearcherWrapper(snapshot, indexSearcher)
 				);
-	}
-
-	/**
-	 * This method always returns 1 shard! Not zero, not more than one.
-	 */
-	private LLSearchResult luceneSearch(boolean doDistributedPre,
-			IndexSearcher indexSearcher,
-			long offset,
-			long limit,
-			@Nullable Float minCompetitiveScore,
-			String keyFieldName,
-			int scoreDivisor,
-			Query luceneQuery,
-			Sort luceneSort,
-			ScoreMode luceneScoreMode,
-			Mono<Void> successCleanup) {
-		Flux<LLSearchResultShard> results = Mono
-				.defer(() -> {
-					if (doDistributedPre) {
-						return Mono.<LLSearchResultShard>create(monoSink -> {
-							try {
-								//noinspection BlockingMethodInNonBlockingContext
-								allowOnlyQueryParsingCollectorStreamSearcher.search(indexSearcher, luceneQuery);
-								monoSink.success(new LLSearchResultShard(successCleanup.thenMany(Flux.empty()), 0));
-							} catch (Exception ex) {
-								monoSink.error(ex);
-							}
-						}).subscribeOn(luceneSearcherScheduler);
-					} else {
-						int boundedOffset = Math.max(0, offset > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) offset);
-						int boundedLimit = Math.max(0, limit > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) limit);
-						return reactiveSearcher
-								.search(indexSearcher,
-										luceneQuery,
-										boundedOffset,
-										boundedLimit,
-										luceneSort,
-										luceneScoreMode,
-										minCompetitiveScore,
-										keyFieldName,
-										luceneSearcherScheduler
-								)
-								.map(searchInstance -> new LLSearchResultShard(
-										Flux
-												.usingWhen(
-														Mono.just(true),
-														_unused -> searchInstance
-																.results()
-																.map(keyScore -> fixKeyScore(keyScore, scoreDivisor)),
-														_unused -> successCleanup
-												),
-										searchInstance.totalHitsCount()
-								));
-					}
-				})
-				.flux();
-		return new LLSearchResult(results);
 	}
 
 	@Override
@@ -788,10 +569,5 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public boolean isLowMemoryMode() {
 		return lowMemory;
-	}
-
-	@Override
-	public boolean supportsOffset() {
-		return true;
 	}
 }

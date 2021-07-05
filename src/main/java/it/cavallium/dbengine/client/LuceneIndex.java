@@ -43,16 +43,16 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> deleteAll();
 
-	<V> Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>, V> queryParams, T key, U mltDocumentValue);
+	<V> Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams, T key, U mltDocumentValue);
 
-	<V> Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>, V> queryParams,
+	<V> Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueGetter<T, U> valueGetter);
 
-	<V> Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>, V> queryParams);
+	<V> Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams);
 
-	<V> Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>, V> queryParams,
+	<V> Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueGetter<T, U> valueGetter);
 
 	Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query);

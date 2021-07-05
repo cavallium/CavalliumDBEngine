@@ -67,6 +67,7 @@ class TopDocsSearcher {
 			int topDocsStartOffset,
 			int topDocsHowMany) throws IOException {
 		TopDocsCollector<?> collector = getTopDocsCollector(luceneSort, limit, after, totalHitsThreshold);
+		indexSearcher.search(query, collector);
 		TopDocs topDocs = collector.topDocs(topDocsStartOffset, topDocsHowMany);
 		if (doDocScores) {
 			TopFieldCollector.populateScores(topDocs.scoreDocs, indexSearcher, query);

@@ -42,7 +42,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 					if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
 						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.limit(), true);
 					} else {
-						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, true);
+						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
 					}
 					//noinspection BlockingMethodInNonBlockingContext
 					TopDocs firstPageTopDocs = TopDocsSearcher.getTopDocs(indexSearcher,
@@ -64,7 +64,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
-						if (paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
+						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
 							return Flux.empty();
 						}
 						return Flux

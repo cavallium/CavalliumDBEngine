@@ -62,23 +62,44 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
-					TopDocs[] topDocs;
-					synchronized (lock) {
-						topDocs = new TopDocs[collectors.size()];
-						var i = 0;
-						for (TopFieldCollector collector : collectors) {
-							topDocs[i] = collector.topDocs();
-							for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
-								scoreDoc.shardIndex = i;
+					TopDocs result;
+					if (queryParams.sort() != null) {
+						TopFieldDocs[] topDocs;
+						synchronized (lock) {
+							topDocs = new TopFieldDocs[collectors.size()];
+							var i = 0;
+							for (TopFieldCollector collector : collectors) {
+								topDocs[i] = collector.topDocs();
+								for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
+									scoreDoc.shardIndex = i;
+								}
+								i++;
 							}
-							i++;
 						}
+						result = TopDocs.merge(queryParams.sort(), LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
+								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
+								topDocs,
+								TIE_BREAKER
+						);
+					} else {
+						TopDocs[] topDocs;
+						synchronized (lock) {
+							topDocs = new TopDocs[collectors.size()];
+							var i = 0;
+							for (TopFieldCollector collector : collectors) {
+								topDocs[i] = collector.topDocs();
+								for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
+									scoreDoc.shardIndex = i;
+								}
+								i++;
+							}
+						}
+						result = TopDocs.merge(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
+								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
+								topDocs,
+								TIE_BREAKER
+						);
 					}
-					var result = TopDocs.merge(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
-							LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
-							topDocs,
-							TIE_BREAKER
-					);
 					IndexSearchers indexSearchers;
 					synchronized (lock) {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
@@ -87,7 +108,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
-						if (paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
+						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
 							return Flux.empty();
 						}
 						return Flux
@@ -120,10 +141,19 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
 														.map(topFieldDocs -> topFieldDocs.toArray(TopFieldDocs[]::new))
-														.map(topFieldDocs -> TopDocs.merge(0, s.currentPageLimit(),
-																topFieldDocs,
-																TIE_BREAKER
-														))
+														.map(topFieldDocs -> {
+															if (queryParams.sort() != null) {
+																return TopDocs.merge(queryParams.sort(), 0, s.currentPageLimit(),
+																		topFieldDocs,
+																		TIE_BREAKER
+																);
+															} else {
+																return TopDocs.merge(0, s.currentPageLimit(),
+																		topFieldDocs,
+																		TIE_BREAKER
+																);
+															}
+														})
 														.blockOptional().orElseThrow();
 												var pageLastDoc = LuceneUtils.getLastFieldDoc(pageTopDocs.scoreDocs);
 												sink.next(pageTopDocs);

@@ -28,7 +28,7 @@ public class UnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
 					if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
 						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.limit(), true);
 					} else {
-						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, true);
+						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
 					}
 					UnsortedCollectorManager unsortedCollectorManager = new UnsortedCollectorManager(() -> TopDocsSearcher.getTopDocsCollector(null,
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),

@@ -84,7 +84,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
-						if (paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
+						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
 							return Flux.empty();
 						}
 						return Flux

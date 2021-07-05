@@ -29,7 +29,7 @@ public class SharedSortedLuceneMultiSearcher implements LuceneMultiSearcher {
 					if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
 						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.limit(), true);
 					} else {
-						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, true);
+						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
 					}
 					CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager = TopFieldCollector
 							.createSharedManager(luceneSort, LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()), null, 1000);

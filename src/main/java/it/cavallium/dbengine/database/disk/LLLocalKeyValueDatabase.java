@@ -38,6 +38,7 @@ import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.LRUCache;
+import org.rocksdb.MemoryUtil;
 import org.rocksdb.Options;
 import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
@@ -121,9 +122,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			createIfNotExists(descriptors, rocksdbOptions, databaseOptions, dbPath, dbPathString);
 
-			// Create all column families that don't exist
-			createAllColumns(descriptors, rocksdbOptions, databaseOptions, dbPathString);
-
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
@@ -181,9 +179,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		flushDb(db, handles);
 
 		for (ColumnFamilyHandle handle : handles) {
-			handle.close();
+			try {
+				handle.close();
+			} catch (Exception ex) {
+				logger.error("Can't close column family", ex);
+			}
 		}
-
 		try {
 			db.closeE();
 		} catch (RocksDBException ex) {
@@ -204,11 +205,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
 		// force flush the database
-		for (int i = 0; i < 2; i++) {
-			db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), handles);
-			db.flushWal(true);
-			db.syncWal();
+		try (var flushOptions = new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true)) {
+			db.flush(flushOptions);
 		}
+		try (var flushOptions = new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true)) {
+			db.flush(flushOptions, handles);
+		}
+		db.flushWal(true);
+		db.syncWal();
 		// end force flush
 	}
 
@@ -254,6 +258,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// that determines the behaviour of the database.
 		var options = new Options();
 		options.setCreateIfMissing(true);
+		options.setCreateMissingColumnFamilies(true);
 		options.setCompactionStyle(CompactionStyle.LEVEL);
 		options.setTargetFileSizeBase(64 * 1024 * 1024); // 64MiB sst file
 		options.setTargetFileSizeMultiplier(2); // Each level is 2 times the previous level
@@ -360,52 +365,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 
 		return options;
-	}
-
-	private void createAllColumns(List<ColumnFamilyDescriptor> totalDescriptors,
-			Options options,
-			DatabaseOptions databaseOptions,
-			String dbPathString) throws RocksDBException {
-		if (databaseOptions.inMemory()) {
-			return;
-		}
-		List<byte[]> columnFamiliesToCreate = new LinkedList<>();
-
-		for (ColumnFamilyDescriptor descriptor : totalDescriptors) {
-			columnFamiliesToCreate.add(descriptor.getName());
-		}
-
-		List<byte[]> existingColumnFamilies = RocksDB.listColumnFamilies(options, dbPathString);
-
-		columnFamiliesToCreate.removeIf((columnFamilyName) -> {
-			for (byte[] cfn : existingColumnFamilies) {
-				if (Arrays.equals(cfn, columnFamilyName)) {
-					return true;
-				}
-			}
-			return false;
-		});
-
-		List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
-		descriptors.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
-		for (byte[] existingColumnFamily : existingColumnFamilies) {
-			descriptors.add(new ColumnFamilyDescriptor(existingColumnFamily));
-		}
-
-		var handles = new LinkedList<ColumnFamilyHandle>();
-
-		/*
-		  SkipStatsUpdateOnDbOpen = true because this RocksDB.open session is used only to add just some columns
-		 */
-		//var dbOptionsFastLoadSlowEdit = new DBOptions(options.setSkipStatsUpdateOnDbOpen(true));
-
-		this.db = RocksDB.open(new DBOptions(options), dbPathString, descriptors, handles);
-
-		for (byte[] name : columnFamiliesToCreate) {
-			db.createColumnFamily(new ColumnFamilyDescriptor(name)).close();
-		}
-
-		flushAndCloseDb(db, handles);
 	}
 
 	private void createInMemoryColumns(List<ColumnFamilyDescriptor> totalDescriptors,

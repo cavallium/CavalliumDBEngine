@@ -8,7 +8,7 @@ import org.jetbrains.annotations.Nullable;
 
 record CurrentPageInfo(@Nullable ScoreDoc last, long remainingLimit, int pageIndex) {
 
-	private static final int MAX_ITEMS_PER_PAGE = 100;
+	private static final int MAX_ITEMS_PER_PAGE = 500;
 
 	public static final Comparator<ScoreDoc> TIE_BREAKER = Comparator.comparingInt((d) -> d.shardIndex);
 	public static final CurrentPageInfo EMPTY_STATUS = new CurrentPageInfo(null, 0, 0);

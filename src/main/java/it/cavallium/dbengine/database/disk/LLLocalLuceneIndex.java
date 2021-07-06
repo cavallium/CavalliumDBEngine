@@ -88,7 +88,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene",
 			Integer.MAX_VALUE,
-			false
+			true
 	);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
 	private final Scheduler luceneSearcherScheduler = Schedulers.newBoundedElastic(
@@ -96,7 +96,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene-searcher",
 			60,
-			false
+			true
 	);
 
 	private final String luceneIndexName;

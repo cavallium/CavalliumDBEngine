@@ -118,10 +118,10 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
 														.map(topFieldDocs -> topFieldDocs.toArray(TopDocs[]::new))
-														.map(topFieldDocs -> TopDocs.merge(0, s.currentPageLimit(),
+														.flatMap(topFieldDocs -> Mono.fromCallable(() -> TopDocs.merge(0, s.currentPageLimit(),
 																topFieldDocs,
 																TIE_BREAKER
-														))
+														)).subscribeOn(scheduler))
 														.blockOptional().orElseThrow();
 												var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 												sink.next(pageTopDocs);

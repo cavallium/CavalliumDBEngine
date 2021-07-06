@@ -25,6 +25,7 @@ import org.apache.lucene.search.TopFieldDocs;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
@@ -141,7 +142,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
 														.map(topFieldDocs -> topFieldDocs.toArray(TopFieldDocs[]::new))
-														.map(topFieldDocs -> {
+														.flatMap(topFieldDocs -> Mono.fromCallable(() -> {
 															if (queryParams.sort() != null) {
 																return TopDocs.merge(queryParams.sort(), 0, s.currentPageLimit(),
 																		topFieldDocs,
@@ -153,7 +154,8 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 																		TIE_BREAKER
 																);
 															}
-														})
+														}).subscribeOn(scheduler))
+														.subscribeOn(Schedulers.immediate())
 														.blockOptional().orElseThrow();
 												var pageLastDoc = LuceneUtils.getLastFieldDoc(pageTopDocs.scoreDocs);
 												sink.next(pageTopDocs);

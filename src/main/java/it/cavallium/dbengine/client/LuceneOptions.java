@@ -14,4 +14,7 @@ public record LuceneOptions(Map<String, String> extraFlags,
 														boolean inMemory,
 														Optional<DirectIOOptions> directIOOptions,
 														boolean allowMemoryMapping,
-														Optional<NRTCachingOptions> nrtCachingOptions) {}
+														Optional<NRTCachingOptions> nrtCachingOptions,
+														int indexWriterBufferSize,
+														boolean applyAllDeletes,
+														boolean writeAllDeletes) {}

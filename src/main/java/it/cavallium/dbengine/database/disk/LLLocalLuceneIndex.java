@@ -39,9 +39,11 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexCommit;
+import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
+import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
@@ -54,6 +56,7 @@ import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.similarities.Similarity;
@@ -197,21 +200,24 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
+		MergeScheduler mergeScheduler;
 		if (lowMemory) {
-			indexWriterConfig.setRAMBufferSizeMB(8);
-			indexWriterConfig.setRAMPerThreadHardLimitMB(32);
-			var mergeScheduler = new SerialMergeScheduler();
-			indexWriterConfig.setMergeScheduler(mergeScheduler);
+			mergeScheduler = new SerialMergeScheduler();
 		} else {
-			indexWriterConfig.setRAMBufferSizeMB(16);
-			//indexWriterConfig.setRAMPerThreadHardLimitMB(512);
-			var mergeScheduler = new ConcurrentMergeScheduler();
-			mergeScheduler.enableAutoIOThrottle();
-			indexWriterConfig.setMergeScheduler(mergeScheduler);
+			var concurrentMergeScheduler = new ConcurrentMergeScheduler();
+			concurrentMergeScheduler.enableAutoIOThrottle();
+			mergeScheduler = concurrentMergeScheduler;
 		}
+		indexWriterConfig.setMergeScheduler(mergeScheduler);
+		indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterBufferSize() / 1024D / 1024D);
+		indexWriterConfig.setReaderPooling(false);
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
-		this.searcherManager = new SearcherManager(indexWriter, false, false, null);
+		this.searcherManager = new SearcherManager(indexWriter,
+				luceneOptions.applyAllDeletes(),
+				luceneOptions.writeAllDeletes(),
+				new SearcherFactory()
+		);
 
 		// Create scheduled tasks lifecycle manager
 		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();

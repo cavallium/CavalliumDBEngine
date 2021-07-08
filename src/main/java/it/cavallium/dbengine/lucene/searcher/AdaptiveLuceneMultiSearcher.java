@@ -1,13 +1,10 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.client.query.QueryParser;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import org.apache.lucene.search.Sort;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 
-	private static final LuceneMultiSearcher sharedSortedLuceneMultiSearcher = new SharedSortedLuceneMultiSearcher();
+	private static final LuceneMultiSearcher scoredLuceneMultiSearcher = new ScoredLuceneMultiSearcher();
 
 	private static final LuceneMultiSearcher unscoredLuceneMultiSearcher = new UnscoredLuceneMultiSearcher();
 
@@ -17,8 +14,8 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		if (queryParams.limit() <= 0) {
 			return countLuceneMultiSearcher.createShardSearcher(queryParams);
-		} else if ((queryParams.sort() != null && queryParams.sort() != Sort.RELEVANCE) || queryParams.scoreMode().needsScores()) {
-			return sharedSortedLuceneMultiSearcher.createShardSearcher(queryParams);
+		} else if (queryParams.isScored()) {
+			return scoredLuceneMultiSearcher.createShardSearcher(queryParams);
 		} else {
 			return unscoredLuceneMultiSearcher.createShardSearcher(queryParams);
 		}

@@ -8,4 +8,13 @@ import org.jetbrains.annotations.Nullable;
 
 public record LocalQueryParams(@NotNull Query query, int offset, int limit,
 															 @Nullable Float minCompetitiveScore, @Nullable Sort sort,
-															 @NotNull ScoreMode scoreMode) {}
+															 @NotNull ScoreMode scoreMode) {
+
+	public boolean isSorted() {
+		return sort != null;
+	}
+
+	public boolean isScored() {
+		return (sort != null && sort.needsScores()) || scoreMode.needsScores();
+	}
+}

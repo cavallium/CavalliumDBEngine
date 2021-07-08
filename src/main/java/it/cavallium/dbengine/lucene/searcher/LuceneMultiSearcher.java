@@ -19,32 +19,10 @@ import reactor.core.scheduler.Scheduler;
 
 public interface LuceneMultiSearcher {
 
-	Logger logger = LoggerFactory.getLogger(LuceneMultiSearcher.class);
-
 	/**
 	 * Do a lucene query, receiving the single results using a consumer
 	 * @param queryParams the query parameters
 	 */
 	Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams);
 
-	static Flux<LLKeyScore> convertHits(
-			ScoreDoc[] hits,
-			IndexSearchers indexSearchers,
-			String keyFieldName,
-			Scheduler scheduler) {
-		return Flux
-				.fromArray(hits)
-				.map(hit -> {
-					int shardDocId = hit.doc;
-					int shardIndex = hit.shardIndex;
-					float score = hit.score;
-					var indexSearcher = indexSearchers.shard(shardIndex);
-					var keyMono = Mono.fromCallable(() -> {
-						//noinspection BlockingMethodInNonBlockingContext
-						@Nullable String collectedDoc = LuceneUtils.keyOfTopDoc(logger, shardDocId, indexSearcher.getIndexReader(), keyFieldName);
-						return collectedDoc;
-					}).subscribeOn(scheduler);
-					return new LLKeyScore(shardDocId, score, keyMono);
-				});
-	}
 }

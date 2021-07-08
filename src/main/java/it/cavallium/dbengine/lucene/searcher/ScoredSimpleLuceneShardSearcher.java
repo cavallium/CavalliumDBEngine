@@ -3,21 +3,17 @@ package it.cavallium.dbengine.lucene.searcher;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 
-import it.cavallium.dbengine.client.query.QueryParser;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
@@ -27,7 +23,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
+class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 	private final Object lock = new Object();
 	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
@@ -36,7 +32,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	private final Query luceneQuery;
 	private final PaginationInfo paginationInfo;
 
-	public FieldSimpleLuceneShardSearcher(CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager,
+	public ScoredSimpleLuceneShardSearcher(CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager,
 			Query luceneQuery, PaginationInfo paginationInfo) {
 		this.sharedManager = sharedManager;
 		this.luceneQuery = luceneQuery;
@@ -61,10 +57,15 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 	@Override
 	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+		if (!queryParams.isScored()) {
+			return Mono.error(
+					new UnsupportedOperationException("Can't execute an unscored query with a scored lucene shard searcher")
+			);
+		}
 		return Mono
 				.fromCallable(() -> {
 					TopDocs result;
-					if (queryParams.sort() != null) {
+					if (queryParams.isSorted()) {
 						TopFieldDocs[] topDocs;
 						synchronized (lock) {
 							topDocs = new TopFieldDocs[collectors.size()];
@@ -105,24 +106,27 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 					synchronized (lock) {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
-					Flux<LLKeyScore> firstPageHits = LuceneMultiSearcher
+					Flux<LLKeyScore> firstPageHits = LuceneUtils
 							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
-						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
+						if (paginationInfo.forceSinglePage()
+								|| paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
 							return Flux.empty();
 						}
 						return Flux
 								.<TopDocs, CurrentPageInfo>generate(
-										() -> new CurrentPageInfo(LuceneUtils.getLastFieldDoc(result.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
+										() -> new CurrentPageInfo(LuceneUtils.getLastFieldDoc(result.scoreDocs),
+												paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
 										(s, sink) -> {
 											if (s.last() != null && s.remainingLimit() > 0) {
+												CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager;
 												Sort luceneSort = queryParams.sort();
-												if (luceneSort == null && queryParams.scoreMode().needsScores()) {
+												if (luceneSort == null) {
 													luceneSort = Sort.RELEVANCE;
 												}
-												CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager = TopFieldCollector
-														.createSharedManager(luceneSort, s.currentPageLimit(), (FieldDoc) s.last(), 1000);
+												sharedManager = TopFieldCollector.createSharedManager(luceneSort, s.currentPageLimit(),
+														(FieldDoc) s.last(), 1000);
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)
@@ -143,7 +147,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 														.collect(Collectors.toCollection(ObjectArrayList::new))
 														.map(topFieldDocs -> topFieldDocs.toArray(TopFieldDocs[]::new))
 														.flatMap(topFieldDocs -> Mono.fromCallable(() -> {
-															if (queryParams.sort() != null) {
+															if (queryParams.isSorted()) {
 																return TopDocs.merge(queryParams.sort(), 0, s.currentPageLimit(),
 																		topFieldDocs,
 																		TIE_BREAKER
@@ -168,7 +172,7 @@ class FieldSimpleLuceneShardSearcher implements LuceneShardSearcher {
 										s -> {}
 								)
 								.subscribeOn(scheduler)
-								.concatMap(topFieldDoc -> LuceneMultiSearcher
+								.concatMap(topFieldDoc -> LuceneUtils
 										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler)
 								);
 					});

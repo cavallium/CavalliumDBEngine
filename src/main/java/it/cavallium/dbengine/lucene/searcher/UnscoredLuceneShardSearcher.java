@@ -3,8 +3,6 @@ package it.cavallium.dbengine.lucene.searcher;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 
-import it.cavallium.dbengine.client.query.QueryParser;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
@@ -18,9 +16,11 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
+import org.apache.lucene.search.TopFieldDocs;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 
@@ -61,7 +61,11 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 				.fromCallable(() -> {
 					TopDocs[] topDocs;
 					synchronized (lock) {
-						topDocs = new TopDocs[collectors.size()];
+						if (queryParams.isSorted()) {
+							topDocs = new TopFieldDocs[collectors.size()];
+						} else {
+							topDocs = new TopDocs[collectors.size()];
+						}
 						var i = 0;
 						for (TopDocsCollector<?> collector : collectors) {
 							topDocs[i] = collector.topDocs();
@@ -71,7 +75,8 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 							i++;
 						}
 					}
-					var result = TopDocs.merge(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
+					TopDocs result = LuceneUtils.mergeTopDocs(queryParams.sort(),
+							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
 							topDocs,
 							TIE_BREAKER
@@ -80,7 +85,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 					synchronized (lock) {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
-					Flux<LLKeyScore> firstPageHits = LuceneMultiSearcher
+					Flux<LLKeyScore> firstPageHits = LuceneUtils
 							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
@@ -89,16 +94,15 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 						}
 						return Flux
 								.<TopDocs, CurrentPageInfo>generate(
-										() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(result.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
+										() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(result.scoreDocs),
+												paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
 										(s, sink) -> {
 											if (s.last() != null && s.remainingLimit() > 0 && s.currentPageLimit() > 0) {
 												Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 												Query luceneQuery = queryParams.query();
-												UnsortedCollectorManager currentPageUnsortedCollectorManager = new UnsortedCollectorManager(() -> TopDocsSearcher.getTopDocsCollector(null,
-														s.currentPageLimit(),
-														s.last(),
-														1000
-												), 0, s.currentPageLimit());
+												UnscoredCollectorManager currentPageUnsortedCollectorManager = new UnscoredCollectorManager(
+														() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), s.currentPageLimit(),
+																s.last(), 1000), 0, s.currentPageLimit(), queryParams.sort());
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)
@@ -117,15 +121,27 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 																.subscribeOn(scheduler)
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
-														.map(topFieldDocs -> topFieldDocs.toArray(TopDocs[]::new))
-														.flatMap(topFieldDocs -> Mono.fromCallable(() -> TopDocs.merge(0, s.currentPageLimit(),
-																topFieldDocs,
-																TIE_BREAKER
-														)).subscribeOn(scheduler))
+														.map(topFieldDocs -> {
+															if (queryParams.isSorted()) {
+																@SuppressWarnings("SuspiciousToArrayCall")
+																TopFieldDocs[] topFieldDocsArray = topFieldDocs.toArray(TopFieldDocs[]::new);
+																return topFieldDocsArray;
+															} else {
+																return topFieldDocs.toArray(TopDocs[]::new);
+															}
+														})
+														.flatMap(topFieldDocs -> Mono
+																.fromCallable(() -> LuceneUtils
+																		.mergeTopDocs(queryParams.sort(), 0, s.currentPageLimit(), topFieldDocs, TIE_BREAKER)
+																)
+																.subscribeOn(scheduler)
+														)
 														.blockOptional().orElseThrow();
+
 												var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 												sink.next(pageTopDocs);
-												return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
+												return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(),
+														s.pageIndex() + 1);
 											} else {
 												sink.complete();
 												return EMPTY_STATUS;
@@ -134,13 +150,17 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 										s -> {}
 								)
 								.subscribeOn(scheduler)
-								.concatMap(topFieldDoc -> LuceneMultiSearcher
+								.concatMap(topFieldDoc -> LuceneUtils
 										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler)
 								);
 					});
 
-					return new LuceneSearchResult(result.totalHits.value, firstPageHits.concatWith(nextHits));
+					return new LuceneSearchResult(result.totalHits.value, firstPageHits
+							.concatWith(nextHits)
+							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams))
+					);
 				})
 				.subscribeOn(scheduler);
 		}
+
 }

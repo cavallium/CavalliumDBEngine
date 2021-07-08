@@ -1,29 +1,15 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
-import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.FIRST_PAGE_LIMIT;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
-import it.cavallium.dbengine.client.query.QueryParser;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
-import java.util.List;
 import java.util.Objects;
-import java.util.stream.Collectors;
-import org.apache.lucene.search.CollectorManager;
-import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.TopFieldCollector;
-import org.apache.lucene.search.TopFieldDocs;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -53,7 +39,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 							queryParams.scoreMode().needsScores(),
 							1000,
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()), LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()));
-					Flux<LLKeyScore> firstPageMono = LuceneMultiSearcher
+					Flux<LLKeyScore> firstPageMono = LuceneUtils
 							.convertHits(
 									firstPageTopDocs.scoreDocs,
 									IndexSearchers.unsharded(indexSearcher),
@@ -92,7 +78,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 										s -> {}
 								)
 								.subscribeOn(scheduler)
-								.concatMap(topFieldDoc -> LuceneMultiSearcher
+								.concatMap(topFieldDoc -> LuceneUtils
 										.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler)
 								);
 					});

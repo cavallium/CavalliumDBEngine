@@ -5,6 +5,7 @@ import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
@@ -13,12 +14,15 @@ import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
+import it.cavallium.dbengine.lucene.searcher.IndexSearchers;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
+import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -36,6 +40,9 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.TopFieldDocs;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
@@ -46,7 +53,10 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
-import org.warp.commonutils.log.Logger;
+import org.reactivestreams.Publisher;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 
 public class LuceneUtils {
 	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
@@ -158,11 +168,10 @@ public class LuceneUtils {
 	}
 
 	@Nullable
-	public static String keyOfTopDoc(Logger logger, int docId, IndexReader indexReader,
+	public static String keyOfTopDoc(int docId, IndexReader indexReader,
 			String keyFieldName) throws IOException {
 		if (docId > indexReader.maxDoc()) {
-			logger.warn("Document " + docId + " > maxDoc (" +indexReader.maxDoc() + ")");
-			return null;
+			throw new IOException("Document " + docId + " > maxDoc (" +indexReader.maxDoc() + ")");
 		}
 		Document d = indexReader.document(docId, Set.of(keyFieldName));
 		if (d.getFields().isEmpty()) {
@@ -171,7 +180,7 @@ public class LuceneUtils {
 			var realFields = indexReader.document(docId).getFields();
 			if (!realFields.isEmpty()) {
 				sb.append("\n");
-				logger.error("Present fields:\n");
+				sb.append("Present fields:\n");
 				boolean first = true;
 				for (IndexableField field : realFields) {
 					if (first) {
@@ -328,5 +337,61 @@ public class LuceneUtils {
 				QueryParser.toSort(queryParams.sort()),
 				QueryParser.toScoreMode(queryParams.scoreMode())
 		);
+	}
+
+	public static Flux<LLKeyScore> convertHits(ScoreDoc[] hits,
+			IndexSearchers indexSearchers,
+			String keyFieldName,
+			Scheduler scheduler) {
+
+		return Flux
+				.fromArray(hits)
+				.flatMapSequential(hit -> Mono.fromCallable(() -> {
+					int shardDocId = hit.doc;
+					int shardIndex = hit.shardIndex;
+					float score = hit.score;
+					var indexSearcher = indexSearchers.shard(shardIndex);
+					try {
+						@Nullable String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
+						return new LLKeyScore(shardDocId, score, Mono.justOrEmpty(collectedDoc));
+					} catch (Exception ex) {
+						return new LLKeyScore(shardDocId, score, Mono.error(ex));
+					}
+				}))
+				.subscribeOn(scheduler);
+	}
+
+	/**
+	 * Transform a flux of results to take elements while the minimum competitive score is valid
+	 */
+	public static Flux<LLKeyScore> filterTopDoc(Flux<LLKeyScore> flux, LocalQueryParams queryParams) {
+		return flux;
+		/*
+		if (queryParams.sort() != null && queryParams.sort().needsScores() && queryParams.minCompetitiveScore() != null) {
+			return flux.takeWhile(entry -> LuceneUtils.filterTopDoc(entry.score(), queryParams.minCompetitiveScore()));
+		} else {
+			return flux;
+		}*/
+	}
+
+	public static TopDocs mergeTopDocs(Sort sort, int startN, int topN, TopDocs[] topDocs, Comparator<ScoreDoc> tieBreaker) {
+		TopDocs result;
+		if (sort != null) {
+			if (!(topDocs instanceof TopFieldDocs[])) {
+				throw new IllegalStateException("Expected TopFieldDocs[], got TopDocs[]");
+			}
+			result = TopDocs.merge(sort, startN,
+					topN,
+					(TopFieldDocs[]) topDocs,
+					tieBreaker
+			);
+		} else {
+			result = TopDocs.merge(startN,
+					topN,
+					topDocs,
+					tieBreaker
+			);
+		}
+		return result;
 	}
 }

@@ -78,7 +78,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 								i++;
 							}
 						}
-						result = TopDocs.merge(queryParams.sort(), LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
+						result = LuceneUtils.mergeTopDocs(queryParams.sort(), LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
 								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
 								topDocs,
 								TIE_BREAKER
@@ -148,7 +148,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 														.map(topFieldDocs -> topFieldDocs.toArray(TopFieldDocs[]::new))
 														.flatMap(topFieldDocs -> Mono.fromCallable(() -> {
 															if (queryParams.isSorted()) {
-																return TopDocs.merge(queryParams.sort(), 0, s.currentPageLimit(),
+																return LuceneUtils.mergeTopDocs(queryParams.sort(), 0, s.currentPageLimit(),
 																		topFieldDocs,
 																		TIE_BREAKER
 																);

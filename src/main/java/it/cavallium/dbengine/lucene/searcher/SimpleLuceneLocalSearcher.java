@@ -83,7 +83,10 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 								);
 					});
 
-					return new LuceneSearchResult(firstPageTopDocs.totalHits.value, firstPageMono.concatWith(nextHits));
+					return new LuceneSearchResult(firstPageTopDocs.totalHits.value, firstPageMono
+							.concatWith(nextHits)
+							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams))
+					);
 				})
 				.subscribeOn(scheduler);
 	}

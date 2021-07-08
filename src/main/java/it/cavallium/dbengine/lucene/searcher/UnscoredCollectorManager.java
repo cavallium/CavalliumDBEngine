@@ -16,14 +16,14 @@ import org.apache.lucene.search.TopFieldDocs;
 import org.jetbrains.annotations.Nullable;
 
 public class UnscoredCollectorManager implements
-		CollectorManager<TopDocsCollector<? extends ScoreDoc>, TopDocs> {
+		CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> {
 
-	private final Supplier<TopDocsCollector<? extends ScoreDoc>> collectorSupplier;
+	private final Supplier<TopDocsCollector<ScoreDoc>> collectorSupplier;
 	private final long offset;
 	private final long limit;
 	private final Sort sort;
 
-	public UnscoredCollectorManager(Supplier<TopDocsCollector<? extends ScoreDoc>> collectorSupplier,
+	public UnscoredCollectorManager(Supplier<TopDocsCollector<ScoreDoc>> collectorSupplier,
 			long offset,
 			long limit,
 			@Nullable Sort sort) {
@@ -34,12 +34,12 @@ public class UnscoredCollectorManager implements
 	}
 
 	@Override
-	public TopDocsCollector<? extends ScoreDoc> newCollector() throws IOException {
+	public TopDocsCollector<ScoreDoc> newCollector() throws IOException {
 		return collectorSupplier.get();
 	}
 
 	@Override
-	public TopDocs reduce(Collection<TopDocsCollector<? extends ScoreDoc>> collection) throws IOException {
+	public TopDocs reduce(Collection<TopDocsCollector<ScoreDoc>> collection) throws IOException {
 		int i = 0;
 		TopDocs[] topDocsArray;
 		if (sort != null) {

@@ -26,12 +26,12 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 
 	private final Object lock = new Object();
 	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
-	private final List<TopDocsCollector<? extends ScoreDoc>> collectors = new ArrayList<>();
-	private final CollectorManager<TopDocsCollector<? extends ScoreDoc>, ? extends TopDocs> firstPageUnsortedCollectorManager;
+	private final List<TopDocsCollector<ScoreDoc>> collectors = new ArrayList<>();
+	private final CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> firstPageUnsortedCollectorManager;
 	private final Query luceneQuery;
 	private final PaginationInfo paginationInfo;
 
-	public UnscoredLuceneShardSearcher(CollectorManager<TopDocsCollector<? extends ScoreDoc>, ? extends TopDocs> unsortedCollectorManager,
+	public UnscoredLuceneShardSearcher(CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> unsortedCollectorManager,
 			Query luceneQuery,
 			PaginationInfo paginationInfo) {
 		this.firstPageUnsortedCollectorManager = unsortedCollectorManager;
@@ -42,7 +42,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 	@Override
 	public Mono<Void> searchOn(IndexSearcher indexSearcher, LocalQueryParams queryParams, Scheduler scheduler) {
 		return Mono.<Void>fromCallable(() -> {
-			TopDocsCollector<? extends ScoreDoc> collector;
+			TopDocsCollector<ScoreDoc> collector;
 			synchronized (lock) {
 				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageUnsortedCollectorManager.newCollector();
@@ -59,28 +59,11 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
-					TopDocs[] topDocs;
+					TopDocs result;
 					synchronized (lock) {
-						if (queryParams.isSorted()) {
-							topDocs = new TopFieldDocs[collectors.size()];
-						} else {
-							topDocs = new TopDocs[collectors.size()];
-						}
-						var i = 0;
-						for (TopDocsCollector<?> collector : collectors) {
-							topDocs[i] = collector.topDocs();
-							for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
-								scoreDoc.shardIndex = i;
-							}
-							i++;
-						}
+						//noinspection BlockingMethodInNonBlockingContext
+						result = firstPageUnsortedCollectorManager.reduce(collectors);
 					}
-					TopDocs result = LuceneUtils.mergeTopDocs(queryParams.sort(),
-							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
-							LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
-							topDocs,
-							TIE_BREAKER
-					);
 					IndexSearchers indexSearchers;
 					synchronized (lock) {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
@@ -106,34 +89,19 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)
-														.index()
-														.flatMapSequential(tuple -> Mono
+														.flatMapSequential(indexSearcher -> Mono
 																.fromCallable(() -> {
-																	long shardIndex = tuple.getT1();
-																	IndexSearcher indexSearcher = tuple.getT2();
 																	//noinspection BlockingMethodInNonBlockingContext
-																	var results = indexSearcher.search(luceneQuery, currentPageUnsortedCollectorManager);
-																	for (ScoreDoc scoreDoc : results.scoreDocs) {
-																		scoreDoc.shardIndex = LuceneUtils.safeLongToInt(shardIndex);
-																	}
-																	return results;
+																	var collector = currentPageUnsortedCollectorManager.newCollector();
+																	//noinspection BlockingMethodInNonBlockingContext
+																	indexSearcher.search(luceneQuery, collector);
+																	return collector;
 																})
 																.subscribeOn(scheduler)
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
-														.map(topFieldDocs -> {
-															if (queryParams.isSorted()) {
-																@SuppressWarnings("SuspiciousToArrayCall")
-																TopFieldDocs[] topFieldDocsArray = topFieldDocs.toArray(TopFieldDocs[]::new);
-																return topFieldDocsArray;
-															} else {
-																return topFieldDocs.toArray(TopDocs[]::new);
-															}
-														})
-														.flatMap(topFieldDocs -> Mono
-																.fromCallable(() -> LuceneUtils
-																		.mergeTopDocs(queryParams.sort(), 0, s.currentPageLimit(), topFieldDocs, TIE_BREAKER)
-																)
+														.flatMap(collectors -> Mono
+																.fromCallable(() -> currentPageUnsortedCollectorManager.reduce(collectors))
 																.subscribeOn(scheduler)
 														)
 														.blockOptional().orElseThrow();

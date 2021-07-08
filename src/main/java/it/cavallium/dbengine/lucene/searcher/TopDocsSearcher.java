@@ -91,11 +91,12 @@ class TopDocsSearcher {
 		return topDocs;
 	}
 
-	public static TopDocsCollector<? extends ScoreDoc> getTopDocsCollector(Sort luceneSort,
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	public static TopDocsCollector<ScoreDoc> getTopDocsCollector(Sort luceneSort,
 			int limit,
 			ScoreDoc after,
 			int totalHitsThreshold) {
-		TopDocsCollector<? extends ScoreDoc> collector;
+		TopDocsCollector<ScoreDoc> collector;
 		if (luceneSort == null) {
 			if (after == null) {
 				collector = TopScoreDocCollector.create(limit, totalHitsThreshold);
@@ -104,9 +105,9 @@ class TopDocsSearcher {
 			}
 		} else {
 			if (after == null) {
-				collector = TopFieldCollector.create(luceneSort, limit, totalHitsThreshold);
+				collector = (TopDocsCollector<ScoreDoc>) (TopDocsCollector) TopFieldCollector.create(luceneSort, limit, totalHitsThreshold);
 			} else if (after instanceof FieldDoc afterFieldDoc) {
-				collector = TopFieldCollector.create(luceneSort, limit, afterFieldDoc, totalHitsThreshold);
+				collector = (TopDocsCollector<ScoreDoc>) (TopDocsCollector) TopFieldCollector.create(luceneSort, limit, afterFieldDoc, totalHitsThreshold);
 			} else {
 				throw new UnsupportedOperationException("GetTopDocs with \"luceneSort\" != null requires \"after\" to be a FieldDoc");
 			}

@@ -28,13 +28,13 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	private final Object lock = new Object();
 	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
 	private final List<TopFieldCollector> collectors = new ArrayList<>();
-	private final CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager;
+	private final CollectorManager<TopFieldCollector, TopDocs> firstPageSharedManager;
 	private final Query luceneQuery;
 	private final PaginationInfo paginationInfo;
 
-	public ScoredSimpleLuceneShardSearcher(CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager,
+	public ScoredSimpleLuceneShardSearcher(CollectorManager<TopFieldCollector, TopDocs> firstPageSharedManager,
 			Query luceneQuery, PaginationInfo paginationInfo) {
-		this.sharedManager = sharedManager;
+		this.firstPageSharedManager = firstPageSharedManager;
 		this.luceneQuery = luceneQuery;
 		this.paginationInfo = paginationInfo;
 	}
@@ -45,7 +45,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 			TopFieldCollector collector;
 			synchronized (lock) {
 				//noinspection BlockingMethodInNonBlockingContext
-				collector = sharedManager.newCollector();
+				collector = firstPageSharedManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
 				collectors.add(collector);
 			}
@@ -65,42 +65,9 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 		return Mono
 				.fromCallable(() -> {
 					TopDocs result;
-					if (queryParams.isSorted()) {
-						TopFieldDocs[] topDocs;
-						synchronized (lock) {
-							topDocs = new TopFieldDocs[collectors.size()];
-							var i = 0;
-							for (TopFieldCollector collector : collectors) {
-								topDocs[i] = collector.topDocs();
-								for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
-									scoreDoc.shardIndex = i;
-								}
-								i++;
-							}
-						}
-						result = LuceneUtils.mergeTopDocs(queryParams.sort(), LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
-								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
-								topDocs,
-								TIE_BREAKER
-						);
-					} else {
-						TopDocs[] topDocs;
-						synchronized (lock) {
-							topDocs = new TopDocs[collectors.size()];
-							var i = 0;
-							for (TopFieldCollector collector : collectors) {
-								topDocs[i] = collector.topDocs();
-								for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
-									scoreDoc.shardIndex = i;
-								}
-								i++;
-							}
-						}
-						result = TopDocs.merge(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
-								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()),
-								topDocs,
-								TIE_BREAKER
-						);
+					synchronized (lock) {
+						//noinspection BlockingMethodInNonBlockingContext
+						result = firstPageSharedManager.reduce(collectors);
 					}
 					IndexSearchers indexSearchers;
 					synchronized (lock) {
@@ -120,13 +87,13 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 												paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
 										(s, sink) -> {
 											if (s.last() != null && s.remainingLimit() > 0) {
-												CollectorManager<TopFieldCollector, TopFieldDocs> sharedManager;
 												Sort luceneSort = queryParams.sort();
 												if (luceneSort == null) {
 													luceneSort = Sort.RELEVANCE;
 												}
-												sharedManager = TopFieldCollector.createSharedManager(luceneSort, s.currentPageLimit(),
-														(FieldDoc) s.last(), 1000);
+												CollectorManager<TopFieldCollector, TopDocs> sharedManager
+														= new ScoringShardsCollectorManager(luceneSort, s.currentPageLimit(),
+														(FieldDoc) s.last(), 1000, 0, s.currentPageLimit());
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)
@@ -136,28 +103,17 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 																	long shardIndex = tuple.getT1();
 																	IndexSearcher indexSearcher = tuple.getT2();
 																	//noinspection BlockingMethodInNonBlockingContext
-																	var results = indexSearcher.search(luceneQuery, sharedManager);
-																	for (ScoreDoc scoreDoc : results.scoreDocs) {
-																		scoreDoc.shardIndex = LuceneUtils.safeLongToInt(shardIndex);
-																	}
-																	return results;
+																	TopFieldCollector collector = sharedManager.newCollector();
+																	//noinspection BlockingMethodInNonBlockingContext
+																	indexSearcher.search(luceneQuery, collector);
+																	return collector;
 																})
 																.subscribeOn(scheduler)
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
-														.map(topFieldDocs -> topFieldDocs.toArray(TopFieldDocs[]::new))
-														.flatMap(topFieldDocs -> Mono.fromCallable(() -> {
-															if (queryParams.isSorted()) {
-																return LuceneUtils.mergeTopDocs(queryParams.sort(), 0, s.currentPageLimit(),
-																		topFieldDocs,
-																		TIE_BREAKER
-																);
-															} else {
-																return TopDocs.merge(0, s.currentPageLimit(),
-																		topFieldDocs,
-																		TIE_BREAKER
-																);
-															}
+														.flatMap(collectors -> Mono.fromCallable(() -> {
+															//noinspection BlockingMethodInNonBlockingContext
+															return sharedManager.reduce(collectors);
 														}).subscribeOn(scheduler))
 														.subscribeOn(Schedulers.immediate())
 														.blockOptional().orElseThrow();
@@ -177,7 +133,11 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 								);
 					});
 
-					return new LuceneSearchResult(result.totalHits.value, firstPageHits.concatWith(nextHits));
+					return new LuceneSearchResult(result.totalHits.value,
+							firstPageHits
+									.concatWith(nextHits)
+									.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams))
+					);
 				})
 				.subscribeOn(scheduler);
 	}

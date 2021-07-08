@@ -22,6 +22,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
@@ -365,32 +366,62 @@ public class LuceneUtils {
 	 * Transform a flux of results to take elements while the minimum competitive score is valid
 	 */
 	public static Flux<LLKeyScore> filterTopDoc(Flux<LLKeyScore> flux, LocalQueryParams queryParams) {
-		return flux;
-		/*
-		if (queryParams.sort() != null && queryParams.sort().needsScores() && queryParams.minCompetitiveScore() != null) {
-			return flux.takeWhile(entry -> LuceneUtils.filterTopDoc(entry.score(), queryParams.minCompetitiveScore()));
+		if (queryParams.scoreMode().needsScores() && queryParams.minCompetitiveScore() != null) {
+			if (queryParams.sort() != null && queryParams.sort().needsScores()) {
+				return flux.takeWhile(entry -> LuceneUtils.filterTopDoc(entry.score(), queryParams.minCompetitiveScore()));
+			} else {
+				return flux.filter(entry -> LuceneUtils.filterTopDoc(entry.score(), queryParams.minCompetitiveScore()));
+			}
 		} else {
 			return flux;
-		}*/
+		}
 	}
 
-	public static TopDocs mergeTopDocs(Sort sort, int startN, int topN, TopDocs[] topDocs, Comparator<ScoreDoc> tieBreaker) {
+	public static TopDocs mergeTopDocs(Sort sort, @Nullable Integer startN, @Nullable Integer topN, TopDocs[] topDocs, Comparator<ScoreDoc> tieBreaker) {
+		if ((startN == null) != (topN == null)) {
+			throw new IllegalArgumentException("You must pass startN and topN together or nothing");
+		}
 		TopDocs result;
 		if (sort != null) {
 			if (!(topDocs instanceof TopFieldDocs[])) {
 				throw new IllegalStateException("Expected TopFieldDocs[], got TopDocs[]");
 			}
-			result = TopDocs.merge(sort, startN,
-					topN,
-					(TopFieldDocs[]) topDocs,
-					tieBreaker
-			);
+			if (startN == null) {
+				int defaultTopN = 0;
+				for (TopDocs td : topDocs) {
+					int length = td.scoreDocs.length;
+					defaultTopN += length;
+				}
+				result = TopDocs.merge(sort, 0, defaultTopN,
+						(TopFieldDocs[]) topDocs,
+						tieBreaker
+				);
+			} else {
+				result = TopDocs.merge(sort, startN,
+						topN,
+						(TopFieldDocs[]) topDocs,
+						tieBreaker
+				);
+			}
 		} else {
-			result = TopDocs.merge(startN,
-					topN,
-					topDocs,
-					tieBreaker
-			);
+			if (startN == null) {
+				int defaultTopN = 0;
+				for (TopDocs td : topDocs) {
+					int length = td.scoreDocs.length;
+					defaultTopN += length;
+				}
+				result = TopDocs.merge(0,
+						defaultTopN,
+						topDocs,
+						tieBreaker
+				);
+			} else {
+				result = TopDocs.merge(startN,
+						topN,
+						topDocs,
+						tieBreaker
+				);
+			}
 		}
 		return result;
 	}

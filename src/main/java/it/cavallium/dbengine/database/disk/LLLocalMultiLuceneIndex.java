@@ -221,7 +221,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.then(shardSearcher.collect(localQueryParams, keyFieldName, Schedulers.boundedElastic()))
 				)
 				// Fix the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount()));
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));
 	}
 
 	@Override
@@ -249,7 +249,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.then(shardSearcher.collect(localQueryParams, keyFieldName, Schedulers.boundedElastic()))
 				)
 				// Fix the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount()));
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));
 	}
 
 	@Override

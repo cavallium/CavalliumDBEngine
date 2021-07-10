@@ -27,6 +27,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 	private final Object lock = new Object();
 	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
+	private final List<Mono<Void>> indexSearcherReleasersArray = new ArrayList<>();
 	private final List<TopFieldCollector> collectors = new ArrayList<>();
 	private final CollectorManager<TopFieldCollector, TopDocs> firstPageSharedManager;
 	private final Query luceneQuery;
@@ -40,13 +41,17 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	}
 
 	@Override
-	public Mono<Void> searchOn(IndexSearcher indexSearcher, LocalQueryParams queryParams, Scheduler scheduler) {
+	public Mono<Void> searchOn(IndexSearcher indexSearcher,
+			Mono<Void> releaseIndexSearcher,
+			LocalQueryParams queryParams,
+			Scheduler scheduler) {
 		return Mono.<Void>fromCallable(() -> {
 			TopFieldCollector collector;
 			synchronized (lock) {
 				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageSharedManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
+				indexSearcherReleasersArray.add(releaseIndexSearcher);
 				collectors.add(collector);
 			}
 			//noinspection BlockingMethodInNonBlockingContext
@@ -65,9 +70,11 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 		return Mono
 				.fromCallable(() -> {
 					TopDocs result;
+					Mono<Void> release;
 					synchronized (lock) {
 						//noinspection BlockingMethodInNonBlockingContext
 						result = firstPageSharedManager.reduce(collectors);
+						release = Mono.when(indexSearcherReleasersArray);
 					}
 					IndexSearchers indexSearchers;
 					synchronized (lock) {
@@ -136,7 +143,8 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 					return new LuceneSearchResult(result.totalHits.value,
 							firstPageHits
 									.concatWith(nextHits)
-									.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams))
+									.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
+							release
 					);
 				})
 				.subscribeOn(scheduler);

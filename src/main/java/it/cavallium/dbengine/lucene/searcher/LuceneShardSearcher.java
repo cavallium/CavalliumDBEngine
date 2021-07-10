@@ -13,6 +13,7 @@ public interface LuceneShardSearcher {
 	 * @param scheduler a blocking scheduler
 	 */
 	Mono<Void> searchOn(IndexSearcher indexSearcher,
+			Mono<Void> indexSearcherRelease,
 			LocalQueryParams queryParams,
 			Scheduler scheduler);
 

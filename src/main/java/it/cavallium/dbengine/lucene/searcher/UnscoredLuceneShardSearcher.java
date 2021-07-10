@@ -26,6 +26,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 
 	private final Object lock = new Object();
 	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
+	private final List<Mono<Void>> indexSearcherReleasersArray = new ArrayList<>();
 	private final List<TopDocsCollector<ScoreDoc>> collectors = new ArrayList<>();
 	private final CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> firstPageUnsortedCollectorManager;
 	private final Query luceneQuery;
@@ -40,13 +41,17 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 	}
 
 	@Override
-	public Mono<Void> searchOn(IndexSearcher indexSearcher, LocalQueryParams queryParams, Scheduler scheduler) {
+	public Mono<Void> searchOn(IndexSearcher indexSearcher,
+			Mono<Void> releaseIndexSearcher,
+			LocalQueryParams queryParams,
+			Scheduler scheduler) {
 		return Mono.<Void>fromCallable(() -> {
 			TopDocsCollector<ScoreDoc> collector;
 			synchronized (lock) {
 				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageUnsortedCollectorManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
+				indexSearcherReleasersArray.add(releaseIndexSearcher);
 				collectors.add(collector);
 			}
 			//noinspection BlockingMethodInNonBlockingContext
@@ -60,9 +65,11 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 		return Mono
 				.fromCallable(() -> {
 					TopDocs result;
+					Mono<Void> release;
 					synchronized (lock) {
 						//noinspection BlockingMethodInNonBlockingContext
 						result = firstPageUnsortedCollectorManager.reduce(collectors);
+						release = Mono.when(indexSearcherReleasersArray);
 					}
 					IndexSearchers indexSearchers;
 					synchronized (lock) {
@@ -125,7 +132,8 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 
 					return new LuceneSearchResult(result.totalHits.value, firstPageHits
 							.concatWith(nextHits)
-							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams))
+							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
+							release
 					);
 				})
 				.subscribeOn(scheduler);

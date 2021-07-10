@@ -26,6 +26,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.time.StopWatch;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.ColumnFamilyDescriptor;
@@ -80,7 +81,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
 	public LLLocalKeyValueDatabase(ByteBufAllocator allocator,
 			String name,
-			Path path,
+			@Nullable Path path,
 			List<Column> columns,
 			List<ColumnFamilyHandle> handles,
 			DatabaseOptions databaseOptions) throws IOException {
@@ -127,7 +128,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					// a factory method that returns a RocksDB instance
 					this.db = RocksDB.open(new DBOptions(rocksdbOptions),
 							dbPathString,
-							databaseOptions.inMemory() ? List.of(DEFAULT_COLUMN_FAMILY) : descriptors,
+							descriptors,
 							handles
 					);
 					break;
@@ -145,7 +146,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					}
 				}
 			}
-			createInMemoryColumns(descriptors, databaseOptions, handles);
 			this.handles = new HashMap<>();
 			if (enableColumnsBug && !databaseOptions.inMemory()) {
 				for (int i = 0; i < columns.size(); i++) {
@@ -189,7 +189,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			db.closeE();
 		} catch (RocksDBException ex) {
 			if ("Cannot close DB with unreleased snapshot.".equals(ex.getMessage())) {
-				snapshotsHandles.forEach((id, snapshot) -> {;
+				snapshotsHandles.forEach((id, snapshot) -> {
 					try {
 						db.releaseSnapshot(snapshot);
 					} catch (Exception ex2) {
@@ -246,12 +246,17 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@SuppressWarnings({"CommentedOutCode", "PointlessArithmeticExpression"})
-	private static Options openRocksDb(Path path, DatabaseOptions databaseOptions) throws IOException {
+	private static Options openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions) throws IOException {
 		// Get databases directory path
-		Path databasesDirPath = path.toAbsolutePath().getParent();
-		// Create base directories
-		if (Files.notExists(databasesDirPath)) {
-			Files.createDirectories(databasesDirPath);
+		Path databasesDirPath;
+		if (path != null) {
+			databasesDirPath = path.toAbsolutePath().getParent();
+			// Create base directories
+			if (Files.notExists(databasesDirPath)) {
+				Files.createDirectories(databasesDirPath);
+			}
+		} else {
+			databasesDirPath = null;
 		}
 
 		// the Options class contains a set of configurable DB options
@@ -280,7 +285,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setKeepLogFileNum(10);
 		options.setAllowFAllocate(true);
 		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
-		var paths = List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
+
+		List<DbPath> paths = List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
 						10L * 1024L * 1024L * 1024L), // 10GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 						100L * 1024L * 1024L * 1024L), // 100GiB
@@ -365,27 +371,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 
 		return options;
-	}
-
-	private void createInMemoryColumns(List<ColumnFamilyDescriptor> totalDescriptors,
-			DatabaseOptions databaseOptions,
-			List<ColumnFamilyHandle> handles)
-			throws RocksDBException {
-		if (!databaseOptions.inMemory()) {
-			return;
-		}
-		List<byte[]> columnFamiliesToCreate = new LinkedList<>();
-
-		for (ColumnFamilyDescriptor descriptor : totalDescriptors) {
-			columnFamiliesToCreate.add(descriptor.getName());
-		}
-
-		for (byte[] name : columnFamiliesToCreate) {
-			if (!Arrays.equals(name, DEFAULT_COLUMN_FAMILY.getName())) {
-				var descriptor = new ColumnFamilyDescriptor(name);
-				handles.add(db.createColumnFamily(descriptor));
-			}
-		}
 	}
 
 	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors,

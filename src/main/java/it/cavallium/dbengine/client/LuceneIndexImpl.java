@@ -87,7 +87,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	private Mono<SearchResultKeys<T>> transformLuceneResult(LLSearchResultShard llSearchResult) {
 		return Mono.just(new SearchResultKeys<>(llSearchResult.results()
 				.map(signal -> new SearchResultKey<>(signal.key().map(indicizer::getKey), signal.score())),
-				llSearchResult.totalHitsCount()
+				llSearchResult.totalHitsCount(),
+				llSearchResult.release()
 		));
 	}
 
@@ -96,7 +97,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return Mono.just(new SearchResult<>(llSearchResult.results().map(signal -> {
 			var key = signal.key().map(indicizer::getKey);
 			return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
-		}), llSearchResult.totalHitsCount()));
+		}), llSearchResult.totalHitsCount(), llSearchResult.release()));
 	}
 
 	/**
@@ -179,7 +180,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
-				.map(SearchResultKeys::totalHitsCount);
+				.flatMap(tSearchResultKeys -> tSearchResultKeys.release().thenReturn(tSearchResultKeys.totalHitsCount()));
 	}
 
 	@Override

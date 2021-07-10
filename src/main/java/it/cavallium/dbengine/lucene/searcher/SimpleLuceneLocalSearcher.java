@@ -18,6 +18,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
+			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			Scheduler scheduler) {
@@ -85,7 +86,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 					return new LuceneSearchResult(firstPageTopDocs.totalHits.value, firstPageMono
 							.concatWith(nextHits)
-							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams))
+							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
+							releaseIndexSearcher
 					);
 				})
 				.subscribeOn(scheduler);

@@ -11,6 +11,7 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
+			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			Scheduler scheduler) {
@@ -18,7 +19,8 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 		return Mono
 				.fromCallable(() -> new LuceneSearchResult(
 						indexSearcher.count(queryParams.query()),
-						Flux.empty())
+						Flux.empty(),
+						releaseIndexSearcher)
 				)
 				.subscribeOn(scheduler);
 	}

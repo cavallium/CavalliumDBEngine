@@ -120,15 +120,22 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	private final ScheduledTaskLifecycle scheduledTasksLifecycle;
 
-	public LLLocalLuceneIndex(Path luceneBasePath,
+	public LLLocalLuceneIndex(@Nullable Path luceneBasePath,
 			String name,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions) throws IOException {
+		Path directoryPath;
+		if (luceneOptions.inMemory() != (luceneBasePath == null)) {
+			throw new IllegalArgumentException();
+		} else if (luceneBasePath != null) {
+			directoryPath = luceneBasePath.resolve(name + ".lucene.db");
+		} else {
+			directoryPath = null;
+		}
 		if (name.length() == 0) {
 			throw new IOException("Empty lucene database name");
 		}
-		Path directoryPath = luceneBasePath.resolve(name + ".lucene.db");
 		if (!MMapDirectory.UNMAP_SUPPORTED) {
 			logger.error("Unmap is unsupported, lucene will run slower: {}", MMapDirectory.UNMAP_NOT_SUPPORTED_REASON);
 		} else {
@@ -471,13 +478,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
 		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
-				.flatMap(modifiedLocalQuery -> Mono
-						.usingWhen(
-								this.acquireSearcherWrapper(snapshot),
-								indexSearcher -> localSearcher.collect(indexSearcher, modifiedLocalQuery, keyFieldName, luceneSearcherScheduler),
-								indexSearcher -> releaseSearcherWrapper(snapshot, indexSearcher)
-						)
-						.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount()))
+				.flatMap(modifiedLocalQuery -> this.acquireSearcherWrapper(snapshot)
+						.flatMap(indexSearcher -> {
+							Mono<Void> releaseMono = releaseSearcherWrapper(snapshot, indexSearcher);
+							return localSearcher
+											.collect(indexSearcher, releaseMono, modifiedLocalQuery, keyFieldName, luceneSearcherScheduler)
+											.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
+											.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
+						})
 				);
 	}
 
@@ -486,12 +494,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			LuceneShardSearcher shardSearcher) {
 		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
-				.flatMap(modifiedLocalQuery -> Mono
-						.usingWhen(
-								this.acquireSearcherWrapper(snapshot),
-								indexSearcher -> shardSearcher.searchOn(indexSearcher, modifiedLocalQuery, luceneSearcherScheduler),
-								indexSearcher -> releaseSearcherWrapper(snapshot, indexSearcher)
-						)
+				.flatMap(modifiedLocalQuery -> this.acquireSearcherWrapper(snapshot)
+						.flatMap(indexSearcher -> {
+							Mono<Void> releaseMono = releaseSearcherWrapper(snapshot, indexSearcher);
+							return shardSearcher
+									.searchOn(indexSearcher, releaseMono, modifiedLocalQuery, luceneSearcherScheduler)
+									.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
+						})
 				);
 	}
 
@@ -569,25 +578,26 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
-		return Mono
-				.usingWhen(
-						this.acquireSearcherWrapper(snapshot),
-						indexSearcher -> localSearcher.collect(indexSearcher, localQueryParams, keyFieldName, luceneSearcherScheduler),
-						indexSearcher -> releaseSearcherWrapper(snapshot, indexSearcher)
-				)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount()));
+		return this.acquireSearcherWrapper(snapshot)
+				.flatMap(indexSearcher -> {
+					Mono<Void> releaseMono = releaseSearcherWrapper(snapshot, indexSearcher);
+					return localSearcher
+							.collect(indexSearcher, releaseMono, localQueryParams, keyFieldName, luceneSearcherScheduler)
+							.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
+							.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
+				});
 	}
 
 	public Mono<Void> distributedSearch(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			LuceneShardSearcher shardSearcher) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
-		return Mono
-				.usingWhen(
-						this.acquireSearcherWrapper(snapshot),
-						indexSearcher -> shardSearcher.searchOn(indexSearcher, localQueryParams, luceneSearcherScheduler),
-						indexSearcher -> releaseSearcherWrapper(snapshot, indexSearcher)
-				);
+		return this.acquireSearcherWrapper(snapshot)
+				.flatMap(indexSearcher -> {
+					Mono<Void> releaseMono = releaseSearcherWrapper(snapshot, indexSearcher);
+					return shardSearcher.searchOn(indexSearcher, releaseMono, localQueryParams, luceneSearcherScheduler)
+							.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
+				});
 	}
 
 	@Override

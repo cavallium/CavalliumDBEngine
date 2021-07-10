@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.NotNull;
 
+@SuppressWarnings("ClassCanBeRecord")
 public class BinaryLexicographicList implements ByteList {
 
 	private final byte[] bytes;

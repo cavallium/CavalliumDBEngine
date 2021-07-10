@@ -85,7 +85,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	private ByteList k(ByteBuf buf) {
-		return ByteList.of(LLUtils.toArray(buf));
+		return new BinaryLexicographicList(LLUtils.toArray(buf));
 	}
 
 	private ByteBuf kk(ByteList bytesList) {

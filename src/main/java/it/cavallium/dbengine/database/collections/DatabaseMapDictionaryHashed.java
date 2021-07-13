@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBloc
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSets;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,7 +31,7 @@ import reactor.core.publisher.Mono;
 public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
 	private final ByteBufAllocator alloc;
-	private final DatabaseMapDictionary<TH, Set<Entry<T, U>>> subDictionary;
+	private final DatabaseMapDictionary<TH, ObjectArraySet<Entry<T, U>>> subDictionary;
 	private final Function<T, TH> keySuffixHashFunction;
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
@@ -89,11 +90,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		);
 	}
 
-	private Map<TH, Set<Entry<T, U>>> serializeMap(Map<T, U> map) {
-		var newMap = new HashMap<TH, Set<Entry<T, U>>>(map.size());
+	private Map<TH, ObjectArraySet<Entry<T, U>>> serializeMap(Map<T, U> map) {
+		var newMap = new HashMap<TH, ObjectArraySet<Entry<T, U>>>(map.size());
 		map.forEach((key, value) -> newMap.compute(keySuffixHashFunction.apply(key), (hash, prev) -> {
 			if (prev == null) {
-				prev = new HashSet<>();
+				prev = new ObjectArraySet<>();
 			}
 			prev.add(Map.entry(key, value));
 			return prev;
@@ -101,7 +102,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		return newMap;
 	}
 
-	private Map<T, U> deserializeMap(Map<TH, Set<Entry<T, U>>> map) {
+	private Map<T, U> deserializeMap(Map<TH, ObjectArraySet<Entry<T, U>>> map) {
 		var newMap = new HashMap<T, U>(map.size());
 		map.forEach((hash, set) -> set.forEach(entry -> newMap.put(entry.getKey(), entry.getValue())));
 		return newMap;
@@ -246,24 +247,24 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	@Override
 	public ValueGetterBlocking<T, U> getDbValueGetter(@Nullable CompositeSnapshot snapshot) {
-		ValueGetterBlocking<TH, Set<Entry<T, U>>> getter = subDictionary.getDbValueGetter(snapshot);
+		ValueGetterBlocking<TH, ObjectArraySet<Entry<T, U>>> getter = subDictionary.getDbValueGetter(snapshot);
 		return key -> extractValue(getter.get(keySuffixHashFunction.apply(key)), key);
 	}
 
 	@Override
 	public ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {
-		ValueGetter<TH, Set<Entry<T, U>>> getter = subDictionary.getAsyncDbValueGetter(snapshot);
+		ValueGetter<TH, ObjectArraySet<Entry<T, U>>> getter = subDictionary.getAsyncDbValueGetter(snapshot);
 		return key -> getter
 				.get(keySuffixHashFunction.apply(key))
 				.flatMap(set -> this.extractValueTransformation(set, key));
 	}
 
-	private Mono<U> extractValueTransformation(Set<Entry<T, U>> entries, T key) {
+	private Mono<U> extractValueTransformation(ObjectArraySet<Entry<T, U>> entries, T key) {
 		return Mono.fromCallable(() -> extractValue(entries, key));
 	}
 
 	@Nullable
-	private U extractValue(Set<Entry<T, U>> entries, T key) {
+	private U extractValue(ObjectArraySet<Entry<T, U>> entries, T key) {
 		if (entries == null) return null;
 		for (Entry<T, U> entry : entries) {
 			if (Objects.equals(entry.getKey(), key)) {
@@ -274,21 +275,23 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@NotNull
-	private Set<Entry<T, U>> insertValueOrCreate(@Nullable Set<Entry<T, U>> entries, T key, U value) {
+	private ObjectArraySet<Entry<T, U>> insertValueOrCreate(@Nullable ObjectArraySet<Entry<T, U>> entries, T key, U value) {
 		if (entries != null) {
-			entries.add(Map.entry(key, value));
-			return entries;
+			var clonedEntries = entries.clone();
+			clonedEntries.add(Map.entry(key, value));
+			return clonedEntries;
 		} else {
-			var oas = new HashSet<Entry<T, U>>(1);
+			var oas = new ObjectArraySet<Entry<T, U>>(1);
 			oas.add(Map.entry(key, value));
 			return oas;
 		}
 	}
 
 	@Nullable
-	private Set<Entry<T, U>> removeValueOrDelete(@Nullable Set<Entry<T, U>> entries, T key) {
+	private Set<Entry<T, U>> removeValueOrDelete(@Nullable ObjectArraySet<Entry<T, U>> entries, T key) {
 		if (entries != null) {
-			var it = entries.iterator();
+			var clonedEntries = entries.clone();
+			var it = clonedEntries.iterator();
 			while (it.hasNext()) {
 				var entry = it.next();
 				if (Objects.equals(entry.getKey(), key)) {
@@ -296,10 +299,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 					break;
 				}
 			}
-			if (entries.size() == 0) {
+			if (clonedEntries.size() == 0) {
 				return null;
 			} else {
-				return entries;
+				return clonedEntries;
 			}
 		} else {
 			return null;

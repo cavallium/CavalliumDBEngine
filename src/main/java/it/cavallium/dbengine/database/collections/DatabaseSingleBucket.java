@@ -24,10 +24,10 @@ import reactor.core.publisher.Mono;
 @SuppressWarnings("unused")
 public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 
-	private final DatabaseStageEntry<Set<Entry<K, V>>> bucketStage;
+	private final DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage;
 	private final K key;
 
-	public DatabaseSingleBucket(DatabaseStageEntry<Set<Entry<K, V>>> bucketStage, K key) {
+	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key) {
 		this.bucketStage = bucketStage;
 		this.key = key;
 	}
@@ -151,9 +151,10 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@NotNull
-	private Set<Entry<K, V>> insertValueOrCreate(@Nullable Set<Entry<K, V>> entries, V value) {
+	private ObjectArraySet<Entry<K, V>> insertValueOrCreate(@Nullable ObjectArraySet<Entry<K, V>> entries, V value) {
 		if (entries != null) {
-			var it = entries.iterator();
+			var clonedEntries = entries.clone();
+			var it = clonedEntries.iterator();
 			while (it.hasNext()) {
 				var entry = it.next();
 				if (Objects.equals(entry.getKey(), key)) {
@@ -161,19 +162,20 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 					break;
 				}
 			}
-			entries.add(Map.entry(key, value));
-			return entries;
+			clonedEntries.add(Map.entry(key, value));
+			return clonedEntries;
 		} else {
-			var oas = new HashSet<Entry<K, V>>(1);
+			var oas = new ObjectArraySet<Entry<K, V>>(1);
 			oas.add(Map.entry(key, value));
 			return oas;
 		}
 	}
 
 	@Nullable
-	private Set<Entry<K, V>> removeValueOrDelete(@Nullable Set<Entry<K, V>> entries) {
+	private ObjectArraySet<Entry<K, V>> removeValueOrDelete(@Nullable ObjectArraySet<Entry<K, V>> entries) {
 		if (entries != null) {
-			var it = entries.iterator();
+			var clonedEntries = entries.clone();
+			var it = clonedEntries.iterator();
 			while (it.hasNext()) {
 				var entry = it.next();
 				if (Objects.equals(entry.getKey(), key)) {
@@ -181,10 +183,10 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 					break;
 				}
 			}
-			if (entries.size() == 0) {
+			if (clonedEntries.size() == 0) {
 				return null;
 			} else {
-				return entries;
+				return clonedEntries;
 			}
 		} else {
 			return null;

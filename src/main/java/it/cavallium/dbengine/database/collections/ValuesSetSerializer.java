@@ -4,12 +4,15 @@ import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
 import it.unimi.dsi.fastutil.objects.ObjectSets;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 
-class ValuesSetSerializer<X> implements Serializer<Set<X>, ByteBuf> {
+class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>, ByteBuf> {
 
 	private final ByteBufAllocator allocator;
 	private final Serializer<X, ByteBuf> entrySerializer;
@@ -20,22 +23,22 @@ class ValuesSetSerializer<X> implements Serializer<Set<X>, ByteBuf> {
 	}
 
 	@Override
-	public @NotNull Set<X> deserialize(@NotNull ByteBuf serialized) {
+	public @NotNull ObjectArraySet<X> deserialize(@NotNull ByteBuf serialized) {
 		try {
 			int entriesLength = serialized.readInt();
-			var set = new HashSet<X>();
+			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
 			for (int i = 0; i < entriesLength; i++) {
 				X entry = entrySerializer.deserialize(serialized.retain());
-				set.add(entry);
+				deserializedElements.add(entry);
 			}
-			return set;
+			return new ObjectArraySet<>(deserializedElements);
 		} finally {
 			serialized.release();
 		}
 	}
 
 	@Override
-	public @NotNull ByteBuf serialize(@NotNull Set<X> deserialized) {
+	public @NotNull ByteBuf serialize(@NotNull ObjectArraySet<X> deserialized) {
 		ByteBuf output = allocator.buffer();
 		try {
 			output.writeInt(deserialized.size());

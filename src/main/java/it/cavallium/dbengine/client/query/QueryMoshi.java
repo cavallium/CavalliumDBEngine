@@ -33,7 +33,7 @@ public class QueryMoshi extends MoshiPolymorphic<IType> {
 
 	@SuppressWarnings({"unchecked", "RedundantCast", "rawtypes"})
 	public QueryMoshi() {
-		super(true, true);
+		super(true, GetterStyle.RECORDS_GETTERS);
 		HashSet<Class<IType>> abstractClasses = new HashSet<>();
 		HashSet<Class<IType>> concreteClasses = new HashSet<>();
 

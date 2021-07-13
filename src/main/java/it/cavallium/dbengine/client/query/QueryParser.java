@@ -42,64 +42,54 @@ public class QueryParser {
 			case BooleanQuery:
 				var booleanQuery = (it.cavallium.dbengine.client.query.current.data.BooleanQuery) query;
 				var bq = new Builder();
-				for (BooleanQueryPart part : booleanQuery.getParts()) {
-					Occur occur;
-					switch (part.getOccur().getBasicType$()) {
-						case OccurFilter:
-							occur = Occur.FILTER;
-							break;
-						case OccurMust:
-							occur = Occur.MUST;
-							break;
-						case OccurShould:
-							occur = Occur.SHOULD;
-							break;
-						case OccurMustNot:
-							occur = Occur.MUST_NOT;
-							break;
-						default:
-							throw new IllegalStateException("Unexpected value: " + part.getOccur().getBasicType$());
-					}
-					bq.add(toQuery(part.getQuery()), occur);
+				for (BooleanQueryPart part : booleanQuery.parts()) {
+					Occur occur = switch (part.occur().getBasicType$()) {
+						case OccurFilter -> Occur.FILTER;
+						case OccurMust -> Occur.MUST;
+						case OccurShould -> Occur.SHOULD;
+						case OccurMustNot -> Occur.MUST_NOT;
+						default -> throw new IllegalStateException("Unexpected value: " + part.occur().getBasicType$());
+					};
+					bq.add(toQuery(part.query()), occur);
 				}
-				bq.setMinimumNumberShouldMatch(booleanQuery.getMinShouldMatch());
+				bq.setMinimumNumberShouldMatch(booleanQuery.minShouldMatch());
 				return bq.build();
 			case IntPointExactQuery:
 				var intPointExactQuery = (IntPointExactQuery) query;
-				return IntPoint.newExactQuery(intPointExactQuery.getField(), intPointExactQuery.getValue());
+				return IntPoint.newExactQuery(intPointExactQuery.field(), intPointExactQuery.value());
 			case LongPointExactQuery:
 				var longPointExactQuery = (LongPointExactQuery) query;
-				return LongPoint.newExactQuery(longPointExactQuery.getField(), longPointExactQuery.getValue());
+				return LongPoint.newExactQuery(longPointExactQuery.field(), longPointExactQuery.value());
 			case TermQuery:
 				var termQuery = (TermQuery) query;
-				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.getTerm()));
+				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.term()));
 			case BoostQuery:
 				var boostQuery = (BoostQuery) query;
-				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.getQuery()), boostQuery.getScoreBoost());
+				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.query()), boostQuery.scoreBoost());
 			case ConstantScoreQuery:
 				var constantScoreQuery = (ConstantScoreQuery) query;
-				return new org.apache.lucene.search.ConstantScoreQuery(toQuery(constantScoreQuery.getQuery()));
+				return new org.apache.lucene.search.ConstantScoreQuery(toQuery(constantScoreQuery.query()));
 			case BoxedQuery:
-				return toQuery(((BoxedQuery) query).getQuery());
+				return toQuery(((BoxedQuery) query).query());
 			case FuzzyQuery:
 				var fuzzyQuery = (it.cavallium.dbengine.client.query.current.data.FuzzyQuery) query;
-				return new FuzzyQuery(toTerm(fuzzyQuery.getTerm()),
-						fuzzyQuery.getMaxEdits(),
-						fuzzyQuery.getPrefixLength(),
-						fuzzyQuery.getMaxExpansions(),
-						fuzzyQuery.getTranspositions()
+				return new FuzzyQuery(toTerm(fuzzyQuery.term()),
+						fuzzyQuery.maxEdits(),
+						fuzzyQuery.prefixLength(),
+						fuzzyQuery.maxExpansions(),
+						fuzzyQuery.transpositions()
 				);
 			case IntPointRangeQuery:
 				var intPointRangeQuery = (IntPointRangeQuery) query;
-				return IntPoint.newRangeQuery(intPointRangeQuery.getField(),
-						intPointRangeQuery.getMin(),
-						intPointRangeQuery.getMax()
+				return IntPoint.newRangeQuery(intPointRangeQuery.field(),
+						intPointRangeQuery.min(),
+						intPointRangeQuery.max()
 				);
 			case LongPointRangeQuery:
 				var longPointRangeQuery = (LongPointRangeQuery) query;
-				return LongPoint.newRangeQuery(longPointRangeQuery.getField(),
-						longPointRangeQuery.getMin(),
-						longPointRangeQuery.getMax()
+				return LongPoint.newRangeQuery(longPointRangeQuery.field(),
+						longPointRangeQuery.min(),
+						longPointRangeQuery.max()
 				);
 			case MatchAllDocsQuery:
 				return new MatchAllDocsQuery();
@@ -108,41 +98,41 @@ public class QueryParser {
 			case PhraseQuery:
 				var phraseQuery = (PhraseQuery) query;
 				var pqb = new org.apache.lucene.search.PhraseQuery.Builder();
-				for (TermPosition phrase : phraseQuery.getPhrase()) {
-					pqb.add(toTerm(phrase.getTerm()), phrase.getPosition());
+				for (TermPosition phrase : phraseQuery.phrase()) {
+					pqb.add(toTerm(phrase.term()), phrase.position());
 				}
-				pqb.setSlop(phraseQuery.getSlop());
+				pqb.setSlop(phraseQuery.slop());
 				return pqb.build();
 			case SortedDocFieldExistsQuery:
 				var sortedDocFieldExistsQuery = (SortedDocFieldExistsQuery) query;
-				return new DocValuesFieldExistsQuery(sortedDocFieldExistsQuery.getField());
+				return new DocValuesFieldExistsQuery(sortedDocFieldExistsQuery.field());
 			case SynonymQuery:
 				var synonymQuery = (SynonymQuery) query;
-				var sqb = new org.apache.lucene.search.SynonymQuery.Builder(synonymQuery.getField());
-				for (TermAndBoost part : synonymQuery.getParts()) {
-					sqb.addTerm(toTerm(part.getTerm()), part.getBoost());
+				var sqb = new org.apache.lucene.search.SynonymQuery.Builder(synonymQuery.field());
+				for (TermAndBoost part : synonymQuery.parts()) {
+					sqb.addTerm(toTerm(part.term()), part.boost());
 				}
 				return sqb.build();
 			case SortedNumericDocValuesFieldSlowRangeQuery:
 				var sortedNumericDocValuesFieldSlowRangeQuery = (SortedNumericDocValuesFieldSlowRangeQuery) query;
-				return SortedNumericDocValuesField.newSlowRangeQuery(sortedNumericDocValuesFieldSlowRangeQuery.getField(),
-						sortedNumericDocValuesFieldSlowRangeQuery.getMin(),
-						sortedNumericDocValuesFieldSlowRangeQuery.getMax()
+				return SortedNumericDocValuesField.newSlowRangeQuery(sortedNumericDocValuesFieldSlowRangeQuery.field(),
+						sortedNumericDocValuesFieldSlowRangeQuery.min(),
+						sortedNumericDocValuesFieldSlowRangeQuery.max()
 				);
 			case WildcardQuery:
 				var wildcardQuery = (WildcardQuery) query;
-				return new org.apache.lucene.search.WildcardQuery(new Term(wildcardQuery.getField(), wildcardQuery.getPattern()));
+				return new org.apache.lucene.search.WildcardQuery(new Term(wildcardQuery.field(), wildcardQuery.pattern()));
 			default:
 				throw new IllegalStateException("Unexpected value: " + query.getBasicType$());
 		}
 	}
 
 	private static Term toTerm(it.cavallium.dbengine.client.query.current.data.Term term) {
-		return new Term(term.getField(), term.getValue());
+		return new Term(term.field(), term.value());
 	}
 
 	public static boolean isScoringEnabled(QueryParams queryParams) {
-		return queryParams.getScoreMode().getComputeScores();
+		return queryParams.scoreMode().computeScores();
 	}
 
 	public static Sort toSort(it.cavallium.dbengine.client.query.current.data.Sort sort) {
@@ -155,7 +145,7 @@ public class QueryParser {
 				return new Sort(SortField.FIELD_DOC);
 			case NumericSort:
 				NumericSort numericSort = (NumericSort) sort;
-				return new Sort(new SortedNumericSortField(numericSort.getField(), Type.LONG, numericSort.getReverse()));
+				return new Sort(new SortedNumericSortField(numericSort.field(), Type.LONG, numericSort.reverse()));
 			default:
 				throw new IllegalStateException("Unexpected value: " + sort.getBasicType$());
 		}
@@ -163,13 +153,13 @@ public class QueryParser {
 
 	@SuppressWarnings("ConstantConditions")
 	public static ScoreMode toScoreMode(it.cavallium.dbengine.client.query.current.data.ScoreMode scoreMode) {
-		if (scoreMode.getComputeScores() && scoreMode.getOnlyTopScores()) {
+		if (scoreMode.computeScores() && scoreMode.onlyTopScores()) {
 			return ScoreMode.TOP_SCORES;
-		} else if (scoreMode.getComputeScores() && !scoreMode.getOnlyTopScores()) {
+		} else if (scoreMode.computeScores() && !scoreMode.onlyTopScores()) {
 			return ScoreMode.COMPLETE;
-		} else if (!scoreMode.getComputeScores() && scoreMode.getOnlyTopScores()) {
+		} else if (!scoreMode.computeScores() && scoreMode.onlyTopScores()) {
 			throw new IllegalStateException("Conflicting score mode options: [computeScores = false, onlyTopScore = true]");
-		} else if (!scoreMode.getComputeScores() && !scoreMode.getOnlyTopScores()) {
+		} else if (!scoreMode.computeScores() && !scoreMode.onlyTopScores()) {
 			return ScoreMode.COMPLETE_NO_SCORES;
 		} else {
 			throw new IllegalStateException("Unexpected value: " + scoreMode);

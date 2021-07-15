@@ -1002,7 +1002,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues) {
 		return entries
-				.window(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
+				.bufferTime(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.flatMap(Flux::collectList)
 				.map(Collections::unmodifiableList)
 				.flatMap(ew -> Mono

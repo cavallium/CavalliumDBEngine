@@ -38,6 +38,7 @@ public final record ClientQueryParams<T>(@Nullable CompositeSnapshot snapshot,
 			case COMPLETE -> ScoreMode.of(false, true);
 			case COMPLETE_NO_SCORES -> ScoreMode.of(false, false);
 			case TOP_SCORES -> ScoreMode.of(true, true);
+			case NO_SCORES -> ScoreMode.of(true, false);
 			//noinspection UnnecessaryDefault
 			default -> throw new IllegalArgumentException();
 		};

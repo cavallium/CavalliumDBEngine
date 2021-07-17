@@ -9,7 +9,9 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.util.Objects;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.TopDocsCollector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -31,15 +33,19 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 					} else {
 						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
 					}
-					//noinspection BlockingMethodInNonBlockingContext
-					TopDocs firstPageTopDocs = TopDocsSearcher.getTopDocs(indexSearcher,
-							queryParams.query(),
-							queryParams.sort(),
-							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
-							null,
-							queryParams.scoreMode().needsScores(),
-							1000,
-							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()), LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()));
+					TopDocs firstPageTopDocs;
+					{
+						TopDocsCollector<ScoreDoc> firstPageCollector = TopDocsSearcher.getTopDocsCollector(
+								queryParams.sort(),
+								LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
+								null,
+								LuceneUtils.totalHitsThreshold());
+						//noinspection BlockingMethodInNonBlockingContext
+						indexSearcher.search(queryParams.query(), firstPageCollector);
+						firstPageTopDocs = firstPageCollector.topDocs(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
+								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit())
+						);
+					}
 					Flux<LLKeyScore> firstPageMono = LuceneUtils
 							.convertHits(
 									firstPageTopDocs.scoreDocs,
@@ -61,9 +67,14 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 											if (s.last() != null && s.remainingLimit() > 0) {
 												TopDocs pageTopDocs;
 												try {
+													TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
+															s.currentPageLimit(),
+															s.last(),
+															LuceneUtils.totalHitsThreshold()
+													);
 													//noinspection BlockingMethodInNonBlockingContext
-													pageTopDocs = TopDocsSearcher.getTopDocs(indexSearcher, queryParams.query(),
-															queryParams.sort(), s.currentPageLimit(), s.last(), queryParams.scoreMode().needsScores(), 1000);
+													indexSearcher.search(queryParams.query(), collector);
+													pageTopDocs = collector.topDocs();
 												} catch (IOException e) {
 													sink.error(e);
 													return EMPTY_STATUS;

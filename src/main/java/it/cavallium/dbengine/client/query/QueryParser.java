@@ -158,7 +158,7 @@ public class QueryParser {
 		} else if (scoreMode.computeScores() && !scoreMode.onlyTopScores()) {
 			return ScoreMode.COMPLETE;
 		} else if (!scoreMode.computeScores() && scoreMode.onlyTopScores()) {
-			throw new IllegalStateException("Conflicting score mode options: [computeScores = false, onlyTopScore = true]");
+			return ScoreMode.TOP_DOCS;
 		} else if (!scoreMode.computeScores() && !scoreMode.onlyTopScores()) {
 			return ScoreMode.COMPLETE_NO_SCORES;
 		} else {

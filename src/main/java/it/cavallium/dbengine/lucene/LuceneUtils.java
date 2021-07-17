@@ -27,7 +27,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.NoSuchElementException;
 import java.util.Set;
+import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
@@ -48,6 +50,7 @@ import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.apache.lucene.search.similarities.Similarity;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.novasearch.lucene.search.similarities.BM25Similarity;
 import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
@@ -55,11 +58,16 @@ import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import org.reactivestreams.Publisher;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 
 public class LuceneUtils {
+
+	private static final Logger logger = LoggerFactory.getLogger(LuceneUtils.class);
+
 	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
 	private static final Analyzer lucene4GramStringAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(false, 4, 4);
 	private static final Analyzer lucene4GramWordsAnalyzerInstance = new NCharGramAnalyzer(true, 4, 4);
@@ -168,35 +176,29 @@ public class LuceneUtils {
 		return minCompetitiveScore == null || score >= minCompetitiveScore;
 	}
 
-	@Nullable
+	/**
+	 * @throws NoSuchElementException when the key is not found
+	 * @throws IOException when an error occurs when reading the document
+	 */
+	@NotNull
 	public static String keyOfTopDoc(int docId, IndexReader indexReader,
-			String keyFieldName) throws IOException {
+			String keyFieldName) throws IOException, NoSuchElementException {
 		if (docId > indexReader.maxDoc()) {
 			throw new IOException("Document " + docId + " > maxDoc (" +indexReader.maxDoc() + ")");
 		}
 		Document d = indexReader.document(docId, Set.of(keyFieldName));
 		if (d.getFields().isEmpty()) {
-			StringBuilder sb = new StringBuilder();
-			sb.append("The document docId: ").append(docId).append(" is empty.");
-			var realFields = indexReader.document(docId).getFields();
-			if (!realFields.isEmpty()) {
-				sb.append("\n");
-				sb.append("Present fields:\n");
-				boolean first = true;
-				for (IndexableField field : realFields) {
-					if (first) {
-						first = false;
-					} else {
-						sb.append("\n");
-					}
-					sb.append(" - ").append(field.name());
-				}
-			}
-			throw new IOException(sb.toString());
+			throw new NoSuchElementException(
+					"Can't get key (field \"" + keyFieldName + "\") of document docId: " + docId + ". Available fields: []");
 		} else {
 			var field = d.getField(keyFieldName);
 			if (field == null) {
-				throw new IOException("Can't get key of document docId: " + docId);
+				throw new NoSuchElementException(
+						"Can't get key (field \"" + keyFieldName + "\") of document docId: " + docId + ". Available fields: " + d
+								.getFields()
+								.stream()
+								.map(IndexableField::name)
+								.collect(Collectors.joining(",", "[", "]")));
 			} else {
 				return field.stringValue();
 			}
@@ -353,8 +355,11 @@ public class LuceneUtils {
 					float score = hit.score;
 					var indexSearcher = indexSearchers.shard(shardIndex);
 					try {
-						@Nullable String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
-						return new LLKeyScore(shardDocId, score, Mono.justOrEmpty(collectedDoc));
+						String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
+						return new LLKeyScore(shardDocId, score, Mono.just(collectedDoc));
+					} catch (NoSuchElementException ex) {
+						logger.debug("Error: document " + shardDocId + " key is not present!");
+						return null;
 					} catch (Exception ex) {
 						return new LLKeyScore(shardDocId, score, Mono.error(ex));
 					}
@@ -424,5 +429,9 @@ public class LuceneUtils {
 			}
 		}
 		return result;
+	}
+
+	public static int totalHitsThreshold() {
+		return 0;
 	}
 }

@@ -92,7 +92,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 												Query luceneQuery = queryParams.query();
 												UnscoredCollectorManager currentPageUnsortedCollectorManager = new UnscoredCollectorManager(
 														() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), s.currentPageLimit(),
-																s.last(), 1000), 0, s.currentPageLimit(), queryParams.sort());
+																s.last(), LuceneUtils.totalHitsThreshold()), 0, s.currentPageLimit(), queryParams.sort());
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)

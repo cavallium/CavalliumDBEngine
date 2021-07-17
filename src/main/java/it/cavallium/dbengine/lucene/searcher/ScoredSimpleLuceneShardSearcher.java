@@ -100,7 +100,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 												}
 												CollectorManager<TopFieldCollector, TopDocs> sharedManager
 														= new ScoringShardsCollectorManager(luceneSort, s.currentPageLimit(),
-														(FieldDoc) s.last(), 1000, 0, s.currentPageLimit());
+														(FieldDoc) s.last(), LuceneUtils.totalHitsThreshold(), 0, s.currentPageLimit());
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)

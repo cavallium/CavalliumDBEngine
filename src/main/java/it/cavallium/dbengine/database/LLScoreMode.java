@@ -18,5 +18,11 @@ public enum	LLScoreMode {
 	 * hits using the {@link Scorer#setMinCompetitiveScore(float)} API.
 	 * This can reduce time if using setMinCompetitiveScore.
 	 */
-	TOP_SCORES
+	TOP_SCORES,
+	/**
+	 * Produced scorers will allow visiting some matches but scores won't be
+	 * available.
+	 * Much faster in multi-lucene indices than complete, because it will not need global scores calculation.
+	 */
+	NO_SCORES
 }

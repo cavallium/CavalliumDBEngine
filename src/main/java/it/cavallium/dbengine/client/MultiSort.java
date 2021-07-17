@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.RandomSort;
 import it.cavallium.dbengine.client.query.current.data.ScoreSort;
@@ -64,6 +65,10 @@ public class MultiSort<T> {
 
 	public static <T, U> MultiSort<SearchResultItem<T, U>> topScoreWithValues() {
 		return new MultiSort<>(ScoreSort.of());
+	}
+
+	public static <T, U> MultiSort<SearchResultItem<T, U>> noScoreNoSortWithValues() {
+		return new MultiSort<>(NoSort.of());
 	}
 
 	public Sort getQuerySort() {

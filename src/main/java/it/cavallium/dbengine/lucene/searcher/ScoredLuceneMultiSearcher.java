@@ -29,7 +29,7 @@ public class ScoredLuceneMultiSearcher implements LuceneMultiSearcher {
 					}
 					CollectorManager<TopFieldCollector, TopDocs> sharedManager = new ScoringShardsCollectorManager(luceneSort,
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
-							null, 1000, LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
+							null, LuceneUtils.totalHitsThreshold(), LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit()));
 					return new ScoredSimpleLuceneShardSearcher(sharedManager, queryParams.query(), paginationInfo);
 				});

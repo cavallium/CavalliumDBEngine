@@ -2,15 +2,13 @@ package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLScoreMode;
-import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
-import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.database.collections.ValueGetter;
+import it.cavallium.dbengine.database.collections.ValueTransformer;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -19,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuples;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
@@ -84,7 +83,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex.deleteAll();
 	}
 
-	private Mono<SearchResultKeys<T>> transformLuceneResult(LLSearchResultShard llSearchResult) {
+	private Mono<SearchResultKeys<T>> transformLuceneResultWithTransformer(LLSearchResultShard llSearchResult) {
 		return Mono.just(new SearchResultKeys<>(llSearchResult.results()
 				.map(signal -> new SearchResultKey<>(signal.key().map(indicizer::getKey), signal.score())),
 				llSearchResult.totalHitsCount(),
@@ -92,7 +91,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		));
 	}
 
-	private <V> Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResultShard llSearchResult,
+	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResultShard llSearchResult,
 			ValueGetter<T, U> valueGetter) {
 		return Mono.just(new SearchResult<>(llSearchResult.results().map(signal -> {
 			var key = signal.key().map(indicizer::getKey);
@@ -100,35 +99,34 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		}), llSearchResult.totalHitsCount(), llSearchResult.release()));
 	}
 
-	/**
-	 *
-	 * @param queryParams the limit is valid for each lucene instance.
-	 *               If you have 15 instances, the number of elements returned
-	 *               can be at most <code>limit * 15</code>
-	 * @return the collection has one or more flux
-	 */
+	private Mono<SearchResult<T, U>> transformLuceneResultWithTransformer(LLSearchResultShard llSearchResult,
+			ValueTransformer<T, U> valueTransformer) {
+		var scoresWithKeysFlux = llSearchResult
+				.results()
+				.flatMapSequential(signal -> signal.key().map(indicizer::getKey).map(key -> Tuples.of(signal.score(), key)));
+		var resultItemsFlux = valueTransformer
+				.transform(scoresWithKeysFlux)
+				.map(tuple3 -> new SearchResultItem<>(Mono.just(tuple3.getT2()),
+						Mono.just(tuple3.getT3()),
+						tuple3.getT1()
+				));
+		return Mono.just(new SearchResult<>(resultItemsFlux, llSearchResult.totalHitsCount(), llSearchResult.release()));
+	}
+
 	@Override
-	public <V> Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams,
+	public Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams,
 			T key,
 			U mltDocumentValue) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName(), mltDocumentFields)
-				.flatMap(this::transformLuceneResult);
+				.flatMap(this::transformLuceneResultWithTransformer);
 
 	}
 
-
-	/**
-	 *
-	 * @param queryParams the limit is valid for each lucene instance.
-	 *               If you have 15 instances, the number of elements returned
-	 *               can be at most <code>limit * 15</code>
-	 * @return the collection has one or more flux
-	 */
 	@Override
-	public <V> Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueGetter<T, U> valueGetter) {
@@ -145,32 +143,34 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				));
 	}
 
-	/**
-	 *
-	 * @param queryParams the limit is valid for each lucene instance.
-	 *               If you have 15 instances, the number of elements returned
-	 *               can be at most <code>limit * 15</code>
-	 * @return the collection has one or more flux
-	 */
 	@Override
-	public <V> Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams) {
+	public Mono<SearchResult<T, U>> moreLikeThisWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+			T key,
+			U mltDocumentValue,
+			ValueTransformer<T, U> valueTransformer) {
+		Flux<Tuple2<String, Set<String>>> mltDocumentFields
+				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
+		return luceneIndex
+				.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
+						queryParams.toQueryParams(),
+						indicizer.getKeyFieldName(),
+						mltDocumentFields
+				)
+				.flatMap(llSearchResult -> this.transformLuceneResultWithTransformer(llSearchResult, valueTransformer));
+	}
+
+	@Override
+	public Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()
 				)
-				.flatMap(this::transformLuceneResult);
+				.flatMap(this::transformLuceneResultWithTransformer);
 	}
 
-	/**
-	 *
-	 * @param queryParams the limit is valid for each lucene instance.
-	 *               If you have 15 instances, the number of elements returned
-	 *               can be at most <code>limit * 15</code>
-	 * @return the collection has one or more flux
-	 */
 	@Override
-	public <V> Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueGetter<T, U> valueGetter) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
@@ -178,8 +178,17 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
+	public Mono<SearchResult<T, U>> searchWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+			ValueTransformer<T, U> valueTransformer) {
+		return luceneIndex
+				.search(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
+				.flatMap(llSearchResult -> this.transformLuceneResultWithTransformer(llSearchResult, valueTransformer));
+	}
+
+	@Override
 	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
+		return this
+				.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
 				.flatMap(tSearchResultKeys -> tSearchResultKeys.release().thenReturn(tSearchResultKeys.totalHitsCount()));
 	}
 

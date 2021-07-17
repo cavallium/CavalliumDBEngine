@@ -1,19 +1,19 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.ExtraKeyOperationResult;
+import it.cavallium.dbengine.database.KeyOperationResult;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
-import it.cavallium.dbengine.database.collections.JoinerBlocking.ValueGetterBlocking;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -52,6 +52,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				.flatMap(v -> v
 						.update(updater, updateReturnMode, existsAlmostCertainly)
 						.doAfterTerminate(v::release)
+				);
+	}
+
+	default <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries, BiFunction<@Nullable U, X, @Nullable U> updater) {
+		return entries
+				.flatMapSequential(entry -> this
+						.updateValue(entry.getT1(), prevValue -> updater.apply(prevValue, entry.getT2()))
+						.map(changed -> new ExtraKeyOperationResult<>(entry.getT1(), entry.getT2(), changed))
 				);
 	}
 
@@ -254,10 +262,20 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return k -> getValue(snapshot, k).block();
 	}
 
-	/**
-	 * Value getter doesn't lock data. Please make sure to lock before getting data.
-	 */
 	default ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {
 		return k -> getValue(snapshot, k);
+	}
+
+	default ValueTransformer<T, U> getAsyncDbValueTransformer(@Nullable CompositeSnapshot snapshot) {
+		return new ValueTransformer<>() {
+			@Override
+			public <X> Flux<Tuple3<X, T, U>> transform(Flux<Tuple2<X, T>> keys) {
+				return Flux.defer(() -> {
+					ConcurrentHashMap<T, X> extraValues = new ConcurrentHashMap<>();
+					return getMulti(snapshot, keys.doOnNext(key -> extraValues.put(key.getT2(), key.getT1())).map(Tuple2::getT2))
+							.map(result -> Tuples.of(extraValues.get(result.getKey()), result.getKey(), result.getValue()));
+				});
+			}
+		};
 	}
 }

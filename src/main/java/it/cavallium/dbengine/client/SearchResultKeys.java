@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.dbengine.database.collections.Joiner.ValueGetter;
+import it.cavallium.dbengine.database.collections.ValueGetter;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

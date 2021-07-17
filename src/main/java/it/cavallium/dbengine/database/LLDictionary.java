@@ -5,12 +5,14 @@ import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.BadBlock;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import reactor.util.function.Tuple3;
 
 @SuppressWarnings("unused")
 @NotAtomic
@@ -58,13 +60,18 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<ByteBuf> remove(ByteBuf key, LLDictionaryResultType resultType);
 
-	Flux<Entry<ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot, Flux<ByteBuf> keys, boolean existsAlmostCertainly);
+	<K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Tuple2<K, ByteBuf>> keys,
+			boolean existsAlmostCertainly);
 
-	default Flux<Entry<ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot, Flux<ByteBuf> keys) {
+	default <K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot, Flux<Tuple2<K, ByteBuf>> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 
 	Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues);
+
+	<X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
+			BiFunction<ByteBuf, X, ByteBuf> updateFunction);
 
 	Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, LLRange range, boolean existsAlmostCertainly);
 

@@ -7,17 +7,22 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.ExtraKeyOperationResult;
+import it.cavallium.dbengine.database.KeyOperationResult;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.unimi.dsi.fastutil.booleans.BooleanArrayList;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -26,10 +31,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -58,6 +65,7 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
 import reactor.util.function.Tuples;
 import static io.netty.buffer.Unpooled.*;
@@ -71,6 +79,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final long MAX_WRITE_BATCH_SIZE = 1024L * 1024L * 1024L; // 1GiB
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
 	static final int MULTI_GET_WINDOW = 500;
+	static final Duration MULTI_GET_WINDOW_TIMEOUT = Duration.ofSeconds(1);
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnmodifiableReadOptions();
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnmodifiableWriteOptions();
 	static final WriteOptions BATCH_WRITE_OPTIONS = new UnmodifiableWriteOptions();
@@ -211,6 +220,14 @@ public class LLLocalDictionary implements LLDictionary {
 		var list = new IntArrayList(keys.size());
 		for (Entry<ByteBuf, ByteBuf> key : keys) {
 			list.add(getLockIndex(key.getKey()));
+		}
+		return list;
+	}
+
+	private <X> IntArrayList getLockIndicesWithExtra(List<Tuple2<ByteBuf, X>> entries) {
+		var list = new IntArrayList(entries.size());
+		for (Tuple2<ByteBuf, X> key : entries) {
+			list.add(getLockIndex(key.getT1()));
 		}
 		return list;
 	}
@@ -869,60 +886,53 @@ public class LLLocalDictionary implements LLDictionary {
 	private Mono<ByteBuf> getPreviousData(ByteBuf key, LLDictionaryResultType resultType) {
 		try {
 			return Mono
-					.defer(() -> {
-						switch (resultType) {
-							case PREVIOUS_VALUE_EXISTENCE:
-								return this
-										.containsKey(null, key.retain())
-										.single()
-										.map(LLUtils::booleanToResponseByteBuffer)
-										.doAfterTerminate(() -> {
-											assert key.refCnt() > 0;
-										});
-							case PREVIOUS_VALUE:
-								return Mono
-										.fromCallable(() -> {
-											StampedLock lock;
-											long stamp;
-											if (updateMode == UpdateMode.ALLOW) {
-												lock = itemsLock.getAt(getLockIndex(key));
+					.defer(() -> switch (resultType) {
+						case PREVIOUS_VALUE_EXISTENCE -> this
+								.containsKey(null, key.retain())
+								.single()
+								.map(LLUtils::booleanToResponseByteBuffer)
+								.doAfterTerminate(() -> {
+									assert key.refCnt() > 0;
+								});
+						case PREVIOUS_VALUE -> Mono
+								.fromCallable(() -> {
+									StampedLock lock;
+									long stamp;
+									if (updateMode == UpdateMode.ALLOW) {
+										lock = itemsLock.getAt(getLockIndex(key));
 
-												stamp = lock.readLock();
+										stamp = lock.readLock();
+									} else {
+										lock = null;
+										stamp = 0;
+									}
+									try {
+										if (logger.isTraceEnabled()) {
+											logger.trace("Reading {}", LLUtils.toArray(key));
+										}
+										var data = new Holder<byte[]>();
+										if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
+											if (data.getValue() != null) {
+												return wrappedBuffer(data.getValue());
 											} else {
-												lock = null;
-												stamp = 0;
-											}
-											try {
-												if (logger.isTraceEnabled()) {
-													logger.trace("Reading {}", LLUtils.toArray(key));
-												}
-												var data = new Holder<byte[]>();
-												if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
-													if (data.getValue() != null) {
-														return wrappedBuffer(data.getValue());
-													} else {
-														try {
-															return dbGet(cfh, null, key.retain(), true);
-														} finally {
-															assert key.refCnt() > 0;
-														}
-													}
-												} else {
-													return null;
-												}
-											} finally {
-												if (updateMode == UpdateMode.ALLOW) {
-													lock.unlockRead(stamp);
+												try {
+													return dbGet(cfh, null, key.retain(), true);
+												} finally {
+													assert key.refCnt() > 0;
 												}
 											}
-										})
-										.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
-										.subscribeOn(dbScheduler);
-							case VOID:
-								return Mono.empty();
-							default:
-								return Mono.error(new IllegalStateException("Unexpected value: " + resultType));
-						}
+										} else {
+											return null;
+										}
+									} finally {
+										if (updateMode == UpdateMode.ALLOW) {
+											lock.unlockRead(stamp);
+										}
+									}
+								})
+								.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
+								.subscribeOn(dbScheduler);
+						case VOID -> Mono.empty();
 					})
 					.doFirst(key::retain)
 					.doAfterTerminate(key::release);
@@ -932,80 +942,92 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Entry<ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<ByteBuf> keys,
+	public <K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Tuple2<K, ByteBuf>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
-				.window(MULTI_GET_WINDOW)
-				.flatMap(keysWindowFlux -> keysWindowFlux
-						.collectList()
-						.doOnDiscard(Entry.class, discardedEntry -> {
-							//noinspection unchecked
-							var entry = (Entry<ByteBuf, ByteBuf>) discardedEntry;
-							entry.getKey().release();
-							entry.getValue().release();
-						})
-						.flatMapMany(keysWindow -> Mono
-								.fromCallable(() -> {
-									Iterable<StampedLock> locks;
-									ArrayList<Long> stamps;
-									if (updateMode == UpdateMode.ALLOW) {
-										locks = itemsLock.bulkGetAt(getLockIndices(keysWindow));
-										stamps = new ArrayList<>();
-										for (var lock : locks) {
-											
-											stamps.add(lock.readLock());
-										}
-									} else {
-										locks = null;
-										stamps = null;
-									}
-									try {
-										var handlesArray = new ColumnFamilyHandle[keysWindow.size()];
-										Arrays.fill(handlesArray, cfh);
-										var handles = ObjectArrayList.wrap(handlesArray, handlesArray.length);
-										var results = db.multiGetAsList(resolveSnapshot(snapshot), handles, LLUtils.toArray(keysWindow));
-										var mappedResults = new ArrayList<Entry<ByteBuf, ByteBuf>>(results.size());
-										for (int i = 0; i < results.size(); i++) {
-											var val = results.get(i);
-											if (val != null) {
-												results.set(i, null);
-												mappedResults.add(Map.entry(keysWindow.get(i).retain(), wrappedBuffer(val)));
-											}
-										}
-										return mappedResults;
-									} finally {
+				.bufferTimeout(MULTI_GET_WINDOW, MULTI_GET_WINDOW_TIMEOUT)
+				.doOnDiscard(Tuple2.class, discardedEntry -> {
+					//noinspection unchecked
+					var entry = (Tuple2<K, ByteBuf>) discardedEntry;
+					entry.getT2().release();
+				})
+				.doOnDiscard(Tuple3.class, discardedEntry -> {
+					//noinspection unchecked
+					var entry = (Tuple3<K, ByteBuf, ByteBuf>) discardedEntry;
+					entry.getT2().release();
+					entry.getT3().release();
+				})
+				.flatMapSequential(keysWindow -> {
+					List<ByteBuf> keyBufsWindow = new ArrayList<>(keysWindow.size());
+					for (Tuple2<K, ByteBuf> objects : keysWindow) {
+						keyBufsWindow.add(objects.getT2());
+					}
+					return Mono
+									.fromCallable(() -> {
+										Iterable<StampedLock> locks;
+										ArrayList<Long> stamps;
 										if (updateMode == UpdateMode.ALLOW) {
-											int index = 0;
+											locks = itemsLock.bulkGetAt(getLockIndices(keyBufsWindow));
+											stamps = new ArrayList<>();
 											for (var lock : locks) {
-												lock.unlockRead(stamps.get(index));
-												index++;
+
+												stamps.add(lock.readLock());
+											}
+										} else {
+											locks = null;
+											stamps = null;
+										}
+										try {
+											var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
+											var results = db.multiGetAsList(resolveSnapshot(snapshot), columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
+											var mappedResults = new ArrayList<Tuple3<K, ByteBuf, ByteBuf>>(results.size());
+											for (int i = 0; i < results.size(); i++) {
+												var val = results.get(i);
+												if (val != null) {
+													results.set(i, null);
+													mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
+															keyBufsWindow.get(i).retain(),
+															wrappedBuffer(val)
+													));
+												}
+											}
+											return mappedResults;
+										} finally {
+											if (updateMode == UpdateMode.ALLOW) {
+												int index = 0;
+												for (var lock : locks) {
+													lock.unlockRead(stamps.get(index));
+													index++;
+												}
 											}
 										}
-									}
-								})
-								.subscribeOn(dbScheduler)
-								.flatMapMany(Flux::fromIterable)
-								.onErrorMap(cause -> new IOException("Failed to read keys "
-										+ Arrays.deepToString(keysWindow.toArray(ByteBuf[]::new)), cause))
-								.doAfterTerminate(() -> keysWindow.forEach(ReferenceCounted::release))
-						)
-				)
+									})
+									.subscribeOn(dbScheduler)
+									.flatMapMany(Flux::fromIterable)
+									.onErrorMap(cause -> new IOException("Failed to read keys "
+											+ Arrays.deepToString(keyBufsWindow.toArray(ByteBuf[]::new)), cause))
+									.doAfterTerminate(() -> keyBufsWindow.forEach(ReferenceCounted::release));
+				}, 2) // Max concurrency is 2 to read data while preparing the next segment
 				.doOnDiscard(Entry.class, discardedEntry -> {
 					//noinspection unchecked
 					var entry = (Entry<ByteBuf, ByteBuf>) discardedEntry;
 					entry.getKey().release();
 					entry.getValue().release();
+				})
+				.doOnDiscard(Tuple3.class, discardedEntry -> {
+					//noinspection unchecked
+					var entry = (Tuple3<K, ByteBuf, ByteBuf>) discardedEntry;
+					entry.getT2().release();
+					entry.getT3().release();
 				});
 	}
 
 	@Override
 	public Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues) {
 		return entries
-				.bufferTime(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.flatMap(Flux::collectList)
-				.map(Collections::unmodifiableList)
-				.flatMap(ew -> Mono
+				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
+				.flatMapSequential(ew -> Mono
 						.using(
 								() -> ew,
 								entriesWindow -> Mono
@@ -1054,13 +1076,15 @@ public class LLLocalDictionary implements LLDictionary {
 										.subscribeOn(dbScheduler)
 
 										// Prepend everything to get previous elements
-										.transformDeferred(transformer -> {
+										.transform(transformer -> {
+											var obj = new Object();
 											if (getOldValues) {
 												return this
 														.getMulti(null, Flux
 																.fromIterable(entriesWindow)
 																.map(Entry::getKey)
-																.map(ByteBuf::retain), false)
+																.map(ByteBuf::retain)
+																.map(buf -> Tuples.of(obj, buf)), false)
 														.publishOn(dbScheduler)
 														.then(transformer);
 											} else {
@@ -1073,8 +1097,7 @@ public class LLLocalDictionary implements LLDictionary {
 										entry.getValue().release();
 									}
 								}
-						)
-				)
+						), 2) // Max concurrency is 2 to read data while preparing the next segment
 				.doOnDiscard(Entry.class, entry -> {
 					if (entry.getKey() instanceof ByteBuf && entry.getValue() instanceof ByteBuf) {
 						//noinspection unchecked
@@ -1089,6 +1112,152 @@ public class LLLocalDictionary implements LLDictionary {
 					for (Entry<ByteBuf, ByteBuf> entry : castedEntries) {
 						entry.getKey().release();
 						entry.getValue().release();
+					}
+				});
+	}
+
+	@Override
+	public <X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
+			BiFunction<ByteBuf, X, ByteBuf> updateFunction) {
+		return entries
+				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
+				.flatMapSequential(ew -> Flux
+						.using(
+								() -> ew,
+								entriesWindow -> {
+									List<ByteBuf> keyBufsWindow = new ArrayList<>(entriesWindow.size());
+									for (Tuple2<ByteBuf, X> objects : entriesWindow) {
+										keyBufsWindow.add(objects.getT1());
+									}
+									return Mono
+											.<Iterable<ExtraKeyOperationResult<ByteBuf, X>>>fromCallable(() -> {
+												Iterable<StampedLock> locks;
+												ArrayList<Long> stamps;
+												if (updateMode == UpdateMode.ALLOW) {
+													locks = itemsLock.bulkGetAt(getLockIndicesWithExtra(entriesWindow));
+													stamps = new ArrayList<>();
+													for (var lock : locks) {
+														stamps.add(lock.writeLock());
+													}
+												} else {
+													locks = null;
+													stamps = null;
+												}
+												try {
+													var columnFamilyHandles = new RepeatedElementList<>(cfh, entriesWindow.size());
+													ArrayList<Tuple3<ByteBuf, X, Optional<ByteBuf>>> mappedInputs;
+													{
+														var inputs = db.multiGetAsList(resolveSnapshot(null), columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
+														mappedInputs = new ArrayList<>(inputs.size());
+														for (int i = 0; i < inputs.size(); i++) {
+															var val = inputs.get(i);
+															if (val != null) {
+																inputs.set(i, null);
+																mappedInputs.add(Tuples.of(
+																		keyBufsWindow.get(i).retain(),
+																		entriesWindow.get(i).getT2(),
+																		Optional.of(wrappedBuffer(val))
+																));
+															} else {
+																mappedInputs.add(Tuples.of(
+																		keyBufsWindow.get(i).retain(),
+																		entriesWindow.get(i).getT2(),
+																		Optional.empty()
+																));
+															}
+														}
+													}
+													var updatedValuesToWrite = new ArrayList<ByteBuf>(mappedInputs.size());
+													var valueChangedResult = new ArrayList<ExtraKeyOperationResult<ByteBuf, X>>(mappedInputs.size());
+													try {
+														for (var mappedInput : mappedInputs) {
+															var updatedValue = updateFunction.apply(mappedInput.getT1().retain(), mappedInput.getT2());
+															valueChangedResult.add(new ExtraKeyOperationResult<>(mappedInput.getT1(),
+																	mappedInput.getT2(),
+																	!Objects.equals(mappedInput.getT3().orElse(null), updatedValue.retain())
+															));
+															updatedValuesToWrite.add(updatedValue);
+														}
+													} finally {
+														for (var mappedInput : mappedInputs) {
+															mappedInput.getT3().ifPresent(ReferenceCounted::release);
+														}
+													}
+
+													if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
+														var batch = new CappedWriteBatch(db,
+																CAPPED_WRITE_BATCH_CAP,
+																RESERVED_WRITE_BATCH_SIZE,
+																MAX_WRITE_BATCH_SIZE,
+																BATCH_WRITE_OPTIONS
+														);
+														int i = 0;
+														for (Tuple2<ByteBuf, X> entry : entriesWindow) {
+															var valueToWrite = updatedValuesToWrite.get(i);
+															if (valueToWrite == null) {
+																batch.delete(cfh, entry.getT1().retain());
+															} else {
+																batch.put(cfh, entry.getT1().retain(), valueToWrite.retain());
+															}
+															i++;
+														}
+														batch.writeToDbAndClose();
+														batch.close();
+													} else {
+														int i = 0;
+														for (Tuple2<ByteBuf, X> entry : entriesWindow) {
+															var valueToWrite = updatedValuesToWrite.get(i);
+															db.put(cfh, EMPTY_WRITE_OPTIONS, entry.getT1().nioBuffer(), valueToWrite.nioBuffer());
+															i++;
+														}
+													}
+													return valueChangedResult;
+												} finally {
+													if (updateMode == UpdateMode.ALLOW) {
+														int index = 0;
+														for (var lock : locks) {
+															lock.unlockWrite(stamps.get(index));
+															index++;
+														}
+													}
+												}
+											})
+											.subscribeOn(dbScheduler)
+											.flatMapMany(Flux::fromIterable);
+								},
+								entriesWindow -> {
+									for (Tuple2<ByteBuf, X> entry : entriesWindow) {
+										entry.getT1().release();
+									}
+								}
+						), 2 // Max concurrency is 2 to update data while preparing the next segment
+				)
+				.doOnDiscard(Tuple2.class, entry -> {
+					if (entry.getT1() instanceof ByteBuf bb) {
+						bb.release();
+					}
+					if (entry.getT2() instanceof ByteBuf bb) {
+						bb.release();
+					}
+				})
+				.doOnDiscard(ExtraKeyOperationResult.class, entry -> {
+					if (entry.key() instanceof ByteBuf bb) {
+						bb.release();
+					}
+					if (entry.extra() instanceof ByteBuf bb) {
+						bb.release();
+					}
+				})
+				.doOnDiscard(Collection.class, obj -> {
+					//noinspection unchecked
+					var castedEntries = (Collection<ExtraKeyOperationResult<Object, Object>>) obj;
+					for (var entry : castedEntries) {
+						if (entry.key() instanceof ByteBuf bb) {
+							bb.release();
+						}
+						if (entry.extra() instanceof ByteBuf bb) {
+							bb.release();
+						}
 					}
 				});
 	}
@@ -1811,7 +1980,7 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 									})
 									.onErrorMap(cause -> new IOException("Failed to get size of range "
-											+ range.toString(), cause))
+											+ range, cause))
 									.subscribeOn(dbScheduler);
 						}
 					})

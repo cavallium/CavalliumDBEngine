@@ -29,6 +29,7 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
+import org.rocksdb.ClockCache;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
@@ -38,6 +39,7 @@ import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
+import org.rocksdb.IndexType;
 import org.rocksdb.LRUCache;
 import org.rocksdb.MemoryUtil;
 import org.rocksdb.Options;
@@ -315,11 +317,25 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(0) // automatic
 			;
 			tableOptions
-					.setBlockCache(new LRUCache(8L * 1024L * 1024L)) // 8MiB
-					.setCacheIndexAndFilterBlocks(false)
-					.setPinL0FilterAndIndexBlocksInCache(false)
+					.setIndexType(IndexType.kTwoLevelIndexSearch)
+					.setPartitionFilters(true)
+					.setMetadataBlockSize(4096)
+					.setBlockCache(new ClockCache(8L * 1024L * 1024L)) // 8MiB
+					.setCacheIndexAndFilterBlocks(true)
+					.setCacheIndexAndFilterBlocksWithHighPriority(true)
+					.setPinL0FilterAndIndexBlocksInCache(true)
 			;
-			options.setWriteBufferManager(new WriteBufferManager(8L * 1024L * 1024L, new LRUCache(8L * 1024L * 1024L))); // 8MiB
+			options.setWriteBufferManager(new WriteBufferManager(8L * 1024L * 1024L, new ClockCache(8L * 1024L * 1024L))); // 8MiB
+
+			if (databaseOptions.useDirectIO()) {
+				options
+						// Option to enable readahead in compaction
+						// If not set, it will be set to 2MB internally
+						.setCompactionReadaheadSize(2 * 1024 * 1024) // recommend at least 2MB
+						// Option to tune write buffer for direct writes
+						.setWritableFileMaxBufferSize(1024 * 1024)
+				;
+			}
 		} else {
 			// HIGH MEMORY
 			options
@@ -329,7 +345,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
 					.setBytesPerSync(1 * 1024 * 1024) // 1MiB
 					.setWalBytesPerSync(10 * 1024 * 1024)
-					.setMaxOpenFiles(150)
+					.setMaxOpenFiles(30)
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
@@ -338,32 +354,43 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(2L * 1024L * 1024L * 1024L) // 2GiB max wal directory size
 			;
 			tableOptions
-					.setBlockCache(new LRUCache(128L * 1024L * 1024L)) // 128MiB
+					.setIndexType(IndexType.kTwoLevelIndexSearch)
+					.setPartitionFilters(true)
+					.setMetadataBlockSize(4096)
+					.setBlockCache(new ClockCache(512L * 1024L * 1024L)) // 512MiB
 					.setCacheIndexAndFilterBlocks(true)
+					.setCacheIndexAndFilterBlocksWithHighPriority(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)
 					;
 			final BloomFilter bloomFilter = new BloomFilter(10, false);
 			tableOptions.setOptimizeFiltersForMemory(true);
 			tableOptions.setFilterPolicy(bloomFilter);
-			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new LRUCache(128L * 1024L * 1024L))); // 128MiB
+			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new ClockCache(128L * 1024L * 1024L))); // 128MiB
 
 			if (databaseOptions.useDirectIO()) {
 				options
-						.setAllowMmapReads(false)
-						.setAllowMmapWrites(false)
-						.setUseDirectIoForFlushAndCompaction(true)
-						.setUseDirectReads(true)
 						// Option to enable readahead in compaction
 						// If not set, it will be set to 2MB internally
-						.setCompactionReadaheadSize(2 * 1024 * 1024) // recommend at least 2MB
+						.setCompactionReadaheadSize(4 * 1024 * 1024) // recommend at least 2MB
 						// Option to tune write buffer for direct writes
-						.setWritableFileMaxBufferSize(1024 * 1024)
+						.setWritableFileMaxBufferSize(4 * 1024 * 1024)
 				;
-			} else {
-				options
-						.setAllowMmapReads(databaseOptions.allowMemoryMapping())
-						.setAllowMmapWrites(databaseOptions.allowMemoryMapping());
 			}
+		}
+		if (databaseOptions.useDirectIO()) {
+			options
+					.setAllowMmapReads(false)
+					.setAllowMmapWrites(false)
+					.setUseDirectReads(true)
+			;
+		} else {
+			options
+					.setAllowMmapReads(databaseOptions.allowMemoryMapping())
+					.setAllowMmapWrites(databaseOptions.allowMemoryMapping());
+		}
+
+		if (!databaseOptions.allowMemoryMapping()) {
+			options.setUseDirectIoForFlushAndCompaction(true);
 		}
 
 		tableOptions.setBlockSize(16 * 1024); // 16MiB

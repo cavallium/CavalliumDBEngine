@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.ExtraKeyOperationResult;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
@@ -18,10 +19,14 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuple3;
+import reactor.util.function.Tuples;
 
 public class LLMemoryDictionary implements LLDictionary {
 
@@ -188,20 +193,20 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Entry<ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<ByteBuf> keys,
+	public <K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Tuple2<K, ByteBuf>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
 				.handle((key, sink) -> {
 					try {
-						var v = snapshots.get(resolveSnapshot(snapshot)).get(k(key));
+						var v = snapshots.get(resolveSnapshot(snapshot)).get(k(key.getT2()));
 						if (v == null) {
 							sink.complete();
 						} else {
-							sink.next(Map.entry(key.retain(), kk(v)));
+							sink.next(Tuples.of(key.getT1(), key.getT2().retain(), kk(v)));
 						}
 					} finally {
-						key.release();
+						key.getT2().release();
 					}
 				});
 	}
@@ -224,6 +229,12 @@ public class LLMemoryDictionary implements LLDictionary {
 						val.release();
 					}
 				});
+	}
+
+	@Override
+	public <X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
+			BiFunction<ByteBuf, X, ByteBuf> updateFunction) {
+		return Flux.error(new UnsupportedOperationException("Not implemented"));
 	}
 
 	@Override

@@ -87,7 +87,7 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> flush();
 
-	Mono<Void> refresh();
+	Mono<Void> refresh(boolean force);
 
 	private static <T, U> ValueTransformer<T, U> getValueGetterTransformer(ValueGetter<T, U> valueGetter) {
 		return new ValueTransformer<T, U>() {

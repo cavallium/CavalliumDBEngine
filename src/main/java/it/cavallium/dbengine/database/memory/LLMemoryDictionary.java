@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -150,7 +151,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	public Mono<ByteBuf> put(ByteBuf key, ByteBuf value, LLDictionaryResultType resultType) {
 		try {
 			return Mono
-					.fromCallable(() -> mainDb.put(k(key),k(value)))
+					.fromCallable(() -> mainDb.put(k(key), k(value)))
 					.transform(result -> this.transformResult(result, resultType))
 					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
 					.doFirst(key::retain)
@@ -169,7 +170,23 @@ public class LLMemoryDictionary implements LLDictionary {
 	public Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			boolean existsAlmostCertainly) {
-		return null;
+		return Mono.fromCallable(() -> {
+			AtomicReference<ByteBuf> oldRef = new AtomicReference<>(null);
+			var newValue = mainDb.compute(k(key), (_unused, old) -> {
+				if (old != null) {
+					oldRef.set(kk(old));
+				}
+				var v = updater.apply(old != null ? kk(old) : null);
+				try {
+					return k(v);
+				} finally {
+					if (v != null) {
+						v.release();
+					}
+				}
+			});
+			return new Delta<>(oldRef.get(), kk(newValue));
+		});
 	}
 
 	@Override
@@ -197,13 +214,13 @@ public class LLMemoryDictionary implements LLDictionary {
 			Flux<Tuple2<K, ByteBuf>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
-				.handle((key, sink) -> {
+				.flatMapSequential(key -> {
 					try {
-						var v = snapshots.get(resolveSnapshot(snapshot)).get(k(key.getT2()));
+						ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(key.getT2()));
 						if (v == null) {
-							sink.complete();
+							return Flux.empty();
 						} else {
-							sink.next(Tuples.of(key.getT1(), key.getT2().retain(), kk(v)));
+							return Flux.just(Tuples.of(key.getT1(), key.getT2().retain(), kk(v)));
 						}
 					} finally {
 						key.getT2().release();

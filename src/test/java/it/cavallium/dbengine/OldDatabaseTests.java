@@ -75,7 +75,7 @@ public class OldDatabaseTests {
 										.map(dictionary -> DatabaseMapDictionaryDeep.deepTail(dictionary,
 												new FixedStringSerializer(3),
 												4,
-												new SubStageGetterMap<>(new FixedStringSerializer(4), Serializer.noop())
+												new SubStageGetterMap<>(new FixedStringSerializer(4), Serializer.noop(), true)
 										))
 										.flatMap(collection -> Flux
 												.fromIterable(originalSuperKeys)
@@ -135,7 +135,7 @@ public class OldDatabaseTests {
 				.then(new LLLocalDatabaseConnection(PooledByteBufAllocator.DEFAULT, wrkspcPath).connect())
 				.flatMap(conn -> conn.getDatabase("testdb",
 						List.of(Column.dictionary("testmap")),
-						new DatabaseOptions(Map.of(), true, false, true, false, true, true, true)
+						new DatabaseOptions(Map.of(), true, false, true, false, true, true, true, true)
 				));
 	}
 
@@ -159,14 +159,14 @@ public class OldDatabaseTests {
 										.map(dictionary -> DatabaseMapDictionaryDeep.deepTail(dictionary,
 												new FixedStringSerializer(3),
 												4,
-												new SubStageGetterMap<>(new FixedStringSerializer(4), Serializer.noop())
+												new SubStageGetterMap<>(new FixedStringSerializer(4), Serializer.noop(), true)
 										)),
 								db
 										.getDictionary("testmap", UpdateMode.DISALLOW)
 										.map(dictionary -> DatabaseMapDictionaryDeep.deepTail(dictionary,
 												new FixedStringSerializer(6),
 												7,
-												new SubStageGetterMap<>(new FixedStringSerializer(7), Serializer.noop())
+												new SubStageGetterMap<>(new FixedStringSerializer(7), Serializer.noop(), true)
 										))
 						)
 						.single()

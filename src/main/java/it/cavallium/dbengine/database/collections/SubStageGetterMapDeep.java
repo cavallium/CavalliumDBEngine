@@ -25,14 +25,16 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	private final SubStageGetter<U, US> subStageGetter;
 	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
 	private final int keyExtLength;
+	private final boolean enableAssertionsWhenUsingAssertions;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
-			int keyExtLength) {
+			int keyExtLength, boolean enableAssertionsWhenUsingAssertions) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;
 		this.keyExtLength = keyExtLength;
 		assert keyExtConsistency();
+		this.enableAssertionsWhenUsingAssertions = enableAssertionsWhenUsingAssertions;
 	}
 
 
@@ -54,7 +56,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		try {
 			return Mono
 					.defer(() -> {
-						if (assertsEnabled) {
+						if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
 							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
 						} else {
 							return Mono
@@ -90,7 +92,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 
 	@Override
 	public boolean needsDebuggingKeyFlux() {
-		return assertsEnabled;
+		return assertsEnabled && enableAssertionsWhenUsingAssertions;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {

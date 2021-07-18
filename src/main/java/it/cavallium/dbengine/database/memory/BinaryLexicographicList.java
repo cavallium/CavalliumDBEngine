@@ -252,6 +252,22 @@ public class BinaryLexicographicList implements ByteList {
 			return true;
 		}
 		if (o == null || getClass() != o.getClass()) {
+			if (o instanceof List) {
+				int i = 0;
+				for (Object o1 : ((List<?>) o)) {
+					if (i >= size()) {
+						return false;
+					}
+					if (!(o1 instanceof Byte)) {
+						return false;
+					}
+					if (this.bytes[i] != (Byte) o1) {
+						return false;
+					}
+					i++;
+				}
+				return (size() == i);
+			}
 			return false;
 		}
 		BinaryLexicographicList bytes1 = (BinaryLexicographicList) o;

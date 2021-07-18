@@ -56,48 +56,58 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 							.take(queryParams.limit(), true);
 
 
-					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
-						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
-							return Flux.empty();
-						}
-						return Flux
-								.<TopDocs, CurrentPageInfo>generate(
-										() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
-										(s, sink) -> {
-											if (s.last() != null && s.remainingLimit() > 0) {
-												TopDocs pageTopDocs;
-												try {
-													TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
-															s.currentPageLimit(),
-															s.last(),
-															LuceneUtils.totalHitsThreshold()
-													);
-													//noinspection BlockingMethodInNonBlockingContext
-													indexSearcher.search(queryParams.query(), collector);
-													pageTopDocs = collector.topDocs();
-												} catch (IOException e) {
-													sink.error(e);
+					Flux<LLKeyScore> nextHits;
+					if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
+						nextHits = null;
+					} else {
+						nextHits = Flux.defer(() -> {
+							return Flux
+									.<TopDocs, CurrentPageInfo>generate(
+											() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
+											(s, sink) -> {
+												if (s.last() != null && s.remainingLimit() > 0) {
+													TopDocs pageTopDocs;
+													try {
+														TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
+																s.currentPageLimit(),
+																s.last(),
+																LuceneUtils.totalHitsThreshold()
+														);
+														//noinspection BlockingMethodInNonBlockingContext
+														indexSearcher.search(queryParams.query(), collector);
+														pageTopDocs = collector.topDocs();
+													} catch (IOException e) {
+														sink.error(e);
+														return EMPTY_STATUS;
+													}
+													var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
+													sink.next(pageTopDocs);
+													return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
+												} else {
+													sink.complete();
 													return EMPTY_STATUS;
 												}
-												var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
-												sink.next(pageTopDocs);
-												return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
-											} else {
-												sink.complete();
-												return EMPTY_STATUS;
-											}
-										},
-										s -> {}
-								)
-								.subscribeOn(scheduler)
-								.concatMap(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler)
-								);
-					});
+											},
+											s -> {}
+									)
+									.subscribeOn(scheduler)
+									.concatMap(topFieldDoc -> LuceneUtils
+											.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler)
+									);
+						});
+					}
 
-					return new LuceneSearchResult(firstPageTopDocs.totalHits.value, firstPageMono
-							.concatWith(nextHits)
-							.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
+					Flux<LLKeyScore> combinedFlux;
+
+					if (nextHits != null) {
+						combinedFlux = firstPageMono
+								.concatWith(nextHits);
+					} else {
+						combinedFlux = firstPageMono;
+					}
+
+					return new LuceneSearchResult(firstPageTopDocs.totalHits.value, combinedFlux,
+							//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							releaseIndexSearcher
 					);
 				})

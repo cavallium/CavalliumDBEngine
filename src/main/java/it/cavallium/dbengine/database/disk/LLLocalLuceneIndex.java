@@ -91,7 +91,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene",
 			Integer.MAX_VALUE,
-			true
+			false
 	);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
 	private final Scheduler luceneSearcherScheduler = Schedulers.newBoundedElastic(
@@ -99,7 +99,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene-searcher",
 			60,
-			true
+			false
+	);
+	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
+	private final Scheduler luceneWriterScheduler = Schedulers.newBoundedElastic(
+			4,
+			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+			"lucene-writer",
+			60,
+			false
 	);
 
 	private final String luceneIndexName;
@@ -353,12 +361,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			scheduledTasksLifecycle.startScheduledTask();
 			try {
+				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.addDocument(LLUtils.toDocument(doc));
 				return null;
 			} finally {
 				scheduledTasksLifecycle.endScheduledTask();
 			}
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneWriterScheduler);
 	}
 
 	@Override
@@ -369,13 +378,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.<Void>fromCallable(() -> {
 							scheduledTasksLifecycle.startScheduledTask();
 							try {
+								//noinspection BlockingMethodInNonBlockingContext
 								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
 								return null;
 							} finally {
 								scheduledTasksLifecycle.endScheduledTask();
 							}
 						})
-						.subscribeOn(Schedulers.boundedElastic())
+						.subscribeOn(luceneWriterScheduler)
 				);
 	}
 
@@ -385,12 +395,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			scheduledTasksLifecycle.startScheduledTask();
 			try {
+				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.deleteDocuments(LLUtils.toTerm(id));
 				return null;
 			} finally {
 				scheduledTasksLifecycle.endScheduledTask();
 			}
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneWriterScheduler);
 	}
 
 	@Override
@@ -398,12 +409,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			scheduledTasksLifecycle.startScheduledTask();
 			try {
+				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
 			} finally {
 				scheduledTasksLifecycle.endScheduledTask();
 			}
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic());
+		}).subscribeOn(luceneWriterScheduler);
 	}
 
 	@Override
@@ -419,6 +431,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
 							LLTerm key = entry.getKey();
 							LLDocument value = entry.getValue();
+							//noinspection BlockingMethodInNonBlockingContext
 							indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
 						}
 						return null;
@@ -426,7 +439,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						scheduledTasksLifecycle.endScheduledTask();
 					}
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(luceneWriterScheduler);
 	}
 
 	@Override
@@ -634,14 +647,20 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> refresh() {
+	public Mono<Void> refresh(boolean force) {
 		return Mono
 				.<Void>fromCallable(() -> {
 					scheduledTasksLifecycle.startScheduledTask();
 					try {
 						if (scheduledTasksLifecycle.isCancelled()) return null;
-						//noinspection BlockingMethodInNonBlockingContext
-						searcherManager.maybeRefresh();
+						if (force) {
+							if (scheduledTasksLifecycle.isCancelled()) return null;
+							//noinspection BlockingMethodInNonBlockingContext
+							searcherManager.maybeRefreshBlocking();
+						} else {
+							//noinspection BlockingMethodInNonBlockingContext
+							searcherManager.maybeRefresh();
+						}
 					} finally {
 						scheduledTasksLifecycle.endScheduledTask();
 					}

@@ -70,5 +70,5 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	/**
 	 * Refresh index searcher
 	 */
-	Mono<Void> refresh();
+	Mono<Void> refresh(boolean force);
 }

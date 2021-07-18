@@ -142,8 +142,8 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 					return new LuceneSearchResult(result.totalHits.value,
 							firstPageHits
-									.concatWith(nextHits)
-									.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
+									.concatWith(nextHits),
+									//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							release
 					);
 				})

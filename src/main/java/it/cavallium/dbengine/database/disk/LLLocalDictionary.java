@@ -287,7 +287,9 @@ public class LLLocalDictionary implements LLDictionary {
 					throw new RocksDBException("Key buffer must be direct");
 				}
 				ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
-				assert keyNioBuffer.isDirect();
+				if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+					assert keyNioBuffer.isDirect();
+				}
 				// Create a direct result buffer because RocksDB works only with direct buffers
 				ByteBuf resultBuf = alloc.directBuffer(LLLocalDictionary.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
 				try {
@@ -297,35 +299,39 @@ public class LLLocalDictionary implements LLDictionary {
 					do {
 						// Create the result nio buffer to pass to RocksDB
 						resultNioBuf = resultBuf.nioBuffer(0, resultBuf.capacity());
-						assert keyNioBuffer.isDirect();
-						assert resultNioBuf.isDirect();
+						if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+							assert keyNioBuffer.isDirect();
+							assert resultNioBuf.isDirect();
+						}
 						valueSize = db.get(cfh,
 								Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS),
 								keyNioBuffer.position(0),
 								resultNioBuf
 						);
 						if (valueSize != RocksDB.NOT_FOUND) {
-							// todo: check if position is equal to data that have been read
-							// todo: check if limit is equal to value size or data that have been read
-							assert valueSize <= 0 || resultNioBuf.limit() > 0;
+							if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+								// todo: check if position is equal to data that have been read
+								// todo: check if limit is equal to value size or data that have been read
+								assert valueSize <= 0 || resultNioBuf.limit() > 0;
 
-							// If the locking is enabled the data is safe, so since we are appending data to the end,
-							// we need to check if it has been appended correctly or it it has been overwritten.
-							// We must not do this check otherwise because if there is no locking the data can be
-							// overwritten with a smaller value the next time.
-							if (updateMode == UpdateMode.ALLOW) {
-								// Check if read data is larger than previously read data.
-								// If it's smaller or equals it means that RocksDB is overwriting the beginning of the result buffer.
-								assert resultNioBuf.limit() > assertionReadData;
-								if (ASSERTIONS_ENABLED) {
-									assertionReadData = resultNioBuf.limit();
+								// If the locking is enabled the data is safe, so since we are appending data to the end,
+								// we need to check if it has been appended correctly or it it has been overwritten.
+								// We must not do this check otherwise because if there is no locking the data can be
+								// overwritten with a smaller value the next time.
+								if (updateMode == UpdateMode.ALLOW) {
+									// Check if read data is larger than previously read data.
+									// If it's smaller or equals it means that RocksDB is overwriting the beginning of the result buffer.
+									assert resultNioBuf.limit() > assertionReadData;
+									if (ASSERTIONS_ENABLED) {
+										assertionReadData = resultNioBuf.limit();
+									}
 								}
-							}
 
-							// Check if read data is not bigger than the total value size.
-							// If it's bigger it means that RocksDB is writing the start of the result into the result
-							// buffer more than once.
-							assert resultNioBuf.limit() <= valueSize;
+								// Check if read data is not bigger than the total value size.
+								// If it's bigger it means that RocksDB is writing the start of the result into the result
+								// buffer more than once.
+								assert resultNioBuf.limit() <= valueSize;
+							}
 
 							if (valueSize <= resultNioBuf.limit()) {
 								// Return the result ready to be read
@@ -392,13 +398,17 @@ public class LLLocalDictionary implements LLDictionary {
 				if (!value.isDirect()) {
 					throw new RocksDBException("Value buffer must be direct");
 				}
-					var keyNioBuffer = LLUtils.toDirect(key);
+				var keyNioBuffer = LLUtils.toDirect(key);
+				if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
 					assert keyNioBuffer.isDirect();
+				}
 
 
-					var valueNioBuffer = LLUtils.toDirect(value);
+				var valueNioBuffer = LLUtils.toDirect(value);
+				if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
 					assert valueNioBuffer.isDirect();
-					db.put(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), keyNioBuffer, valueNioBuffer);
+				}
+				db.put(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), keyNioBuffer, valueNioBuffer);
 			} else {
 				db.put(cfh, Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS), LLUtils.toArray(key), LLUtils.toArray(value));
 			}
@@ -750,9 +760,11 @@ public class LLLocalDictionary implements LLDictionary {
 									ByteBuf prevDataToSendToUpdater = prevData == null ? null : prevData.retainedSlice();
 									try {
 										newData = updater.apply(prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.retain());
-										assert prevDataToSendToUpdater == null
-												|| prevDataToSendToUpdater.readerIndex() == 0
-												|| !prevDataToSendToUpdater.isReadable();
+										if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+											assert prevDataToSendToUpdater == null
+													|| prevDataToSendToUpdater.readerIndex() == 0
+													|| !prevDataToSendToUpdater.isReadable();
+										}
 									} finally {
 										if (prevDataToSendToUpdater != null) {
 											prevDataToSendToUpdater.release();
@@ -892,7 +904,9 @@ public class LLLocalDictionary implements LLDictionary {
 								.single()
 								.map(LLUtils::booleanToResponseByteBuffer)
 								.doAfterTerminate(() -> {
-									assert key.refCnt() > 0;
+									if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+										assert key.refCnt() > 0;
+									}
 								});
 						case PREVIOUS_VALUE -> Mono
 								.fromCallable(() -> {
@@ -918,7 +932,9 @@ public class LLLocalDictionary implements LLDictionary {
 												try {
 													return dbGet(cfh, null, key.retain(), true);
 												} finally {
-													assert key.refCnt() > 0;
+													if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+														assert key.refCnt() > 0;
+													}
 												}
 											}
 										} else {

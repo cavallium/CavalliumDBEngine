@@ -3,9 +3,11 @@ package it.cavallium.dbengine.lucene;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
+import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
@@ -432,6 +434,6 @@ public class LuceneUtils {
 	}
 
 	public static int totalHitsThreshold() {
-		return 0;
+		return 1;
 	}
 }

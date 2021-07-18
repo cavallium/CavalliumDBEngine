@@ -58,7 +58,7 @@ public class DbTestUtils {
 						.then(new LLLocalDatabaseConnection(DbTestUtils.ALLOCATOR, wrkspcPath).connect())
 						.flatMap(conn -> conn.getDatabase("testdb",
 								List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-								new DatabaseOptions(Map.of(), true, false, true, false, true, true, true)
+								new DatabaseOptions(Map.of(), true, false, true, false, true, true, true, true)
 						)),
 				action,
 				db -> db.close().then(Mono.fromCallable(() -> {
@@ -149,7 +149,8 @@ public class DbTestUtils {
 				SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key1Bytes),
 				key2Bytes,
 				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(DbTestUtils.ALLOCATOR, key2Bytes),
-						Serializer.utf8(DbTestUtils.ALLOCATOR)
+						Serializer.utf8(DbTestUtils.ALLOCATOR),
+						true
 				)
 		);
 	}
@@ -164,7 +165,8 @@ public class DbTestUtils {
 				new SubStageGetterHashMap<>(Serializer.utf8(DbTestUtils.ALLOCATOR),
 						Serializer.utf8(DbTestUtils.ALLOCATOR),
 						String::hashCode,
-						SerializerFixedBinaryLength.intSerializer(DbTestUtils.ALLOCATOR)
+						SerializerFixedBinaryLength.intSerializer(DbTestUtils.ALLOCATOR),
+						true
 				)
 		);
 	}

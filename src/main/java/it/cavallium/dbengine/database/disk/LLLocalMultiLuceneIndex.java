@@ -269,10 +269,10 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> refresh() {
+	public Mono<Void> refresh(boolean force) {
 		return Flux
 				.fromArray(luceneIndices)
-				.flatMap(LLLocalLuceneIndex::refresh)
+				.flatMap(index -> index.refresh(force))
 				.then();
 	}
 

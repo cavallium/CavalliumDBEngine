@@ -93,7 +93,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResultShard llSearchResult,
 			ValueGetter<T, U> valueGetter) {
-		return Mono.just(new SearchResult<>(llSearchResult.results().map(signal -> {
+		return Mono.fromCallable(() -> new SearchResult<>(llSearchResult.results().map(signal -> {
 			var key = signal.key().map(indicizer::getKey);
 			return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
 		}), llSearchResult.totalHitsCount(), llSearchResult.release()));
@@ -110,7 +110,10 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						Mono.just(tuple3.getT3()),
 						tuple3.getT1()
 				));
-		return Mono.just(new SearchResult<>(resultItemsFlux, llSearchResult.totalHitsCount(), llSearchResult.release()));
+		return Mono.fromCallable(() -> new SearchResult<>(resultItemsFlux,
+				llSearchResult.totalHitsCount(),
+				llSearchResult.release()
+		));
 	}
 
 	@Override
@@ -214,8 +217,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	 * Refresh index searcher
 	 */
 	@Override
-	public Mono<Void> refresh() {
-		return luceneIndex.refresh();
+	public Mono<Void> refresh(boolean force) {
+		return luceneIndex.refresh(force);
 	}
 
 	@Override

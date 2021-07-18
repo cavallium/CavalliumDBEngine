@@ -44,12 +44,4 @@ public class CountedStream<T> {
 	public Mono<List<T>> collectList() {
 		return stream.collectList();
 	}
-
-	public static <T> Mono<CountedStream<T>> counted(Flux<T> flux) {
-		var publishedFlux = flux.cache();
-		return publishedFlux
-				.count()
-				.map(count -> new CountedStream<>(publishedFlux, count))
-				.switchIfEmpty(Mono.fromSupplier(() -> new CountedStream<>(Flux.empty(), 0)));
-	}
 }

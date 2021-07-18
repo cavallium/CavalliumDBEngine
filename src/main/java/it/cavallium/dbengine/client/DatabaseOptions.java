@@ -13,4 +13,5 @@ public record DatabaseOptions(Map<String, String> extraFlags,
 															boolean useDirectIO,
 															boolean allowMemoryMapping,
 															boolean allowNettyDirect,
-															boolean useNettyDirect) {}
+															boolean useNettyDirect,
+															boolean enableDbAssertionsWhenUsingAssertions) {}

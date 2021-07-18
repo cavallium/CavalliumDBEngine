@@ -25,11 +25,13 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 
 	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
 	private final Serializer<U, ByteBuf> valueSerializer;
+	private final boolean enableAssertionsWhenUsingAssertions;
 
 	public SubStageGetterMap(SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
-			Serializer<U, ByteBuf> valueSerializer) {
+			Serializer<U, ByteBuf> valueSerializer, boolean enableAssertionsWhenUsingAssertions) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
+		this.enableAssertionsWhenUsingAssertions = enableAssertionsWhenUsingAssertions;
 	}
 
 	@Override
@@ -40,7 +42,7 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 		try {
 			return Mono
 					.defer(() -> {
-						if (assertsEnabled) {
+						if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
 							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
 						} else {
 							return Mono
@@ -75,7 +77,7 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 
 	@Override
 	public boolean needsDebuggingKeyFlux() {
-		return assertsEnabled;
+		return assertsEnabled && enableAssertionsWhenUsingAssertions;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {

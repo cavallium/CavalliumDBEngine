@@ -30,13 +30,16 @@ public class SubStageGetterHashSet<T, TH> implements
 	private final Serializer<T, ByteBuf> keySerializer;
 	private final Function<T, TH> keyHashFunction;
 	private final SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer;
+	private final boolean enableAssertionsWhenUsingAssertions;
 
 	public SubStageGetterHashSet(Serializer<T, ByteBuf> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer,
+			boolean enableAssertionsWhenUsingAssertions) {
 		this.keySerializer = keySerializer;
 		this.keyHashFunction = keyHashFunction;
 		this.keyHashSerializer = keyHashSerializer;
+		this.enableAssertionsWhenUsingAssertions = enableAssertionsWhenUsingAssertions;
 	}
 
 	@Override
@@ -47,7 +50,7 @@ public class SubStageGetterHashSet<T, TH> implements
 		try {
 			return Mono
 					.defer(() -> {
-						if (assertsEnabled) {
+						if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
 							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
 						} else {
 							return Mono
@@ -83,7 +86,7 @@ public class SubStageGetterHashSet<T, TH> implements
 
 	@Override
 	public boolean needsDebuggingKeyFlux() {
-		return assertsEnabled;
+		return assertsEnabled && enableAssertionsWhenUsingAssertions;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {

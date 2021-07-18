@@ -12,7 +12,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -115,12 +117,20 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return removeAndGetPrevious(key).map(o -> true).defaultIfEmpty(false);
 	}
 
+	/**
+	 * GetMulti must return the elements in sequence!
+	 */
 	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		return keys.flatMapSequential(key -> this
-				.getValue(snapshot, key, existsAlmostCertainly)
-				.map(value -> Map.entry(key, value)));
+		return keys
+				.flatMapSequential(key -> this
+						.getValue(snapshot, key, existsAlmostCertainly)
+						.map(value -> Map.entry(key, value))
+				);
 	}
 
+	/**
+	 * GetMulti must return the elements in sequence!
+	 */
 	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
 		return getMulti(snapshot, keys, false);
 	}
@@ -271,9 +281,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 			@Override
 			public <X> Flux<Tuple3<X, T, U>> transform(Flux<Tuple2<X, T>> keys) {
 				return Flux.defer(() -> {
-					ConcurrentHashMap<T, X> extraValues = new ConcurrentHashMap<>();
-					return getMulti(snapshot, keys.doOnNext(key -> extraValues.put(key.getT2(), key.getT1())).map(Tuple2::getT2))
-							.map(result -> Tuples.of(extraValues.get(result.getKey()), result.getKey(), result.getValue()));
+					ConcurrentLinkedQueue<X> extraValues = new ConcurrentLinkedQueue<>();
+					return getMulti(snapshot, keys.map(key -> {
+						extraValues.add(key.getT1());
+						return key.getT2();
+					})).map(result -> {
+						var extraValue = extraValues.remove();
+						return Tuples.of(extraValue, result.getKey(), result.getValue());
+					});
 				});
 			}
 		};

@@ -34,6 +34,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 
 	private final ConcurrentHashMap<Long, ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>>> snapshots = new ConcurrentHashMap<>();
 	private final ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>> mainDb;
+	private final ConcurrentHashMap<String, LLMemoryDictionary> singletons = new ConcurrentHashMap<>();
 
 	public LLMemoryKeyValueDatabase(ByteBufAllocator allocator, String name, List<Column> columns) {
 		this.allocator = allocator;
@@ -46,8 +47,21 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue) {
-		return Mono.error(new UnsupportedOperationException("Not implemented"));
+	public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] singletonName, byte[] defaultValue) {
+		var columnNameString = new String(singletonListColumnName, StandardCharsets.UTF_8);
+		var dict = singletons.computeIfAbsent(columnNameString, _unused -> new LLMemoryDictionary(allocator,
+				name,
+				columnNameString,
+				UpdateMode.ALLOW,
+				snapshots,
+				mainDb
+		));
+		return Mono
+				.fromCallable(() -> new LLMemorySingleton(dict, singletonName)).flatMap(singleton -> singleton
+						.get(null)
+						.switchIfEmpty(singleton.set(defaultValue).then(Mono.empty()))
+						.thenReturn(singleton)
+				);
 	}
 
 	@Override

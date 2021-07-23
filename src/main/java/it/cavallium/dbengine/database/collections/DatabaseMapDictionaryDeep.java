@@ -480,10 +480,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 										})
 								)
 								.doOnDiscard(Collection.class, discardedCollection -> {
-									//noinspection unchecked
-									var rangeKeys = (Collection<ByteBuf>) discardedCollection;
-									for (ByteBuf rangeKey : rangeKeys) {
-										rangeKey.release();
+									for (Object o : discardedCollection) {
+										if (o instanceof ByteBuf byteBuf) {
+											byteBuf.release();
+										}
 									}
 								});
 					} else {

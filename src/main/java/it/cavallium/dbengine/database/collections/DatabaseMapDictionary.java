@@ -355,10 +355,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.flatMap(entry -> Mono
 						.fromCallable(() -> serializeEntry(entry.getKey(), entry.getValue()))
 						.doOnDiscard(Entry.class, uncastedEntry -> {
-							//noinspection unchecked
-							var castedEntry = (Entry<ByteBuf, ByteBuf>) uncastedEntry;
-							castedEntry.getKey().release();
-							castedEntry.getValue().release();
+							if (uncastedEntry.getKey() instanceof ByteBuf byteBuf) {
+								byteBuf.release();
+							}
+							if (uncastedEntry.getValue() instanceof ByteBuf byteBuf) {
+								byteBuf.release();
+							}
 						})
 				);
 		return dictionary
@@ -372,12 +374,15 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		Flux<Tuple2<ByteBuf, X>> serializedEntries = entries
 				.flatMap(entry -> Mono
 						.fromCallable(() -> Tuples.of(serializeSuffix(entry.getT1()), entry.getT2()))
-						.doOnDiscard(Entry.class, uncastedEntry -> {
-							//noinspection unchecked
-							var castedEntry = (Tuple2<ByteBuf, Object>) uncastedEntry;
-							castedEntry.getT1().release();
-						})
-				);
+				)
+				.doOnDiscard(Tuple2.class, uncastedEntry -> {
+					if (uncastedEntry.getT1() instanceof ByteBuf byteBuf) {
+						byteBuf.release();
+					}
+					if (uncastedEntry.getT2() instanceof ByteBuf byteBuf) {
+						byteBuf.release();
+					}
+				});
 		var serializedUpdater = getSerializedUpdater(updater);
 		return dictionary.updateMulti(serializedEntries, serializedUpdater)
 				.map(result -> new ExtraKeyOperationResult<>(deserializeSuffix(result.key()),
@@ -419,11 +424,13 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						deserializeSuffix(stripPrefix(serializedEntry.getKey(), false)),
 						valueSerializer.deserialize(serializedEntry.getValue())
 				))
-				.doOnDiscard(Entry.class, entry -> {
-					//noinspection unchecked
-					var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
-					castedEntry.getKey().release();
-					castedEntry.getValue().release();
+				.doOnDiscard(Entry.class, uncastedEntry -> {
+					if (uncastedEntry.getKey() instanceof ByteBuf byteBuf) {
+						byteBuf.release();
+					}
+					if (uncastedEntry.getValue() instanceof ByteBuf byteBuf) {
+						byteBuf.release();
+					}
 				})
 				.doFirst(range::retain)
 				.doAfterTerminate(range::release);

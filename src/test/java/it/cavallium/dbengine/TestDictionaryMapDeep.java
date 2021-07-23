@@ -685,6 +685,8 @@ public class TestDictionaryMapDeep {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.filter(k -> k.getValue().isPresent())
+						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -709,6 +711,8 @@ public class TestDictionaryMapDeep {
 								.thenMany(map.getMulti(null, Flux.fromIterable(entries.keySet())))
 								.doAfterTerminate(map::release)
 						)
+						.filter(k -> k.getValue().isPresent())
+						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -761,6 +765,8 @@ public class TestDictionaryMapDeep {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.filter(k -> k.getValue().isPresent())
+						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();

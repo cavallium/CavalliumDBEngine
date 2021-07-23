@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -341,6 +342,8 @@ public class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.filter(k -> k.getValue().isPresent())
+						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -365,6 +368,8 @@ public class TestDictionaryMap {
 								.thenMany(map.getMulti(null, Flux.fromIterable(entries.keySet())))
 								.doAfterTerminate(map::release)
 						)
+						.filter(k -> k.getValue().isPresent())
+						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -417,6 +422,8 @@ public class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.filter(k -> k.getValue().isPresent())
+						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();

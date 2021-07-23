@@ -958,7 +958,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
+	public <K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<K, ByteBuf>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
@@ -997,16 +997,20 @@ public class LLLocalDictionary implements LLDictionary {
 										try {
 											var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
 											var results = db.multiGetAsList(resolveSnapshot(snapshot), columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
-											var mappedResults = new ArrayList<Tuple3<K, ByteBuf, ByteBuf>>(results.size());
+											var mappedResults = new ArrayList<Tuple3<K, ByteBuf, Optional<ByteBuf>>>(results.size());
 											for (int i = 0; i < results.size(); i++) {
-												var val = results.get(i);
+												byte[] val = results.get(i);
+												Optional<ByteBuf> valueOpt;
 												if (val != null) {
 													results.set(i, null);
-													mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
-															keyBufsWindow.get(i).retain(),
-															wrappedBuffer(val)
-													));
+													valueOpt = Optional.of(wrappedBuffer(val));
+												} else {
+													valueOpt = Optional.empty();
 												}
+												mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
+														keyBufsWindow.get(i).retain(),
+														valueOpt
+												));
 											}
 											return mappedResults;
 										} finally {
@@ -1033,9 +1037,9 @@ public class LLLocalDictionary implements LLDictionary {
 				})
 				.doOnDiscard(Tuple3.class, discardedEntry -> {
 					//noinspection unchecked
-					var entry = (Tuple3<K, ByteBuf, ByteBuf>) discardedEntry;
+					var entry = (Tuple3<K, ByteBuf, Optional<ByteBuf>>) discardedEntry;
 					entry.getT2().release();
-					entry.getT3().release();
+					entry.getT3().ifPresent(ReferenceCounted::release);
 				});
 	}
 

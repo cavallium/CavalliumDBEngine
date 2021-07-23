@@ -91,7 +91,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene",
 			Integer.MAX_VALUE,
-			false
+			true
 	);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
 	private final Scheduler luceneSearcherScheduler = Schedulers.newBoundedElastic(
@@ -99,16 +99,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 			"lucene-searcher",
 			60,
-			false
+			true
 	);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
-	private final Scheduler luceneWriterScheduler = Schedulers.newBoundedElastic(
-			4,
-			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			"lucene-writer",
-			60,
-			false
-	);
+	private final Scheduler luceneWriterScheduler;
 
 	private final String luceneIndexName;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -215,12 +209,20 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
+		int writerSchedulerMaxThreadCount;
 		MergeScheduler mergeScheduler;
 		if (lowMemory) {
 			mergeScheduler = new SerialMergeScheduler();
+			writerSchedulerMaxThreadCount = 1;
 		} else {
 			var concurrentMergeScheduler = new ConcurrentMergeScheduler();
-			concurrentMergeScheduler.enableAutoIOThrottle();
+			concurrentMergeScheduler.setDefaultMaxMergesAndThreads(false);
+			if (luceneOptions.inMemory()) {
+				concurrentMergeScheduler.disableAutoIOThrottle();
+			} else {
+				concurrentMergeScheduler.enableAutoIOThrottle();
+			}
+			writerSchedulerMaxThreadCount = concurrentMergeScheduler.getMaxThreadCount();
 			mergeScheduler = concurrentMergeScheduler;
 		}
 		indexWriterConfig.setMergeScheduler(mergeScheduler);
@@ -232,6 +234,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				luceneOptions.applyAllDeletes(),
 				luceneOptions.writeAllDeletes(),
 				new SearcherFactory()
+		);
+
+		this.luceneWriterScheduler = Schedulers.newBoundedElastic(
+				writerSchedulerMaxThreadCount,
+				Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+				"lucene-writer",
+				60,
+				true
 		);
 
 		// Create scheduled tasks lifecycle manager

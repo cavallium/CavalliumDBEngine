@@ -5,6 +5,7 @@ import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.BadBlock;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -60,11 +61,11 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<ByteBuf> remove(ByteBuf key, LLDictionaryResultType resultType);
 
-	<K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
+	<K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<K, ByteBuf>> keys,
 			boolean existsAlmostCertainly);
 
-	default <K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot, Flux<Tuple2<K, ByteBuf>> keys) {
+	default <K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot, Flux<Tuple2<K, ByteBuf>> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 

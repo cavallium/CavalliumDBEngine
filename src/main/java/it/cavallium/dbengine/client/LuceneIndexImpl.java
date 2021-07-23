@@ -106,8 +106,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.flatMapSequential(signal -> signal.key().map(indicizer::getKey).map(key -> Tuples.of(signal.score(), key)));
 		var resultItemsFlux = valueTransformer
 				.transform(scoresWithKeysFlux)
+				.filter(tuple3 -> tuple3.getT3().isPresent())
 				.map(tuple3 -> new SearchResultItem<>(Mono.just(tuple3.getT2()),
-						Mono.just(tuple3.getT3()),
+						Mono.just(tuple3.getT3().orElseThrow()),
 						tuple3.getT1()
 				));
 		return Mono.fromCallable(() -> new SearchResult<>(resultItemsFlux,

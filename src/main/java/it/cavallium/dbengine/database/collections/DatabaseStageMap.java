@@ -120,18 +120,19 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	/**
 	 * GetMulti must return the elements in sequence!
 	 */
-	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
+	default Flux<Entry<T, Optional<U>>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
 		return keys
 				.flatMapSequential(key -> this
 						.getValue(snapshot, key, existsAlmostCertainly)
-						.map(value -> Map.entry(key, value))
+						.map(value -> Map.entry(key, Optional.of(value)))
+						.switchIfEmpty(Mono.fromSupplier(() -> Map.entry(key, Optional.empty())))
 				);
 	}
 
 	/**
 	 * GetMulti must return the elements in sequence!
 	 */
-	default Flux<Entry<T, U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
+	default Flux<Entry<T, Optional<U>>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 
@@ -279,7 +280,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default ValueTransformer<T, U> getAsyncDbValueTransformer(@Nullable CompositeSnapshot snapshot) {
 		return new ValueTransformer<>() {
 			@Override
-			public <X> Flux<Tuple3<X, T, U>> transform(Flux<Tuple2<X, T>> keys) {
+			public <X> Flux<Tuple3<X, T, Optional<U>>> transform(Flux<Tuple2<X, T>> keys) {
 				return Flux.defer(() -> {
 					ConcurrentLinkedQueue<X> extraValues = new ConcurrentLinkedQueue<>();
 					return getMulti(snapshot, keys.map(key -> {

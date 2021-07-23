@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
@@ -210,17 +211,17 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <K> Flux<Tuple3<K, ByteBuf, ByteBuf>> getMulti(@Nullable LLSnapshot snapshot,
+	public <K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<K, ByteBuf>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
 				.flatMapSequential(key -> {
 					try {
 						ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(key.getT2()));
-						if (v == null) {
-							return Flux.empty();
+						if (v != null) {
+							return Flux.just(Tuples.of(key.getT1(), key.getT2().retain(), Optional.of(kk(v))));
 						} else {
-							return Flux.just(Tuples.of(key.getT1(), key.getT2().retain(), kk(v)));
+							return Flux.just(Tuples.of(key.getT1(), key.getT2().retain(), Optional.empty()));
 						}
 					} finally {
 						key.getT2().release();

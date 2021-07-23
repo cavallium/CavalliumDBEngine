@@ -7,6 +7,7 @@ import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
 import java.util.Map.Entry;
+import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -92,10 +93,12 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 	private static <T, U> ValueTransformer<T, U> getValueGetterTransformer(ValueGetter<T, U> valueGetter) {
 		return new ValueTransformer<T, U>() {
 			@Override
-			public <X> Flux<Tuple3<X, T, U>> transform(Flux<Tuple2<X, T>> keys) {
+			public <X> Flux<Tuple3<X, T, Optional<U>>> transform(Flux<Tuple2<X, T>> keys) {
 				return keys.flatMapSequential(key -> valueGetter
 						.get(key.getT2())
-						.map(result -> Tuples.of(key.getT1(), key.getT2(), result)));
+						.map(result -> Tuples.of(key.getT1(), key.getT2(), Optional.of(result)))
+						.switchIfEmpty(Mono.fromSupplier(() -> Tuples.of(key.getT1(), key.getT2(), Optional.empty())))
+				);
 			}
 		};
 	}

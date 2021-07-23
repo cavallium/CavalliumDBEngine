@@ -345,7 +345,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
 					.setBytesPerSync(1 * 1024 * 1024) // 1MiB
 					.setWalBytesPerSync(10 * 1024 * 1024)
-					.setMaxOpenFiles(30)
+					.setMaxOpenFiles(1500)
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
@@ -363,7 +363,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setPinL0FilterAndIndexBlocksInCache(true)
 					;
 			final BloomFilter bloomFilter = new BloomFilter(10, false);
-			tableOptions.setOptimizeFiltersForMemory(true);
+			// Disabled this option because it can cause memory corruption
+			//tableOptions.setOptimizeFiltersForMemory(true);
 			tableOptions.setFilterPolicy(bloomFilter);
 			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new ClockCache(128L * 1024L * 1024L))); // 128MiB
 
@@ -374,6 +375,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setCompactionReadaheadSize(4 * 1024 * 1024) // recommend at least 2MB
 						// Option to tune write buffer for direct writes
 						.setWritableFileMaxBufferSize(4 * 1024 * 1024)
+						.setMaxOpenFiles(-1)
 				;
 			}
 		}

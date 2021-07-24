@@ -14,4 +14,5 @@ public record DatabaseOptions(Map<String, String> extraFlags,
 															boolean allowMemoryMapping,
 															boolean allowNettyDirect,
 															boolean useNettyDirect,
-															boolean enableDbAssertionsWhenUsingAssertions) {}
+															boolean enableDbAssertionsWhenUsingAssertions,
+															int maxOpenFiles) {}

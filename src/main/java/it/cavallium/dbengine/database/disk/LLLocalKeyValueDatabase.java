@@ -296,6 +296,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						600L * 1024L * 1024L * 1024L)); // 600GiB
 		options.setDbPaths(paths);
 		options.setCfPaths(paths);
+		options.setMaxOpenFiles(databaseOptions.maxOpenFiles());
 		// Direct I/O parameters. Removed because they use too much disk.
 		//options.setUseDirectReads(true);
 		//options.setUseDirectIoForFlushAndCompaction(true);
@@ -309,7 +310,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setBytesPerSync(0) // default
 					.setWalBytesPerSync(0) // default
 					.setIncreaseParallelism(1)
-					.setMaxOpenFiles(15)
 					.optimizeLevelStyleCompaction(1024 * 1024) // 1MiB of ram will be used for level style compaction
 					.setWriteBufferSize(1024 * 1024) // 1MB
 					.setWalTtlSeconds(0)
@@ -345,7 +345,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
 					.setBytesPerSync(1 * 1024 * 1024) // 1MiB
 					.setWalBytesPerSync(10 * 1024 * 1024)
-					.setMaxOpenFiles(1500)
 					.optimizeLevelStyleCompaction(
 							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
@@ -375,7 +374,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setCompactionReadaheadSize(4 * 1024 * 1024) // recommend at least 2MB
 						// Option to tune write buffer for direct writes
 						.setWritableFileMaxBufferSize(4 * 1024 * 1024)
-						.setMaxOpenFiles(-1)
 				;
 			}
 		}

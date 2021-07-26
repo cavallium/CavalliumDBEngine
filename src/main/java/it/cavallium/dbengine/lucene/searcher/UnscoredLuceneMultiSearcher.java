@@ -24,7 +24,8 @@ public class UnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
 					UnscoredCollectorManager unsortedCollectorManager = new UnscoredCollectorManager(() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
 							null,
-							LuceneUtils.totalHitsThreshold()
+							LuceneUtils.totalHitsThreshold(),
+							queryParams.isScored()
 					), queryParams.offset(), queryParams.limit(), queryParams.sort());
 					return new UnscoredLuceneShardSearcher(unsortedCollectorManager, queryParams.query(), paginationInfo);
 				});

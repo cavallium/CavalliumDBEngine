@@ -39,7 +39,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 								queryParams.sort(),
 								LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
 								null,
-								LuceneUtils.totalHitsThreshold());
+								LuceneUtils.totalHitsThreshold(),
+								queryParams.isScored());
 						//noinspection BlockingMethodInNonBlockingContext
 						indexSearcher.search(queryParams.query(), firstPageCollector);
 						firstPageTopDocs = firstPageCollector.topDocs(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
@@ -71,7 +72,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 														TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
 																s.currentPageLimit(),
 																s.last(),
-																LuceneUtils.totalHitsThreshold()
+																LuceneUtils.totalHitsThreshold(),
+																queryParams.isScored()
 														);
 														//noinspection BlockingMethodInNonBlockingContext
 														indexSearcher.search(queryParams.query(), collector);

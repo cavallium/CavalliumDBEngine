@@ -1,5 +1,8 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.ALLOW_UNSCORED_PAGINATION_MODE;
+
+import it.cavallium.dbengine.lucene.UnscoredCollector;
 import java.io.IOException;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.NumericDocValues;
@@ -28,15 +31,27 @@ class TopDocsSearcher {
 	public static TopDocsCollector<ScoreDoc> getTopDocsCollector(Sort luceneSort,
 			int limit,
 			ScoreDoc after,
-			int totalHitsThreshold) {
+			int totalHitsThreshold,
+			boolean computeScores) {
 		TopDocsCollector<ScoreDoc> collector;
 		if (luceneSort == null) {
 			if (after == null) {
-				collector = TopScoreDocCollector.create(limit, totalHitsThreshold);
+				if (computeScores || !ALLOW_UNSCORED_PAGINATION_MODE) {
+					collector = TopScoreDocCollector.create(limit, totalHitsThreshold);
+				} else {
+					collector = new UnscoredCollector(null, limit);
+				}
 			} else {
-				collector = TopScoreDocCollector.create(limit, after, totalHitsThreshold);
+				if (computeScores || !ALLOW_UNSCORED_PAGINATION_MODE) {
+					collector = TopScoreDocCollector.create(limit, after, totalHitsThreshold);
+				} else {
+					collector = new UnscoredCollector(after.doc, limit);
+				}
 			}
 		} else {
+			if (!computeScores) {
+				throw new IllegalArgumentException("ComputeScores must be true if sort is set");
+			}
 			if (after == null) {
 				collector = (TopDocsCollector<ScoreDoc>) (TopDocsCollector) TopFieldCollector.create(luceneSort, limit, totalHitsThreshold);
 			} else if (after instanceof FieldDoc afterFieldDoc) {

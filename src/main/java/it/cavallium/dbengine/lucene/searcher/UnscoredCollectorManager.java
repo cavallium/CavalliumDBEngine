@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
+import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.ALLOW_UNSCORED_PAGINATION_MODE;
 
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;

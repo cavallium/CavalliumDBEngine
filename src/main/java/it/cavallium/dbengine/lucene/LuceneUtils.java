@@ -188,7 +188,9 @@ public class LuceneUtils {
 		if (docId > indexReader.maxDoc()) {
 			throw new IOException("Document " + docId + " > maxDoc (" +indexReader.maxDoc() + ")");
 		}
-		Document d = indexReader.document(docId, Set.of(keyFieldName));
+		DocumentStoredSingleFieldVisitor visitor = new DocumentStoredSingleFieldVisitor(keyFieldName);
+		indexReader.document(docId, visitor);
+		Document d = visitor.getDocument();
 		if (d.getFields().isEmpty()) {
 			throw new NoSuchElementException(
 					"Can't get key (field \"" + keyFieldName + "\") of document docId: " + docId + ". Available fields: []");

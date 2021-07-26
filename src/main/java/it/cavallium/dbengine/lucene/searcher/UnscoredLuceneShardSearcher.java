@@ -126,7 +126,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 										s -> {}
 								)
 								.subscribeOn(scheduler)
-								.concatMap(topFieldDoc -> LuceneUtils
+								.flatMapSequential(topFieldDoc -> LuceneUtils
 										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler)
 								);
 					});

@@ -93,7 +93,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 											s -> {}
 									)
 									.subscribeOn(scheduler)
-									.concatMap(topFieldDoc -> LuceneUtils
+									.flatMapSequential(topFieldDoc -> LuceneUtils
 											.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler)
 									);
 						});

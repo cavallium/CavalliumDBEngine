@@ -40,6 +40,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 								LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
 								null,
 								LuceneUtils.totalHitsThreshold(),
+								!paginationInfo.forceSinglePage(),
 								queryParams.isScored());
 						//noinspection BlockingMethodInNonBlockingContext
 						indexSearcher.search(queryParams.query(), firstPageCollector);
@@ -73,6 +74,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 																s.currentPageLimit(),
 																s.last(),
 																LuceneUtils.totalHitsThreshold(),
+																true,
 																queryParams.isScored()
 														);
 														//noinspection BlockingMethodInNonBlockingContext

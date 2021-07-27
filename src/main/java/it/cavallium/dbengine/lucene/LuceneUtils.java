@@ -353,22 +353,28 @@ public class LuceneUtils {
 
 		return Flux
 				.fromArray(hits)
-				.flatMapSequential(hit -> Mono.fromCallable(() -> {
+				.parallel()
+				.runOn(scheduler)
+				.map(hit -> {
 					int shardDocId = hit.doc;
 					int shardIndex = hit.shardIndex;
 					float score = hit.score;
 					var indexSearcher = indexSearchers.shard(shardIndex);
 					try {
+						//noinspection BlockingMethodInNonBlockingContext
 						String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
 						return new LLKeyScore(shardDocId, score, Mono.just(collectedDoc));
 					} catch (NoSuchElementException ex) {
 						logger.debug("Error: document " + shardDocId + " key is not present!");
-						return null;
+						// Errored key score, to filter out next
+						return new LLKeyScore(-1, -1, Mono.empty());
 					} catch (Exception ex) {
 						return new LLKeyScore(shardDocId, score, Mono.error(ex));
 					}
-				}))
-				.subscribeOn(scheduler);
+				})
+				// Filter out the errored key scores
+				.filter(ks -> !(ks.docId() == -1 && ks.score() == -1))
+				.sequential();
 	}
 
 	/**

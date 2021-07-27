@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
-import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -16,13 +15,11 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
-import org.apache.lucene.search.TopFieldDocs;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
-class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
+class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 
 	private final Object lock = new Object();
 	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
@@ -32,7 +29,7 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 	private final Query luceneQuery;
 	private final PaginationInfo paginationInfo;
 
-	public UnscoredLuceneShardSearcher(CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> unsortedCollectorManager,
+	public UnscoredPagedLuceneShardSearcher(CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> unsortedCollectorManager,
 			Query luceneQuery,
 			PaginationInfo paginationInfo) {
 		this.firstPageUnsortedCollectorManager = unsortedCollectorManager;
@@ -90,9 +87,9 @@ class UnscoredLuceneShardSearcher implements LuceneShardSearcher {
 											if (s.last() != null && s.remainingLimit() > 0 && s.currentPageLimit() > 0) {
 												Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 												Query luceneQuery = queryParams.query();
-												UnscoredCollectorManager currentPageUnsortedCollectorManager = new UnscoredCollectorManager(
+												UnscoredTopDocsCollectorManager currentPageUnsortedCollectorManager = new UnscoredTopDocsCollectorManager(
 														() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), s.currentPageLimit(),
-																s.last(), LuceneUtils.totalHitsThreshold(), queryParams.isScored()),
+																s.last(), LuceneUtils.totalHitsThreshold(), true, queryParams.isScored()),
 														0, s.currentPageLimit(), queryParams.sort());
 												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux

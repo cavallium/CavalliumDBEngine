@@ -16,7 +16,7 @@ import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldDocs;
 import org.jetbrains.annotations.Nullable;
 
-public class UnscoredCollectorManager implements
+public class UnscoredTopDocsCollectorManager implements
 		CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> {
 
 	private final Supplier<TopDocsCollector<ScoreDoc>> collectorSupplier;
@@ -24,7 +24,7 @@ public class UnscoredCollectorManager implements
 	private final long limit;
 	private final Sort sort;
 
-	public UnscoredCollectorManager(Supplier<TopDocsCollector<ScoreDoc>> collectorSupplier,
+	public UnscoredTopDocsCollectorManager(Supplier<TopDocsCollector<ScoreDoc>> collectorSupplier,
 			long offset,
 			long limit,
 			@Nullable Sort sort) {

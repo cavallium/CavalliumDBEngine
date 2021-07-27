@@ -32,21 +32,21 @@ class TopDocsSearcher {
 			int limit,
 			ScoreDoc after,
 			int totalHitsThreshold,
+			boolean allowPagination,
 			boolean computeScores) {
 		TopDocsCollector<ScoreDoc> collector;
+		if (after != null && !allowPagination) {
+			throw new IllegalArgumentException("\"allowPagination\" is false, but \"after\" is set");
+		}
 		if (luceneSort == null) {
 			if (after == null) {
-				if (computeScores || !ALLOW_UNSCORED_PAGINATION_MODE) {
+				if (computeScores || allowPagination || !ALLOW_UNSCORED_PAGINATION_MODE) {
 					collector = TopScoreDocCollector.create(limit, totalHitsThreshold);
 				} else {
-					collector = new UnscoredCollector(null, limit);
+					collector = new UnscoredCollector(limit);
 				}
 			} else {
-				if (computeScores || !ALLOW_UNSCORED_PAGINATION_MODE) {
-					collector = TopScoreDocCollector.create(limit, after, totalHitsThreshold);
-				} else {
-					collector = new UnscoredCollector(after.doc, limit);
-				}
+				collector = TopScoreDocCollector.create(limit, after, totalHitsThreshold);
 			}
 		} else {
 			if (!computeScores) {

@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -8,6 +7,8 @@ import reactor.core.scheduler.Scheduler;
 public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	private static final LuceneLocalSearcher localSearcher = new SimpleLuceneLocalSearcher();
+
+	private static final LuceneLocalSearcher unscoredPagedLuceneLocalSearcher = new LocalLuceneWrapper(new UnscoredUnsortedContinuousLuceneMultiSearcher());
 
 	private static final LuceneLocalSearcher countSearcher = new CountLuceneLocalSearcher();
 
@@ -19,6 +20,14 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 			Scheduler scheduler) {
 		if (queryParams.limit() == 0) {
 			return countSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName, scheduler);
+		} else if (!queryParams.isScored() && queryParams.offset() == 0 && queryParams.limit() >= 2147483630
+				&& !queryParams.isSorted()) {
+			return unscoredPagedLuceneLocalSearcher.collect(indexSearcher,
+					releaseIndexSearcher,
+					queryParams,
+					keyFieldName,
+					scheduler
+			);
 		} else {
 			return localSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName, scheduler);
 		}

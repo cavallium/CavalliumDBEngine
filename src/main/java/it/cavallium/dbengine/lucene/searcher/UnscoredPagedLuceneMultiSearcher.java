@@ -6,7 +6,7 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SE
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import reactor.core.publisher.Mono;
 
-public class UnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
+public class UnscoredPagedLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
 	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
@@ -21,13 +21,14 @@ public class UnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
 					} else {
 						paginationInfo = new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
 					}
-					UnscoredCollectorManager unsortedCollectorManager = new UnscoredCollectorManager(() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
+					UnscoredTopDocsCollectorManager unsortedCollectorManager = new UnscoredTopDocsCollectorManager(() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
 							LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit()),
 							null,
 							LuceneUtils.totalHitsThreshold(),
+							!paginationInfo.forceSinglePage(),
 							queryParams.isScored()
 					), queryParams.offset(), queryParams.limit(), queryParams.sort());
-					return new UnscoredLuceneShardSearcher(unsortedCollectorManager, queryParams.query(), paginationInfo);
+					return new UnscoredPagedLuceneShardSearcher(unsortedCollectorManager, queryParams.query(), paginationInfo);
 				});
 	}
 }

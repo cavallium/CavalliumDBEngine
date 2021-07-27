@@ -19,15 +19,9 @@ import org.jetbrains.annotations.Nullable;
 public class UnscoredCollector extends TopDocsCollector<ScoreDoc> implements LeafCollector {
 	private final IntArrayList docIds = new IntArrayList();
 	private final int limit;
-	private final boolean doAfterDocCalculation;
-	private final int afterDocId;
 	private LeafReaderContext currentLeafReaderContext;
 
-	private boolean isLastElementOrdered = true;
-	private int biggestDocId = -1;
-	private int biggestDocIdIndex;
-
-	public UnscoredCollector(@Nullable Integer afterDocId, int limit) {
+	public UnscoredCollector(int limit) {
 		super(null);
 		if (!ALLOW_UNSCORED_PAGINATION_MODE) {
 			throw new UnsupportedOperationException();
@@ -36,25 +30,6 @@ public class UnscoredCollector extends TopDocsCollector<ScoreDoc> implements Lea
 			throw new IllegalArgumentException();
 		}
 		this.limit = limit;
-		if (afterDocId != null) {
-			this.doAfterDocCalculation = true;
-			this.afterDocId = afterDocId;
-		} else {
-			this.doAfterDocCalculation = false;
-			this.afterDocId = -1;
-		}
-	}
-
-	public UnscoredCollector(@Nullable Integer afterDocId) {
-		super(null);
-		this.limit = -1;
-		if (afterDocId != null) {
-			this.doAfterDocCalculation = true;
-			this.afterDocId = afterDocId;
-		} else {
-			this.doAfterDocCalculation = false;
-			this.afterDocId = -1;
-		}
 	}
 
 	@Override
@@ -64,28 +39,10 @@ public class UnscoredCollector extends TopDocsCollector<ScoreDoc> implements Lea
 	@Override
 	public void collect(int localDocId) {
 		totalHits++;
-		boolean canCollect;
-		if (limit == -1 || docIds.size() < limit) {
-			if (doAfterDocCalculation) {
-				canCollect = localDocId > (this.afterDocId - currentLeafReaderContext.docBase);
-			} else {
-				canCollect = true;
-			}
-		} else {
-			canCollect = false;
-		}
+		boolean canCollect = limit == -1 || docIds.size() < limit;
 		if (canCollect) {
 			int docId = currentLeafReaderContext.docBase + localDocId;
-			if (docIds.add(docId)) {
-				if (docId > biggestDocId) {
-					isLastElementOrdered = true;
-					int docIndex = docIds.size() - 1;
-					biggestDocId = docId;
-					biggestDocIdIndex = docIndex;
-				} else {
-					isLastElementOrdered = false;
-				}
-			}
+			docIds.add(docId);
 		}
 	}
 
@@ -137,13 +94,6 @@ public class UnscoredCollector extends TopDocsCollector<ScoreDoc> implements Lea
 		for (int docId : docIds.subList(start, start + howMany)) {
 			results[i] = new ScoreDoc(docId, 1.0f);
 			i++;
-		}
-		if (!isLastElementOrdered || start + howMany < docIds.size()) {
-			int lastIndex = results.length - 1;
-			var previousLastDoc = results[lastIndex];
-			var biggestDoc = results[biggestDocIdIndex];
-			results[lastIndex] = biggestDoc;
-			results[biggestDocIdIndex] = previousLastDoc;
 		}
 	}
 

@@ -49,9 +49,6 @@ class TopDocsSearcher {
 				collector = TopScoreDocCollector.create(limit, after, totalHitsThreshold);
 			}
 		} else {
-			if (!computeScores) {
-				throw new IllegalArgumentException("ComputeScores must be true if sort is set");
-			}
 			if (after == null) {
 				collector = (TopDocsCollector<ScoreDoc>) (TopDocsCollector) TopFieldCollector.create(luceneSort, limit, totalHitsThreshold);
 			} else if (after instanceof FieldDoc afterFieldDoc) {

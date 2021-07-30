@@ -148,7 +148,8 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 												.flatMap(scoreDocs -> LuceneUtils.convertHits(scoreDocs.toArray(ScoreDoc[]::new),
 														indexSearchers,
 														keyFieldName,
-														scheduler
+														scheduler,
+														false
 												));
 
 										return new LuceneSearchResult(1, resultsFlux, release);

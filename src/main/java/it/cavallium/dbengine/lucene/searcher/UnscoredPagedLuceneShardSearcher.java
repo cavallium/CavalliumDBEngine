@@ -73,7 +73,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler);
+							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler, false);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
 						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
@@ -124,7 +124,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 								)
 								.subscribeOn(scheduler)
 								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler)
+										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler, false)
 								);
 					});
 

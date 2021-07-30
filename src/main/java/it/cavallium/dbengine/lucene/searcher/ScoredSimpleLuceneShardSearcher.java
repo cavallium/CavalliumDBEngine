@@ -81,7 +81,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler);
+							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler, true);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
 						if (paginationInfo.forceSinglePage()
@@ -136,7 +136,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 								)
 								.subscribeOn(scheduler)
 								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler)
+										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler, true)
 								);
 					});
 

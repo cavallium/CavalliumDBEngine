@@ -53,7 +53,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 									firstPageTopDocs.scoreDocs,
 									IndexSearchers.unsharded(indexSearcher),
 									keyFieldName,
-									scheduler
+									scheduler,
+									true
 							)
 							.take(queryParams.limit(), true);
 
@@ -96,7 +97,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 									)
 									.subscribeOn(scheduler)
 									.flatMapSequential(topFieldDoc -> LuceneUtils
-											.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler)
+											.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true)
 									);
 						});
 					}

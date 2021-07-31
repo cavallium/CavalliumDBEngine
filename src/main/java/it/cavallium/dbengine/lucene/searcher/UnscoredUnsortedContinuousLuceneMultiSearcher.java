@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
@@ -44,15 +45,21 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 						class IterableCollector extends SimpleCollector {
 
 							private int shardIndex;
+							private LeafReaderContext context;
 
 							@Override
 							public void collect(int i) {
-								var scoreDoc = new ScoreDoc(i, 0, shardIndex);
+								var scoreDoc = new ScoreDoc(context.docBase + i, 0, shardIndex);
 								synchronized (scoreDocsSink) {
 									while (scoreDocsSink.tryEmitNext(scoreDoc) == EmitResult.FAIL_OVERFLOW) {
 										LockSupport.parkNanos(10);
 									}
 								}
+							}
+
+							@Override
+							protected void doSetNextReader(LeafReaderContext context) throws IOException {
+								this.context = context;
 							}
 
 							@Override

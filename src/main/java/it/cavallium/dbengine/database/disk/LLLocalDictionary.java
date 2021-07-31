@@ -1243,7 +1243,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											})
 											.subscribeOn(dbScheduler)
-											.concatMapIterable(list -> list);
+											.flatMapIterable(list -> list);
 								},
 								entriesWindow -> {
 									for (Tuple2<ByteBuf, X> entry : entriesWindow) {

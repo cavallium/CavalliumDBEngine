@@ -980,54 +980,54 @@ public class LLLocalDictionary implements LLDictionary {
 						keyBufsWindow.add(objects.getT2());
 					}
 					return Mono
-									.fromCallable(() -> {
-										Iterable<StampedLock> locks;
-										ArrayList<Long> stamps;
-										if (updateMode == UpdateMode.ALLOW) {
-											locks = itemsLock.bulkGetAt(getLockIndices(keyBufsWindow));
-											stamps = new ArrayList<>();
-											for (var lock : locks) {
+							.fromCallable(() -> {
+								Iterable<StampedLock> locks;
+								ArrayList<Long> stamps;
+								if (updateMode == UpdateMode.ALLOW) {
+									locks = itemsLock.bulkGetAt(getLockIndices(keyBufsWindow));
+									stamps = new ArrayList<>();
+									for (var lock : locks) {
 
-												stamps.add(lock.readLock());
-											}
+										stamps.add(lock.readLock());
+									}
+								} else {
+									locks = null;
+									stamps = null;
+								}
+								try {
+									var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
+									var results = db.multiGetAsList(resolveSnapshot(snapshot), columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
+									var mappedResults = new ArrayList<Tuple3<K, ByteBuf, Optional<ByteBuf>>>(results.size());
+									for (int i = 0; i < results.size(); i++) {
+										byte[] val = results.get(i);
+										Optional<ByteBuf> valueOpt;
+										if (val != null) {
+											results.set(i, null);
+											valueOpt = Optional.of(wrappedBuffer(val));
 										} else {
-											locks = null;
-											stamps = null;
+											valueOpt = Optional.empty();
 										}
-										try {
-											var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
-											var results = db.multiGetAsList(resolveSnapshot(snapshot), columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
-											var mappedResults = new ArrayList<Tuple3<K, ByteBuf, Optional<ByteBuf>>>(results.size());
-											for (int i = 0; i < results.size(); i++) {
-												byte[] val = results.get(i);
-												Optional<ByteBuf> valueOpt;
-												if (val != null) {
-													results.set(i, null);
-													valueOpt = Optional.of(wrappedBuffer(val));
-												} else {
-													valueOpt = Optional.empty();
-												}
-												mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
-														keyBufsWindow.get(i).retain(),
-														valueOpt
-												));
-											}
-											return mappedResults;
-										} finally {
-											if (updateMode == UpdateMode.ALLOW) {
-												int index = 0;
-												for (var lock : locks) {
-													lock.unlockRead(stamps.get(index));
-													index++;
-												}
-											}
+										mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
+												keyBufsWindow.get(i).retain(),
+												valueOpt
+										));
+									}
+									return mappedResults;
+								} finally {
+									if (updateMode == UpdateMode.ALLOW) {
+										int index = 0;
+										for (var lock : locks) {
+											lock.unlockRead(stamps.get(index));
+											index++;
 										}
-									})
-									.subscribeOn(dbScheduler)
-									.flatMapMany(Flux::fromIterable)
-									.onErrorMap(cause -> new IOException("Failed to read keys "
-											+ Arrays.deepToString(keyBufsWindow.toArray(ByteBuf[]::new)), cause))
-									.doAfterTerminate(() -> keyBufsWindow.forEach(ReferenceCounted::release));
+									}
+								}
+							})
+							.subscribeOn(dbScheduler)
+							.flatMapIterable(list -> list)
+							.onErrorMap(cause -> new IOException("Failed to read keys "
+									+ Arrays.deepToString(keyBufsWindow.toArray(ByteBuf[]::new)), cause))
+							.doAfterTerminate(() -> keyBufsWindow.forEach(ReferenceCounted::release));
 				}, 2) // Max concurrency is 2 to read data while preparing the next segment
 				.doOnDiscard(Entry.class, discardedEntry -> {
 					//noinspection unchecked
@@ -1243,7 +1243,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											})
 											.subscribeOn(dbScheduler)
-											.flatMapMany(Flux::fromIterable);
+											.concatMapIterable(list -> list);
 								},
 								entriesWindow -> {
 									for (Tuple2<ByteBuf, X> entry : entriesWindow) {

@@ -822,7 +822,7 @@ public class TestDictionaryMapDeep {
 										map.setAndGetPrevious(entries)
 								)
 								.map(Map::entrySet)
-								.flatMap(Flux::fromIterable)
+								.concatMapIterable(list -> list)
 								.doAfterTerminate(map::release)
 						)
 				));
@@ -847,7 +847,7 @@ public class TestDictionaryMapDeep {
 						.flatMapMany(map -> Flux
 								.concat(map.set(entries).then(Mono.empty()), map.clearAndGetPrevious(), map.get(null))
 								.map(Map::entrySet)
-								.flatMap(Flux::fromIterable)
+								.concatMapIterable(list -> list)
 								.doAfterTerminate(map::release)
 						)
 				));
@@ -900,7 +900,7 @@ public class TestDictionaryMapDeep {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.get(null)
 										.map(Map::entrySet)
-										.flatMapMany(Flux::fromIterable)
+										.flatMapIterable(list -> list)
 								)
 								.doAfterTerminate(map::release)
 						)

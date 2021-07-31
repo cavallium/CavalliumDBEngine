@@ -477,7 +477,7 @@ public class TestDictionaryMap {
 						.flatMapMany(map -> Flux
 								.concat(map.setAndGetPrevious(entries), map.setAndGetPrevious(entries))
 								.map(Map::entrySet)
-								.flatMap(Flux::fromIterable)
+								.concatMapIterable(list -> list)
 								.doAfterTerminate(map::release)
 						)
 				));
@@ -502,7 +502,7 @@ public class TestDictionaryMap {
 						.flatMapMany(map -> Flux
 								.concat(map.set(entries).then(Mono.empty()), map.clearAndGetPrevious(), map.get(null))
 								.map(Map::entrySet)
-								.flatMap(Flux::fromIterable)
+								.concatMapIterable(list -> list)
 								.doAfterTerminate(map::release)
 						)
 				));
@@ -555,7 +555,7 @@ public class TestDictionaryMap {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.get(null)
 										.map(Map::entrySet)
-										.flatMapMany(Flux::fromIterable)
+										.flatMapIterable(list -> list)
 								)
 								.doAfterTerminate(map::release)
 						)

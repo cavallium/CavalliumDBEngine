@@ -201,7 +201,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 				.getAllValues(snapshot)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
-				.flatMap(Flux::fromIterable);
+				.concatMapIterable(list -> list);
 	}
 
 	@Override

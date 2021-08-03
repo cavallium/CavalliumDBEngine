@@ -469,8 +469,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private ColumnFamilyHandle getCfh(byte[] columnName) throws RocksDBException {
 		ColumnFamilyHandle cfh = handles.get(Column.special(Column.toString(columnName)));
-		//noinspection RedundantIfStatement
 		if (databaseOptions.enableDbAssertionsWhenUsingAssertions()) {
+			//noinspection RedundantIfStatement
 			if (!enableColumnsBug) {
 				assert Arrays.equals(cfh.getName(), columnName);
 			}

@@ -5,6 +5,7 @@ import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.ScoreMode;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.List;
 import java.util.Map;
@@ -51,11 +52,11 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 */
 	Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
 
-	default Mono<Long> count(@Nullable LLSnapshot snapshot, Query query) {
+	default Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query) {
 		QueryParams params = QueryParams.of(query, 0, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
 		return Mono.from(this.search(snapshot, params, null)
 				.flatMap(llSearchResultShard -> llSearchResultShard.release().thenReturn(llSearchResultShard.totalHitsCount()))
-				.defaultIfEmpty(0L));
+				.defaultIfEmpty(TotalHitsCount.of(0, true)));
 	}
 
 	boolean isLowMemoryMode();

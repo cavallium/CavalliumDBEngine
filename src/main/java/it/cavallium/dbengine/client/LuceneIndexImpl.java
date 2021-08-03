@@ -2,6 +2,7 @@ package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
@@ -190,7 +191,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query) {
+	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this
 				.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
 				.flatMap(tSearchResultKeys -> tSearchResultKeys.release().thenReturn(tSearchResultKeys.totalHitsCount()));

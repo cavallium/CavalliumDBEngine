@@ -111,7 +111,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 						combinedFlux = firstPageMono;
 					}
 
-					return new LuceneSearchResult(firstPageTopDocs.totalHits.value, combinedFlux,
+					return new LuceneSearchResult(LuceneUtils.convertTotalHitsCount(firstPageTopDocs.totalHits), combinedFlux,
 							//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							releaseIndexSearcher
 					);

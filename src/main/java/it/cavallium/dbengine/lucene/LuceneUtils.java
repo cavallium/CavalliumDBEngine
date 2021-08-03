@@ -6,6 +6,7 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
@@ -50,6 +51,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldDocs;
+import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
@@ -462,5 +464,18 @@ public class LuceneUtils {
 
 	public static int totalHitsThreshold() {
 		return 1;
+	}
+
+	public static TotalHitsCount convertTotalHitsCount(TotalHits totalHits) {
+		return switch (totalHits.relation) {
+			case EQUAL_TO -> TotalHitsCount.of(totalHits.value, true);
+			case GREATER_THAN_OR_EQUAL_TO -> TotalHitsCount.of(totalHits.value, false);
+		};
+	}
+
+	public static TotalHitsCount sum(TotalHitsCount totalHitsCount, TotalHitsCount totalHitsCount1) {
+		return TotalHitsCount.of(totalHitsCount.value() + totalHitsCount1.value(),
+				totalHitsCount.exact() && totalHitsCount1.exact()
+		);
 	}
 }

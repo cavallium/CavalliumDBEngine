@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
@@ -159,7 +160,7 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 														false
 												));
 
-										return new LuceneSearchResult(1, resultsFlux, release);
+										return new LuceneSearchResult(TotalHitsCount.of(0, false), resultsFlux, release);
 									});
 						}
 					};

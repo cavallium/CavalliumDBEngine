@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -18,7 +19,7 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 		//noinspection BlockingMethodInNonBlockingContext
 		return Mono
 				.fromCallable(() -> new LuceneSearchResult(
-						indexSearcher.count(queryParams.query()),
+						TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
 						Flux.empty(),
 						releaseIndexSearcher)
 				)

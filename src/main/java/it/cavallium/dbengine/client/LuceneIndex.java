@@ -2,6 +2,7 @@ package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.collections.ValueGetter;
@@ -80,7 +81,7 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 	Mono<SearchResult<T, U>> searchWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueTransformer<T, U> valueTransformer);
 
-	Mono<Long> count(@Nullable CompositeSnapshot snapshot, Query query);
+	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);
 
 	boolean isLowMemoryMode();
 

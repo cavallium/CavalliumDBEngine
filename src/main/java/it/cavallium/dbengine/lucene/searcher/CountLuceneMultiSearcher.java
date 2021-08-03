@@ -2,7 +2,9 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
@@ -36,7 +38,7 @@ public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 
 						@Override
 						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
-							return Mono.fromCallable(() -> new LuceneSearchResult(totalHits.get(), Flux.empty(), Mono.when(release)));
+							return Mono.fromCallable(() -> new LuceneSearchResult(TotalHitsCount.of(totalHits.get(), true), Flux.empty(), Mono.when(release)));
 						}
 					};
 				});

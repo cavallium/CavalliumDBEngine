@@ -196,3 +196,7 @@ versions:
         data:
           onlyTopScores: boolean
           computeScores: boolean
+      TotalHitsCount:
+        data:
+          value: long
+          exact: boolean

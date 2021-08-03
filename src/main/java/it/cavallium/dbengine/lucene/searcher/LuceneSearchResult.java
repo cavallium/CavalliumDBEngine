@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase;
 import java.io.IOException;
@@ -14,11 +15,11 @@ public final class LuceneSearchResult {
 	protected static final Logger logger = LoggerFactory.getLogger(LuceneSearchResult.class);
 
 	private volatile boolean releaseCalled;
-	private final long totalHitsCount;
+	private final TotalHitsCount totalHitsCount;
 	private final Flux<LLKeyScore> results;
 	private final Mono<Void> release;
 
-	public LuceneSearchResult(long totalHitsCount, Flux<LLKeyScore> results, Mono<Void> release) {
+	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results, Mono<Void> release) {
 		this.totalHitsCount = totalHitsCount;
 		this.results = results;
 		this.release = Mono.fromRunnable(() -> {
@@ -38,7 +39,7 @@ public final class LuceneSearchResult {
 		super.finalize();
 	}
 
-	public long totalHitsCount() {
+	public TotalHitsCount totalHitsCount() {
 		return totalHitsCount;
 	}
 

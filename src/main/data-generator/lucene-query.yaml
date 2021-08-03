@@ -197,6 +197,7 @@ versions:
           onlyTopScores: boolean
           computeScores: boolean
       TotalHitsCount:
+        stringRepresenter: "it.cavallium.dbengine.lucene.LuceneUtils.toHumanReadableString"
         data:
           value: long
           exact: boolean

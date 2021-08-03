@@ -478,4 +478,13 @@ public class LuceneUtils {
 				totalHitsCount.exact() && totalHitsCount1.exact()
 		);
 	}
+
+	@SuppressWarnings("unused")
+	public static String toHumanReadableString(TotalHitsCount totalHitsCount) {
+		if (totalHitsCount.exact()) {
+			return Long.toString(totalHitsCount.value());
+		} else {
+			return totalHitsCount.value() + "+";
+		}
+	}
 }

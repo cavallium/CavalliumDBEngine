@@ -28,6 +28,19 @@ public class ScheduledTaskLifecycle {
 	}
 
 	/**
+	 * Mark this task as running.
+	 * After calling this method, please call {@method endScheduledTask} inside a finally block!
+	 * @return false if failed
+	 */
+	public boolean tryStartScheduledTask() {
+		if (cancelled) {
+			return false;
+		}
+		this.lock.readLock();
+		return true;
+	}
+
+	/**
 	 * Mark this task as ended. Must be called after {@method startScheduledTask}
 	 */
 	public void endScheduledTask() {

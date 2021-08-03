@@ -280,7 +280,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 		@Override
 		public void run() {
-			scheduledTasksLifecycle.startScheduledTask();
+			if (!scheduledTasksLifecycle.tryStartScheduledTask()) {
+				return;
+			}
 			try {
 				if (scheduledTasksLifecycle.isCancelled() || cancelled) return;
 				task.run();

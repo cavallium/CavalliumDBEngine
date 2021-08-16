@@ -23,17 +23,17 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	ByteBufAllocator getAllocator();
 
-	Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, ByteBuf key, boolean existsAlmostCertainly);
+	Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, Mono<ByteBuf> key, boolean existsAlmostCertainly);
 
-	default Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, ByteBuf key) {
+	default Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, Mono<ByteBuf> key) {
 		return get(snapshot, key, false);
 	}
 
-	Mono<ByteBuf> put(ByteBuf key, ByteBuf value, LLDictionaryResultType resultType);
+	Mono<ByteBuf> put(Mono<ByteBuf> key, Mono<ByteBuf> value, LLDictionaryResultType resultType);
 
 	Mono<UpdateMode> getUpdateMode();
 
-	default Mono<ByteBuf> update(ByteBuf key,
+	default Mono<ByteBuf> update(Mono<ByteBuf> key,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
@@ -42,24 +42,24 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 				.transform(prev -> LLUtils.resolveDelta(prev, updateReturnMode));
 	}
 
-	default Mono<ByteBuf> update(ByteBuf key,
+	default Mono<ByteBuf> update(Mono<ByteBuf> key,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			UpdateReturnMode returnMode) {
 		return update(key, updater, returnMode, false);
 	}
 
-	Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
+	Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> key,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			boolean existsAlmostCertainly);
 
-	default Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
+	default Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> key,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
 		return updateAndGetDelta(key, updater, false);
 	}
 
 	Mono<Void> clear();
 
-	Mono<ByteBuf> remove(ByteBuf key, LLDictionaryResultType resultType);
+	Mono<ByteBuf> remove(Mono<ByteBuf> key, LLDictionaryResultType resultType);
 
 	<K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Tuple2<K, ByteBuf>> keys,
@@ -74,34 +74,34 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	<X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
 			BiFunction<ByteBuf, X, ByteBuf> updateFunction);
 
-	Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, LLRange range, boolean existsAlmostCertainly);
+	Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean existsAlmostCertainly);
 
-	default Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, LLRange range) {
+	default Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range) {
 		return getRange(snapshot, range, false);
 	}
 
 	Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			LLRange range,
+			Mono<LLRange> range,
 			int prefixLength,
 			boolean existsAlmostCertainly);
 
 	default Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			LLRange range,
+			Mono<LLRange> range,
 			int prefixLength) {
 		return getRangeGrouped(snapshot, range, prefixLength, false);
 	}
 
-	Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range);
+	Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+	Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, Mono<LLRange> range, int prefixLength);
 
-	Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength);
+	Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<LLRange> range, int prefixLength);
 
-	Flux<BadBlock> badBlocks(LLRange range);
+	Flux<BadBlock> badBlocks(Mono<LLRange> range);
 
-	Mono<Void> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries);
+	Mono<Void> setRange(Mono<LLRange> range, Flux<Entry<ByteBuf, ByteBuf>> entries);
 
-	default Mono<Void> replaceRange(LLRange range,
+	default Mono<Void> replaceRange(Mono<LLRange> range,
 			boolean canKeysChange,
 			Function<Entry<ByteBuf, ByteBuf>, Mono<Entry<ByteBuf, ByteBuf>>> entriesReplacer,
 			boolean existsAlmostCertainly) {
@@ -122,19 +122,19 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		});
 	}
 
-	default Mono<Void> replaceRange(LLRange range,
+	default Mono<Void> replaceRange(Mono<LLRange> range,
 			boolean canKeysChange,
 			Function<Entry<ByteBuf, ByteBuf>, Mono<Entry<ByteBuf, ByteBuf>>> entriesReplacer) {
 		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
-	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range);
+	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast);
+	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fast);
 
-	Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, LLRange range);
+	Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, LLRange range);
+	Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Mono<Entry<ByteBuf, ByteBuf>> removeOne(LLRange range);
+	Mono<Entry<ByteBuf, ByteBuf>> removeOne(Mono<LLRange> range);
 }

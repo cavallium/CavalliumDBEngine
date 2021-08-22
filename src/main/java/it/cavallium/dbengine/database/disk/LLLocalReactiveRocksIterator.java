@@ -4,6 +4,7 @@ import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIter
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
@@ -99,9 +100,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 					rocksIterator.close();
 					tuple.getT2().release();
 					tuple.getT3().release();
-				})
-				.doFirst(range::retain)
-				.doAfterTerminate(range::release);
+				});
 	}
 
 	public abstract T getEntry(ByteBuf key, ByteBuf value);
@@ -110,7 +109,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 		if (released.compareAndSet(false, true)) {
 			range.release();
 		} else {
-			throw new IllegalStateException("Already released");
+			throw new IllegalReferenceCountException(0, -1);
 		}
 	}
 }

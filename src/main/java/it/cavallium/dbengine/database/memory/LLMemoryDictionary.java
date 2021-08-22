@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.memory;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.ExtraKeyOperationResult;
@@ -135,31 +134,28 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, ByteBuf key, boolean existsAlmostCertainly) {
-		try {
-			return Mono
-					.fromCallable(() -> snapshots.get(resolveSnapshot(snapshot)).get(k(key)))
-					.map(this::kk)
-					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
-					.doFirst(key::retain)
-					.doAfterTerminate(key::release);
-		} finally {
-			key.release();
-		}
+	public Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, Mono<ByteBuf> keyMono, boolean existsAlmostCertainly) {
+		return Mono.usingWhen(keyMono,
+				key -> Mono
+						.fromCallable(() -> snapshots.get(resolveSnapshot(snapshot)).get(k(key)))
+						.map(this::kk)
+						.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause)),
+				key -> Mono.fromRunnable(key::release)
+		);
 	}
 
 	@Override
-	public Mono<ByteBuf> put(ByteBuf key, ByteBuf value, LLDictionaryResultType resultType) {
-		try {
-			return Mono
-					.fromCallable(() -> mainDb.put(k(key), k(value)))
-					.transform(result -> this.transformResult(result, resultType))
-					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
-					.doFirst(key::retain)
-					.doAfterTerminate(key::release);
-		} finally {
-			key.release();
-		}
+	public Mono<ByteBuf> put(Mono<ByteBuf> keyMono, Mono<ByteBuf> valueMono, LLDictionaryResultType resultType) {
+		return Mono.usingWhen(keyMono,
+				key -> Mono.usingWhen(valueMono,
+						value -> Mono
+								.fromCallable(() -> mainDb.put(k(key), k(value)))
+								.transform(result -> this.transformResult(result, resultType))
+								.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause)),
+						value -> Mono.fromRunnable(value::release)
+				),
+				key -> Mono.fromRunnable(key::release)
+		);
 	}
 
 	@Override
@@ -168,26 +164,29 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Delta<ByteBuf>> updateAndGetDelta(ByteBuf key,
+	public Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> keyMono,
 			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			boolean existsAlmostCertainly) {
-		return Mono.fromCallable(() -> {
-			AtomicReference<ByteBuf> oldRef = new AtomicReference<>(null);
-			var newValue = mainDb.compute(k(key), (_unused, old) -> {
-				if (old != null) {
-					oldRef.set(kk(old));
-				}
-				var v = updater.apply(old != null ? kk(old) : null);
-				try {
-					return k(v);
-				} finally {
-					if (v != null) {
-						v.release();
-					}
-				}
-			});
-			return new Delta<>(oldRef.get(), kk(newValue));
-		});
+		return Mono.usingWhen(keyMono,
+				key -> Mono.fromCallable(() -> {
+					AtomicReference<ByteBuf> oldRef = new AtomicReference<>(null);
+					var newValue = mainDb.compute(k(key), (_unused, old) -> {
+						if (old != null) {
+							oldRef.set(kk(old));
+						}
+						var v = updater.apply(old != null ? kk(old) : null);
+						try {
+							return k(v);
+						} finally {
+							if (v != null) {
+								v.release();
+							}
+						}
+					});
+					return new Delta<>(oldRef.get(), kk(newValue));
+				}),
+				key -> Mono.fromRunnable(key::release)
+		);
 	}
 
 	@Override
@@ -196,18 +195,26 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<ByteBuf> remove(ByteBuf key, LLDictionaryResultType resultType) {
-		try {
-			return Mono
-					.fromCallable(() -> mainDb.remove(k(key)))
-					// Don't retain the result because it has been removed from the skip list
-					.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
-					.map(this::kk)
-					.doFirst(key::retain)
-					.doAfterTerminate(key::release);
-		} finally {
-			key.release();
-		}
+	public Mono<ByteBuf> remove(Mono<ByteBuf> keyMono, LLDictionaryResultType resultType) {
+		return Mono.usingWhen(keyMono,
+				key -> Mono
+						.fromCallable(() -> mainDb.remove(k(key)))
+						// Don't retain the result because it has been removed from the skip list
+						.mapNotNull(bytesList -> switch (resultType) {
+							case VOID -> null;
+							case PREVIOUS_VALUE_EXISTENCE -> LLUtils.booleanToResponseByteBuffer(true);
+							case PREVIOUS_VALUE -> kk(bytesList);
+						})
+						.switchIfEmpty(Mono.defer(() -> {
+							if (resultType == LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE) {
+								return Mono.fromCallable(() -> LLUtils.booleanToResponseByteBuffer(false));
+							} else {
+								return Mono.empty();
+							}
+						}))
+						.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause)),
+				key -> Mono.fromRunnable(key::release)
+		);
 	}
 
 	@Override
@@ -257,99 +264,106 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot,
-			LLRange range,
+			Mono<LLRange> rangeMono,
 			boolean existsAlmostCertainly) {
-		try {
-			if (range.isSingle()) {
-				return Mono.fromCallable(() -> {
-					var element = snapshots.get(resolveSnapshot(snapshot))
-							.get(k(range.getSingle()));
-					return Map.entry(range.getSingle().retain(), kk(element));
-				}).flux();
-			} else {
-				return Mono
-						.fromCallable(() -> mapSlice(snapshot, range))
-						.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
-						.map(entry -> Map.entry(kk(entry.getKey()), kk(entry.getValue())));
-			}
-		} finally {
-			range.release();
-		}
+		return Flux.usingWhen(rangeMono,
+				range -> {
+					if (range.isSingle()) {
+						return Mono.fromCallable(() -> {
+							var element = snapshots.get(resolveSnapshot(snapshot))
+									.get(k(range.getSingle()));
+							return Map.entry(range.getSingle().retain(), kk(element));
+						}).flux();
+					} else {
+						return Mono
+								.fromCallable(() -> mapSlice(snapshot, range))
+								.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
+								.map(entry -> Map.entry(kk(entry.getKey()), kk(entry.getValue())));
+					}
+				},
+				range -> Mono.fromRunnable(range::release)
+		);
 	}
 
 	@Override
 	public Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			LLRange range,
+			Mono<LLRange> rangeMono,
 			int prefixLength,
 			boolean existsAlmostCertainly) {
 		return Flux.error(new UnsupportedOperationException("Not implemented"));
 	}
 
 	@Override
-	public Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range) {
-		try {
-			if (range.isSingle()) {
-				return Mono.fromCallable(() -> {
-					var contains = snapshots.get(resolveSnapshot(snapshot))
-							.containsKey(k(range.getSingle()));
-					return contains ? range.getSingle().retain() : null;
-				}).flux();
-			} else {
-				return Mono
-						.fromCallable(() -> mapSlice(snapshot, range))
-						.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
-						.map(entry -> kk(entry.getKey()));
-			}
-		} finally {
-			range.release();
-		}
+	public Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
+		return Flux.usingWhen(rangeMono,
+				range -> {
+					if (range.isSingle()) {
+						return Mono.fromCallable(() -> {
+							var contains = snapshots.get(resolveSnapshot(snapshot))
+									.containsKey(k(range.getSingle()));
+							return contains ? range.getSingle().retain() : null;
+						}).flux();
+					} else {
+						return Mono
+								.fromCallable(() -> mapSlice(snapshot, range))
+								.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
+								.map(entry -> kk(entry.getKey()));
+					}
+				},
+				range -> Mono.fromRunnable(range::release)
+		);
 	}
 
 	@Override
-	public Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return getRangeKeys(snapshot, range)
+	public Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
+			Mono<LLRange> rangeMono,
+			int prefixLength) {
+		return getRangeKeys(snapshot, rangeMono)
 				.bufferUntilChanged(k -> k.slice(k.readerIndex(), prefixLength), LLUtils::equals);
 	}
 
 	@Override
-	public Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, LLRange range, int prefixLength) {
-		return getRangeKeys(snapshot, range)
+	public Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, int prefixLength) {
+		return getRangeKeys(snapshot, rangeMono)
 				.distinctUntilChanged(k -> k.slice(k.readerIndex(), prefixLength), LLUtils::equals)
 				.map(k -> k.slice(k.readerIndex(), prefixLength));
 	}
 
 	@Override
-	public Flux<BadBlock> badBlocks(LLRange range) {
+	public Flux<BadBlock> badBlocks(Mono<LLRange> rangeMono) {
 		return Flux.empty();
 	}
 
 	@Override
-	public Mono<Void> setRange(LLRange range, Flux<Entry<ByteBuf, ByteBuf>> entries) {
+	public Mono<Void> setRange(Mono<LLRange> rangeMono, Flux<Entry<ByteBuf, ByteBuf>> entries) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 
 	@Override
-	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range) {
+	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 
 	@Override
-	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast) {
-		return Mono.fromCallable(() -> (long) mapSlice(snapshot, range).size());
+	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fast) {
+		return Mono.usingWhen(rangeMono,
+				range -> Mono.fromCallable(() -> (long) mapSlice(snapshot, range).size()),
+				range -> Mono.fromRunnable(range::release)
+		);
 	}
 
 	@Override
-	public Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, LLRange range) {
+	public Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 
 	@Override
-	public Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, LLRange range) {
+	public Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 
 	@Override
-	public Mono<Entry<ByteBuf, ByteBuf>> removeOne(LLRange range) {
+	public Mono<Entry<ByteBuf, ByteBuf>> removeOne(Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 

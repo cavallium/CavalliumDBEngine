@@ -13,10 +13,13 @@ public class LLMemorySingleton implements LLSingleton {
 
 	private final LLMemoryDictionary dict;
 	private final byte[] singletonName;
+	private final Mono<ByteBuf> singletonNameBufMono;
 
 	public LLMemorySingleton(LLMemoryDictionary dict, byte[] singletonName) {
 		this.dict = dict;
 		this.singletonName = singletonName;
+		ByteBuf singletonNameBuf = Unpooled.wrappedBuffer(singletonName);
+		this.singletonNameBufMono = Mono.just(singletonNameBuf).map(ByteBuf::retain);
 	}
 
 	@Override
@@ -26,32 +29,23 @@ public class LLMemorySingleton implements LLSingleton {
 
 	@Override
 	public Mono<byte[]> get(@Nullable LLSnapshot snapshot) {
-		var bb = Unpooled.wrappedBuffer(singletonName);
-		return Mono
-				.defer(() -> dict.get(snapshot, bb.retain(), false))
+		return dict
+				.get(snapshot, singletonNameBufMono, false)
 				.map(b -> {
 					try {
 						return LLUtils.toArray(b);
 					} finally {
 						b.release();
 					}
-				})
-				.doAfterTerminate(bb::release)
-				.doFirst(bb::retain);
+				});
 	}
 
 	@Override
 	public Mono<Void> set(byte[] value) {
-		var bbKey = Unpooled.wrappedBuffer(singletonName);
-		var bbVal = Unpooled.wrappedBuffer(value);
-		return Mono
-				.defer(() -> dict
-						.put(bbKey.retain(), bbVal.retain(), LLDictionaryResultType.VOID)
-				)
-				.doAfterTerminate(bbKey::release)
-				.doAfterTerminate(bbVal::release)
-				.doFirst(bbKey::retain)
-				.doFirst(bbVal::retain)
+		var bbKey = Mono.just(Unpooled.wrappedBuffer(singletonName)).map(ByteBuf::retain);
+		var bbVal = Mono.just(Unpooled.wrappedBuffer(value)).map(ByteBuf::retain);
+		return dict
+				.put(bbKey, bbVal, LLDictionaryResultType.VOID)
 				.then();
 	}
 }

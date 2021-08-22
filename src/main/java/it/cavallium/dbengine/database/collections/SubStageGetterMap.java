@@ -37,37 +37,36 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	@Override
 	public Mono<DatabaseMapDictionary<T, U>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			ByteBuf prefixKey,
-			List<ByteBuf> debuggingKeys) {
-		try {
-			return Mono
-					.defer(() -> {
-						if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
-							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
-						} else {
-							return Mono
-									.fromCallable(() -> {
-										for (ByteBuf key : debuggingKeys) {
-											key.release();
+			Mono<ByteBuf> prefixKeyMono,
+			Flux<ByteBuf> debuggingKeysFlux) {
+		return Mono.usingWhen(prefixKeyMono,
+				prefixKey -> Mono
+						.fromSupplier(() -> DatabaseMapDictionary
+								.tail(dictionary,
+										prefixKey.retain(),
+										keySerializer,
+										valueSerializer
+								)
+						)
+						.transform(mono -> {
+							if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
+								return debuggingKeysFlux.handle((key, sink) -> {
+									try {
+										if (key.readableBytes() != prefixKey.readableBytes() + getKeyBinaryLength()) {
+											sink.error(new IndexOutOfBoundsException());
+										} else {
+											sink.complete();
 										}
-										return null;
-									});
-						}
-					})
-					.then(Mono
-							.fromSupplier(() -> DatabaseMapDictionary
-									.tail(dictionary,
-											prefixKey.retain(),
-											keySerializer,
-											valueSerializer
-									)
-							)
-					)
-					.doFirst(prefixKey::retain)
-					.doAfterTerminate(prefixKey::release);
-		} finally {
-			prefixKey.release();
-		}
+									} finally {
+										key.release();
+									}
+								}).then(mono);
+							} else {
+								return mono;
+							}
+						}),
+				prefixKey -> Mono.fromRunnable(prefixKey::release)
+		);
 	}
 
 	@Override
@@ -78,23 +77,6 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	@Override
 	public boolean needsDebuggingKeyFlux() {
 		return assertsEnabled && enableAssertionsWhenUsingAssertions;
-	}
-
-	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {
-		return Mono
-				.fromCallable(() -> {
-					try {
-						for (ByteBuf key : keys) {
-							assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
-						}
-					} finally {
-						prefixKey.release();
-						for (ByteBuf key : keys) {
-							key.release();
-						}
-					}
-					return null;
-				});
 	}
 
 	public int getKeyBinaryLength() {

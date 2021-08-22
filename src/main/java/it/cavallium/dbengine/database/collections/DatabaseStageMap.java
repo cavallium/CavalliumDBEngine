@@ -30,7 +30,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
-		return this.at(snapshot, key).flatMap(v -> v.get(snapshot, existsAlmostCertainly).doAfterTerminate(v::release));
+		return Mono.usingWhen(
+				this.at(snapshot, key),
+				stage -> stage.get(snapshot, existsAlmostCertainly),
+				stage -> Mono.fromRunnable(stage::release)
+		);
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
@@ -42,19 +46,24 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.set(value).doAfterTerminate(v::release));
+		return Mono.usingWhen(
+				at(null, key).single(),
+				stage -> stage.set(value),
+				stage -> Mono.fromRunnable(stage::release)
+		);
 	}
 
 	Mono<UpdateMode> getUpdateMode();
 
-	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
-		return this
-				.at(null, key)
-				.single()
-				.flatMap(v -> v
-						.update(updater, updateReturnMode, existsAlmostCertainly)
-						.doAfterTerminate(v::release)
-				);
+	default Mono<U> updateValue(T key,
+			UpdateReturnMode updateReturnMode,
+			boolean existsAlmostCertainly,
+			Function<@Nullable U, @Nullable U> updater) {
+		return Mono.usingWhen(
+				this.at(null, key).single(),
+				stage -> stage.update(updater, updateReturnMode, existsAlmostCertainly),
+				stage -> Mono.fromRunnable(stage::release)
+		);
 	}
 
 	default <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries, BiFunction<@Nullable U, X, @Nullable U> updater) {
@@ -77,14 +86,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return updateValueAndGetDelta(key, existsAlmostCertainly, updater).map(LLUtils::isDeltaChanged).single();
 	}
 
-	default Mono<Delta<U>> updateValueAndGetDelta(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
-		return this
-				.at(null, key)
-				.single()
-				.flatMap(v -> v
-						.updateAndGetDelta(updater, existsAlmostCertainly)
-						.doAfterTerminate(v::release)
-				);
+	default Mono<Delta<U>> updateValueAndGetDelta(T key,
+			boolean existsAlmostCertainly,
+			Function<@Nullable U, @Nullable U> updater) {
+		return Mono.usingWhen(
+				this.at(null, key).single(),
+				stage -> stage.updateAndGetDelta(updater, existsAlmostCertainly),
+				stage -> Mono.fromRunnable(stage::release)
+		);
 	}
 
 	default Mono<Delta<U>> updateValueAndGetDelta(T key, Function<@Nullable U, @Nullable U> updater) {
@@ -92,17 +101,22 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.setAndGetPrevious(value).doAfterTerminate(v::release));
+		return Mono.usingWhen(
+				at(null, key).single(),
+				stage -> stage.setAndGetPrevious(value),
+				stage -> Mono.fromRunnable(stage::release)
+		);
 	}
 
 	/**
-	 *
-	 * @param key
-	 * @param value
 	 * @return true if the key was associated with any value, false if the key didn't exist.
 	 */
 	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
-		return at(null, key).single().flatMap(v -> v.setAndGetChanged(value).doAfterTerminate(v::release)).single();
+		return Mono.usingWhen(
+				at(null, key).single(),
+				stage -> stage.setAndGetChanged(value),
+				stage -> Mono.fromRunnable(stage::release)
+		).single();
 	}
 
 	default Mono<Void> remove(T key) {
@@ -110,7 +124,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return at(null, key).flatMap(v -> v.clearAndGetPrevious().doAfterTerminate(v::release));
+		return Mono.usingWhen(
+				at(null, key),
+				DatabaseStage::clearAndGetPrevious,
+				stage -> Mono.fromRunnable(stage::release)
+		);
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {

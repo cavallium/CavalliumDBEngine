@@ -11,7 +11,8 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements SubStageGetter<Map<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
+public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
+		SubStageGetter<Map<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
 
 	private static final boolean assertsEnabled;
 	static {
@@ -51,38 +52,37 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	@Override
 	public Mono<DatabaseMapDictionaryDeep<T, U, US>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			ByteBuf prefixKey,
-			List<ByteBuf> debuggingKeys) {
-		try {
-			return Mono
-					.defer(() -> {
-						if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
-							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
-						} else {
-							return Mono
-									.fromCallable(() -> {
-										for (ByteBuf key : debuggingKeys) {
-											key.release();
+			Mono<ByteBuf> prefixKeyMono,
+			Flux<ByteBuf> debuggingKeysFlux) {
+		return Mono.usingWhen(prefixKeyMono,
+				prefixKey -> Mono
+						.fromSupplier(() -> DatabaseMapDictionaryDeep
+								.deepIntermediate(dictionary,
+										prefixKey.retain(),
+										keySerializer,
+										subStageGetter,
+										keyExtLength
+								)
+						)
+						.transform(mono -> {
+							if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
+								return debuggingKeysFlux.handle((key, sink) -> {
+									try {
+										if (key.readableBytes() != prefixKey.readableBytes() + getKeyBinaryLength()) {
+											sink.error(new IndexOutOfBoundsException());
+										} else {
+											sink.complete();
 										}
-										return null;
-									});
-						}
-					})
-					.then(Mono
-							.fromSupplier(() -> DatabaseMapDictionaryDeep
-									.deepIntermediate(dictionary,
-											prefixKey.retain(),
-											keySerializer,
-											subStageGetter,
-											keyExtLength
-									)
-							)
-					)
-					.doFirst(prefixKey::retain)
-					.doAfterTerminate(prefixKey::release);
-		} finally {
-			prefixKey.release();
-		}
+									} finally {
+										key.release();
+									}
+								}).then(mono);
+							} else {
+								return mono;
+							}
+						}),
+				prefixKey -> Mono.fromRunnable(prefixKey::release)
+		);
 	}
 
 	@Override

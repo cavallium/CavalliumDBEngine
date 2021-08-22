@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
-import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -47,39 +46,39 @@ public class SubStageGetterHashMap<T, U, TH> implements
 	@Override
 	public Mono<DatabaseMapDictionaryHashed<T, U, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			ByteBuf prefixKey,
-			List<ByteBuf> debuggingKeys) {
-		try {
-			return Mono
-					.defer(() -> {
-						if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
-							return checkKeyFluxConsistency(prefixKey.retain(), debuggingKeys);
-						} else {
-							return Mono
-									.fromCallable(() -> {
-										for (ByteBuf key : debuggingKeys) {
-											key.release();
+			Mono<ByteBuf> prefixKeyMono,
+			Flux<ByteBuf> debuggingKeysFlux) {
+		return Mono.usingWhen(
+				prefixKeyMono,
+				prefixKey -> Mono
+						.fromSupplier(() -> DatabaseMapDictionaryHashed
+								.tail(dictionary,
+										prefixKey.retain(),
+										keySerializer,
+										valueSerializer,
+										keyHashFunction,
+										keyHashSerializer
+								)
+						)
+						.transform(mono -> {
+							if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
+								return debuggingKeysFlux.handle((key, sink) -> {
+									try {
+										if (key.readableBytes() != prefixKey.readableBytes() + getKeyHashBinaryLength()) {
+											sink.error(new IndexOutOfBoundsException());
+										} else {
+											sink.complete();
 										}
-										return null;
-									});
-						}
-					})
-					.then(Mono
-							.fromSupplier(() -> DatabaseMapDictionaryHashed
-									.tail(dictionary,
-											prefixKey.retain(),
-											keySerializer,
-											valueSerializer,
-											keyHashFunction,
-											keyHashSerializer
-									)
-							)
-					)
-					.doFirst(prefixKey::retain)
-					.doAfterTerminate(prefixKey::release);
-		} finally {
-			prefixKey.release();
-		}
+									} finally {
+										key.release();
+									}
+								}).then(mono);
+							} else {
+								return mono;
+							}
+						}),
+				prefixKey -> Mono.fromRunnable(prefixKey::release)
+		);
 	}
 
 	@Override
@@ -90,23 +89,6 @@ public class SubStageGetterHashMap<T, U, TH> implements
 	@Override
 	public boolean needsDebuggingKeyFlux() {
 		return assertsEnabled && enableAssertionsWhenUsingAssertions;
-	}
-
-	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {
-		return Mono
-				.fromCallable(() -> {
-					try {
-						for (ByteBuf key : keys) {
-							assert key.readableBytes() == prefixKey.readableBytes() + getKeyHashBinaryLength();
-						}
-					} finally {
-						prefixKey.release();
-						for (ByteBuf key : keys) {
-							key.release();
-						}
-					}
-					return null;
-				});
 	}
 
 	public int getKeyHashBinaryLength() {

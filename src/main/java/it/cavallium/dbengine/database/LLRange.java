@@ -5,6 +5,7 @@ import static io.netty.buffer.Unpooled.wrappedUnmodifiableBuffer;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufUtil;
+import io.netty.util.IllegalReferenceCountException;
 import java.util.Arrays;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -14,16 +15,18 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public class LLRange {
 
-	private static final LLRange RANGE_ALL = new LLRange(null, null);
+	private static final LLRange RANGE_ALL = new LLRange(null, null, false);
 	private final ByteBuf min;
 	private final ByteBuf max;
+	private final boolean releasable;
 	private final AtomicInteger refCnt = new AtomicInteger(1);
 
-	private LLRange(ByteBuf min, ByteBuf max) {
+	private LLRange(ByteBuf min, ByteBuf max, boolean releasable) {
 		assert min == null || min.refCnt() > 0;
 		assert max == null || max.refCnt() > 0;
 		this.min = min;
 		this.max = max;
+		this.releasable = releasable;
 	}
 
 	public static LLRange all() {
@@ -31,23 +34,23 @@ public class LLRange {
 	}
 
 	public static LLRange from(ByteBuf min) {
-		return new LLRange(min, null);
+		return new LLRange(min, null, true);
 	}
 
 	public static LLRange to(ByteBuf max) {
-		return new LLRange(null, max);
+		return new LLRange(null, max, true);
 	}
 
 	public static LLRange single(ByteBuf single) {
 		try {
-			return new LLRange(single.retain(), single.retain());
+			return new LLRange(single.retain(), single.retain(), true);
 		} finally {
 			single.release();
 		}
 	}
 
 	public static LLRange of(ByteBuf min, ByteBuf max) {
-		return new LLRange(min, max);
+		return new LLRange(min, max, true);
 	}
 
 	public boolean isAll() {
@@ -104,8 +107,11 @@ public class LLRange {
 	}
 
 	private void checkReleased() {
+		if (!releasable) {
+			return;
+		}
 		if (refCnt.get() <= 0) {
-			throw new IllegalStateException("Released");
+			throw new IllegalReferenceCountException(0);
 		}
 	}
 
@@ -137,8 +143,11 @@ public class LLRange {
 	}
 
 	public LLRange retain() {
+		if (!releasable) {
+			return this;
+		}
 		if (refCnt.updateAndGet(refCnt -> refCnt <= 0 ? 0 : (refCnt + 1)) <= 0) {
-			throw new IllegalStateException("Released");
+			throw new IllegalReferenceCountException(0, 1);
 		}
 		if (min != null) {
 			min.retain();
@@ -150,8 +159,11 @@ public class LLRange {
 	}
 
 	public void release() {
+		if (!releasable) {
+			return;
+		}
 		if (refCnt.decrementAndGet() < 0) {
-			throw new IllegalStateException("Already released");
+			throw new IllegalReferenceCountException(0, -1);
 		}
 		if (min != null) {
 			min.release();

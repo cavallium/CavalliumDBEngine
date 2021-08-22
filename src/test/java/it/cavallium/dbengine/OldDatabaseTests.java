@@ -53,7 +53,7 @@ public class OldDatabaseTests {
 										))
 										.flatMap(collection -> Flux
 												.fromIterable(originalKeys)
-												.flatMap(k1 -> collection.putValue(k1, DUMMY_VALUE))
+												.flatMap(k1 -> collection.putValue(k1, DUMMY_VALUE.retain()))
 												.then(collection.leavesCount(null, false))
 										)
 								)
@@ -82,7 +82,7 @@ public class OldDatabaseTests {
 												.flatMap(k1 -> collection.at(null, k1))
 												.flatMap(k1at -> Flux
 														.fromIterable(originalSubKeys)
-														.flatMap(k2 -> k1at.putValue(k2, DUMMY_VALUE))
+														.flatMap(k2 -> k1at.putValue(k2, DUMMY_VALUE.retain()))
 												)
 												.then(collection.leavesCount(null, false))
 										)
@@ -99,15 +99,15 @@ public class OldDatabaseTests {
 		String newPrefix = "xxx";
 
 		StepVerifier
-				.create(
-						tempDb()
-								.flatMapMany(db -> addKeysAndConvertToLongerOnes(db, originalSuperKeys, originalSubKeys, newPrefix))
+				.create(tempDb()
+						.flatMapMany(db -> addKeysAndConvertToLongerOnes(db, originalSuperKeys, originalSubKeys, newPrefix))
 				)
 				.expectNextSequence(originalSuperKeys
 						.stream()
 						.flatMap(superKey -> originalSubKeys
 								.stream()
-								.map(subKey -> Map.entry(newPrefix + superKey, newPrefix + subKey)))
+								.map(subKey -> Map.entry(newPrefix + superKey, newPrefix + subKey))
+						)
 						.collect(Collectors.toList())
 				)
 				.verifyComplete();
@@ -174,11 +174,17 @@ public class OldDatabaseTests {
 							var db1 = tuple.getT1();
 							return Flux
 									.fromIterable(originalSuperKeys)
-									.flatMapSequential(superKey -> db1.at(null, superKey))
-									.flatMapSequential(at -> Flux
+									.concatMap(superKey -> db1.at(null, superKey))
+									.concatMap(at -> Flux
 											.fromIterable(originalSubKeys)
-											.flatMapSequential(subKey -> at.at(null, subKey))
-											.flatMapSequential(at2 -> at2.set(DUMMY_VALUE))
+											.concatMap(subKey -> at
+													.at(null, subKey)
+													.flatMap(at2 -> at2
+															.set(DUMMY_VALUE.retainedSlice())
+															.doAfterTerminate(at2::release)
+													)
+											)
+											.doAfterTerminate(at::release)
 									)
 									.then(db
 											.takeSnapshot()
@@ -203,19 +209,23 @@ public class OldDatabaseTests {
 
 							return oldDb
 									.getAllStages(snapshot)
-									.flatMapSequential(parentEntry -> Mono
+									.concatMap(parentEntry -> Mono
 											.fromCallable(() -> newPrefix + parentEntry.getKey())
 											.flatMapMany(newId1 -> parentEntry.getValue()
 													.getAllValues(snapshot)
-													.flatMapSequential(entry -> Mono
+													.concatMap(entry -> Mono
 															.fromCallable(() -> newPrefix + entry.getKey())
 															.flatMap(newId2 -> newDb
 																	.at(null, newId1)
-																	.flatMap(newStage -> newStage.putValue(newId2, entry.getValue()))
+																	.flatMap(newStage -> newStage
+																			.putValue(newId2, entry.getValue())
+																			.doAfterTerminate(newStage::release)
+																	)
 																	.thenReturn(Map.entry(newId1, newId2))
 															)
 													)
 											)
+											.doAfterTerminate(() -> parentEntry.getValue().release())
 									)
 									.concatWith(db
 											.releaseSnapshot(snapshot.getSnapshot(db))

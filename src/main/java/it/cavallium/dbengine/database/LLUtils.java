@@ -488,4 +488,12 @@ public class LLUtils {
 	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {
 		return !Objects.equals(delta.previous(), delta.current());
 	}
+
+	public static Mono<ByteBuf> lazyRetain(ByteBuf buf) {
+		return Mono.just(buf).map(ByteBuf::retain);
+	}
+
+	public static Mono<LLRange> lazyRetain(LLRange range) {
+		return Mono.just(range).map(LLRange::retain);
+	}
 }

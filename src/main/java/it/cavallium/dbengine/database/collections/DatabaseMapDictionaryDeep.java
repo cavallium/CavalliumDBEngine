@@ -2,10 +2,10 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.util.IllegalReferenceCountException;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
@@ -13,22 +13,16 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary;
-import it.cavallium.dbengine.database.disk.ReleasableSlice;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
-import reactor.util.function.Tuples;
 
-// todo: implement optimized methods
+// todo: implement optimized methods (which?)
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
 
 	protected final LLDictionary dictionary;
@@ -40,6 +34,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected final int keySuffixLength;
 	protected final int keyExtLength;
 	protected final LLRange range;
+	protected final Mono<LLRange> rangeMono;
 	private volatile boolean released;
 
 	private static ByteBuf incrementPrefix(ByteBufAllocator alloc, ByteBuf originalKey, int prefixLength) {
@@ -90,11 +85,19 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	static ByteBuf firstRangeKey(ByteBufAllocator alloc, ByteBuf prefixKey, int prefixLength, int suffixLength, int extLength) {
+	static ByteBuf firstRangeKey(ByteBufAllocator alloc,
+			ByteBuf prefixKey,
+			int prefixLength,
+			int suffixLength,
+			int extLength) {
 		return zeroFillKeySuffixAndExt(alloc, prefixKey, prefixLength, suffixLength, extLength);
 	}
 
-	static ByteBuf nextRangeKey(ByteBufAllocator alloc, ByteBuf prefixKey, int prefixLength, int suffixLength, int extLength) {
+	static ByteBuf nextRangeKey(ByteBufAllocator alloc,
+			ByteBuf prefixKey,
+			int prefixLength,
+			int suffixLength,
+			int extLength) {
 		try {
 			ByteBuf nonIncremented = zeroFillKeySuffixAndExt(alloc, prefixKey.retain(), prefixLength, suffixLength, extLength);
 			try {
@@ -107,7 +110,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	protected static ByteBuf zeroFillKeySuffixAndExt(ByteBufAllocator alloc, ByteBuf prefixKey, int prefixLength, int suffixLength, int extLength) {
+	protected static ByteBuf zeroFillKeySuffixAndExt(ByteBufAllocator alloc,
+			ByteBuf prefixKey,
+			int prefixLength,
+			int suffixLength,
+			int extLength) {
 		try {
 			assert prefixKey.readableBytes() == prefixLength;
 			assert suffixLength > 0;
@@ -262,6 +269,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 					assert keyPrefix.refCnt() > 0;
 					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
 					this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.retain(), nextRangeKey.retain());
+					this.rangeMono = LLUtils.lazyRetain(this.range);
 					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
 				} finally {
 					nextRangeKey.release();
@@ -371,18 +379,12 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return Mono
-				.defer(() -> dictionary.sizeRange(resolveSnapshot(snapshot), range.retain(), fast))
-				.doFirst(range::retain)
-				.doAfterTerminate(range::release);
+		return dictionary.sizeRange(resolveSnapshot(snapshot), rangeMono, fast);
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return Mono
-				.defer(() -> dictionary.isRangeEmpty(resolveSnapshot(snapshot), range.retain()))
-				.doFirst(range::retain)
-				.doAfterTerminate(range::release);
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), rangeMono);
 	}
 
 	@Override
@@ -391,32 +393,26 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				.using(
 						() -> serializeSuffix(keySuffix),
 						keySuffixData -> {
-							Mono<List<ByteBuf>> debuggingKeysMono = Mono
-									.defer(() -> {
+							Flux<ByteBuf> debuggingKeysFlux = Mono
+									.<List<ByteBuf>>defer(() -> {
 										if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED
 												&& this.subStageGetter.needsDebuggingKeyFlux()) {
 											return Flux
 													.using(
 															() -> toExtRange(keySuffixData.retain()),
 															extRangeBuf -> this.dictionary
-																	.getRangeKeys(resolveSnapshot(snapshot), extRangeBuf.retain()),
+																	.getRangeKeys(resolveSnapshot(snapshot), LLUtils.lazyRetain(extRangeBuf)),
 															LLRange::release
 													)
 													.collectList();
 										} else {
 											return Mono.just(List.of());
 										}
-									});
-							return Mono
-									.using(
-											() -> toKeyWithoutExt(keySuffixData.retain()),
-											keyBuf -> debuggingKeysMono
-													.flatMap(debuggingKeysList -> this.subStageGetter
-															.subStage(dictionary, snapshot, keyBuf.retain(), debuggingKeysList)
-													),
-											ReferenceCounted::release
-									)
-									.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+									})
+									.flatMapIterable(it -> it);
+							Mono<ByteBuf> keyBufMono = LLUtils.lazyRetain(toKeyWithoutExt(keySuffixData.retain()));
+							return this.subStageGetter
+									.subStage(dictionary, snapshot, keyBufMono, debuggingKeysFlux);
 						},
 						ReferenceCounted::release
 				)
@@ -430,10 +426,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<BadBlock> badBlocks() {
-		return Flux
-				.defer(() -> dictionary.badBlocks(range.retain()))
-				.doFirst(range::retain)
-				.doAfterTerminate(range::release);
+		return dictionary.badBlocks(rangeMono);
 	}
 
 	private static record GroupBuffers(ByteBuf groupKeyWithExt, ByteBuf groupKeyWithoutExt, ByteBuf groupSuffix) {}
@@ -443,9 +436,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return Flux
 				.defer(() -> {
 					if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED && this.subStageGetter.needsDebuggingKeyFlux()) {
-						return Flux
-								.defer(() -> dictionary.getRangeKeysGrouped(resolveSnapshot(snapshot), range.retain(), keyPrefixLength + keySuffixLength))
-								.flatMapSequential(rangeKeys -> Flux
+						return dictionary
+								.getRangeKeysGrouped(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength)
+								.concatMap(rangeKeys -> Flux
 										.using(
 												() -> {
 													assert this.subStageGetter.isMultiKey() || rangeKeys.size() == 1;
@@ -462,8 +455,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 														.then(this.subStageGetter
 																.subStage(dictionary,
 																		snapshot,
-																		buffers.groupKeyWithoutExt.retain(),
-																		rangeKeys.stream().map(ByteBuf::retain).collect(Collectors.toList())
+																		LLUtils.lazyRetain(buffers.groupKeyWithoutExt),
+																		Flux.fromIterable(rangeKeys).map(ByteBuf::retain)
 																)
 																.map(us -> Map.entry(this.deserializeSuffix(buffers.groupSuffix.retain()), us))
 														),
@@ -488,7 +481,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 								});
 					} else {
 						return Flux
-								.defer(() -> dictionary.getRangeKeyPrefixes(resolveSnapshot(snapshot), range.retain(), keyPrefixLength + keySuffixLength))
+								.defer(() -> dictionary.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength))
 								.flatMapSequential(groupKeyWithoutExt -> Mono
 										.using(
 												() -> {
@@ -499,17 +492,15 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 												groupSuffix -> this.subStageGetter
 														.subStage(dictionary,
 																snapshot,
-																groupKeyWithoutExt.retain(),
-																List.of()
+																LLUtils.lazyRetain(groupKeyWithoutExt),
+																Flux.empty()
 														)
 														.map(us -> Map.entry(this.deserializeSuffix(groupSuffix.retain()), us)),
 												ReferenceCounted::release
 										)
 								);
 					}
-				})
-				.doFirst(range::retain)
-				.doAfterTerminate(range::release);
+				});
 	}
 
 	private boolean subStageKeysConsistency(int totalKeyLength) {
@@ -530,17 +521,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				.getAllValues(null)
 				.concatWith(this
 						.clear()
-						.then(entries
-								.flatMap(entry -> this
-										.at(null, entry.getKey())
-										.flatMap(us -> us
-												.set(entry.getValue())
-												.doAfterTerminate(us::release)
-										)
-								)
-								.doOnDiscard(DatabaseStage.class, DatabaseStage::release)
-								.then(Mono.empty())
-						)
+						.then(this.putMulti(entries))
+						.then(Mono.empty())
 				);
 	}
 
@@ -552,11 +534,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 						return dictionary.clear();
 					} else if (range.isSingle()) {
 						return dictionary
-								.remove(range.getSingle().retain(), LLDictionaryResultType.VOID)
+								.remove(LLUtils.lazyRetain(range.getSingle()), LLDictionaryResultType.VOID)
 								.doOnNext(ReferenceCounted::release)
 								.then();
 					} else {
-						return dictionary.setRange(range.retain(), Flux.empty());
+						return dictionary.setRange(LLUtils.lazyRetain(range), Flux.empty());
 					}
 				});
 	}
@@ -588,7 +570,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			this.range.release();
 			this.keyPrefix.release();
 		} else {
-			throw new IllegalStateException("Already released");
+			throw new IllegalReferenceCountException(0, -1);
 		}
 	}
 }

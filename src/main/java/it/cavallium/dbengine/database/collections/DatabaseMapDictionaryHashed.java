@@ -188,10 +188,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 				.flatMap(bucket -> Flux
 						.fromIterable(bucket)
 						.map(Entry::getKey)
-						.flatMap(key -> this
-								.at(snapshot, key)
-								.flatMap(stage -> Mono.just(Map.entry(key, stage)).doAfterTerminate(stage::release))
-						)
+						.flatMap(key -> this.at(snapshot, key).map(stage -> Map.entry(key, stage)))
 				);
 	}
 
@@ -207,13 +204,13 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return entries
-				.flatMap(entry -> this
-				.at(null, entry.getKey())
-				.flatMap(stage -> stage
-						.setAndGetPrevious(entry.getValue())
-						.map(prev -> Map.entry(entry.getKey(), prev))
-						.doAfterTerminate(stage::release))
-				);
+				.flatMap(entry -> Flux.usingWhen(
+						this.at(null, entry.getKey()),
+						stage -> stage
+								.setAndGetPrevious(entry.getValue())
+								.map(prev -> Map.entry(entry.getKey(), prev)),
+						stage -> Mono.fromRunnable(stage::release)
+				));
 	}
 
 	@Override

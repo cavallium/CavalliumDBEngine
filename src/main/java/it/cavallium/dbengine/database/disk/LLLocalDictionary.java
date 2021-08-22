@@ -77,9 +77,9 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
 	static final int MULTI_GET_WINDOW = 500;
 	static final Duration MULTI_GET_WINDOW_TIMEOUT = Duration.ofSeconds(1);
-	static final ReadOptions EMPTY_READ_OPTIONS = new UnmodifiableReadOptions();
-	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnmodifiableWriteOptions();
-	static final WriteOptions BATCH_WRITE_OPTIONS = new UnmodifiableWriteOptions();
+	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
+	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
+	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
 	static final boolean PREFER_SEEK_TO_FIRST = false;
 	/**
 	 * It used to be false,
@@ -1492,6 +1492,7 @@ public class LLLocalDictionary implements LLDictionary {
 						return Mono
 								.<Void>fromCallable(() -> {
 									if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
+										assert EMPTY_READ_OPTIONS.isOwningHandle();
 										try (var opts = new ReadOptions(EMPTY_READ_OPTIONS)) {
 											ReleasableSlice minBound;
 											if (range.hasMin()) {
@@ -1514,6 +1515,8 @@ public class LLLocalDictionary implements LLDictionary {
 												} else {
 													maxBound = emptyReleasableSlice();
 												}
+												assert cfh.isOwningHandle();
+												assert opts.isOwningHandle();
 												try (RocksIterator it = db.newIterator(cfh, opts)) {
 													if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
 														rocksIterSeekTo(databaseOptions.allowNettyDirect(), it, range.getMin().retain());

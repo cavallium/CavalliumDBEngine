@@ -31,32 +31,31 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	@Override
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			ByteBuf keyPrefix,
-			List<ByteBuf> debuggingKeys) {
-		try {
-			return Mono
-					.fromCallable(() -> {
-						try {
-							for (ByteBuf key : debuggingKeys) {
-								if (!LLUtils.equals(keyPrefix, key)) {
-									throw new IndexOutOfBoundsException("Found more than one element!");
-								}
+			Mono<ByteBuf> keyPrefixMono,
+			Flux<ByteBuf> debuggingKeysFlux) {
+		return Mono.usingWhen(
+				keyPrefixMono,
+				keyPrefix -> Mono
+						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
+						.transform(mono -> {
+							if (assertsEnabled && needsDebuggingKeyFlux()) {
+								return debuggingKeysFlux.handle((key, sink) -> {
+									try {
+										if (!LLUtils.equals(keyPrefix, key)) {
+											sink.error(new IndexOutOfBoundsException("Found more than one element!"));
+										} else {
+											sink.complete();
+										}
+									} finally {
+										key.release();
+									}
+								}).then(mono);
+							} else {
+								return mono;
 							}
-							return null;
-						} finally {
-							for (ByteBuf key : debuggingKeys) {
-								key.release();
-							}
-						}
-					})
-					.then(Mono
-							.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
-					)
-					.doFirst(keyPrefix::retain)
-					.doAfterTerminate(keyPrefix::release);
-		} finally {
-			keyPrefix.release();
-		}
+						}),
+				keyPrefix -> Mono.fromRunnable(keyPrefix::release)
+		);
 	}
 
 	@Override

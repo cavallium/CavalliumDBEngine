@@ -77,20 +77,15 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
-		return Mono
-				.usingWhen(
-						Mono.just(true),
-						b -> get(null, false),
-						b -> dictionary
-								.setRange(rangeMono,
-										Flux
-												.fromIterable(Collections.unmodifiableMap(value).entrySet())
-												.map(entry -> Map
-														.entry(this.toKey(serializeSuffix(entry.getKey())),
-																valueSerializer.serialize(entry.getValue())
-														))
-								)
-				);
+		return Mono.usingWhen(
+				Mono.just(true),
+				b -> get(null, false),
+				b -> dictionary.setRange(rangeMono, Flux
+						.fromIterable(Collections.unmodifiableMap(value).entrySet())
+						.map(entry -> Map.entry(this.toKey(serializeSuffix(entry.getKey())),
+								valueSerializer.serialize(entry.getValue())))
+				)
+		);
 	}
 
 	@Override

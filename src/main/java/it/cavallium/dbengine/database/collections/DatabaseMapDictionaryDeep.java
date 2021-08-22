@@ -269,7 +269,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 					assert keyPrefix.refCnt() > 0;
 					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
 					this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.retain(), nextRangeKey.retain());
-					this.rangeMono = LLUtils.lazyRetain(this.range);
+					this.rangeMono = LLUtils.lazyRetainRange(this.range);
 					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
 				} finally {
 					nextRangeKey.release();
@@ -389,34 +389,33 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		return Mono
-				.using(
-						() -> serializeSuffix(keySuffix),
-						keySuffixData -> {
-							Flux<ByteBuf> debuggingKeysFlux = Mono
-									.<List<ByteBuf>>defer(() -> {
-										if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED
-												&& this.subStageGetter.needsDebuggingKeyFlux()) {
-											return Flux
-													.using(
-															() -> toExtRange(keySuffixData.retain()),
-															extRangeBuf -> this.dictionary
-																	.getRangeKeys(resolveSnapshot(snapshot), LLUtils.lazyRetain(extRangeBuf)),
-															LLRange::release
-													)
-													.collectList();
-										} else {
-											return Mono.just(List.of());
-										}
-									})
-									.flatMapIterable(it -> it);
-							Mono<ByteBuf> keyBufMono = LLUtils.lazyRetain(toKeyWithoutExt(keySuffixData.retain()));
-							return this.subStageGetter
-									.subStage(dictionary, snapshot, keyBufMono, debuggingKeysFlux);
-						},
-						ReferenceCounted::release
-				)
-				.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+		return Mono.using(
+				() -> serializeSuffix(keySuffix),
+				keySuffixData -> {
+					Flux<ByteBuf> debuggingKeysFlux = Mono.<List<ByteBuf>>defer(() -> {
+						if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED
+								&& this.subStageGetter.needsDebuggingKeyFlux()) {
+							return Flux
+									.using(
+											() -> toExtRange(keySuffixData.retain()),
+											extRangeBuf -> this.dictionary
+													.getRangeKeys(resolveSnapshot(snapshot), LLUtils.lazyRetainRange(extRangeBuf)),
+											LLRange::release
+									)
+									.collectList();
+						} else {
+							return Mono.just(List.of());
+						}
+					}).flatMapIterable(it -> it);
+					return Mono.using(
+							() -> toKeyWithoutExt(keySuffixData.retain()),
+							keyWithoutExt -> this.subStageGetter
+									.subStage(dictionary, snapshot, LLUtils.lazyRetain(keyWithoutExt), debuggingKeysFlux),
+							ReferenceCounted::release
+					);
+				},
+				ReferenceCounted::release
+		).doOnDiscard(DatabaseStage.class, DatabaseStage::release);
 	}
 
 	@Override
@@ -538,7 +537,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 								.doOnNext(ReferenceCounted::release)
 								.then();
 					} else {
-						return dictionary.setRange(LLUtils.lazyRetain(range), Flux.empty());
+						return dictionary.setRange(LLUtils.lazyRetainRange(range), Flux.empty());
 					}
 				});
 	}

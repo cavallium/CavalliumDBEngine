@@ -16,6 +16,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
@@ -493,7 +495,23 @@ public class LLUtils {
 		return Mono.just(buf).map(ByteBuf::retain);
 	}
 
-	public static Mono<LLRange> lazyRetain(LLRange range) {
+	public static Mono<LLRange> lazyRetainRange(LLRange range) {
 		return Mono.just(range).map(LLRange::retain);
+	}
+
+	public static Mono<ByteBuf> lazyRetain(Callable<ByteBuf> bufCallable) {
+		return Mono.fromCallable(bufCallable).cacheInvalidateIf(byteBuf -> {
+			// Retain if the value has been cached previously
+			byteBuf.retain();
+			return false;
+		});
+	}
+
+	public static Mono<LLRange> lazyRetainRange(Callable<LLRange> rangeCallable) {
+		return Mono.fromCallable(rangeCallable).cacheInvalidateIf(range -> {
+			// Retain if the value has been cached previously
+			range.retain();
+			return false;
+		});
 	}
 }

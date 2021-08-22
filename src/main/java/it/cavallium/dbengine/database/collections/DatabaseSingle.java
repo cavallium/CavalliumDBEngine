@@ -11,11 +11,14 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SynchronousSink;
 
 public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
@@ -43,11 +46,19 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 		}
 	}
 
+	private void deserializeValue(ByteBuf value, SynchronousSink<U> sink) {
+		try {
+			sink.next(serializer.deserialize(value));
+		} catch (SerializationException ex) {
+			sink.error(ex);
+		}
+	}
+
 	@Override
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
 				.get(resolveSnapshot(snapshot), keyMono, existsAlmostCertainly)
-				.map(serializer::deserialize);
+				.handle(this::deserializeValue);
 	}
 
 	@Override
@@ -56,13 +67,13 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 				.using(() -> serializer.serialize(value),
 						valueByteBuf -> dictionary
 								.put(keyMono, LLUtils.lazyRetain(valueByteBuf), LLDictionaryResultType.PREVIOUS_VALUE)
-								.map(serializer::deserialize),
+								.handle(this::deserializeValue),
 						ReferenceCounted::release
 				);
 	}
 
 	@Override
-	public Mono<U> update(Function<@Nullable U, @Nullable U> updater,
+	public Mono<U> update(SerializationFunction<@Nullable U, @Nullable U> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return dictionary
@@ -74,11 +85,11 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 						return serializer.serialize(result);
 					}
 				}, updateReturnMode, existsAlmostCertainly)
-				.map(serializer::deserialize);
+				.handle(this::deserializeValue);
 	}
 
 	@Override
-	public Mono<Delta<U>> updateAndGetDelta(Function<@Nullable U, @Nullable U> updater,
+	public Mono<Delta<U>> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater,
 			boolean existsAlmostCertainly) {
 		return dictionary
 				.updateAndGetDelta(keyMono, (oldValueSer) -> {
@@ -95,7 +106,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	public Mono<U> clearAndGetPrevious() {
 		return dictionary
 				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE)
-				.map(serializer::deserialize);
+				.handle(this::deserializeValue);
 	}
 
 	@Override

@@ -18,6 +18,8 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -567,7 +569,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<ByteBuf> update(Mono<ByteBuf> keyMono,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
@@ -700,7 +702,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> keyMono,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> this.runOnDb(() -> {
@@ -1111,7 +1113,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public <X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
-			BiFunction<ByteBuf, X, ByteBuf> updateFunction) {
+			BiSerializationFunction<ByteBuf, X, ByteBuf> updateFunction) {
 		return entries
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.flatMapSequential(ew -> Flux

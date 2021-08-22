@@ -11,6 +11,9 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.io.IOException;
 import java.util.List;
@@ -165,7 +168,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> keyMono,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
@@ -174,7 +177,12 @@ public class LLMemoryDictionary implements LLDictionary {
 						if (old != null) {
 							oldRef.set(kk(old));
 						}
-						var v = updater.apply(old != null ? kk(old) : null);
+						ByteBuf v = null;
+						try {
+							v = updater.apply(old != null ? kk(old) : null);
+						} catch (SerializationException e) {
+							throw new IllegalStateException(e);
+						}
 						try {
 							return k(v);
 						} finally {
@@ -258,7 +266,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public <X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
-			BiFunction<ByteBuf, X, ByteBuf> updateFunction) {
+			BiSerializationFunction<ByteBuf, X, ByteBuf> updateFunction) {
 		return Flux.error(new UnsupportedOperationException("Not implemented"));
 	}
 

@@ -9,9 +9,9 @@ import org.jetbrains.annotations.NotNull;
 
 public interface Serializer<A, B> {
 
-	@NotNull A deserialize(@NotNull B serialized);
+	@NotNull A deserialize(@NotNull B serialized) throws SerializationException;
 
-	@NotNull B serialize(@NotNull A deserialized);
+	@NotNull B serialize(@NotNull A deserialized) throws SerializationException;
 
 	Serializer<ByteBuf, ByteBuf> NOOP_SERIALIZER = new Serializer<>() {
 		@Override

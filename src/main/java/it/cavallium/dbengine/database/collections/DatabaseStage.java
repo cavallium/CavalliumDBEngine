@@ -5,6 +5,7 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -44,7 +45,7 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 				.switchIfEmpty(Mono.fromSupplier(() -> value != null));
 	}
 
-	default Mono<T> update(Function<@Nullable T, @Nullable T> updater,
+	default Mono<T> update(SerializationFunction<@Nullable T, @Nullable T> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return this
@@ -52,14 +53,14 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 				.transform(prev -> LLUtils.resolveDelta(prev, updateReturnMode));
 	}
 
-	default Mono<T> update(Function<@Nullable T, @Nullable T> updater, UpdateReturnMode updateReturnMode) {
+	default Mono<T> update(SerializationFunction<@Nullable T, @Nullable T> updater, UpdateReturnMode updateReturnMode) {
 		return update(updater, updateReturnMode, false);
 	}
 
-	Mono<Delta<T>> updateAndGetDelta(Function<@Nullable T, @Nullable T> updater,
+	Mono<Delta<T>> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater,
 			boolean existsAlmostCertainly);
 
-	default Mono<Delta<T>> updateAndGetDelta(Function<@Nullable T, @Nullable T> updater) {
+	default Mono<Delta<T>> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater) {
 		return updateAndGetDelta(updater, false);
 	}
 

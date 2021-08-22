@@ -13,6 +13,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Collection;
 import java.util.List;
@@ -457,7 +458,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 																		LLUtils.lazyRetain(buffers.groupKeyWithoutExt),
 																		Flux.fromIterable(rangeKeys).map(ByteBuf::retain)
 																)
-																.map(us -> Map.entry(this.deserializeSuffix(buffers.groupSuffix.retain()), us))
+																.<Entry<T, US>>handle((us, sink) -> {
+																	try {
+																		var deserializedSuffix = this.deserializeSuffix(buffers.groupSuffix.retain());
+																		sink.next(Map.entry(deserializedSuffix, us));
+																	} catch (SerializationException ex) {
+																		sink.error(ex);
+																	}
+																})
 														),
 												buffers -> {
 													buffers.groupSuffix.release();
@@ -494,7 +502,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 																LLUtils.lazyRetain(groupKeyWithoutExt),
 																Flux.empty()
 														)
-														.map(us -> Map.entry(this.deserializeSuffix(groupSuffix.retain()), us)),
+														.<Entry<T, US>>handle((us, sink) -> {
+															try {
+																sink.next(Map.entry(this.deserializeSuffix(groupSuffix.retain()), us));
+															} catch (SerializationException ex) {
+																sink.error(ex);
+															}
+														}),
 												ReferenceCounted::release
 										)
 								);
@@ -543,7 +557,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	protected T deserializeSuffix(ByteBuf keySuffix) {
+	protected T deserializeSuffix(ByteBuf keySuffix) throws SerializationException {
 		try {
 			assert suffixKeyConsistency(keySuffix.readableBytes());
 			var result = keySuffixSerializer.deserialize(keySuffix.retain());
@@ -555,7 +569,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	protected ByteBuf serializeSuffix(T keySuffix) {
+	protected ByteBuf serializeSuffix(T keySuffix) throws SerializationException {
 		ByteBuf suffixData = keySuffixSerializer.serialize(keySuffix);
 		assert suffixKeyConsistency(suffixData.readableBytes());
 		assert keyPrefix.refCnt() > 0;

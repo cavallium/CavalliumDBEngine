@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.client;
 
 import io.netty.buffer.ByteBuf;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.NotNull;
 
@@ -16,7 +17,7 @@ public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryL
 	}
 
 	@Override
-	public @NotNull B deserialize(@NotNull ByteBuf serialized) {
+	public @NotNull B deserialize(@NotNull ByteBuf serialized) throws SerializationException {
 		try {
 			return keyMapper.map(fixedLengthSerializer.deserialize(serialized.retain()));
 		} finally {
@@ -25,7 +26,7 @@ public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryL
 	}
 
 	@Override
-	public @NotNull ByteBuf serialize(@NotNull B deserialized) {
+	public @NotNull ByteBuf serialize(@NotNull B deserialized) throws SerializationException {
 		return fixedLengthSerializer.serialize(keyMapper.unmap(deserialized));
 	}
 

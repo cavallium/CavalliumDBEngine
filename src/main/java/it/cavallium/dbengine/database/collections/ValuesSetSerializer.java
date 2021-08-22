@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
@@ -23,7 +24,7 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>, ByteBuf> {
 	}
 
 	@Override
-	public @NotNull ObjectArraySet<X> deserialize(@NotNull ByteBuf serialized) {
+	public @NotNull ObjectArraySet<X> deserialize(@NotNull ByteBuf serialized) throws SerializationException {
 		try {
 			int entriesLength = serialized.readInt();
 			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
@@ -38,18 +39,18 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>, ByteBuf> {
 	}
 
 	@Override
-	public @NotNull ByteBuf serialize(@NotNull ObjectArraySet<X> deserialized) {
+	public @NotNull ByteBuf serialize(@NotNull ObjectArraySet<X> deserialized) throws SerializationException {
 		ByteBuf output = allocator.buffer();
 		try {
 			output.writeInt(deserialized.size());
-			deserialized.forEach((entry) -> {
+			for (X entry : deserialized) {
 				ByteBuf serialized = entrySerializer.serialize(entry);
 				try {
 					output.writeBytes(serialized);
 				} finally {
 					serialized.release();
 				}
-			});
+			}
 			return output.retain();
 		} finally {
 			output.release();

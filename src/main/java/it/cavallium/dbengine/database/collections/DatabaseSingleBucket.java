@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import it.unimi.dsi.fastutil.objects.ObjectSets;
 import java.util.HashSet;
@@ -58,7 +59,7 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@Override
-	public Mono<V> update(Function<@Nullable V, @Nullable V> updater,
+	public Mono<V> update(SerializationFunction<@Nullable V, @Nullable V> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return bucketStage
@@ -76,7 +77,7 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@Override
-	public Mono<Delta<V>> updateAndGetDelta(Function<@Nullable V, @Nullable V> updater, boolean existsAlmostCertainly) {
+	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater, boolean existsAlmostCertainly) {
 		return bucketStage
 				.updateAndGetDelta(oldBucket -> {
 					V oldValue = extractValue(oldBucket);

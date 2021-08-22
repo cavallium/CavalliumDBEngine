@@ -7,6 +7,9 @@ import it.cavallium.dbengine.database.KeyOperationResult;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -58,7 +61,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<U> updateValue(T key,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly,
-			Function<@Nullable U, @Nullable U> updater) {
+			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return Mono.usingWhen(
 				this.at(null, key).single(),
 				stage -> stage.update(updater, updateReturnMode, existsAlmostCertainly),
@@ -66,7 +69,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		);
 	}
 
-	default <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries, BiFunction<@Nullable U, X, @Nullable U> updater) {
+	default <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries,
+			BiSerializationFunction<@Nullable U, X, @Nullable U> updater) {
 		return entries
 				.flatMapSequential(entry -> this
 						.updateValue(entry.getT1(), prevValue -> updater.apply(prevValue, entry.getT2()))
@@ -74,21 +78,21 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				);
 	}
 
-	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, Function<@Nullable U, @Nullable U> updater) {
+	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return updateValue(key, updateReturnMode, false, updater);
 	}
 
-	default Mono<Boolean> updateValue(T key, Function<@Nullable U, @Nullable U> updater) {
+	default Mono<Boolean> updateValue(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return updateValueAndGetDelta(key, false, updater).map(LLUtils::isDeltaChanged).single();
 	}
 
-	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, Function<@Nullable U, @Nullable U> updater) {
+	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return updateValueAndGetDelta(key, existsAlmostCertainly, updater).map(LLUtils::isDeltaChanged).single();
 	}
 
 	default Mono<Delta<U>> updateValueAndGetDelta(T key,
 			boolean existsAlmostCertainly,
-			Function<@Nullable U, @Nullable U> updater) {
+			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return Mono.usingWhen(
 				this.at(null, key).single(),
 				stage -> stage.updateAndGetDelta(updater, existsAlmostCertainly),
@@ -96,7 +100,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		);
 	}
 
-	default Mono<Delta<U>> updateValueAndGetDelta(T key, Function<@Nullable U, @Nullable U> updater) {
+	default Mono<Delta<U>> updateValueAndGetDelta(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return updateValueAndGetDelta(key, false, updater);
 	}
 
@@ -221,7 +225,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Delta<Map<T, U>>> updateAndGetDelta(Function<@Nullable Map<T, U>, @Nullable Map<T, U>> updater,
+	default Mono<Delta<Map<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Map<T, U>, @Nullable Map<T, U>> updater,
 			boolean existsAlmostCertainly) {
 		return this
 				.getUpdateMode()
@@ -236,11 +240,15 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 									if (v.isEmpty()) {
 										v = null;
 									}
-									var result = updater.apply(v);
-									if (result != null && result.isEmpty()) {
-										result = null;
+									try {
+										var result = updater.apply(v);
+										if (result != null && result.isEmpty()) {
+											result = null;
+										}
+										sink.next(Tuples.of(Optional.ofNullable(v), Optional.ofNullable(result)));
+									} catch (SerializationException ex) {
+										sink.error(ex);
 									}
-									sink.next(Tuples.of(Optional.ofNullable(v), Optional.ofNullable(result)));
 								})
 								.flatMap(result -> Mono
 										.justOrEmpty(result.getT2())

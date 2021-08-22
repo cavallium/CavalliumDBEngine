@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.collections;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -23,7 +24,7 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>, ByteBuf> 
 	}
 
 	@Override
-	public @NotNull Entry<X, Y> deserialize(@NotNull ByteBuf serialized) {
+	public @NotNull Entry<X, Y> deserialize(@NotNull ByteBuf serialized) throws SerializationException {
 		try {
 			X deserializedKey = keySuffixSerializer.deserialize(serialized.retain());
 			Y deserializedValue = valueSerializer.deserialize(serialized.retain());
@@ -34,7 +35,7 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>, ByteBuf> 
 	}
 
 	@Override
-	public @NotNull ByteBuf serialize(@NotNull Entry<X, Y> deserialized) {
+	public @NotNull ByteBuf serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
 		ByteBuf keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
 		try {
 			ByteBuf value = valueSerializer.serialize(deserialized.getValue());

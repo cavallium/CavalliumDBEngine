@@ -7,17 +7,22 @@ import io.netty.buffer.ByteBufAllocator;
 import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.CompositeByteBuf;
 import io.netty.buffer.Unpooled;
+import io.netty.util.AbstractReferenceCounted;
 import io.netty.util.IllegalReferenceCountException;
+import io.netty.util.ReferenceCounted;
+import it.cavallium.dbengine.database.disk.ReleasableSlice;
+import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
@@ -37,6 +42,8 @@ import org.apache.lucene.search.SortedNumericSortField;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
+import org.warp.commonutils.functional.IOFunction;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
@@ -94,16 +101,12 @@ public class LLUtils {
 	}
 
 	public static ScoreMode toScoreMode(LLScoreMode scoreMode) {
-		switch (scoreMode) {
-			case COMPLETE:
-				return ScoreMode.COMPLETE;
-			case TOP_SCORES:
-				return ScoreMode.TOP_SCORES;
-			case COMPLETE_NO_SCORES:
-				return ScoreMode.COMPLETE_NO_SCORES;
-			default:
-				throw new IllegalStateException("Unexpected value: " + scoreMode);
-		}
+		return switch (scoreMode) {
+			case COMPLETE -> ScoreMode.COMPLETE;
+			case TOP_SCORES -> ScoreMode.TOP_SCORES;
+			case COMPLETE_NO_SCORES -> ScoreMode.COMPLETE_NO_SCORES;
+			default -> throw new IllegalStateException("Unexpected value: " + scoreMode);
+		};
 	}
 
 	public static Term toTerm(LLTerm term) {
@@ -143,25 +146,18 @@ public class LLUtils {
 	}
 
 	private static IndexableField toField(LLItem item) {
-		switch (item.getType()) {
-			case IntPoint:
-				return new IntPoint(item.getName(), Ints.fromByteArray(item.getData()));
-			case LongPoint:
-				return new LongPoint(item.getName(), Longs.fromByteArray(item.getData()));
-			case FloatPoint:
-				return new FloatPoint(item.getName(), ByteBuffer.wrap(item.getData()).getFloat());
-			case TextField:
-				return new TextField(item.getName(), item.stringValue(), Field.Store.NO);
-			case TextFieldStored:
-				return new TextField(item.getName(), item.stringValue(), Field.Store.YES);
-			case SortedNumericDocValuesField:
-				return new SortedNumericDocValuesField(item.getName(), Longs.fromByteArray(item.getData()));
-			case StringField:
-				return new StringField(item.getName(), item.stringValue(), Field.Store.NO);
-			case StringFieldStored:
-				return new StringField(item.getName(), item.stringValue(), Field.Store.YES);
-		}
-		throw new UnsupportedOperationException("Unsupported field type");
+		return switch (item.getType()) {
+			case IntPoint -> new IntPoint(item.getName(), Ints.fromByteArray(item.getData()));
+			case LongPoint -> new LongPoint(item.getName(), Longs.fromByteArray(item.getData()));
+			case FloatPoint -> new FloatPoint(item.getName(), ByteBuffer.wrap(item.getData()).getFloat());
+			case TextField -> new TextField(item.getName(), item.stringValue(), Field.Store.NO);
+			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Field.Store.YES);
+			case SortedNumericDocValuesField -> new SortedNumericDocValuesField(item.getName(),
+					Longs.fromByteArray(item.getData())
+			);
+			case StringField -> new StringField(item.getName(), item.stringValue(), Field.Store.NO);
+			case StringFieldStored -> new StringField(item.getName(), item.stringValue(), Field.Store.YES);
+		};
 	}
 
 	public static it.cavallium.dbengine.database.LLKeyScore toKeyScore(LLKeyScore hit) {
@@ -442,48 +438,50 @@ public class LLUtils {
 	public static <T> Mono<T> resolveDelta(Mono<Delta<T>> prev, UpdateReturnMode updateReturnMode) {
 		return prev.handle((delta, sink) -> {
 			switch (updateReturnMode) {
-				case GET_NEW_VALUE:
+				case GET_NEW_VALUE -> {
 					var current = delta.current();
 					if (current != null) {
 						sink.next(current);
 					} else {
 						sink.complete();
 					}
-					break;
-				case GET_OLD_VALUE:
+				}
+				case GET_OLD_VALUE -> {
 					var previous = delta.previous();
 					if (previous != null) {
 						sink.next(previous);
 					} else {
 						sink.complete();
 					}
-					break;
-				case NOTHING:
-					sink.complete();
-					break;
-				default:
-					sink.error(new IllegalStateException());
+				}
+				case NOTHING -> sink.complete();
+				default -> sink.error(new IllegalStateException());
 			}
 		});
 	}
 
-	public static <T, U> Mono<Delta<U>> mapDelta(Mono<Delta<T>> mono, Function<@NotNull T, @Nullable U> mapper) {
-		return mono.map(delta -> {
-			T prev = delta.previous();
-			T curr = delta.current();
-			U newPrev;
-			U newCurr;
-			if (prev != null) {
-				newPrev = mapper.apply(prev);
-			} else {
-				newPrev = null;
+	public static <T, U> Mono<Delta<U>> mapDelta(Mono<Delta<T>> mono,
+			SerializationFunction<@NotNull T, @Nullable U> mapper) {
+		return mono.handle((delta, sink) -> {
+			try {
+				T prev = delta.previous();
+				T curr = delta.current();
+				U newPrev;
+				U newCurr;
+				if (prev != null) {
+					newPrev = mapper.apply(prev);
+				} else {
+					newPrev = null;
+				}
+				if (curr != null) {
+					newCurr = mapper.apply(curr);
+				} else {
+					newCurr = null;
+				}
+				sink.next(new Delta<>(newPrev, newCurr));
+			} catch (SerializationException ex) {
+				sink.error(ex);
 			}
-			if (curr != null) {
-				newCurr = mapper.apply(curr);
-			} else {
-				newCurr = null;
-			}
-			return new Delta<>(newPrev, newCurr);
 		});
 	}
 
@@ -513,5 +511,45 @@ public class LLUtils {
 			range.retain();
 			return false;
 		});
+	}
+
+	public static <T> Mono<T> handleDiscard(Mono<T> mono) {
+		return mono.doOnDiscard(Map.Entry.class, e -> {
+			if (e.getKey() instanceof ByteBuf bb) {
+				if (bb.refCnt() > 0) {
+					bb.release();
+				}
+			}
+			if (e.getValue() instanceof ByteBuf bb) {
+				if (bb.refCnt() > 0) {
+					bb.release();
+				}
+			}
+		});
+	}
+
+	public static <T> Flux<T> handleDiscard(Flux<T> mono) {
+		return mono
+				.doOnDiscard(ReferenceCounted.class, LLUtils::discardRefCounted)
+				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry);
+	}
+
+	private static void discardEntry(Map.Entry<?, ?> e) {
+		if (e.getKey() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				bb.release();
+			}
+		}
+		if (e.getValue() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				bb.release();
+			}
+		}
+	}
+
+	private static void discardRefCounted(ReferenceCounted referenceCounted) {
+		if (referenceCounted.refCnt() > 0) {
+			referenceCounted.release();
+		}
 	}
 }

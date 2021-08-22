@@ -8,7 +8,6 @@ import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PooledByteBufAllocator;
 import java.io.NotSerializableException;
 import java.nio.charset.StandardCharsets;
-import org.apache.commons.lang3.SerializationException;
 import org.jetbrains.annotations.NotNull;
 
 @SuppressWarnings("unused")
@@ -53,7 +52,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 	static SerializerFixedBinaryLength<String, ByteBuf> utf8(ByteBufAllocator allocator, int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull String deserialize(@NotNull ByteBuf serialized) {
+			public @NotNull String deserialize(@NotNull ByteBuf serialized) throws SerializationException {
 				try {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {
 						throw new SerializationException(
@@ -69,7 +68,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 			}
 
 			@Override
-			public @NotNull ByteBuf serialize(@NotNull String deserialized) {
+			public @NotNull ByteBuf serialize(@NotNull String deserialized) throws SerializationException {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
 				ByteBuf buf = allocator.buffer(ByteBufUtil.utf8MaxBytes(deserialized));
 				try {

@@ -3,6 +3,8 @@ package it.cavallium.dbengine.database;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
 import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -34,7 +36,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Mono<UpdateMode> getUpdateMode();
 
 	default Mono<ByteBuf> update(Mono<ByteBuf> key,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return this
@@ -43,17 +45,17 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	}
 
 	default Mono<ByteBuf> update(Mono<ByteBuf> key,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			UpdateReturnMode returnMode) {
 		return update(key, updater, returnMode, false);
 	}
 
 	Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> key,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
 			boolean existsAlmostCertainly);
 
 	default Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> key,
-			Function<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
+			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
 		return updateAndGetDelta(key, updater, false);
 	}
 
@@ -72,7 +74,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues);
 
 	<X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
-			BiFunction<ByteBuf, X, ByteBuf> updateFunction);
+			BiSerializationFunction<ByteBuf, X, ByteBuf> updateFunction);
 
 	Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean existsAlmostCertainly);
 

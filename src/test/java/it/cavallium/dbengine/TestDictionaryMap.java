@@ -432,8 +432,10 @@ public class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetAndGetChanged(DbType dbType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
+	public void testSetAndGetChanged(DbType dbType,
+			UpdateMode updateMode,
+			Map<String, String> entries,
+			boolean shouldFail) {
 		Step<Boolean> stpVer = StepVerifier
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, dbType, 5))

@@ -1,9 +1,8 @@
 package it.cavallium.dbengine.database.serialization;
 
 import java.io.IOException;
-import java.io.UncheckedIOException;
 
-public class SerializationException extends Exception {
+public class SerializationException extends IOException {
 
 	public SerializationException() {
 		super();

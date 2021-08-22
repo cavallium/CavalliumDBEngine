@@ -1093,22 +1093,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 						), 2) // Max concurrency is 2 to read data while preparing the next segment
-				.doOnDiscard(Entry.class, entry -> {
-					if (entry.getKey() instanceof ByteBuf && entry.getValue() instanceof ByteBuf) {
-						//noinspection unchecked
-						var castedEntry = (Entry<ByteBuf, ByteBuf>) entry;
-						castedEntry.getKey().release();
-						castedEntry.getValue().release();
-					}
-				})
-				.doOnDiscard(Collection.class, obj -> {
-					//noinspection unchecked
-					var castedEntries = (Collection<Entry<ByteBuf, ByteBuf>>) obj;
-					for (Entry<ByteBuf, ByteBuf> entry : castedEntries) {
-						entry.getKey().release();
-						entry.getValue().release();
-					}
-				});
+				.transform(LLUtils::handleDiscard);
 	}
 
 	@Override

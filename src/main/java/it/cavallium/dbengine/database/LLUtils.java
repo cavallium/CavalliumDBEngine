@@ -531,7 +531,8 @@ public class LLUtils {
 	public static <T> Flux<T> handleDiscard(Flux<T> mono) {
 		return mono
 				.doOnDiscard(ReferenceCounted.class, LLUtils::discardRefCounted)
-				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry);
+				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry)
+				.doOnDiscard(Collection.class, LLUtils::discardCollection);
 	}
 
 	private static void discardEntry(Map.Entry<?, ?> e) {
@@ -550,6 +551,29 @@ public class LLUtils {
 	private static void discardRefCounted(ReferenceCounted referenceCounted) {
 		if (referenceCounted.refCnt() > 0) {
 			referenceCounted.release();
+		}
+	}
+
+	private static void discardCollection(Collection<?> collection) {
+		for (Object o : collection) {
+			if (o instanceof ReferenceCounted referenceCounted) {
+				if (referenceCounted.refCnt() > 0) {
+					referenceCounted.release();
+				}
+			} else if (o instanceof Map.Entry entry) {
+				if (entry.getKey() instanceof ReferenceCounted bb) {
+					if (bb.refCnt() > 0) {
+						bb.release();
+					}
+				}
+				if (entry.getValue() instanceof ReferenceCounted bb) {
+					if (bb.refCnt() > 0) {
+						bb.release();
+					}
+				}
+			} else {
+				break;
+			}
 		}
 	}
 }

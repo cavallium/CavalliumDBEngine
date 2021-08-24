@@ -370,7 +370,7 @@ public class LuceneUtils {
 								.map(hit -> {
 									var result = mapHitBlocking(hit, indexSearchers, keyFieldName);
 									// The "else" value is an errored key score, to filter out next
-									return Objects.requireNonNullElseGet(result, () -> new LLKeyScore(-1, -1, Mono.empty()));
+									return Objects.requireNonNullElseGet(result, () -> new LLKeyScore(-1, -1, null));
 								})
 								.sequential()
 								// Filter out the errored key scores
@@ -389,12 +389,13 @@ public class LuceneUtils {
 		var indexSearcher = indexSearchers.shard(shardIndex);
 		try {
 			String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
-			return new LLKeyScore(shardDocId, score, Mono.just(collectedDoc));
+			return new LLKeyScore(shardDocId, score, collectedDoc);
 		} catch (NoSuchElementException ex) {
-			logger.debug("Error: document " + shardDocId + " key is not present!");
+			logger.debug("Error: document {} key is not present!", shardDocId);
 			return null;
 		} catch (Exception ex) {
-			return new LLKeyScore(shardDocId, score, Mono.error(ex));
+			logger.error("Failed to read document {}", shardDocId, ex);
+			return new LLKeyScore(shardDocId, score, null);
 		}
 	}
 

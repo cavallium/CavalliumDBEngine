@@ -86,7 +86,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	private Mono<SearchResultKeys<T>> transformLuceneResultWithTransformer(LLSearchResultShard llSearchResult) {
 		return Mono.just(new SearchResultKeys<>(llSearchResult.results()
-				.map(signal -> new SearchResultKey<>(signal.key().map(indicizer::getKey), signal.score())),
+				.map(signal -> new SearchResultKey<>(Mono.fromCallable(signal::key).map(indicizer::getKey), signal.score())),
 				llSearchResult.totalHitsCount(),
 				llSearchResult.release()
 		));
@@ -95,7 +95,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResultShard llSearchResult,
 			ValueGetter<T, U> valueGetter) {
 		return Mono.fromCallable(() -> new SearchResult<>(llSearchResult.results().map(signal -> {
-			var key = signal.key().map(indicizer::getKey);
+			var key = Mono.fromCallable(signal::key).map(indicizer::getKey);
 			return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
 		}), llSearchResult.totalHitsCount(), llSearchResult.release()));
 	}
@@ -104,7 +104,11 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 			ValueTransformer<T, U> valueTransformer) {
 		var scoresWithKeysFlux = llSearchResult
 				.results()
-				.flatMapSequential(signal -> signal.key().map(indicizer::getKey).map(key -> Tuples.of(signal.score(), key)));
+				.flatMapSequential(signal -> Mono
+						.fromCallable(signal::key)
+						.map(indicizer::getKey)
+						.map(key -> Tuples.of(signal.score(), key))
+				);
 		var resultItemsFlux = valueTransformer
 				.transform(scoresWithKeysFlux)
 				.filter(tuple3 -> tuple3.getT3().isPresent())

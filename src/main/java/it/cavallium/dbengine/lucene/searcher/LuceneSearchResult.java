@@ -12,9 +12,10 @@ import reactor.core.publisher.Mono;
 
 public final class LuceneSearchResult {
 
-	protected static final Logger logger = LoggerFactory.getLogger(LuceneSearchResult.class);
+	private static final Logger logger = LoggerFactory.getLogger(LuceneSearchResult.class);
 
 	private volatile boolean releaseCalled;
+
 	private final TotalHitsCount totalHitsCount;
 	private final Flux<LLKeyScore> results;
 	private final Mono<Void> release;
@@ -28,15 +29,6 @@ public final class LuceneSearchResult {
 			}
 			releaseCalled = true;
 		}).then(release);
-	}
-
-	@SuppressWarnings("deprecation")
-	@Override
-	protected void finalize() throws Throwable {
-		if (!releaseCalled) {
-			logger.warn("LuceneSearchResult::release has not been called before class finalization!");
-		}
-		super.finalize();
 	}
 
 	public TotalHitsCount totalHitsCount() {
@@ -69,6 +61,15 @@ public final class LuceneSearchResult {
 	@Override
 	public String toString() {
 		return "LuceneSearchResult[" + "totalHitsCount=" + totalHitsCount + ", " + "results=" + results + ']';
+	}
+
+	@SuppressWarnings("deprecation")
+	@Override
+	protected void finalize() throws Throwable {
+		if (!releaseCalled) {
+			logger.warn("LuceneSearchResult::release has not been called before class finalization!");
+		}
+		super.finalize();
 	}
 
 }

@@ -30,7 +30,9 @@ public final class SearchResult<T, U> {
 	}
 
 	public static <T, U> SearchResult<T, U> empty() {
-		return new SearchResult<>(Flux.empty(), TotalHitsCount.of(0, true), Mono.empty());
+		var sr = new SearchResult<T, U>(Flux.empty(), TotalHitsCount.of(0, true), Mono.empty());
+		sr.releaseCalled = true;
+		return sr;
 	}
 
 	public Flux<SearchResultItem<T, U>> resultsThenRelease() {

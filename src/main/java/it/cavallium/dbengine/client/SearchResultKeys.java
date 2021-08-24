@@ -32,8 +32,10 @@ public final class SearchResultKeys<T> {
 		}).then(release);
 	}
 
-	public static <T, U> SearchResultKeys<T> empty() {
-		return new SearchResultKeys<>(Flux.empty(), TotalHitsCount.of(0, true), Mono.empty());
+	public static <T> SearchResultKeys<T> empty() {
+		var sr = new SearchResultKeys<T>(Flux.empty(), TotalHitsCount.of(0, true), Mono.empty());
+		sr.releaseCalled = true;
+		return sr;
 	}
 
 	public <U> SearchResult<T, U> withValues(ValueGetter<T, U> valuesGetter) {

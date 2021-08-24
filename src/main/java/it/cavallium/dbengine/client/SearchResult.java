@@ -23,7 +23,7 @@ public final class SearchResult<T, U> {
 		this.totalHitsCount = totalHitsCount;
 		this.release = Mono.fromRunnable(() -> {
 			if (releaseCalled) {
-				logger.warn("LuceneSearchResult::release has been called twice!");
+				logger.warn(this.getClass().getName() + "::release has been called twice!");
 			}
 			releaseCalled = true;
 		}).then(release);
@@ -75,7 +75,7 @@ public final class SearchResult<T, U> {
 	@Override
 	protected void finalize() throws Throwable {
 		if (!releaseCalled) {
-			logger.warn("LuceneSearchResult::release has not been called before class finalization!");
+			logger.warn(this.getClass().getName() + "::release has not been called before class finalization!");
 		}
 		super.finalize();
 	}

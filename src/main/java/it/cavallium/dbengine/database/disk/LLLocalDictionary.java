@@ -1151,6 +1151,7 @@ public class LLLocalDictionary implements LLDictionary {
 													var valueChangedResult = new ArrayList<ExtraKeyOperationResult<ByteBuf, X>>(mappedInputs.size());
 													try {
 														for (var mappedInput : mappedInputs) {
+															//noinspection BlockingMethodInNonBlockingContext
 															var updatedValue = updateFunction.apply(mappedInput.getT1().retain(), mappedInput.getT2());
 															valueChangedResult.add(new ExtraKeyOperationResult<>(mappedInput.getT1(),
 																	mappedInput.getT2(),
@@ -1288,43 +1289,24 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private Flux<Entry<ByteBuf, ByteBuf>> getRangeMulti(LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Flux.usingWhen(rangeMono,
-				range -> Flux
-						.using(
-								() -> new LLLocalEntryReactiveRocksIterator(db,
-										alloc,
-										cfh,
-										range.retain(),
-										databaseOptions.allowNettyDirect(),
-										resolveSnapshot(snapshot),
-										getRangeMultiDebugName
-								),
-								llLocalEntryReactiveRocksIterator -> llLocalEntryReactiveRocksIterator
-										.flux()
-										.subscribeOn(dbScheduler),
-								LLLocalReactiveRocksIterator::release
-						),
+				range -> Flux.using(
+						() -> new LLLocalEntryReactiveRocksIterator(db, alloc, cfh, range.retain(),
+								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeMultiDebugName),
+						llLocalEntryReactiveRocksIterator -> llLocalEntryReactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						LLLocalReactiveRocksIterator::release
+				).transform(LLUtils::handleDiscard),
 				range -> Mono.fromRunnable(range::release)
 		);
 	}
 
 	private Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeMultiGrouped(LLSnapshot snapshot, Mono<LLRange> rangeMono, int prefixLength) {
 		return Flux.usingWhen(rangeMono,
-				range -> Flux
-						.using(
-								() -> new LLLocalGroupedEntryReactiveRocksIterator(db,
-										alloc,
-										cfh,
-										prefixLength,
-										range.retain(),
-										databaseOptions.allowNettyDirect(),
-										resolveSnapshot(snapshot),
-										"getRangeMultiGrouped"
-								),
-								reactiveRocksIterator -> reactiveRocksIterator
-										.flux()
-										.subscribeOn(dbScheduler),
-								LLLocalGroupedReactiveRocksIterator::release
-						),
+				range -> Flux.using(
+						() -> new LLLocalGroupedEntryReactiveRocksIterator(db, alloc, cfh, prefixLength, range.retain(),
+								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), "getRangeMultiGrouped"),
+						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						LLLocalGroupedReactiveRocksIterator::release
+				).transform(LLUtils::handleDiscard),
 				range -> Mono.fromRunnable(range::release)
 		);
 	}
@@ -1348,20 +1330,12 @@ public class LLLocalDictionary implements LLDictionary {
 			Mono<LLRange> rangeMono,
 			int prefixLength) {
 		return Flux.usingWhen(rangeMono,
-				range -> Flux
-						.using(
-								() -> new LLLocalGroupedKeyReactiveRocksIterator(db,
-										alloc,
-										cfh,
-										prefixLength,
-										range.retain(),
-										databaseOptions.allowNettyDirect(),
-										resolveSnapshot(snapshot),
-										"getRangeKeysGrouped"
-								), reactiveRocksIterator -> reactiveRocksIterator.flux()
-										.subscribeOn(dbScheduler),
-								LLLocalGroupedReactiveRocksIterator::release
-						),
+				range -> Flux.using(
+						() -> new LLLocalGroupedKeyReactiveRocksIterator(db, alloc, cfh, prefixLength, range.retain(),
+								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), "getRangeKeysGrouped"),
+						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						LLLocalGroupedReactiveRocksIterator::release
+				).transform(LLUtils::handleDiscard),
 				range -> Mono.fromRunnable(range::release)
 		);
 	}
@@ -1449,24 +1423,14 @@ public class LLLocalDictionary implements LLDictionary {
 		);
 	}
 
-	@SuppressWarnings("Convert2MethodRef")
 	private Flux<ByteBuf> getRangeKeysMulti(LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Flux.usingWhen(rangeMono,
-				range -> Flux
-						.using(
-								() -> new LLLocalKeyReactiveRocksIterator(db,
-										alloc,
-										cfh,
-										range.retain(),
-										databaseOptions.allowNettyDirect(),
-										resolveSnapshot(snapshot),
-										getRangeKeysMultiDebugName
-								),
-								llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux(),
-								LLLocalReactiveRocksIterator::release
-						)
-						.doOnDiscard(ByteBuf.class, ReferenceCounted::release)
-						.subscribeOn(dbScheduler),
+				range -> Flux.using(
+						() -> new LLLocalKeyReactiveRocksIterator(db, alloc, cfh, range.retain(),
+								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeKeysMultiDebugName),
+						llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						LLLocalReactiveRocksIterator::release
+				).transform(LLUtils::handleDiscard),
 				range -> Mono.fromRunnable(range::release)
 		);
 	}

@@ -44,7 +44,7 @@ public class SubStageGetterHashSet<T, TH> implements
 	public Mono<DatabaseSetDictionaryHashed<T, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<ByteBuf> prefixKeyMono,
-			Flux<ByteBuf> debuggingKeysFlux) {
+			@Nullable Flux<ByteBuf> debuggingKeysFlux) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseSetDictionaryHashed
@@ -56,7 +56,7 @@ public class SubStageGetterHashSet<T, TH> implements
 								)
 						)
 						.transform(mono -> {
-							if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
+							if (debuggingKeysFlux != null) {
 								return debuggingKeysFlux.handle((key, sink) -> {
 									try {
 										if (key.readableBytes() != prefixKey.readableBytes() + getKeyHashBinaryLength()) {

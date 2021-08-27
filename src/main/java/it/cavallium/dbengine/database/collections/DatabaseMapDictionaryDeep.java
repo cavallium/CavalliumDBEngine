@@ -416,7 +416,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 					);
 				},
 				ReferenceCounted::release
-		).doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+		).transform(LLUtils::handleDiscard).doOnDiscard(DatabaseStage.class, DatabaseStage::release);
 	}
 
 	@Override

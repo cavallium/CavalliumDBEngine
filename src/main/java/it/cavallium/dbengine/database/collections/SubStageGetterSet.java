@@ -36,12 +36,12 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<ByteBuf> prefixKeyMono,
-			Flux<ByteBuf> debuggingKeysFlux) {
+			@Nullable Flux<ByteBuf> debuggingKeysFlux) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey.retain(), keySerializer))
 						.transform(mono -> {
-							if (assertsEnabled && enableAssertionsWhenUsingAssertions) {
+							if (debuggingKeysFlux != null) {
 								return debuggingKeysFlux.handle((key, sink) -> {
 									try {
 										if (key.readableBytes() != prefixKey.readableBytes() + getKeyBinaryLength()) {

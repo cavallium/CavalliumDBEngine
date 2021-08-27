@@ -14,7 +14,7 @@ public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 	Mono<US> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<ByteBuf> prefixKey,
-			Flux<ByteBuf> debuggingKeyFlux);
+			@Nullable Flux<ByteBuf> debuggingKeyFlux);
 
 	boolean isMultiKey();
 

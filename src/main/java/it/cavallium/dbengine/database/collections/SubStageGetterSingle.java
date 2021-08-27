@@ -32,16 +32,16 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<ByteBuf> keyPrefixMono,
-			Flux<ByteBuf> debuggingKeysFlux) {
+			@Nullable Flux<ByteBuf> debuggingKeysFlux) {
 		return Mono.usingWhen(
 				keyPrefixMono,
 				keyPrefix -> Mono
 						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
 						.transform(mono -> {
-							if (assertsEnabled && needsDebuggingKeyFlux()) {
+							if (debuggingKeysFlux != null) {
 								return debuggingKeysFlux.handle((key, sink) -> {
 									try {
-										if (!LLUtils.equals(keyPrefix, key)) {
+										if (needsDebuggingKeyFlux() && !LLUtils.equals(keyPrefix, key)) {
 											sink.error(new IndexOutOfBoundsException("Found more than one element!"));
 										} else {
 											sink.complete();

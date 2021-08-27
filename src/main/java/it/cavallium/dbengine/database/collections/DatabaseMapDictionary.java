@@ -430,8 +430,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), rangeMono)
 				.handle((key, sink) -> {
-					ByteBuf keySuffixWithExt = stripPrefix(key.retain(), false);
 					try {
+						ByteBuf keySuffixWithExt = stripPrefix(key.retain(), false);
 						try {
 							sink.next(Map.entry(deserializeSuffix(keySuffixWithExt.retainedSlice()),
 									new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary,

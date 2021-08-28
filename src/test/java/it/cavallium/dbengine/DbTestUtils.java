@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PoolArenaMetric;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
@@ -40,28 +41,19 @@ import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
-	private volatile static ByteBufAllocator POOLED_ALLOCATOR = null;
+	public static record TestAllocator(ByteBufAllocator allocator) {}
 
-	public static synchronized ByteBufAllocator getUncachedAllocator() {
-		try {
-			ensureNoLeaks(POOLED_ALLOCATOR);
-		} catch (Throwable ex) {
-			POOLED_ALLOCATOR = null;
-		}
-		if (POOLED_ALLOCATOR == null) {
-			POOLED_ALLOCATOR = new PooledByteBufAllocator(false, 1, 0, 8192, 11, 0, 0, true);
-		}
-		return POOLED_ALLOCATOR;
+	public static TestAllocator newAllocator() {
+		return new TestAllocator(new PooledByteBufAllocator(false, 1, 0, 4096, 11, 0, 0, true));
 	}
 
-	public static synchronized ByteBufAllocator getUncachedAllocatorUnsafe() {
-		return POOLED_ALLOCATOR;
+	public static void destroyAllocator(TestAllocator testAllocator) {
 	}
 
 	public static final AtomicInteger dbId = new AtomicInteger(0);
 
 	@SuppressWarnings("SameParameterValue")
-	private static int getActiveBuffers(ByteBufAllocator allocator) {
+	private static int getActiveBuffers(ByteBufAllocator allocator, boolean printStats) {
 		int directActive = 0, directAlloc = 0, directDealloc = 0;
 		if (allocator instanceof PooledByteBufAllocator alloc) {
 			for (PoolArenaMetric arena : alloc.directArenas()) {
@@ -74,12 +66,14 @@ public class DbTestUtils {
 		} else {
 			throw new UnsupportedOperationException();
 		}
-		System.out.println("directActive " + directActive + " directAlloc " + directAlloc + " directDealloc " + directDealloc);
+		if (printStats) {
+			System.out.println("directActive " + directActive + " directAlloc " + directAlloc + " directDealloc " + directDealloc);
+		}
 		return directActive;
 	}
 
 	@SuppressWarnings("SameParameterValue")
-	private static int getActiveHeapBuffers(ByteBufAllocator allocator) {
+	private static int getActiveHeapBuffers(ByteBufAllocator allocator, boolean printStats) {
 		int heapActive = 0, heapAlloc = 0, heapDealloc = 0;
 		if (allocator instanceof PooledByteBufAllocator alloc) {
 			for (PoolArenaMetric arena : alloc.heapArenas()) {
@@ -92,24 +86,25 @@ public class DbTestUtils {
 		} else {
 			throw new UnsupportedOperationException();
 		}
-		System.out.println("heapActive " + heapActive + " heapAlloc " + heapAlloc + " heapDealloc " + heapDealloc);
+		if (printStats) {
+			System.out.println("heapActive " + heapActive + " heapAlloc " + heapAlloc + " heapDealloc " + heapDealloc);
+		}
 		return heapActive;
 	}
 
-	public static <U> Flux<U> tempDb(Function<LLKeyValueDatabase, Publisher<U>> action) {
-		return Flux.usingWhen(openTempDb(),
+	public static <U> Flux<U> tempDb(TestAllocator alloc, Function<LLKeyValueDatabase, Publisher<U>> action) {
+		return Flux.usingWhen(openTempDb(alloc),
 				tempDb -> action.apply(tempDb.db()),
 				DbTestUtils::closeTempDb
 		);
 	}
 
-	public static record TempDb(ByteBufAllocator allocator, LLDatabaseConnection connection, LLKeyValueDatabase db,
+	public static record TempDb(TestAllocator allocator, LLDatabaseConnection connection, LLKeyValueDatabase db,
 															Path path) {}
 
-	public static Mono<TempDb> openTempDb() {
+	public static Mono<TempDb> openTempDb(TestAllocator alloc) {
 		return Mono.defer(() -> {
 			var wrkspcPath = Path.of("/tmp/.cache/tempdb-" + dbId.incrementAndGet() + "/");
-			var alloc = getUncachedAllocator();
 			return Mono
 					.<LLKeyValueDatabase>fromCallable(() -> {
 						if (Files.exists(wrkspcPath)) {
@@ -125,7 +120,7 @@ public class DbTestUtils {
 						return null;
 					})
 					.subscribeOn(Schedulers.boundedElastic())
-					.then(new LLLocalDatabaseConnection(alloc, wrkspcPath).connect())
+					.then(new LLLocalDatabaseConnection(alloc.allocator(), wrkspcPath).connect())
 					.flatMap(conn -> conn
 							.getDatabase("testdb",
 									List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
@@ -138,8 +133,8 @@ public class DbTestUtils {
 
 	public static Mono<Void> closeTempDb(TempDb tempDb) {
 		return tempDb.db().close().then(tempDb.connection().disconnect()).then(Mono.fromCallable(() -> {
-			ensureNoLeaks(tempDb.allocator());
-			if (tempDb.allocator() instanceof PooledByteBufAllocator pooledByteBufAllocator) {
+			ensureNoLeaks(tempDb.allocator().allocator(), false);
+			if (tempDb.allocator().allocator() instanceof PooledByteBufAllocator pooledByteBufAllocator) {
 				pooledByteBufAllocator.trimCurrentThreadCache();
 				pooledByteBufAllocator.freeThreadLocalCache();
 			}
@@ -156,10 +151,10 @@ public class DbTestUtils {
 		}).subscribeOn(Schedulers.boundedElastic())).then();
 	}
 
-	public static void ensureNoLeaks(ByteBufAllocator allocator) {
+	public static void ensureNoLeaks(ByteBufAllocator allocator, boolean printStats) {
 		if (allocator != null) {
-			assertEquals(0, getActiveBuffers(allocator));
-			assertEquals(0, getActiveHeapBuffers(allocator));
+			assertEquals(0, getActiveBuffers(allocator, printStats));
+			assertEquals(0, getActiveHeapBuffers(allocator, printStats));
 		}
 	}
 

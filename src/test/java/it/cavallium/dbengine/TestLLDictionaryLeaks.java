@@ -1,10 +1,14 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
+import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.netty.buffer.ByteBuf;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
+import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -31,13 +35,23 @@ import reactor.core.scheduler.Schedulers;
 
 public class TestLLDictionaryLeaks {
 
+	private TestAllocator allocator;
 	private TempDb tempDb;
 	private LLKeyValueDatabase db;
 
 	@BeforeEach
 	public void beforeEach() {
-		tempDb = Objects.requireNonNull(DbTestUtils.openTempDb().block(), "TempDB");
+		this.allocator = newAllocator();
+		ensureNoLeaks(allocator.allocator(), false);
+		tempDb = Objects.requireNonNull(DbTestUtils.openTempDb(allocator).block(), "TempDB");
 		db = tempDb.db();
+	}
+
+	@AfterEach
+	public void afterEach() {
+		DbTestUtils.closeTempDb(tempDb).block();
+		ensureNoLeaks(allocator.allocator(), true);
+		destroyAllocator(allocator);
 	}
 
 	public static Stream<Arguments> provideArguments() {
@@ -208,10 +222,5 @@ public class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(dict.remove(key, resultType).then());
-	}
-
-	@AfterEach
-	public void afterEach() {
-		DbTestUtils.closeTempDb(tempDb).block();
 	}
 }

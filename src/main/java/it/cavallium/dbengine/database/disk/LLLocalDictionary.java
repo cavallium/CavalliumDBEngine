@@ -1511,9 +1511,7 @@ public class LLLocalDictionary implements LLDictionary {
 									return null;
 								})
 								.subscribeOn(dbScheduler)
-								.thenMany(entries
-										.window(MULTI_GET_WINDOW)
-								)
+								.thenMany(entries.window(MULTI_GET_WINDOW))
 								.flatMap(keysWindowFlux -> keysWindowFlux
 										.collectList()
 										.flatMap(entriesList -> Mono

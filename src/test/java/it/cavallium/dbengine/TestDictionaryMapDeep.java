@@ -1,15 +1,17 @@
 package it.cavallium.dbengine;
 
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
-import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocator;
-import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocatorUnsafe;
+import static it.cavallium.dbengine.DbTestUtils.newAllocator;
+import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 
+import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -19,6 +21,8 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -32,7 +36,10 @@ import reactor.util.function.Tuple3;
 import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
 
+@TestMethodOrder(MethodOrderer.MethodName.class)
 public class TestDictionaryMapDeep {
+
+	private TestAllocator allocator;
 
 	private static boolean isTestBadKeysEnabled() {
 		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
@@ -77,45 +84,45 @@ public class TestDictionaryMapDeep {
 	}
 
 	private static Stream<Arguments> provideArgumentsPut() {
-		var goodKeys1 = Set.of("12345", "zebra");
-		Set<String> badKeys1;
+		var goodKeys1 = List.of("12345", "zebra");
+		List<String> badKeys1;
 		if (isTestBadKeysEnabled()) {
-			badKeys1 = Set.of("", "a", "aaaa", "aaaaaa");
+			badKeys1 = List.of("", "a", "aaaa", "aaaaaa");
 		} else {
-			badKeys1 = Set.of();
+			badKeys1 = List.of();
 		}
-		var goodKeys2 = Set.of("123456", "anatra");
-		Set<String> badKeys2;
+		var goodKeys2 = List.of("123456", "anatra");
+		List<String> badKeys2;
 		if (isTestBadKeysEnabled()) {
-			badKeys2 = Set.of("", "a", "aaaaa", "aaaaaaa");
+			badKeys2 = List.of("", "a", "aaaaa", "aaaaaaa");
 		} else {
-			badKeys2 = Set.of();
+			badKeys2 = List.of();
 		}
 
-		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
+		var values = List.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
 
 		Flux<Tuple4<String, String, String, Boolean>> failOnKeys1 = Flux
 				.fromIterable(badKeys1)
 				.map(badKey1 -> Tuples.of(
 						badKey1,
-						goodKeys2.stream().findAny().orElseThrow(),
-						values.stream().findAny().orElseThrow(),
+						goodKeys2.stream().findFirst().orElseThrow(),
+						values.stream().findFirst().orElseThrow(),
 						true
 				));
 		Flux<Tuple4<String, String, String, Boolean>> failOnKeys2 = Flux
 				.fromIterable(badKeys2)
 				.map(badKey2 -> Tuples.of(
-						goodKeys1.stream().findAny().orElseThrow(),
+						goodKeys1.stream().findFirst().orElseThrow(),
 						badKey2,
-						values.stream().findAny().orElseThrow(),
+						values.stream().findFirst().orElseThrow(),
 						true
 				));
 
 		Flux<Tuple4<String, String, String, Boolean>> goodKeys1And2 = Flux
 				.fromIterable(values)
 				.map(value -> Tuples.of(
-						goodKeys1.stream().findAny().orElseThrow(),
-						goodKeys2.stream().findAny().orElseThrow(),
+						goodKeys1.stream().findFirst().orElseThrow(),
+						goodKeys2.stream().findFirst().orElseThrow(),
 						value,
 						false
 				));
@@ -128,7 +135,7 @@ public class TestDictionaryMapDeep {
 				);
 
 		return keys1And2
-				.flatMap(entryTuple -> Flux
+				.concatMap(entryTuple -> Flux
 						.fromArray(UpdateMode.values())
 						.map(updateMode -> Tuples.of(updateMode,
 								entryTuple.getT1(),
@@ -143,24 +150,27 @@ public class TestDictionaryMapDeep {
 						fullTuple.getT4(),
 						fullTuple.getT5()
 				))
-				.toStream();
+				.toStream()
+				.sequential();
 	}
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(getUncachedAllocator());
+		this.allocator = newAllocator();
+		ensureNoLeaks(allocator.allocator(), false);
 	}
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(getUncachedAllocatorUnsafe());
+		ensureNoLeaks(allocator.allocator(), true);
+		destroyAllocator(allocator);
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSet")
 	public void testSetValueGetValue(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMap(map -> map
 								.putValue(key, value)
@@ -182,7 +192,7 @@ public class TestDictionaryMapDeep {
 			Map<String, String> value,
 			boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> map
 								.putValue(key, value)
@@ -202,7 +212,7 @@ public class TestDictionaryMapDeep {
 	public void testAtSetGetAllStagesGetAllValues(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Tuple3<String, String, String>, Boolean>().keySet(true);
 		Step<Tuple3<String, String, String>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> map
 								.at(null, key)
@@ -243,10 +253,10 @@ public class TestDictionaryMapDeep {
 	}
 
 	@ParameterizedTest
-	@MethodSource("provideArgumentsPut")
+	@MethodSource({"provideArgumentsPut"})
 	public void testAtPutValueAtGetValue(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMap(map -> map
 								.at(null, key1).flatMap(v -> v.putValue(key2, value).doAfterTerminate(v::release))
@@ -265,7 +275,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSet")
 	public void testSetAndGetPrevious(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -289,7 +299,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueAndGetPrevious(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -326,7 +336,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSet")
 	public void testSetValueRemoveAndGetPrevious(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -348,7 +358,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueRemoveAndGetPrevious(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -386,7 +396,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSet")
 	public void testSetValueRemoveAndGetStatus(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -408,7 +418,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueRemoveAndGetStatus(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -449,7 +459,7 @@ public class TestDictionaryMapDeep {
 			return;
 		}
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -491,7 +501,7 @@ public class TestDictionaryMapDeep {
 			return;
 		}
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -536,7 +546,7 @@ public class TestDictionaryMapDeep {
 		if (updateMode != UpdateMode.ALLOW_UNSAFE && !isTestBadKeysEnabled()) {
 			return;
 		}
-		var stpVer = StepVerifier.create(tempDb(db -> tempDictionary(db, updateMode)
+		var stpVer = StepVerifier.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 				.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 				.flatMapMany(map -> Flux.concat(
 						map.updateValue(key, old -> {
@@ -575,7 +585,7 @@ public class TestDictionaryMapDeep {
 			return;
 		}
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -626,7 +636,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSet")
 	public void testSetAndGetChanged(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -647,18 +657,18 @@ public class TestDictionaryMapDeep {
 	}
 
 	private static Stream<Arguments> provideArgumentsSetMulti() {
-		var goodKeys = Set.of(Set.of("12345", "67890"), Set.<String>of());
-		Set<Set<String>> badKeys;
+		var goodKeys = List.of(List.of("12345", "67890"), List.<String>of());
+		List<List<String>> badKeys;
 		if (isTestBadKeysEnabled()) {
-			badKeys = Set.of(Set.of("", "12345"), Set.of("45678", "aaaa"), Set.of("aaaaaa", "capra"));
+			badKeys = List.of(List.of("", "12345"), List.of("45678", "aaaa"), List.of("aaaaaa", "capra"));
 		} else {
-			badKeys = Set.of();
+			badKeys = List.of();
 		}
-		Set<Tuple2<Set<String>, Boolean>> keys = Stream.concat(
+		List<Tuple2<List<String>, Boolean>> keys = Stream.concat(
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
-		).collect(Collectors.toSet());
-		var values = Set.of(
+		).collect(Collectors.toList());
+		var values = List.of(
 				Map.of("123456", "a", "234567", ""),
 				Map.of("123456", "\0", "234567", "\0\0", "345678", BIG_STRING)
 		);
@@ -682,7 +692,7 @@ public class TestDictionaryMapDeep {
 	public void testSetMultiGetMulti(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -710,7 +720,7 @@ public class TestDictionaryMapDeep {
 	public void testSetAllValuesGetMulti(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> map
 								.setAllValues(Flux.fromIterable(entries.entrySet()))
@@ -736,7 +746,7 @@ public class TestDictionaryMapDeep {
 	public void testSetAllValuesAndGetPrevious(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -762,7 +772,7 @@ public class TestDictionaryMapDeep {
 	public void testSetGetMulti(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -789,7 +799,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetAndGetStatus(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> {
 							Mono<Void> removalMono;
@@ -821,7 +831,7 @@ public class TestDictionaryMapDeep {
 	public void testSetAndGetPrevious(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -849,7 +859,7 @@ public class TestDictionaryMapDeep {
 	public void testSetClearAndGetPreviousGet(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(map.set(entries).then(Mono.empty()), map.clearAndGetPrevious(), map.get(null))
@@ -874,7 +884,7 @@ public class TestDictionaryMapDeep {
 	public void testSetMultiGetAllValues(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -900,7 +910,7 @@ public class TestDictionaryMapDeep {
 	public void testSetMultiGet(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -928,7 +938,7 @@ public class TestDictionaryMapDeep {
 	public void testSetMultiGetAllStagesGet(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
 		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -960,7 +970,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiIsEmpty(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(
@@ -982,7 +992,7 @@ public class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiClear(UpdateMode updateMode, Map<String, Map<String, String>> entries, boolean shouldFail) {
 		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> Flux
 								.concat(

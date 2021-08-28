@@ -1,11 +1,12 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
-import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocator;
-import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocatorUnsafe;
+import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 
+import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
@@ -19,25 +20,29 @@ import reactor.test.StepVerifier;
 
 public class TestDictionary {
 
+	private TestAllocator allocator;
+
 	private static Stream<Arguments> provideArgumentsCreate() {
 		return Arrays.stream(UpdateMode.values()).map(Arguments::of);
 	}
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(getUncachedAllocator());
+		this.allocator = newAllocator();
+		ensureNoLeaks(allocator.allocator(), false);
 	}
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(getUncachedAllocatorUnsafe());
+		ensureNoLeaks(allocator.allocator(), true);
+		destroyAllocator(allocator);
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsCreate")
 	public void testCreate(UpdateMode updateMode) {
 		StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.flatMap(LLDictionary::clear)
 						.then()
 				))

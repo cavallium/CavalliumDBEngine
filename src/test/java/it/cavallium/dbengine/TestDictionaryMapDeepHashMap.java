@@ -1,12 +1,13 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
-import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocator;
-import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocatorUnsafe;
+import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMapHashMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 
+import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
 import java.util.Map;
@@ -31,6 +32,8 @@ import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
 
 public class TestDictionaryMapDeepHashMap {
+
+	private TestAllocator allocator;
 
 	private static boolean isTestBadKeysEnabled() {
 		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
@@ -101,19 +104,21 @@ public class TestDictionaryMapDeepHashMap {
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(getUncachedAllocator());
+		this.allocator = newAllocator();
+		ensureNoLeaks(allocator.allocator(), false);
 	}
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(getUncachedAllocatorUnsafe());
+		ensureNoLeaks(allocator.allocator(), true);
+		destroyAllocator(allocator);
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueGetAllValues(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
+				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMapHashMap(dict, 5))
 						.flatMapMany(map -> map
 								.at(null, key1).flatMap(v -> v.putValue(key2, value).doAfterTerminate(v::release))

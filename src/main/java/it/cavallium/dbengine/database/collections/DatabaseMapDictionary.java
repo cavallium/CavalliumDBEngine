@@ -492,10 +492,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		return Flux.usingWhen(
-				Mono.just(true),
-				b -> getAllValues(null),
-				b -> dictionary.setRange(rangeMono, entries.handle((entry, sink) -> {
+		return Flux.concat(
+				this.getAllValues(null),
+				dictionary.setRange(rangeMono, entries.handle((entry, sink) -> {
 					try {
 						ByteBuf serializedKey = toKey(serializeSuffix(entry.getKey()));
 						try {
@@ -511,7 +510,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					} catch (SerializationException e) {
 						sink.error(e);
 					}
-				}))
+				})).then(Mono.empty())
 		);
 	}
 

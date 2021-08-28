@@ -90,8 +90,6 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.next(Map.entry(key, value));
 					} catch (SerializationException ex) {
 						sink.error(ex);
-					} finally {
-						entry.release();
 					}
 				})
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
@@ -499,21 +497,16 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				b -> getAllValues(null),
 				b -> dictionary.setRange(rangeMono, entries.handle((entry, sink) -> {
 					try {
-						ByteBuf serializedKeySuffix = serializeSuffix(entry.getKey());
+						ByteBuf serializedKey = toKey(serializeSuffix(entry.getKey()));
 						try {
-							ByteBuf serializedKey = toKey(serializedKeySuffix);
+							ByteBuf serializedValue = valueSerializer.serialize(entry.getValue());
 							try {
-								ByteBuf serializedValue = valueSerializer.serialize(entry.getValue());
-								try {
-									sink.next(new LLEntry(serializedKey.retain(), serializedValue.retain()));
-								} finally {
-									serializedValue.release();
-								}
+								sink.next(new LLEntry(serializedKey.retain(), serializedValue.retain()));
 							} finally {
-								serializedKey.release();
+								serializedValue.release();
 							}
 						} finally {
-							serializedKeySuffix.release();
+							serializedKey.release();
 						}
 					} catch (SerializationException e) {
 						sink.error(e);

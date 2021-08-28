@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
@@ -42,12 +43,18 @@ import org.apache.lucene.search.SortedNumericSortField;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.warp.commonutils.functional.IOFunction;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuple3;
 
 @SuppressWarnings("unused")
 public class LLUtils {
+
+	private static final Logger logger = LoggerFactory.getLogger(LLUtils.class);
 
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE = new byte[]{0};
@@ -514,35 +521,154 @@ public class LLUtils {
 	}
 
 	public static <T> Mono<T> handleDiscard(Mono<T> mono) {
-		return mono.doOnDiscard(Map.Entry.class, e -> {
-			if (e.getKey() instanceof ByteBuf bb) {
-				if (bb.refCnt() > 0) {
-					bb.release();
-				}
-			}
-			if (e.getValue() instanceof ByteBuf bb) {
-				if (bb.refCnt() > 0) {
-					bb.release();
-				}
-			}
-		});
+		return mono
+				.doOnDiscard(Object.class, obj -> {
+					if (obj instanceof ReferenceCounted o) {
+						discardRefCounted(o);
+					} else if (obj instanceof Entry o) {
+						discardEntry(o);
+					} else if (obj instanceof Collection o) {
+						discardCollection(o);
+					} else if (obj instanceof Tuple3 o) {
+						discardTuple3(o);
+					} else if (obj instanceof Tuple2 o) {
+						discardTuple2(o);
+					} else if (obj instanceof LLEntry o) {
+						discardLLEntry(o);
+					} else if (obj instanceof LLRange o) {
+						discardLLRange(o);
+					} else if (obj instanceof Delta o) {
+						discardDelta(o);
+					} else if (obj instanceof Map o) {
+						discardMap(o);
+					}
+				});
+		// todo: check if the single object discard hook is more performant
+		/*
+				.doOnDiscard(ReferenceCounted.class, LLUtils::discardRefCounted)
+				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry)
+				.doOnDiscard(Collection.class, LLUtils::discardCollection)
+				.doOnDiscard(Tuple2.class, LLUtils::discardTuple2)
+				.doOnDiscard(Tuple3.class, LLUtils::discardTuple3)
+				.doOnDiscard(LLEntry.class, LLUtils::discardLLEntry)
+				.doOnDiscard(LLRange.class, LLUtils::discardLLRange)
+				.doOnDiscard(Delta.class, LLUtils::discardDelta)
+				.doOnDiscard(Map.class, LLUtils::discardMap);
+
+		 */
 	}
 
 	public static <T> Flux<T> handleDiscard(Flux<T> mono) {
 		return mono
+				.doOnDiscard(Object.class, obj -> {
+					if (obj instanceof ReferenceCounted o) {
+						discardRefCounted(o);
+					} else if (obj instanceof Entry o) {
+						discardEntry(o);
+					} else if (obj instanceof Collection o) {
+						discardCollection(o);
+					} else if (obj instanceof Tuple3 o) {
+						discardTuple3(o);
+					} else if (obj instanceof Tuple2 o) {
+						discardTuple2(o);
+					} else if (obj instanceof LLEntry o) {
+						discardLLEntry(o);
+					} else if (obj instanceof LLRange o) {
+						discardLLRange(o);
+					} else if (obj instanceof Delta o) {
+						discardDelta(o);
+					} else if (obj instanceof Map o) {
+						discardMap(o);
+					} else {
+						System.err.println(obj.getClass().getName());
+					}
+				});
+		// todo: check if the single object discard hook is more performant
+		/*
 				.doOnDiscard(ReferenceCounted.class, LLUtils::discardRefCounted)
 				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry)
-				.doOnDiscard(Collection.class, LLUtils::discardCollection);
+				.doOnDiscard(Collection.class, LLUtils::discardCollection)
+				.doOnDiscard(Tuple2.class, LLUtils::discardTuple2)
+				.doOnDiscard(Tuple3.class, LLUtils::discardTuple3)
+				.doOnDiscard(LLEntry.class, LLUtils::discardLLEntry)
+				.doOnDiscard(LLRange.class, LLUtils::discardLLRange)
+				.doOnDiscard(Delta.class, LLUtils::discardDelta)
+				.doOnDiscard(Map.class, LLUtils::discardMap);
+
+		 */
+	}
+
+	private static void discardLLEntry(LLEntry entry) {
+		logger.trace("Releasing discarded ByteBuf");
+		entry.release();
+	}
+
+	private static void discardLLRange(LLRange range) {
+		logger.trace("Releasing discarded ByteBuf");
+		range.release();
 	}
 
 	private static void discardEntry(Map.Entry<?, ?> e) {
 		if (e.getKey() instanceof ByteBuf bb) {
 			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
 				bb.release();
 			}
 		}
 		if (e.getValue() instanceof ByteBuf bb) {
 			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+	}
+
+	private static void discardTuple2(Tuple2<?, ?> e) {
+		if (e.getT1() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+		if (e.getT2() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+	}
+
+	private static void discardTuple3(Tuple3<?, ?, ?> e) {
+		if (e.getT1() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		} else if (e.getT1() instanceof Optional opt) {
+			if (opt.isPresent() && opt.get() instanceof ByteBuf bb) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+		if (e.getT2() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		} else if (e.getT1() instanceof Optional opt) {
+			if (opt.isPresent() && opt.get() instanceof ByteBuf bb) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+		if (e.getT3() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		} else if (e.getT1() instanceof Optional opt) {
+			if (opt.isPresent() && opt.get() instanceof ByteBuf bb) {
+				logger.trace("Releasing discarded ByteBuf");
 				bb.release();
 			}
 		}
@@ -550,6 +676,7 @@ public class LLUtils {
 
 	private static void discardRefCounted(ReferenceCounted referenceCounted) {
 		if (referenceCounted.refCnt() > 0) {
+			logger.trace("Releasing discarded ByteBuf");
 			referenceCounted.release();
 		}
 	}
@@ -558,20 +685,61 @@ public class LLUtils {
 		for (Object o : collection) {
 			if (o instanceof ReferenceCounted referenceCounted) {
 				if (referenceCounted.refCnt() > 0) {
+					logger.trace("Releasing discarded ByteBuf");
 					referenceCounted.release();
 				}
 			} else if (o instanceof Map.Entry entry) {
 				if (entry.getKey() instanceof ReferenceCounted bb) {
 					if (bb.refCnt() > 0) {
+						logger.trace("Releasing discarded ByteBuf");
 						bb.release();
 					}
 				}
 				if (entry.getValue() instanceof ReferenceCounted bb) {
 					if (bb.refCnt() > 0) {
+						logger.trace("Releasing discarded ByteBuf");
 						bb.release();
 					}
 				}
 			} else {
+				break;
+			}
+		}
+	}
+
+	private static void discardDelta(Delta<?> delta) {
+		if (delta.previous() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+		if (delta.current() instanceof ByteBuf bb) {
+			if (bb.refCnt() > 0) {
+				logger.trace("Releasing discarded ByteBuf");
+				bb.release();
+			}
+		}
+	}
+
+	private static void discardMap(Map<?, ?> map) {
+		for (Entry<?, ?> entry : map.entrySet()) {
+			boolean hasByteBuf = false;
+			if (entry.getKey() instanceof ByteBuf bb) {
+				if (bb.refCnt() > 0) {
+					logger.trace("Releasing discarded ByteBuf");
+					bb.release();
+				}
+				hasByteBuf = true;
+			}
+			if (entry.getValue() instanceof ByteBuf bb) {
+				if (bb.refCnt() > 0) {
+					logger.trace("Releasing discarded ByteBuf");
+					bb.release();
+				}
+				hasByteBuf = true;
+			}
+			if (!hasByteBuf) {
 				break;
 			}
 		}

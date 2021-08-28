@@ -1,5 +1,8 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocator;
+import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocatorUnsafe;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMapHashMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
@@ -13,6 +16,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -92,6 +97,16 @@ public class TestDictionaryMapDeepHashMap {
 						fullTuple.getT1() != UpdateMode.ALLOW || fullTuple.getT5()
 				))
 				.toStream();
+	}
+
+	@BeforeEach
+	public void beforeEach() {
+		ensureNoLeaks(getUncachedAllocator());
+	}
+
+	@AfterEach
+	public void afterEach() {
+		ensureNoLeaks(getUncachedAllocatorUnsafe());
 	}
 
 	@ParameterizedTest

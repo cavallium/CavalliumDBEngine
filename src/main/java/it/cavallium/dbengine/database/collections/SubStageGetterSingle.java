@@ -13,15 +13,6 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageEntry<T>> {
 
-	private static final boolean assertsEnabled;
-	static {
-		boolean assertsEnabledTmp = false;
-		//noinspection AssertWithSideEffects
-		assert assertsEnabledTmp = true;
-		//noinspection ConstantConditions
-		assertsEnabled = assertsEnabledTmp;
-	}
-
 	private final Serializer<T, ByteBuf> serializer;
 
 	public SubStageGetterSingle(Serializer<T, ByteBuf> serializer) {
@@ -31,29 +22,11 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	@Override
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<ByteBuf> keyPrefixMono,
-			@Nullable Flux<ByteBuf> debuggingKeysFlux) {
+			Mono<ByteBuf> keyPrefixMono) {
 		return Mono.usingWhen(
 				keyPrefixMono,
 				keyPrefix -> Mono
-						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer))
-						.transform(mono -> {
-							if (debuggingKeysFlux != null) {
-								return debuggingKeysFlux.handle((key, sink) -> {
-									try {
-										if (needsDebuggingKeyFlux() && !LLUtils.equals(keyPrefix, key)) {
-											sink.error(new IndexOutOfBoundsException("Found more than one element!"));
-										} else {
-											sink.complete();
-										}
-									} finally {
-										key.release();
-									}
-								}).then(mono);
-							} else {
-								return mono;
-							}
-						}),
+						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix.retain(), serializer)),
 				keyPrefix -> Mono.fromRunnable(keyPrefix::release)
 		);
 	}
@@ -61,11 +34,6 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	@Override
 	public boolean isMultiKey() {
 		return false;
-	}
-
-	@Override
-	public boolean needsDebuggingKeyFlux() {
-		return assertsEnabled;
 	}
 
 }

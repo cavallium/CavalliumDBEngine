@@ -14,7 +14,11 @@ public class DatabaseEmpty {
 	public static final Serializer<Nothing, ByteBuf> NOTHING_SERIALIZER = new Serializer<>() {
 		@Override
 		public @NotNull Nothing deserialize(@NotNull ByteBuf serialized) {
-			return NOTHING;
+			try {
+				return NOTHING;
+			} finally {
+				serialized.release();
+			}
 		}
 
 		@Override

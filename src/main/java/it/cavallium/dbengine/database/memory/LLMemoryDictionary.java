@@ -7,10 +7,12 @@ import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.ExtraKeyOperationResult;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.disk.ReleasableSlice;
 import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -245,7 +247,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues) {
+	public Flux<LLEntry> putMulti(Flux<LLEntry> entries, boolean getOldValues) {
 		return entries
 				.handle((entry, sink) -> {
 					var key = entry.getKey();
@@ -255,7 +257,7 @@ public class LLMemoryDictionary implements LLDictionary {
 						if (v == null || !getOldValues) {
 							sink.complete();
 						} else {
-							sink.next(Map.entry(key.retain(), kk(v)));
+							sink.next(new LLEntry(key.retain(), kk(v)));
 						}
 					} finally {
 						key.release();
@@ -271,7 +273,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot,
+	public Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot,
 			Mono<LLRange> rangeMono,
 			boolean existsAlmostCertainly) {
 		return Flux.usingWhen(rangeMono,
@@ -280,13 +282,13 @@ public class LLMemoryDictionary implements LLDictionary {
 						return Mono.fromCallable(() -> {
 							var element = snapshots.get(resolveSnapshot(snapshot))
 									.get(k(range.getSingle()));
-							return Map.entry(range.getSingle().retain(), kk(element));
+							return new LLEntry(range.getSingle().retain(), kk(element));
 						}).flux();
 					} else {
 						return Mono
 								.fromCallable(() -> mapSlice(snapshot, range))
 								.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
-								.map(entry -> Map.entry(kk(entry.getKey()), kk(entry.getValue())));
+								.map(entry -> new LLEntry(kk(entry.getKey()), kk(entry.getValue())));
 					}
 				},
 				range -> Mono.fromRunnable(range::release)
@@ -294,7 +296,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+	public Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<LLRange> rangeMono,
 			int prefixLength,
 			boolean existsAlmostCertainly) {
@@ -333,8 +335,16 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, int prefixLength) {
 		return getRangeKeys(snapshot, rangeMono)
-				.distinctUntilChanged(k -> k.slice(k.readerIndex(), prefixLength), LLUtils::equals)
-				.map(k -> k.slice(k.readerIndex(), prefixLength));
+				.distinctUntilChanged(k -> k.slice(k.readerIndex(), prefixLength), (a, b) -> {
+					if (LLUtils.equals(a, b)) {
+						b.release();
+						return true;
+					} else {
+						return false;
+					}
+				})
+				.map(k -> k.slice(k.readerIndex(), prefixLength))
+				.transform(LLUtils::handleDiscard);
 	}
 
 	@Override
@@ -343,7 +353,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Void> setRange(Mono<LLRange> rangeMono, Flux<Entry<ByteBuf, ByteBuf>> entries) {
+	public Mono<Void> setRange(Mono<LLRange> rangeMono, Flux<LLEntry> entries) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 
@@ -361,7 +371,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
+	public Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 
@@ -371,7 +381,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Entry<ByteBuf, ByteBuf>> removeOne(Mono<LLRange> rangeMono) {
+	public Mono<LLEntry> removeOne(Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 

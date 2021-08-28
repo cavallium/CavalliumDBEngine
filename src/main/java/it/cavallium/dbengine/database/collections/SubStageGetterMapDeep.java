@@ -14,28 +14,17 @@ import reactor.core.publisher.Mono;
 public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		SubStageGetter<Map<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
 
-	private static final boolean assertsEnabled;
-	static {
-		boolean assertsEnabledTmp = false;
-		//noinspection AssertWithSideEffects
-		assert assertsEnabledTmp = true;
-		//noinspection ConstantConditions
-		assertsEnabled = assertsEnabledTmp;
-	}
-
 	private final SubStageGetter<U, US> subStageGetter;
 	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
 	private final int keyExtLength;
-	private final boolean enableAssertionsWhenUsingAssertions;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
 			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
-			int keyExtLength, boolean enableAssertionsWhenUsingAssertions) {
+			int keyExtLength) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;
 		this.keyExtLength = keyExtLength;
 		assert keyExtConsistency();
-		this.enableAssertionsWhenUsingAssertions = enableAssertionsWhenUsingAssertions;
 	}
 
 
@@ -52,8 +41,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	@Override
 	public Mono<DatabaseMapDictionaryDeep<T, U, US>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<ByteBuf> prefixKeyMono,
-			@Nullable Flux<ByteBuf> debuggingKeysFlux) {
+			Mono<ByteBuf> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseMapDictionaryDeep
@@ -63,24 +51,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 										subStageGetter,
 										keyExtLength
 								)
-						)
-						.transform(mono -> {
-							if (debuggingKeysFlux != null) {
-								return debuggingKeysFlux.handle((key, sink) -> {
-									try {
-										if (key.readableBytes() != prefixKey.readableBytes() + getKeyBinaryLength()) {
-											sink.error(new IndexOutOfBoundsException());
-										} else {
-											sink.complete();
-										}
-									} finally {
-										key.release();
-									}
-								}).then(mono);
-							} else {
-								return mono;
-							}
-						}),
+						),
 				prefixKey -> Mono.fromRunnable(prefixKey::release)
 		);
 	}
@@ -88,11 +59,6 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	@Override
 	public boolean isMultiKey() {
 		return true;
-	}
-
-	@Override
-	public boolean needsDebuggingKeyFlux() {
-		return assertsEnabled && enableAssertionsWhenUsingAssertions;
 	}
 
 	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {

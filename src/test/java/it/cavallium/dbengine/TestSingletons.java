@@ -1,11 +1,16 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocator;
+import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocatorUnsafe;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -32,6 +37,16 @@ public class TestSingletons {
 				Arguments.of(0L, 3),
 				Arguments.of(102L, 5)
 		);
+	}
+
+	@BeforeEach
+	public void beforeEach() {
+		ensureNoLeaks(getUncachedAllocator());
+	}
+
+	@AfterEach
+	public void afterEach() {
+		ensureNoLeaks(getUncachedAllocatorUnsafe());
 	}
 
 	@Test

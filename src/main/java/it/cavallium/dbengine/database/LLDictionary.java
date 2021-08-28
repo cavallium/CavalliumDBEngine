@@ -71,23 +71,23 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		return getMulti(snapshot, keys, false);
 	}
 
-	Flux<Entry<ByteBuf, ByteBuf>> putMulti(Flux<Entry<ByteBuf, ByteBuf>> entries, boolean getOldValues);
+	Flux<LLEntry> putMulti(Flux<LLEntry> entries, boolean getOldValues);
 
 	<X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
 			BiSerializationFunction<ByteBuf, X, ByteBuf> updateFunction);
 
-	Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean existsAlmostCertainly);
+	Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean existsAlmostCertainly);
 
-	default Flux<Entry<ByteBuf, ByteBuf>> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range) {
+	default Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range) {
 		return getRange(snapshot, range, false);
 	}
 
-	Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+	Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<LLRange> range,
 			int prefixLength,
 			boolean existsAlmostCertainly);
 
-	default Flux<List<Entry<ByteBuf, ByteBuf>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+	default Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<LLRange> range,
 			int prefixLength) {
 		return getRangeGrouped(snapshot, range, prefixLength, false);
@@ -101,11 +101,11 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Flux<BadBlock> badBlocks(Mono<LLRange> range);
 
-	Mono<Void> setRange(Mono<LLRange> range, Flux<Entry<ByteBuf, ByteBuf>> entries);
+	Mono<Void> setRange(Mono<LLRange> range, Flux<LLEntry> entries);
 
 	default Mono<Void> replaceRange(Mono<LLRange> range,
 			boolean canKeysChange,
-			Function<Entry<ByteBuf, ByteBuf>, Mono<Entry<ByteBuf, ByteBuf>>> entriesReplacer,
+			Function<LLEntry, Mono<LLEntry>> entriesReplacer,
 			boolean existsAlmostCertainly) {
 		return Mono.defer(() -> {
 			if (canKeysChange) {
@@ -126,7 +126,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	default Mono<Void> replaceRange(Mono<LLRange> range,
 			boolean canKeysChange,
-			Function<Entry<ByteBuf, ByteBuf>, Mono<Entry<ByteBuf, ByteBuf>>> entriesReplacer) {
+			Function<LLEntry, Mono<LLEntry>> entriesReplacer) {
 		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
@@ -134,9 +134,9 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fast);
 
-	Mono<Entry<ByteBuf, ByteBuf>> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
 	Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Mono<Entry<ByteBuf, ByteBuf>> removeOne(Mono<LLRange> range);
+	Mono<LLEntry> removeOne(Mono<LLRange> range);
 }

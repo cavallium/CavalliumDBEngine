@@ -22,6 +22,7 @@ import java.util.Map.Entry;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuples;
 
 // todo: implement optimized methods (which?)
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
@@ -393,25 +394,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return Mono.using(
 				() -> serializeSuffix(keySuffix),
 				keySuffixData -> {
-					Flux<ByteBuf> debuggingKeysFlux = Mono.<List<ByteBuf>>defer(() -> {
-						if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED
-								&& this.subStageGetter.needsDebuggingKeyFlux()) {
-							return Flux
-									.using(
-											() -> toExtRange(keySuffixData.retain()),
-											extRangeBuf -> this.dictionary
-													.getRangeKeys(resolveSnapshot(snapshot), LLUtils.lazyRetainRange(extRangeBuf)),
-											LLRange::release
-									)
-									.collectList();
-						} else {
-							return Mono.just(List.of());
-						}
-					}).flatMapIterable(it -> it);
 					return Mono.using(
 							() -> toKeyWithoutExt(keySuffixData.retain()),
 							keyWithoutExt -> this.subStageGetter
-									.subStage(dictionary, snapshot, LLUtils.lazyRetain(keyWithoutExt), debuggingKeysFlux),
+									.subStage(dictionary, snapshot, LLUtils.lazyRetain(keyWithoutExt)),
 							ReferenceCounted::release
 					);
 				},
@@ -433,87 +419,43 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+
 		return Flux
-				.defer(() -> {
-					if (LLLocalDictionary.DEBUG_PREFIXES_WHEN_ASSERTIONS_ARE_ENABLED && this.subStageGetter.needsDebuggingKeyFlux()) {
-						return dictionary
-								.getRangeKeysGrouped(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength)
-								.concatMap(rangeKeys -> Flux
-										.using(
-												() -> {
-													assert this.subStageGetter.isMultiKey() || rangeKeys.size() == 1;
-													ByteBuf groupKeyWithExt = rangeKeys.get(0).retainedSlice();
-													ByteBuf groupKeyWithoutExt = removeExtFromFullKey(groupKeyWithExt.retain(), true);
-													ByteBuf groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain(), true);
-													return new GroupBuffers(groupKeyWithExt, groupKeyWithoutExt, groupSuffix);
-												},
-												buffers -> Mono
-														.fromCallable(() -> {
-															assert subStageKeysConsistency(buffers.groupKeyWithExt.readableBytes());
-															return null;
-														})
-														.then(this.subStageGetter
-																.subStage(dictionary,
-																		snapshot,
-																		LLUtils.lazyRetain(buffers.groupKeyWithoutExt),
-																		Flux.fromIterable(rangeKeys).map(ByteBuf::retain)
-																)
-																.<Entry<T, US>>handle((us, sink) -> {
-																	try {
-																		var deserializedSuffix = this.deserializeSuffix(buffers.groupSuffix.retain());
-																		sink.next(Map.entry(deserializedSuffix, us));
-																	} catch (SerializationException ex) {
-																		sink.error(ex);
-																	}
-																})
-														),
-												buffers -> {
-													buffers.groupSuffix.release();
-													buffers.groupKeyWithoutExt.release();
-													buffers.groupKeyWithExt.release();
-												}
-										)
-										.doAfterTerminate(() -> {
-											for (ByteBuf rangeKey : rangeKeys) {
-												rangeKey.release();
-											}
-										})
-								)
-								.doOnDiscard(Collection.class, discardedCollection -> {
-									for (Object o : discardedCollection) {
-										if (o instanceof ByteBuf byteBuf) {
-											byteBuf.release();
+				.defer(() -> dictionary.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength))
+				.flatMapSequential(groupKeyWithoutExt -> Mono
+						.using(
+								() -> {
+									try {
+										var groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain(), true);
+										try {
+											assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
+											return Tuples.of(groupKeyWithoutExt.retain(), groupSuffix.retain());
+										} finally {
+											groupSuffix.release();
 										}
+									} finally {
+										groupKeyWithoutExt.release();
 									}
-								});
-					} else {
-						return Flux
-								.defer(() -> dictionary.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength))
-								.flatMapSequential(groupKeyWithoutExt -> Mono
-										.using(
-												() -> {
-													var groupSuffix = this.stripPrefix(groupKeyWithoutExt.retain(), true);
-													assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
-													return groupSuffix;
-												},
-												groupSuffix -> this.subStageGetter
-														.subStage(dictionary,
-																snapshot,
-																LLUtils.lazyRetain(groupKeyWithoutExt),
-																Flux.empty()
-														)
-														.<Entry<T, US>>handle((us, sink) -> {
-															try {
-																sink.next(Map.entry(this.deserializeSuffix(groupSuffix.retain()), us));
-															} catch (SerializationException ex) {
-																sink.error(ex);
-															}
-														}),
-												ReferenceCounted::release
+								},
+								groupKeyWithoutExtAndGroupSuffix -> this.subStageGetter
+										.subStage(dictionary,
+												snapshot,
+												LLUtils.lazyRetain(groupKeyWithoutExtAndGroupSuffix.getT1())
 										)
-								);
-					}
-				});
+										.<Entry<T, US>>handle((us, sink) -> {
+											try {
+												sink.next(Map.entry(this.deserializeSuffix(groupKeyWithoutExtAndGroupSuffix.getT2().retain()), us));
+											} catch (SerializationException ex) {
+												sink.error(ex);
+											}
+										}),
+								entry -> {
+									entry.getT1().release();
+									entry.getT2().release();
+								}
+						)
+				)
+				.transform(LLUtils::handleDiscard);
 	}
 
 	private boolean subStageKeysConsistency(int totalKeyLength) {

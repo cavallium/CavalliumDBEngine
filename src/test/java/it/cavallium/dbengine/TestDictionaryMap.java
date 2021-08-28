@@ -2,6 +2,7 @@ package it.cavallium.dbengine;
 
 import static it.cavallium.dbengine.DbTestUtils.*;
 
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
 import java.util.List;
@@ -13,6 +14,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -72,6 +75,16 @@ public class TestDictionaryMap {
 				)))
 				.filter(tuple -> !(tuple.getT1() == DbType.HASH_MAP && tuple.getT2() != UpdateMode.ALLOW))
 				.map(fullTuple -> Arguments.of(fullTuple.getT1(), fullTuple.getT2(), fullTuple.getT3(), fullTuple.getT4(), fullTuple.getT5()));
+	}
+
+	@BeforeEach
+	public void beforeEach() {
+		ensureNoLeaks(getUncachedAllocator());
+	}
+
+	@AfterEach
+	public void afterEach() {
+		ensureNoLeaks(getUncachedAllocatorUnsafe());
 	}
 
 	@ParameterizedTest
@@ -338,6 +351,7 @@ public class TestDictionaryMap {
 						)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -390,6 +404,7 @@ public class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -527,6 +542,7 @@ public class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -555,6 +571,7 @@ public class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -588,6 +605,7 @@ public class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -616,6 +634,7 @@ public class TestDictionaryMap {
 								.doAfterTerminate(map::release)
 						)
 						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();
@@ -627,7 +646,6 @@ public class TestDictionaryMap {
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
 	public void testPutMultiClear(DbType dbType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Boolean> stpVer = StepVerifier
 				.create(tempDb(db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, dbType, 5))
@@ -642,6 +660,7 @@ public class TestDictionaryMap {
 								.doAfterTerminate(map::release)
 						)
 						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();

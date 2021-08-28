@@ -1,9 +1,13 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocator;
+import static it.cavallium.dbengine.DbTestUtils.getUncachedAllocatorUnsafe;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
 import java.util.Map;
@@ -13,6 +17,8 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -138,6 +144,16 @@ public class TestDictionaryMapDeep {
 						fullTuple.getT5()
 				))
 				.toStream();
+	}
+
+	@BeforeEach
+	public void beforeEach() {
+		ensureNoLeaks(getUncachedAllocator());
+	}
+
+	@AfterEach
+	public void afterEach() {
+		ensureNoLeaks(getUncachedAllocatorUnsafe());
 	}
 
 	@ParameterizedTest
@@ -520,35 +536,31 @@ public class TestDictionaryMapDeep {
 		if (updateMode != UpdateMode.ALLOW_UNSAFE && !isTestBadKeysEnabled()) {
 			return;
 		}
-		var stpVer = StepVerifier
-				.create(tempDb(db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.updateValue(key, old -> {
-											assert old == null;
-											return Map.of("error?", "error.");
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, false, old -> {
-											assert Objects.equals(old, Map.of("error?", "error."));
-											return Map.of("error?", "error.");
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, Map.of("error?", "error."));
-											return Map.of("error?", "error.");
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, Map.of("error?", "error."));
-											return value;
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, value);
-											return value;
-										}).then(map.getValue(null, key))
-								)
-								.doAfterTerminate(map::release)
-						)
-				));
+		var stpVer = StepVerifier.create(tempDb(db -> tempDictionary(db, updateMode)
+				.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
+				.flatMapMany(map -> Flux.concat(
+						map.updateValue(key, old -> {
+							assert old == null;
+							return Map.of("error?", "error.");
+						}).then(map.getValue(null, key)),
+						map.updateValue(key, false, old -> {
+							assert Objects.equals(old, Map.of("error?", "error."));
+							return Map.of("error?", "error.");
+						}).then(map.getValue(null, key)),
+						map.updateValue(key, true, old -> {
+							assert Objects.equals(old, Map.of("error?", "error."));
+							return Map.of("error?", "error.");
+						}).then(map.getValue(null, key)),
+						map.updateValue(key, true, old -> {
+							assert Objects.equals(old, Map.of("error?", "error."));
+							return value;
+						}).then(map.getValue(null, key)),
+						map.updateValue(key, true, old -> {
+							assert Objects.equals(old, value);
+							return value;
+						}).then(map.getValue(null, key))
+				).doAfterTerminate(map::release))
+		));
 		if (updateMode != UpdateMode.ALLOW_UNSAFE || shouldFail) {
 			stpVer.verifyError();
 		} else {
@@ -795,6 +807,7 @@ public class TestDictionaryMapDeep {
 									)
 									.doAfterTerminate(map::release);
 						})
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			stpVer.verifyError();

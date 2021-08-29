@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.buffer.PooledByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
+import it.cavallium.dbengine.database.LLUtils;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.NotNull;
 
@@ -13,52 +13,41 @@ public interface Serializer<A, B> {
 
 	@NotNull B serialize(@NotNull A deserialized) throws SerializationException;
 
-	Serializer<ByteBuf, ByteBuf> NOOP_SERIALIZER = new Serializer<>() {
+	Serializer<Send<Buffer>, Send<Buffer>> NOOP_SERIALIZER = new Serializer<>() {
 		@Override
-		public @NotNull ByteBuf deserialize(@NotNull ByteBuf serialized) {
-			try {
-				return serialized.retainedSlice();
-			} finally {
-				serialized.release();
-			}
+		public @NotNull Send<Buffer> deserialize(@NotNull Send<Buffer> serialized) {
+			return serialized;
 		}
 
 		@Override
-		public @NotNull ByteBuf serialize(@NotNull ByteBuf deserialized) {
-			try {
-				return deserialized.retainedSlice();
-			} finally {
-				deserialized.release();
-			}
+		public @NotNull Send<Buffer> serialize(@NotNull Send<Buffer> deserialized) {
+			return deserialized;
 		}
 	};
 
-	static Serializer<ByteBuf, ByteBuf> noop() {
+	static Serializer<Send<Buffer>, Send<Buffer>> noop() {
 		return NOOP_SERIALIZER;
 	}
 
-	static Serializer<String, ByteBuf> utf8(ByteBufAllocator allocator) {
+	static Serializer<String, Send<Buffer>> utf8(BufferAllocator allocator) {
 		return new Serializer<>() {
 			@Override
-			public @NotNull String deserialize(@NotNull ByteBuf serialized) {
-				try {
-					var length = serialized.readInt();
-					var result = serialized.toString(serialized.readerIndex(), length, StandardCharsets.UTF_8);
-					serialized.readerIndex(serialized.readerIndex() + length);
-					return result;
-				} finally {
-					serialized.release();
+			public @NotNull String deserialize(@NotNull Send<Buffer> serializedToReceive) {
+				try (Buffer serialized = serializedToReceive.receive()) {
+					int length = serialized.readInt();
+					return LLUtils.deserializeString(serialized.send(), serialized.readerOffset(), length, StandardCharsets.UTF_8);
 				}
 			}
 
 			@Override
-			public @NotNull ByteBuf serialize(@NotNull String deserialized) {
+			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
-				int length = ByteBufUtil.utf8Bytes(deserialized);
-				ByteBuf buf = allocator.buffer(Integer.BYTES + length);
-				buf.writeInt(length);
-				ByteBufUtil.writeUtf8(buf, deserialized);
-				return buf;
+				int length = LLUtils.utf8MaxBytes(deserialized);
+				try (Buffer buf = allocator.allocate(Integer.BYTES + length)) {
+					buf.writeInt(length);
+					LLUtils.writeString(buf, deserialized, StandardCharsets.UTF_8);
+					return buf.send();
+				}
 			}
 		};
 	}

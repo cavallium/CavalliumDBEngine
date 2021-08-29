@@ -1,117 +1,146 @@
 package it.cavallium.dbengine.database;
 
 import static io.netty.buffer.Unpooled.wrappedBuffer;
-import static io.netty.buffer.Unpooled.wrappedUnmodifiableBuffer;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufUtil;
-import io.netty.util.IllegalReferenceCountException;
-import java.util.Arrays;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Drop;
+import io.netty.buffer.api.Owned;
+import io.netty.buffer.api.Send;
+import io.netty.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Range of data, from min (inclusive),to max (exclusive)
  */
-public class LLRange {
+public class LLRange extends ResourceSupport<LLRange, LLRange> {
 
-	private static final LLRange RANGE_ALL = new LLRange(null, null, false);
-	private final ByteBuf min;
-	private final ByteBuf max;
-	private final boolean releasable;
-	private final AtomicInteger refCnt = new AtomicInteger(1);
+	private static final LLRange RANGE_ALL = new LLRange(null, null, null, d -> {});
+	private Buffer min;
+	private Buffer max;
+	private Buffer single;
 
-	private LLRange(ByteBuf min, ByteBuf max, boolean releasable) {
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		this.min = min;
-		this.max = max;
-		this.releasable = releasable;
+	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single, Drop<LLRange> drop) {
+		super(new CloseOnDrop(drop));
+		assert isAllAccessible();
+		assert single == null || (min == null && max == null);
+		this.min = min != null ? min.receive().makeReadOnly() : null;
+		this.max = max != null ? max.receive().makeReadOnly() : null;
+		this.single = single != null ? single.receive().makeReadOnly() : null;
+	}
+
+	private boolean isAllAccessible() {
+		assert min == null || min.isAccessible();
+		assert max == null || max.isAccessible();
+		assert single == null || single.isAccessible();
+		assert this.isAccessible();
+		assert this.isOwned();
+		return true;
 	}
 
 	public static LLRange all() {
-		return RANGE_ALL;
+		return RANGE_ALL.copy();
 	}
 
-	public static LLRange from(ByteBuf min) {
-		return new LLRange(min, null, true);
+	public static LLRange from(Send<Buffer> min) {
+		return new LLRange(min, null, null, d -> {});
 	}
 
-	public static LLRange to(ByteBuf max) {
-		return new LLRange(null, max, true);
+	public static LLRange to(Send<Buffer> max) {
+		return new LLRange(null, max, null, d -> {});
 	}
 
-	public static LLRange single(ByteBuf single) {
-		try {
-			return new LLRange(single.retain(), single.retain(), true);
-		} finally {
-			single.release();
-		}
+	public static LLRange single(Send<Buffer> single) {
+		return new LLRange(null, null, single, d -> {});
 	}
 
-	public static LLRange of(ByteBuf min, ByteBuf max) {
-		return new LLRange(min, max, true);
+	public static LLRange of(Send<Buffer> min, Send<Buffer> max) {
+		return new LLRange(min, max, null, d -> {});
 	}
 
 	public boolean isAll() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		return min == null && max == null;
+		ensureOwned();
+		return min == null && max == null && single == null;
 	}
 
 	public boolean isSingle() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		if (min == null || max == null) return false;
-		return LLUtils.equals(min, max);
+		ensureOwned();
+		return single != null;
 	}
 
 	public boolean hasMin() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		return min != null;
+		ensureOwned();
+		return min != null || single != null;
 	}
 
-	public ByteBuf getMin() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		assert min != null;
-		return min;
+	public Send<Buffer> getMin() {
+		ensureOwned();
+		if (min != null) {
+			return min.copy().send();
+		} else if (single != null) {
+			return single.copy().send();
+		} else {
+			return null;
+		}
+	}
+
+	public Buffer getMinUnsafe() {
+		ensureOwned();
+		if (min != null) {
+			return min;
+		} else if (single != null) {
+			return single;
+		} else {
+			return null;
+		}
 	}
 
 	public boolean hasMax() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		return max != null;
+		ensureOwned();
+		return max != null || single != null;
 	}
 
-	public ByteBuf getMax() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		assert max != null;
-		return max;
-	}
-
-	public ByteBuf getSingle() {
-		checkReleased();
-		assert min == null || min.refCnt() > 0;
-		assert max == null || max.refCnt() > 0;
-		assert isSingle();
-		return min;
-	}
-
-	private void checkReleased() {
-		if (!releasable) {
-			return;
+	public Send<Buffer> getMax() {
+		ensureOwned();
+		if (max != null) {
+			return max.copy().send();
+		} else if (single != null) {
+			return single.copy().send();
+		} else {
+			return null;
 		}
-		if (refCnt.get() <= 0) {
-			throw new IllegalReferenceCountException(0);
+	}
+
+	public Buffer getMaxUnsafe() {
+		ensureOwned();
+		if (max != null) {
+			return max;
+		} else if (single != null) {
+			return single;
+		} else {
+			return null;
+		}
+	}
+
+	public Send<Buffer> getSingle() {
+		ensureOwned();
+		assert isSingle();
+		return single != null ? single.copy().send() : null;
+	}
+
+	public Buffer getSingleUnsafe() {
+		ensureOwned();
+		assert isSingle();
+		return single;
+	}
+
+	private void ensureOwned() {
+		assert isAllAccessible();
+		if (!isOwned()) {
+			if (!isAccessible()) {
+				throw this.createResourceClosedException();
+			} else {
+				throw new IllegalStateException("Resource not owned");
+			}
 		}
 	}
 
@@ -142,34 +171,53 @@ public class LLRange {
 				.toString();
 	}
 
-	public LLRange retain() {
-		if (!releasable) {
-			return this;
-		}
-		if (refCnt.updateAndGet(refCnt -> refCnt <= 0 ? 0 : (refCnt + 1)) <= 0) {
-			throw new IllegalReferenceCountException(0, 1);
-		}
-		if (min != null) {
-			min.retain();
-		}
-		if (max != null) {
-			max.retain();
-		}
-		return this;
+	public LLRange copy() {
+		ensureOwned();
+		return new LLRange(min != null ? min.copy().send() : null,
+				max != null ? max.copy().send() : null,
+				single != null ? single.copy().send(): null,
+				d -> {}
+		);
 	}
 
-	public void release() {
-		if (!releasable) {
-			return;
+	@Override
+	protected RuntimeException createResourceClosedException() {
+		return new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<LLRange> prepareSend() {
+		Send<Buffer> minSend;
+		Send<Buffer> maxSend;
+		Send<Buffer> singleSend;
+		minSend = this.min != null ? this.min.send() : null;
+		maxSend = this.max != null ? this.max.send() : null;
+		singleSend = this.single != null ? this.single.send() : null;
+		this.makeInaccessible();
+		return drop -> new LLRange(minSend, maxSend, singleSend, drop);
+	}
+
+	private void makeInaccessible() {
+		this.min = null;
+		this.max = null;
+		this.single = null;
+	}
+
+	private static class CloseOnDrop implements Drop<LLRange> {
+
+		private final Drop<LLRange> delegate;
+
+		public CloseOnDrop(Drop<LLRange> drop) {
+			this.delegate = drop;
 		}
-		if (refCnt.decrementAndGet() < 0) {
-			throw new IllegalReferenceCountException(0, -1);
-		}
-		if (min != null) {
-			min.release();
-		}
-		if (max != null) {
-			max.release();
+
+		@Override
+		public void drop(LLRange obj) {
+			if (obj.min != null) obj.min.close();
+			if (obj.max != null) obj.max.close();
+			if (obj.single != null) obj.single.close();
+			obj.makeInaccessible();
+			delegate.drop(obj);
 		}
 	}
 }

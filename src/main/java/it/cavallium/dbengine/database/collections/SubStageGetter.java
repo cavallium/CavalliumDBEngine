@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import java.util.Collection;
@@ -13,7 +14,7 @@ public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 
 	Mono<US> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<ByteBuf> prefixKey);
+			Mono<Send<Buffer>> prefixKey);
 
 	boolean isMultiKey();
 }

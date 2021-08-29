@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -14,16 +14,16 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, DatabaseSetDictionary<T>> {
 
-	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
+	private final SerializerFixedBinaryLength<T, Buffer> keySerializer;
 
-	public SubStageGetterSet(SerializerFixedBinaryLength<T, ByteBuf> keySerializer) {
+	public SubStageGetterSet(SerializerFixedBinaryLength<T, Buffer> keySerializer) {
 		this.keySerializer = keySerializer;
 	}
 
 	@Override
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<ByteBuf> prefixKeyMono) {
+			Mono<Buffer> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey.retain(), keySerializer)),

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.function.Function;
@@ -11,9 +11,9 @@ public class DatabaseEmpty {
 
 	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
-	public static final Serializer<Nothing, ByteBuf> NOTHING_SERIALIZER = new Serializer<>() {
+	public static final Serializer<Nothing, Buffer> NOTHING_SERIALIZER = new Serializer<>() {
 		@Override
-		public @NotNull Nothing deserialize(@NotNull ByteBuf serialized) {
+		public @NotNull Nothing deserialize(@NotNull Buffer serialized) {
 			try {
 				return NOTHING;
 			} finally {
@@ -22,7 +22,7 @@ public class DatabaseEmpty {
 		}
 
 		@Override
-		public @NotNull ByteBuf serialize(@NotNull Nothing deserialized) {
+		public @NotNull Buffer serialize(@NotNull Nothing deserialized) {
 			return EMPTY_BUFFER;
 		}
 	};
@@ -33,7 +33,7 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, ByteBuf key) {
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Buffer key) {
 		return new DatabaseSingle<>(dictionary, key, NOTHING_SERIALIZER);
 	}
 

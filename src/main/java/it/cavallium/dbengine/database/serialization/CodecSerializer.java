@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.BufferInputStream;
+import io.netty.buffer.api.BufferOutputStream;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.Unpooled;
 import java.io.IOError;
@@ -11,7 +11,7 @@ import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
 
-public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
+public class CodecSerializer<A> implements Serializer<A, Buffer> {
 
 	private final ByteBufAllocator allocator;
 	private final Codecs<A> deserializationCodecs;
@@ -40,7 +40,7 @@ public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
 	}
 
 	@Override
-	public @NotNull A deserialize(@NotNull ByteBuf serialized) {
+	public @NotNull A deserialize(@NotNull Buffer serialized) {
 		try (var is = new ByteBufInputStream(serialized)) {
 			int codecId;
 			if (microCodecs) {
@@ -59,8 +59,8 @@ public class CodecSerializer<A> implements Serializer<A, ByteBuf> {
 	}
 
 	@Override
-	public @NotNull ByteBuf serialize(@NotNull A deserialized) {
-		ByteBuf buf = allocator.buffer();
+	public @NotNull Buffer serialize(@NotNull A deserialized) {
+		Buffer buf = allocator.buffer();
 		try (var os = new ByteBufOutputStream(buf)) {
 			if (microCodecs) {
 				os.writeByte(serializationCodecId);

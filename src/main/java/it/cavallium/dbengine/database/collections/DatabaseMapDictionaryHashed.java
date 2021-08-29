@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
@@ -33,41 +34,37 @@ import reactor.util.function.Tuples;
 @SuppressWarnings("unused")
 public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
-	private final ByteBufAllocator alloc;
+	private final BufferAllocator alloc;
 	private final DatabaseMapDictionary<TH, ObjectArraySet<Entry<T, U>>> subDictionary;
 	private final Function<T, TH> keySuffixHashFunction;
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
-			ByteBuf prefixKey,
-			Serializer<T, ByteBuf> keySuffixSerializer,
-			Serializer<U, ByteBuf> valueSerializer,
+			Send<Buffer> prefixKey,
+			Serializer<T, Send<Buffer>> keySuffixSerializer,
+			Serializer<U, Send<Buffer>> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, ByteBuf> keySuffixHashSerializer) {
-		try {
-			if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
-				throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
-			}
-			this.alloc = dictionary.getAllocator();
-			ValueWithHashSerializer<T, U> valueWithHashSerializer
-					= new ValueWithHashSerializer<>(alloc, keySuffixSerializer, valueSerializer);
-			ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
-					= new ValuesSetSerializer<>(alloc, valueWithHashSerializer);
-			this.subDictionary = DatabaseMapDictionary.tail(dictionary,
-					prefixKey.retain(),
-					keySuffixHashSerializer,
-					valuesSetSerializer
-			);
-			this.keySuffixHashFunction = keySuffixHashFunction;
-		} finally {
-			prefixKey.release();
+			SerializerFixedBinaryLength<TH, Buffer> keySuffixHashSerializer) {
+		if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
+			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
+		this.alloc = dictionary.getAllocator();
+		ValueWithHashSerializer<T, U> valueWithHashSerializer
+				= new ValueWithHashSerializer<>(alloc, keySuffixSerializer, valueSerializer);
+		ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
+				= new ValuesSetSerializer<>(alloc, valueWithHashSerializer);
+		this.subDictionary = DatabaseMapDictionary.tail(dictionary,
+				prefixKey,
+				keySuffixHashSerializer,
+				valuesSetSerializer
+		);
+		this.keySuffixHashFunction = keySuffixHashFunction;
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> simple(LLDictionary dictionary,
-			Serializer<T, ByteBuf> keySerializer,
-			Serializer<U, ByteBuf> valueSerializer,
+			Serializer<T, Buffer> keySerializer,
+			Serializer<U, Buffer> valueSerializer,
 			Function<T, UH> keyHashFunction,
-			SerializerFixedBinaryLength<UH, ByteBuf> keyHashSerializer) {
+			SerializerFixedBinaryLength<UH, Buffer> keyHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
 				dictionary.getAllocator().buffer(0),
@@ -79,11 +76,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
-			ByteBuf prefixKey,
-			Serializer<T, ByteBuf> keySuffixSerializer,
-			Serializer<U, ByteBuf> valueSerializer,
+			Buffer prefixKey,
+			Serializer<T, Buffer> keySuffixSerializer,
+			Serializer<U, Buffer> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<UH, ByteBuf> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<UH, Buffer> keySuffixHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

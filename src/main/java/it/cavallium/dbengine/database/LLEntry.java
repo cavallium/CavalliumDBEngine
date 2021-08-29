@@ -1,74 +1,127 @@
 package it.cavallium.dbengine.database;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.util.IllegalReferenceCountException;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicInteger;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Drop;
+import io.netty.buffer.api.Owned;
+import io.netty.buffer.api.Send;
+import io.netty.buffer.api.internal.ResourceSupport;
+import java.util.StringJoiner;
+import org.jetbrains.annotations.NotNull;
 
-public class LLEntry {
+public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
+	@NotNull
+	private final Buffer key;
+	@NotNull
+	private final Buffer value;
 
-	private static final Logger logger = LoggerFactory.getLogger(LLEntry.class);
-
-	private final AtomicInteger refCnt = new AtomicInteger(1);
-
-	private final ByteBuf key;
-	private final ByteBuf value;
-
-	public LLEntry(ByteBuf key, ByteBuf value) {
-		try {
-			this.key = key.retain();
-			this.value = value.retain();
-		} finally {
-			key.release();
-			value.release();
-		}
+	private LLEntry(Send<Buffer> key, Send<Buffer> value, Drop<LLEntry> drop) {
+		super(new LLEntry.CloseOnDrop(drop));
+		assert isAllAccessible();
+		this.key = key.receive().makeReadOnly();
+		this.value = value.receive().makeReadOnly();
 	}
 
-	public ByteBuf getKey() {
-		if (refCnt.get() <= 0) {
-			throw new IllegalReferenceCountException(refCnt.get());
-		}
+	private boolean isAllAccessible() {
+		assert key.isAccessible();
+		assert value.isAccessible();
+		assert this.isAccessible();
+		assert this.isOwned();
+		return true;
+	}
+
+	public static LLEntry of(Send<Buffer> key, Send<Buffer> value) {
+		return new LLEntry(key, value, d -> {});
+	}
+
+	public Send<Buffer> getKey() {
+		ensureOwned();
+		return key.copy().send();
+	}
+
+	public Buffer getKeyUnsafe() {
 		return key;
 	}
 
-	public ByteBuf getValue() {
-		if (refCnt.get() <= 0) {
-			throw new IllegalReferenceCountException(refCnt.get());
-		}
+	public Send<Buffer> getValue() {
+		ensureOwned();
+		return value.copy().send();
+	}
+
+
+	public Buffer getValueUnsafe() {
 		return value;
 	}
 
-	public void retain() {
-		if (refCnt.getAndIncrement() <= 0) {
-			throw new IllegalReferenceCountException(refCnt.get(), 1);
+	private void ensureOwned() {
+		assert isAllAccessible();
+		if (!isOwned()) {
+			if (!isAccessible()) {
+				throw this.createResourceClosedException();
+			} else {
+				throw new IllegalStateException("Resource not owned");
+			}
 		}
-		key.retain();
-		value.retain();
-	}
-
-	public void release() {
-		if (refCnt.decrementAndGet() < 0) {
-			throw new IllegalReferenceCountException(refCnt.get(), -1);
-		}
-		if (key.refCnt() > 0) {
-			key.release();
-		}
-		if (value.refCnt() > 0) {
-			value.release();
-		}
-	}
-
-	public boolean isReleased() {
-		return refCnt.get() <= 0;
 	}
 
 	@Override
-	protected void finalize() throws Throwable {
-		if (refCnt.get() > 0) {
-			logger.warn(this.getClass().getName() + "::release has not been called!");
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
 		}
-		super.finalize();
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		LLEntry LLEntry = (LLEntry) o;
+		return LLUtils.equals(key, LLEntry.key) && LLUtils.equals(value, LLEntry.value);
+	}
+
+	@Override
+	public int hashCode() {
+		int result = LLUtils.hashCode(key);
+		result = 31 * result + LLUtils.hashCode(value);
+		return result;
+	}
+
+	@Override
+	public String toString() {
+		return new StringJoiner(", ", LLEntry.class.getSimpleName() + "[", "]")
+				.add("key=" + LLUtils.toString(key))
+				.add("value=" + LLUtils.toString(value))
+				.toString();
+	}
+
+	public LLEntry copy() {
+		ensureOwned();
+		return new LLEntry(key.copy().send(), value.copy().send(), d -> {});
+	}
+
+	@Override
+	protected RuntimeException createResourceClosedException() {
+		return new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<LLEntry> prepareSend() {
+		Send<Buffer> keySend;
+		Send<Buffer> valueSend;
+		keySend = this.key.send();
+		valueSend = this.value.send();
+		return drop -> new LLEntry(keySend, valueSend, drop);
+	}
+
+	private static class CloseOnDrop implements Drop<LLEntry> {
+
+		private final Drop<LLEntry> delegate;
+
+		public CloseOnDrop(Drop<LLEntry> drop) {
+			this.delegate = drop;
+		}
+
+		@Override
+		public void drop(LLEntry obj) {
+			obj.key.close();
+			obj.value.close();
+			delegate.drop(obj);
+		}
 	}
 }

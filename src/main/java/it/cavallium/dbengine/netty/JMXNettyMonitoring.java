@@ -1,13 +1,13 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty.buffer.ByteBufAllocatorMetric;
+import io.netty.buffer.api.BufferAllocatorMetric;
 
 public class JMXNettyMonitoring implements JMXNettyMonitoringMBean {
 
 	private final String name;
 	private final ByteBufAllocatorMetric metric;
 
-	public JMXNettyMonitoring(String name, io.netty.buffer.ByteBufAllocatorMetric metric) {
+	public JMXNettyMonitoring(String name, io.netty.buffer.api.BufferAllocatorMetric metric) {
 		this.name = name;
 		this.metric = metric;
 	}

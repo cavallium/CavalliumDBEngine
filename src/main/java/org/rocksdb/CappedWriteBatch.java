@@ -1,6 +1,9 @@
 package org.rocksdb;
 
-import io.netty.buffer.ByteBuf;
+import static it.cavallium.dbengine.database.LLUtils.isDirect;
+
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -25,7 +28,7 @@ public class CappedWriteBatch extends WriteBatch {
 	private final int cap;
 	private final WriteOptions writeOptions;
 	
-	private final List<ByteBuf> buffersToRelease;
+	private final List<Buffer> buffersToRelease;
 
 	/**
 	 * @param cap The limit of operations
@@ -53,9 +56,8 @@ public class CappedWriteBatch extends WriteBatch {
 
 	private synchronized void releaseAllBuffers() {
 		if (!buffersToRelease.isEmpty()) {
-			for (ByteBuf byteBuffer : buffersToRelease) {
-				assert byteBuffer.refCnt() > 0;
-				byteBuffer.release();
+			for (Buffer byteBuffer : buffersToRelease) {
+				byteBuffer.close();
 			}
 			buffersToRelease.clear();
 		}
@@ -90,8 +92,12 @@ public class CappedWriteBatch extends WriteBatch {
 		flushIfNeeded(false);
 	}
 
-	public synchronized void put(ColumnFamilyHandle columnFamilyHandle, ByteBuf key, ByteBuf value) throws RocksDBException {
-		if (USE_FAST_DIRECT_BUFFERS && key.isDirect() && value.isDirect()) {
+	public synchronized void put(ColumnFamilyHandle columnFamilyHandle,
+			Send<Buffer> keyToReceive,
+			Send<Buffer> valueToReceive) throws RocksDBException {
+		var key = keyToReceive.receive();
+		var value = valueToReceive.receive();
+		if (USE_FAST_DIRECT_BUFFERS && isDirect(key) && isDirect(value)) {
 			buffersToRelease.add(key);
 			buffersToRelease.add(value);
 			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
@@ -106,8 +112,8 @@ public class CappedWriteBatch extends WriteBatch {
 				byte[] valueArray = LLUtils.toArray(value);
 				super.put(columnFamilyHandle, keyArray, valueArray);
 			} finally {
-				key.release();
-				value.release();
+				key.close();
+				value.close();
 			}
 		}
 		flushIfNeeded(false);
@@ -151,7 +157,8 @@ public class CappedWriteBatch extends WriteBatch {
 		flushIfNeeded(false);
 	}
 
-	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, ByteBuf key) throws RocksDBException {
+	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
+		var key = keyToReceive.receive();
 		if (USE_FAST_DIRECT_BUFFERS) {
 			buffersToRelease.add(key);
 			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
@@ -167,7 +174,7 @@ public class CappedWriteBatch extends WriteBatch {
 			try {
 				super.delete(columnFamilyHandle, LLUtils.toArray(key));
 			} finally {
-				key.release();
+				key.close();
 			}
 		}
 		flushIfNeeded(false);

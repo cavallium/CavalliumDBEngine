@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.memory;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.ExtraKeyOperationResult;
@@ -81,7 +81,7 @@ public class LLMemoryDictionary implements LLDictionary {
 		}
 	}
 
-	private Mono<ByteBuf> transformResult(Mono<ByteList> result, LLDictionaryResultType resultType) {
+	private Mono<Buffer> transformResult(Mono<ByteList> result, LLDictionaryResultType resultType) {
 		if (resultType == LLDictionaryResultType.PREVIOUS_VALUE) {
 			// Don't retain the result because it has been removed from the skip list
 			return result.map(this::kk);
@@ -95,11 +95,11 @@ public class LLMemoryDictionary implements LLDictionary {
 		}
 	}
 
-	private ByteList k(ByteBuf buf) {
+	private ByteList k(Buffer buf) {
 		return new BinaryLexicographicList(LLUtils.toArray(buf));
 	}
 
-	private ByteBuf kk(ByteList bytesList) {
+	private Buffer kk(ByteList bytesList) {
 		var buffer = getAllocator().buffer(bytesList.size());
 		buffer.writeBytes(bytesList.toByteArray());
 		return buffer;
@@ -139,7 +139,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, Mono<ByteBuf> keyMono, boolean existsAlmostCertainly) {
+	public Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> keyMono, boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono
 						.fromCallable(() -> snapshots.get(resolveSnapshot(snapshot)).get(k(key)))
@@ -150,7 +150,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<ByteBuf> put(Mono<ByteBuf> keyMono, Mono<ByteBuf> valueMono, LLDictionaryResultType resultType) {
+	public Mono<Buffer> put(Mono<Buffer> keyMono, Mono<Buffer> valueMono, LLDictionaryResultType resultType) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.usingWhen(valueMono,
 						value -> Mono
@@ -169,17 +169,17 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> keyMono,
-			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+	public Mono<Delta<Buffer>> updateAndGetDelta(Mono<Buffer> keyMono,
+			SerializationFunction<@Nullable Buffer, @Nullable Buffer> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
-					AtomicReference<ByteBuf> oldRef = new AtomicReference<>(null);
+					AtomicReference<Buffer> oldRef = new AtomicReference<>(null);
 					var newValue = mainDb.compute(k(key), (_unused, old) -> {
 						if (old != null) {
 							oldRef.set(kk(old));
 						}
-						ByteBuf v = null;
+						Buffer v = null;
 						try {
 							v = updater.apply(old != null ? kk(old) : null);
 						} catch (SerializationException e) {
@@ -205,7 +205,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<ByteBuf> remove(Mono<ByteBuf> keyMono, LLDictionaryResultType resultType) {
+	public Mono<Buffer> remove(Mono<Buffer> keyMono, LLDictionaryResultType resultType) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono
 						.fromCallable(() -> mainDb.remove(k(key)))
@@ -228,8 +228,8 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<K, ByteBuf>> keys,
+	public <K> Flux<Tuple3<K, Buffer, Optional<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Tuple2<K, Buffer>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
 				.flatMapSequential(key -> {
@@ -267,8 +267,8 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
-			BiSerializationFunction<ByteBuf, X, ByteBuf> updateFunction) {
+	public <X> Flux<ExtraKeyOperationResult<Buffer, X>> updateMulti(Flux<Tuple2<Buffer, X>> entries,
+			BiSerializationFunction<Buffer, X, Buffer> updateFunction) {
 		return Flux.error(new UnsupportedOperationException("Not implemented"));
 	}
 
@@ -304,7 +304,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
+	public Flux<Buffer> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Flux.usingWhen(rangeMono,
 				range -> {
 					if (range.isSingle()) {
@@ -325,7 +325,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
+	public Flux<List<Buffer>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
 			Mono<LLRange> rangeMono,
 			int prefixLength) {
 		return getRangeKeys(snapshot, rangeMono)
@@ -333,7 +333,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, int prefixLength) {
+	public Flux<Buffer> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, int prefixLength) {
 		return getRangeKeys(snapshot, rangeMono)
 				.distinctUntilChanged(k -> k.slice(k.readerIndex(), prefixLength), (a, b) -> {
 					if (LLUtils.equals(a, b)) {
@@ -376,7 +376,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
+	public Mono<Buffer> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
 		return Mono.error(new UnsupportedOperationException("Not implemented"));
 	}
 

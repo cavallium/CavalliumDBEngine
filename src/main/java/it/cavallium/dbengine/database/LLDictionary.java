@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -23,89 +24,90 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	String getColumnName();
 
-	ByteBufAllocator getAllocator();
+	BufferAllocator getAllocator();
 
-	Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, Mono<ByteBuf> key, boolean existsAlmostCertainly);
+	Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> key, boolean existsAlmostCertainly);
 
-	default Mono<ByteBuf> get(@Nullable LLSnapshot snapshot, Mono<ByteBuf> key) {
+	default Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> key) {
 		return get(snapshot, key, false);
 	}
 
-	Mono<ByteBuf> put(Mono<ByteBuf> key, Mono<ByteBuf> value, LLDictionaryResultType resultType);
+	Mono<Send<Buffer>> put(Mono<Send<Buffer>> key, Mono<Send<Buffer>> value, LLDictionaryResultType resultType);
 
 	Mono<UpdateMode> getUpdateMode();
 
-	default Mono<ByteBuf> update(Mono<ByteBuf> key,
-			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return this
 				.updateAndGetDelta(key, updater, existsAlmostCertainly)
-				.transform(prev -> LLUtils.resolveDelta(prev, updateReturnMode));
+				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
 	}
 
-	default Mono<ByteBuf> update(Mono<ByteBuf> key,
-			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			UpdateReturnMode returnMode) {
 		return update(key, updater, returnMode, false);
 	}
 
-	Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> key,
-			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater,
+	Mono<LLDelta> updateAndGetDelta(Mono<Send<Buffer>> key,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly);
 
-	default Mono<Delta<ByteBuf>> updateAndGetDelta(Mono<ByteBuf> key,
-			SerializationFunction<@Nullable ByteBuf, @Nullable ByteBuf> updater) {
+	default Mono<LLDelta> updateAndGetDelta(Mono<Send<Buffer>> key,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater) {
 		return updateAndGetDelta(key, updater, false);
 	}
 
 	Mono<Void> clear();
 
-	Mono<ByteBuf> remove(Mono<ByteBuf> key, LLDictionaryResultType resultType);
+	Mono<Send<Buffer>> remove(Mono<Send<Buffer>> key, LLDictionaryResultType resultType);
 
-	<K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<K, ByteBuf>> keys,
+	<K> Flux<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Tuple2<K, Send<Buffer>>> keys,
 			boolean existsAlmostCertainly);
 
-	default <K> Flux<Tuple3<K, ByteBuf, Optional<ByteBuf>>> getMulti(@Nullable LLSnapshot snapshot, Flux<Tuple2<K, ByteBuf>> keys) {
+	default <K> Flux<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Tuple2<K, Send<Buffer>>> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 
-	Flux<LLEntry> putMulti(Flux<LLEntry> entries, boolean getOldValues);
+	Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues);
 
-	<X> Flux<ExtraKeyOperationResult<ByteBuf, X>> updateMulti(Flux<Tuple2<ByteBuf, X>> entries,
-			BiSerializationFunction<ByteBuf, X, ByteBuf> updateFunction);
+	<X> Flux<ExtraKeyOperationResult<Send<Buffer>, X>> updateMulti(Flux<Tuple2<Send<Buffer>, X>> entries,
+			BiSerializationFunction<Send<Buffer>, X, Send<Buffer>> updateFunction);
 
-	Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean existsAlmostCertainly);
+	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean existsAlmostCertainly);
 
-	default Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range) {
+	default Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range) {
 		return getRange(snapshot, range, false);
 	}
 
-	Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
 			int prefixLength,
 			boolean existsAlmostCertainly);
 
-	default Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	default Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
 			int prefixLength) {
 		return getRangeGrouped(snapshot, range, prefixLength, false);
 	}
 
-	Flux<ByteBuf> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
 
-	Flux<List<ByteBuf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, Mono<LLRange> range, int prefixLength);
+	Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
 
-	Flux<ByteBuf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<LLRange> range, int prefixLength);
+	Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
 
-	Flux<BadBlock> badBlocks(Mono<LLRange> range);
+	Flux<BadBlock> badBlocks(Mono<Send<LLRange>> range);
 
-	Mono<Void> setRange(Mono<LLRange> range, Flux<LLEntry> entries);
+	Mono<Void> setRange(Mono<Send<LLRange>> range, Flux<Send<LLEntry>> entries);
 
-	default Mono<Void> replaceRange(Mono<LLRange> range,
+	default Mono<Void> replaceRange(Mono<Send<LLRange>> range,
 			boolean canKeysChange,
-			Function<LLEntry, Mono<LLEntry>> entriesReplacer,
+			Function<Send<LLEntry>, Mono<Send<LLEntry>>> entriesReplacer,
 			boolean existsAlmostCertainly) {
 		return Mono.defer(() -> {
 			if (canKeysChange) {
@@ -124,19 +126,19 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		});
 	}
 
-	default Mono<Void> replaceRange(Mono<LLRange> range,
+	default Mono<Void> replaceRange(Mono<Send<LLRange>> range,
 			boolean canKeysChange,
-			Function<LLEntry, Mono<LLEntry>> entriesReplacer) {
+			Function<Send<LLEntry>, Mono<Send<LLEntry>>> entriesReplacer) {
 		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
-	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
 
-	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fast);
+	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean fast);
 
-	Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	Mono<Send<LLEntry>> getOne(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
 
-	Mono<ByteBuf> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	Mono<Send<Buffer>> getOneKey(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
 
-	Mono<LLEntry> removeOne(Mono<LLRange> range);
+	Mono<Send<LLEntry>> removeOne(Mono<Send<LLRange>> range);
 }

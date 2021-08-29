@@ -1,18 +1,19 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 
-public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterator<ByteBuf> {
+public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterator<Send<Buffer>> {
 
 	public LLLocalKeyReactiveRocksIterator(RocksDB db,
-			ByteBufAllocator alloc,
+			BufferAllocator alloc,
 			ColumnFamilyHandle cfh,
-			LLRange range,
+			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
@@ -20,9 +21,9 @@ public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterato
 	}
 
 	@Override
-	public ByteBuf getEntry(ByteBuf key, ByteBuf value) {
+	public Send<Buffer> getEntry(Send<Buffer> key, Send<Buffer> value) {
 		if (value != null) {
-			value.release();
+			value.close();
 		}
 		return key;
 	}

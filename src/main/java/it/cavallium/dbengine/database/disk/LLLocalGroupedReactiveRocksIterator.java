@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.BufferUtil;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
@@ -20,7 +21,7 @@ import static io.netty.buffer.Unpooled.*;
 public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 
 	private final RocksDB db;
-	private final ByteBufAllocator alloc;
+	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 	private final int prefixLength;
 	private final LLRange range;
@@ -29,9 +30,9 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	private final boolean canFillCache;
 	private final boolean readValues;
 
-	public LLLocalGroupedReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
+	public LLLocalGroupedReactiveRocksIterator(RocksDB db, BufferAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
-			LLRange range,
+			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean canFillCache,
@@ -59,18 +60,18 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 					try {
 						var rocksIterator = tuple.getT1();
 						ObjectArrayList<T> values = new ObjectArrayList<>();
-						ByteBuf firstGroupKey = null;
+						Buffer firstGroupKey = null;
 						try {
 							rocksIterator.status();
 							while (rocksIterator.isValid()) {
-								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+								Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 								try {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.retain();
 									} else if (!ByteBufUtil.equals(firstGroupKey, firstGroupKey.readerIndex(), key, key.readerIndex(), prefixLength)) {
 										break;
 									}
-									ByteBuf value;
+									Buffer value;
 									if (readValues) {
 										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 									} else {
@@ -112,7 +113,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				});
 	}
 
-	public abstract T getEntry(ByteBuf key, ByteBuf value);
+	public abstract T getEntry(Send<Buffer> key, Send<Buffer> value);
 
 	public void release() {
 		range.release();

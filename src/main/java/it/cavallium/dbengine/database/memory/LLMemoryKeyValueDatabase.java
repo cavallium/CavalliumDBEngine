@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.memory;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;

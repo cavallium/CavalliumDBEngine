@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
@@ -23,16 +23,16 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		JMXNettyMonitoringManager.initialize();
 	}
 
-	private final ByteBufAllocator allocator;
+	private final BufferAllocator allocator;
 	private final Path basePath;
 
-	public LLLocalDatabaseConnection(ByteBufAllocator allocator, Path basePath) {
+	public LLLocalDatabaseConnection(BufferAllocator allocator, Path basePath) {
 		this.allocator = allocator;
 		this.basePath = basePath;
 	}
 
 	@Override
-	public ByteBufAllocator getAllocator() {
+	public BufferAllocator getAllocator() {
 		return allocator;
 	}
 

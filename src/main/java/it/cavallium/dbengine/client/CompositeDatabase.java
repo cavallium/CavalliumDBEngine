@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.BufferAllocator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -18,7 +18,7 @@ public interface CompositeDatabase {
 	 */
 	Mono<Void> releaseSnapshot(CompositeSnapshot snapshot);
 
-	ByteBufAllocator getAllocator();
+	BufferAllocator getAllocator();
 
 	/**
 	 * Find corrupted items

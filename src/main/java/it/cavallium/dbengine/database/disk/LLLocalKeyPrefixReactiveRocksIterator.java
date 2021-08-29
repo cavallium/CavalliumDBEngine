@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.BufferUtil;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.Arrays;
@@ -17,7 +18,7 @@ import static io.netty.buffer.Unpooled.*;
 public class LLLocalKeyPrefixReactiveRocksIterator {
 
 	private final RocksDB db;
-	private final ByteBufAllocator alloc;
+	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 	private final int prefixLength;
 	private final LLRange range;
@@ -26,9 +27,9 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	private final boolean canFillCache;
 	private final String debugName;
 
-	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
+	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db, BufferAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
-			LLRange range,
+			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean canFillCache,
@@ -45,7 +46,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	}
 
 
-	public Flux<ByteBuf> flux() {
+	public Flux<Send<Buffer>> flux() {
 		return Flux
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
@@ -59,10 +60,10 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 					try {
 						var rocksIterator = tuple.getT1();
 						rocksIterator.status();
-						ByteBuf firstGroupKey = null;
+						Buffer firstGroupKey = null;
 						try {
 							while (rocksIterator.isValid()) {
-								ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+								Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 								try {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.retain();

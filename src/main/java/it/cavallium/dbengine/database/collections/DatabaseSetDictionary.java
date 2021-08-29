@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -15,13 +15,13 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> {
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
-			ByteBuf prefixKey,
-			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer) {
+			Buffer prefixKey,
+			SerializerFixedBinaryLength<T, Buffer> keySuffixSerializer) {
 		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.NOTHING_SERIALIZER);
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, ByteBuf> keySerializer) {
+			SerializerFixedBinaryLength<T, Buffer> keySerializer) {
 		var buf = dictionary.getAllocator().buffer(0);
 		try {
 			return new DatabaseSetDictionary<>(dictionary, buf, keySerializer);
@@ -31,8 +31,8 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
-			ByteBuf prefixKey,
-			SerializerFixedBinaryLength<T, ByteBuf> keySuffixSerializer) {
+			Buffer prefixKey,
+			SerializerFixedBinaryLength<T, Buffer> keySuffixSerializer) {
 		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer);
 	}
 

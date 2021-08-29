@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
+import io.netty.buffer.api.internal.ResourceSupport;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -23,18 +25,16 @@ import reactor.core.publisher.SynchronousSink;
 public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	private final LLDictionary dictionary;
-	private final ByteBuf key;
-	private final Mono<ByteBuf> keyMono;
-	private final Serializer<U, ByteBuf> serializer;
+	private final Buffer key;
+	private final Mono<Send<Buffer>> keyMono;
+	private final Serializer<U, Send<Buffer>> serializer;
 
-	public DatabaseSingle(LLDictionary dictionary, ByteBuf key, Serializer<U, ByteBuf> serializer) {
-		try {
+	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U, Send<Buffer>> serializer) {
+		try (key) {
 			this.dictionary = dictionary;
-			this.key = key.retain();
+			this.key = key.receive();
 			this.keyMono = LLUtils.lazyRetain(this.key);
 			this.serializer = serializer;
-		} finally {
-			key.release();
 		}
 	}
 
@@ -46,7 +46,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 		}
 	}
 
-	private void deserializeValue(ByteBuf value, SynchronousSink<U> sink) {
+	private void deserializeValue(Send<Buffer> value, SynchronousSink<U> sink) {
 		try {
 			sink.next(serializer.deserialize(value));
 		} catch (SerializationException ex) {
@@ -63,13 +63,9 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
-		return Mono
-				.using(() -> serializer.serialize(value),
-						valueByteBuf -> dictionary
-								.put(keyMono, LLUtils.lazyRetain(valueByteBuf), LLDictionaryResultType.PREVIOUS_VALUE)
-								.handle(this::deserializeValue),
-						ReferenceCounted::release
-				);
+		return dictionary
+				.put(keyMono, Mono.fromCallable(() -> serializer.serialize(value)), LLDictionaryResultType.PREVIOUS_VALUE)
+				.handle(this::deserializeValue);
 	}
 
 	@Override
@@ -99,7 +95,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 					} else {
 						return serializer.serialize(result);
 					}
-				}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, serializer::deserialize));
+				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono, serializer::deserialize));
 	}
 
 	@Override
@@ -112,23 +108,23 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::single))
+				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::single).map(ResourceSupport::send))
 				.map(empty -> empty ? 0L : 1L);
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::single));
+				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::single).map(ResourceSupport::send));
 	}
 
 	@Override
 	public void release() {
-		key.release();
+		key.close();
 	}
 
 	@Override
 	public Flux<BadBlock> badBlocks() {
-		return dictionary.badBlocks(keyMono.map(LLRange::single));
+		return dictionary.badBlocks(keyMono.map(LLRange::single).map(ResourceSupport::send));
 	}
 }

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -65,7 +65,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 
-	private final ByteBufAllocator allocator;
+	private final BufferAllocator allocator;
 	private final Scheduler dbScheduler;
 
 	// Configurations
@@ -81,7 +81,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
-	public LLLocalKeyValueDatabase(ByteBufAllocator allocator,
+	public LLLocalKeyValueDatabase(BufferAllocator allocator,
 			String name,
 			@Nullable Path path,
 			List<Column> columns,
@@ -497,7 +497,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public ByteBufAllocator getAllocator() {
+	public BufferAllocator getAllocator() {
 		return allocator;
 	}
 

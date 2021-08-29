@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -16,15 +16,15 @@ import reactor.core.publisher.Mono;
 public class SubStageGetterHashMap<T, U, TH> implements
 		SubStageGetter<Map<T, U>, DatabaseMapDictionaryHashed<T, U, TH>> {
 
-	private final Serializer<T, ByteBuf> keySerializer;
-	private final Serializer<U, ByteBuf> valueSerializer;
+	private final Serializer<T, Buffer> keySerializer;
+	private final Serializer<U, Buffer> valueSerializer;
 	private final Function<T, TH> keyHashFunction;
-	private final SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer;
+	private final SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer;
 
-	public SubStageGetterHashMap(Serializer<T, ByteBuf> keySerializer,
-			Serializer<U, ByteBuf> valueSerializer,
+	public SubStageGetterHashMap(Serializer<T, Buffer> keySerializer,
+			Serializer<U, Buffer> valueSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 		this.keyHashFunction = keyHashFunction;
@@ -34,7 +34,7 @@ public class SubStageGetterHashMap<T, U, TH> implements
 	@Override
 	public Mono<DatabaseMapDictionaryHashed<T, U, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<ByteBuf> prefixKeyMono) {
+			Mono<Buffer> prefixKeyMono) {
 		return Mono.usingWhen(
 				prefixKeyMono,
 				prefixKey -> Mono

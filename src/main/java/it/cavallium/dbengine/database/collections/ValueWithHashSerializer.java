@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -9,43 +10,35 @@ import java.util.Map;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.NotNull;
 
-class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>, ByteBuf> {
+class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>, Send<Buffer>> {
 
-	private final ByteBufAllocator allocator;
-	private final Serializer<X, ByteBuf> keySuffixSerializer;
-	private final Serializer<Y, ByteBuf> valueSerializer;
+	private final BufferAllocator allocator;
+	private final Serializer<X, Send<Buffer>> keySuffixSerializer;
+	private final Serializer<Y, Send<Buffer>> valueSerializer;
 
-	ValueWithHashSerializer(ByteBufAllocator allocator,
-			Serializer<X, ByteBuf> keySuffixSerializer,
-			Serializer<Y, ByteBuf> valueSerializer) {
+	ValueWithHashSerializer(BufferAllocator allocator,
+			Serializer<X, Send<Buffer>> keySuffixSerializer,
+			Serializer<Y, Send<Buffer>> valueSerializer) {
 		this.allocator = allocator;
 		this.keySuffixSerializer = keySuffixSerializer;
 		this.valueSerializer = valueSerializer;
 	}
 
 	@Override
-	public @NotNull Entry<X, Y> deserialize(@NotNull ByteBuf serialized) throws SerializationException {
-		try {
-			X deserializedKey = keySuffixSerializer.deserialize(serialized.retain());
-			Y deserializedValue = valueSerializer.deserialize(serialized.retain());
+	public @NotNull Entry<X, Y> deserialize(@NotNull Send<Buffer> serializedToReceive) throws SerializationException {
+		try (var serialized = serializedToReceive.receive()) {
+			X deserializedKey = keySuffixSerializer.deserialize(serialized.copy().send());
+			Y deserializedValue = valueSerializer.deserialize(serialized.send());
 			return Map.entry(deserializedKey, deserializedValue);
-		} finally {
-			serialized.release();
 		}
 	}
 
 	@Override
-	public @NotNull ByteBuf serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
-		ByteBuf keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
-		try {
-			ByteBuf value = valueSerializer.serialize(deserialized.getValue());
-			try {
-				return LLUtils.compositeBuffer(allocator, keySuffix.retain(), value.retain());
-			} finally {
-				value.release();
+	public @NotNull Send<Buffer> serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
+		try (Buffer keySuffix = keySuffixSerializer.serialize(deserialized.getKey()).receive()) {
+			try (Buffer value = valueSerializer.serialize(deserialized.getValue()).receive()) {
+				return LLUtils.compositeBuffer(allocator, keySuffix.send(), value.send());
 			}
-		} finally {
-			keySuffix.release();
 		}
 	}
 }

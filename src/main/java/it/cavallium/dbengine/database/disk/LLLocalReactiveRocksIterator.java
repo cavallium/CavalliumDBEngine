@@ -2,8 +2,9 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
 import io.netty.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
@@ -27,7 +28,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 
 	private final AtomicBoolean released = new AtomicBoolean(false);
 	private final RocksDB db;
-	private final ByteBufAllocator alloc;
+	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 	private final LLRange range;
 	private final boolean allowNettyDirect;
@@ -36,9 +37,9 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	private final String debugName;
 
 	public LLLocalReactiveRocksIterator(RocksDB db,
-			ByteBufAllocator alloc,
+			BufferAllocator alloc,
 			ColumnFamilyHandle cfh,
-			LLRange range,
+			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean readValues,
@@ -46,7 +47,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 		this.db = db;
 		this.alloc = alloc;
 		this.cfh = cfh;
-		this.range = range;
+		this.range = range.receive();
 		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
@@ -55,59 +56,53 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 
 	public Flux<T> flux() {
 		return Flux
-				.<T, @NotNull Tuple3<RocksIterator, ReleasableSlice, ReleasableSlice>>generate(() -> {
+				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					if (!range.hasMin() || !range.hasMax()) {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(false);
 					}
-					return getRocksIterator(allowNettyDirect, readOptions, range.retain(), db, cfh);
+					return getRocksIterator(allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
-					range.retain();
 					try {
 						var rocksIterator = tuple.getT1();
 						rocksIterator.status();
 						if (rocksIterator.isValid()) {
-							ByteBuf key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-							try {
-								ByteBuf value;
+							try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+								Buffer value;
 								if (readValues) {
 									value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 								} else {
-									value = alloc.buffer(0);
+									value = alloc.allocate(0);
 								}
 								try {
 									rocksIterator.next();
 									rocksIterator.status();
-									sink.next(getEntry(key.retain(), value.retain()));
+									sink.next(getEntry(key.send(), value.send()));
 								} finally {
-									value.release();
+									value.close();
 								}
-							} finally {
-								key.release();
 							}
 						} else {
 							sink.complete();
 						}
 					} catch (RocksDBException ex) {
 						sink.error(ex);
-					} finally {
-						range.release();
 					}
 					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
-					tuple.getT2().release();
-					tuple.getT3().release();
+					tuple.getT2().close();
+					tuple.getT3().close();
 				});
 	}
 
-	public abstract T getEntry(ByteBuf key, ByteBuf value);
+	public abstract T getEntry(Send<Buffer> key, Send<Buffer> value);
 
 	public void release() {
 		if (released.compareAndSet(false, true)) {
-			range.release();
+			range.close();
 		} else {
 			throw new IllegalReferenceCountException(0, -1);
 		}

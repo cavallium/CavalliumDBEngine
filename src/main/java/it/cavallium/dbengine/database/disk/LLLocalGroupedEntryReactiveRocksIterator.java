@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import java.util.Map;
@@ -11,11 +12,11 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 
 public class LLLocalGroupedEntryReactiveRocksIterator extends
-		LLLocalGroupedReactiveRocksIterator<LLEntry> {
+		LLLocalGroupedReactiveRocksIterator<Send<LLEntry>> {
 
-	public LLLocalGroupedEntryReactiveRocksIterator(RocksDB db, ByteBufAllocator alloc, ColumnFamilyHandle cfh,
+	public LLLocalGroupedEntryReactiveRocksIterator(RocksDB db, BufferAllocator alloc, ColumnFamilyHandle cfh,
 			int prefixLength,
-			LLRange range,
+			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
@@ -23,7 +24,7 @@ public class LLLocalGroupedEntryReactiveRocksIterator extends
 	}
 
 	@Override
-	public LLEntry getEntry(ByteBuf key, ByteBuf value) {
-		return new LLEntry(key, value);
+	public Send<LLEntry> getEntry(Send<Buffer> key, Send<Buffer> value) {
+		return LLEntry.of(key, value).send();
 	}
 }

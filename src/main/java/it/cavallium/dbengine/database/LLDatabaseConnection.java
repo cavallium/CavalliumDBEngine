@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import io.netty.buffer.ByteBufAllocator;
+import io.netty.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -11,7 +11,7 @@ import reactor.core.publisher.Mono;
 @SuppressWarnings("UnusedReturnValue")
 public interface LLDatabaseConnection {
 
-	ByteBufAllocator getAllocator();
+	BufferAllocator getAllocator();
 
 	Mono<? extends LLDatabaseConnection> connect();
 

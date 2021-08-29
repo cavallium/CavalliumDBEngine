@@ -13,7 +13,6 @@ import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.HitQueue;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
-import org.apache.lucene.search.MultiCollectorManager.Collectors;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreDoc;

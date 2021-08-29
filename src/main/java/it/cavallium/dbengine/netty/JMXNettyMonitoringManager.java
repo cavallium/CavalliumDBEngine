@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty.buffer.ByteBufAllocatorMetric;
+import io.netty.buffer.api.BufferAllocatorMetric;
 import io.netty.buffer.PoolArenaMetric;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.PooledByteBufAllocatorMetric;

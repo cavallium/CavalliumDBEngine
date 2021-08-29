@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -17,10 +17,10 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHashed<T, Nothing, TH> {
 
 	protected DatabaseSetDictionaryHashed(LLDictionary dictionary,
-			ByteBuf prefixKey,
-			Serializer<T, ByteBuf> keySuffixSerializer,
+			Buffer prefixKey,
+			Serializer<T, Buffer> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, ByteBuf> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH, Buffer> keySuffixHashSerializer) {
 		super(dictionary,
 				prefixKey,
 				keySuffixSerializer,
@@ -31,9 +31,9 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
-			Serializer<T, ByteBuf> keySerializer,
+			Serializer<T, Buffer> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				dictionary.getAllocator().buffer(0),
 				keySerializer,
@@ -43,10 +43,10 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
-			ByteBuf prefixKey,
-			Serializer<T, ByteBuf> keySuffixSerializer,
+			Buffer prefixKey,
+			Serializer<T, Buffer> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, ByteBuf> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

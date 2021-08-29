@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -15,11 +15,11 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		SubStageGetter<Map<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
 
 	private final SubStageGetter<U, US> subStageGetter;
-	private final SerializerFixedBinaryLength<T, ByteBuf> keySerializer;
+	private final SerializerFixedBinaryLength<T, Buffer> keySerializer;
 	private final int keyExtLength;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, ByteBuf> keySerializer,
+			SerializerFixedBinaryLength<T, Buffer> keySerializer,
 			int keyExtLength) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;
@@ -41,7 +41,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	@Override
 	public Mono<DatabaseMapDictionaryDeep<T, U, US>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<ByteBuf> prefixKeyMono) {
+			Mono<Buffer> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseMapDictionaryDeep
@@ -61,16 +61,16 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		return true;
 	}
 
-	private Mono<Void> checkKeyFluxConsistency(ByteBuf prefixKey, List<ByteBuf> keys) {
+	private Mono<Void> checkKeyFluxConsistency(Buffer prefixKey, List<Buffer> keys) {
 		return Mono
 				.fromCallable(() -> {
 					try {
-						for (ByteBuf key : keys) {
+						for (Buffer key : keys) {
 							assert key.readableBytes() == prefixKey.readableBytes() + getKeyBinaryLength();
 						}
 					} finally {
 						prefixKey.release();
-						for (ByteBuf key : keys) {
+						for (Buffer key : keys) {
 							key.release();
 						}
 					}

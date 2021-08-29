@@ -1,17 +1,20 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Resource;
+import it.cavallium.dbengine.database.SafeCloseable;
 import org.rocksdb.AbstractSlice;
 
-public interface ReleasableSlice {
+public interface ReleasableSlice extends SafeCloseable {
 
-	default void release() {
+	@Override
+	default void close() {
 
 	}
 
 	AbstractSlice<?> slice();
 
-	ByteBuf byteBuf();
+	Buffer byteBuf();
 
 	Object additionalData();
 }

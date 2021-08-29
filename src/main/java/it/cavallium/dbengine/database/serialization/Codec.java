@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty.buffer.ByteBufInputStream;
-import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.api.BufferInputStream;
+import io.netty.buffer.api.BufferOutputStream;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 

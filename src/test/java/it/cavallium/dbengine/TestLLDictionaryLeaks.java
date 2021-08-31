@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -75,7 +77,7 @@ public class TestLLDictionaryLeaks {
 	}
 
 	private LLDictionary getDict(UpdateMode updateMode) {
-		var dict = DbTestUtils.tempDictionary(db, updateMode).block();
+		var dict = DbTestUtils.tempDictionary(db, updateMode).blockOptional().orElseThrow();
 		var key1 = Mono.fromCallable(() -> fromString("test-key-1"));
 		var key2 = Mono.fromCallable(() -> fromString("test-key-2"));
 		var key3 = Mono.fromCallable(() -> fromString("test-key-3"));
@@ -88,11 +90,12 @@ public class TestLLDictionaryLeaks {
 		return dict;
 	}
 
-	private ByteBuf fromString(String s) {
+	private Send<Buffer> fromString(String s) {
 		var sb = s.getBytes(StandardCharsets.UTF_8);
-		var b = db.getAllocator().buffer(sb.length);
-		b.writeBytes(b);
-		return b;
+		try (var b = db.getAllocator().allocate(sb.length)) {
+			b.writeBytes(b);
+			return b.send();
+		}
 	}
 
 	private void run(Flux<?> publisher) {
@@ -129,6 +132,14 @@ public class TestLLDictionaryLeaks {
 
 	@Test
 	public void testNoOp() {
+	}
+
+	@Test
+	public void testNoOpAllocation() {
+		for (int i = 0; i < 10; i++) {
+			var a = allocator.allocator().allocate(i * 512);
+			a.send().receive().close();
+		}
 	}
 
 	@ParameterizedTest

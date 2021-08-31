@@ -402,7 +402,8 @@ public class LLLocalDictionary implements LLDictionary {
 			@Nullable WriteOptions writeOptions,
 			Send<Buffer> keyToReceive,
 			Send<Buffer> valueToReceive) throws RocksDBException {
-		try (WriteOptions validWriteOptions = Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS)) {
+		WriteOptions validWriteOptions = Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS);
+		try {
 			try (var key = keyToReceive.receive()) {
 				try (var value = valueToReceive.receive()) {
 					if (databaseOptions.allowNettyDirect()) {
@@ -423,6 +424,10 @@ public class LLLocalDictionary implements LLDictionary {
 						db.put(cfh, validWriteOptions, LLUtils.toArray(key), LLUtils.toArray(value));
 					}
 				}
+			}
+		} finally {
+			if (writeOptions != null && !(writeOptions instanceof UnreleasableWriteOptions)) {
+				writeOptions.close();
 			}
 		}
 	}
@@ -523,13 +528,18 @@ public class LLLocalDictionary implements LLDictionary {
 							int size = RocksDB.NOT_FOUND;
 							byte[] keyBytes = LLUtils.toArray(key);
 							Holder<byte[]> data = new Holder<>();
-							try (var unmodifiableReadOpts = resolveSnapshot(snapshot)) {
+							var unmodifiableReadOpts = resolveSnapshot(snapshot);
+							try {
 								if (db.keyMayExist(cfh, unmodifiableReadOpts, keyBytes, data)) {
 									if (data.getValue() != null) {
 										size = data.getValue().length;
 									} else {
 										size = db.get(cfh, unmodifiableReadOpts, keyBytes, NO_DATA);
 									}
+								}
+							} finally {
+								if (unmodifiableReadOpts != null && !(unmodifiableReadOpts instanceof UnreleasableReadOptions)) {
+									unmodifiableReadOpts.close();
 								}
 							}
 							return size != RocksDB.NOT_FOUND;
@@ -912,55 +922,51 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType) {
-		return Mono
-				.usingWhen(keyMono,
-						keySend -> {
-					try (var key = keySend.receive()) {
-						return switch (resultType) {
-							case PREVIOUS_VALUE_EXISTENCE -> this
-									.containsKey(null, keyMono)
-									.single()
-									.map((Boolean bool) -> LLUtils.booleanToResponseByteBuffer(alloc, bool).send());
-							case PREVIOUS_VALUE -> Mono
-									.fromCallable(() -> {
-										StampedLock lock;
-										long stamp;
-										if (updateMode == UpdateMode.ALLOW) {
-											lock = itemsLock.getAt(getLockIndex(key));
+		return switch (resultType) {
+			case PREVIOUS_VALUE_EXISTENCE -> this
+					.containsKey(null, keyMono)
+					.single()
+					.map((Boolean bool) -> LLUtils.booleanToResponseByteBuffer(alloc, bool));
+			case PREVIOUS_VALUE -> Mono.usingWhen(
+					keyMono,
+					keySend -> this
+							.runOnDb(() -> {
+								try (var key = keySend.receive()) {
+									StampedLock lock;
+									long stamp;
+									if (updateMode == UpdateMode.ALLOW) {
+										lock = itemsLock.getAt(getLockIndex(key));
 
-											stamp = lock.readLock();
-										} else {
-											lock = null;
-											stamp = 0;
+										stamp = lock.readLock();
+									} else {
+										lock = null;
+										stamp = 0;
+									}
+									try {
+										if (logger.isTraceEnabled()) {
+											logger.trace("Reading {}", LLUtils.toArray(key));
 										}
-										try {
-											if (logger.isTraceEnabled()) {
-												logger.trace("Reading {}", LLUtils.toArray(key));
-											}
-											var data = new Holder<byte[]>();
-											if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
-												if (data.getValue() != null) {
-													return LLUtils.fromByteArray(alloc, data.getValue()).send();
-												} else {
-													return dbGet(cfh, null, key.send(), true);
-												}
+										var data = new Holder<byte[]>();
+										if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
+											if (data.getValue() != null) {
+												return LLUtils.fromByteArray(alloc, data.getValue()).send();
 											} else {
-												return null;
+												return dbGet(cfh, null, key.send(), true);
 											}
-										} finally {
-											if (updateMode == UpdateMode.ALLOW) {
-												lock.unlockRead(stamp);
-											}
+										} else {
+											return null;
 										}
-									})
-									.onErrorMap(cause -> new IOException("Failed to read " + LLUtils.toStringSafe(key), cause))
-									.subscribeOn(dbScheduler);
-							case VOID -> Mono.empty();
-						};
-					}
-						},
-						keySend -> Mono.fromRunnable(keySend::close)
-				);
+									} finally {
+										if (updateMode == UpdateMode.ALLOW) {
+											lock.unlockRead(stamp);
+										}
+									}
+								}
+							})
+							.onErrorMap(cause -> new IOException("Failed to read ", cause)),
+					keySend -> Mono.fromRunnable(keySend::close));
+			case VOID -> Mono.empty();
+		};
 	}
 
 	@Override

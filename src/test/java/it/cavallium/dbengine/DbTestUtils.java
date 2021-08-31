@@ -4,10 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.ByteBufUtil;
 import io.netty.buffer.PoolArenaMetric;
 import io.netty.buffer.PooledByteBufAllocator;
 import io.netty.buffer.UnpooledByteBufAllocator;
+import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.MemoryManager;
+import io.netty.buffer.api.Send;
+import io.netty.buffer.api.pool.BufferAllocatorMetric;
+import io.netty.buffer.api.pool.PooledBufferAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -41,55 +45,26 @@ import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
-	public static record TestAllocator(ByteBufAllocator allocator) {}
+	public static record TestAllocator(PooledBufferAllocator allocator) {}
 
 	public static TestAllocator newAllocator() {
-		return new TestAllocator(new PooledByteBufAllocator(false, 1, 0, 4096, 11, 0, 0, true));
+		return new TestAllocator(new PooledBufferAllocator(MemoryManager.instance(), true, 1, 8192, 9, 0, 0, false));
 	}
 
 	public static void destroyAllocator(TestAllocator testAllocator) {
+		testAllocator.allocator().close();
 	}
 
 	public static final AtomicInteger dbId = new AtomicInteger(0);
 
 	@SuppressWarnings("SameParameterValue")
-	private static int getActiveBuffers(ByteBufAllocator allocator, boolean printStats) {
-		int directActive = 0, directAlloc = 0, directDealloc = 0;
-		if (allocator instanceof PooledByteBufAllocator alloc) {
-			for (PoolArenaMetric arena : alloc.directArenas()) {
-				directActive += arena.numActiveAllocations();
-				directAlloc += arena.numAllocations();
-				directDealloc += arena.numDeallocations();
-			}
-		} else if (allocator instanceof UnpooledByteBufAllocator alloc) {
-			directActive += alloc.metric().usedDirectMemory();
-		} else {
-			throw new UnsupportedOperationException();
-		}
+	private static long getUsedMemory(PooledBufferAllocator allocator, boolean printStats) {
+		allocator.trimCurrentThreadCache();
+		var usedMemory = ((BufferAllocatorMetric) allocator.metric()).usedMemory();
 		if (printStats) {
-			System.out.println("directActive " + directActive + " directAlloc " + directAlloc + " directDealloc " + directDealloc);
+			System.out.println("usedMemory=" + usedMemory);
 		}
-		return directActive;
-	}
-
-	@SuppressWarnings("SameParameterValue")
-	private static int getActiveHeapBuffers(ByteBufAllocator allocator, boolean printStats) {
-		int heapActive = 0, heapAlloc = 0, heapDealloc = 0;
-		if (allocator instanceof PooledByteBufAllocator alloc) {
-			for (PoolArenaMetric arena : alloc.heapArenas()) {
-				heapActive += arena.numActiveAllocations();
-				heapAlloc += arena.numAllocations();
-				heapDealloc += arena.numDeallocations();
-			}
-		} else if (allocator instanceof UnpooledByteBufAllocator alloc) {
-			heapActive += alloc.metric().usedHeapMemory();
-		} else {
-			throw new UnsupportedOperationException();
-		}
-		if (printStats) {
-			System.out.println("heapActive " + heapActive + " heapAlloc " + heapAlloc + " heapDealloc " + heapDealloc);
-		}
-		return heapActive;
+		return usedMemory;
 	}
 
 	public static <U> Flux<U> tempDb(TestAllocator alloc, Function<LLKeyValueDatabase, Publisher<U>> action) {
@@ -134,10 +109,6 @@ public class DbTestUtils {
 	public static Mono<Void> closeTempDb(TempDb tempDb) {
 		return tempDb.db().close().then(tempDb.connection().disconnect()).then(Mono.fromCallable(() -> {
 			ensureNoLeaks(tempDb.allocator().allocator(), false);
-			if (tempDb.allocator().allocator() instanceof PooledByteBufAllocator pooledByteBufAllocator) {
-				pooledByteBufAllocator.trimCurrentThreadCache();
-				pooledByteBufAllocator.freeThreadLocalCache();
-			}
 			if (Files.exists(tempDb.path())) {
 				Files.walk(tempDb.path()).sorted(Comparator.reverseOrder()).forEach(file -> {
 					try {
@@ -151,10 +122,9 @@ public class DbTestUtils {
 		}).subscribeOn(Schedulers.boundedElastic())).then();
 	}
 
-	public static void ensureNoLeaks(ByteBufAllocator allocator, boolean printStats) {
+	public static void ensureNoLeaks(PooledBufferAllocator allocator, boolean printStats) {
 		if (allocator != null) {
-			assertEquals(0, getActiveBuffers(allocator, printStats));
-			assertEquals(0, getActiveHeapBuffers(allocator, printStats));
+			assertEquals(0L, getUsedMemory(allocator, printStats));
 		}
 	}
 
@@ -195,26 +165,21 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull Short deserialize(@NotNull ByteBuf serialized) {
-							try {
-								var prevReaderIdx = serialized.readerIndex();
+						public @NotNull Short deserialize(@NotNull Send<Buffer> serializedToReceive) {
+							try (var serialized = serializedToReceive.receive()) {
+								var prevReaderIdx = serialized.readerOffset();
 								var val = serialized.readShort();
-								serialized.readerIndex(prevReaderIdx + Short.BYTES);
+								serialized.readerOffset(prevReaderIdx + Short.BYTES);
 								return val;
-							} finally {
-								serialized.release();
 							}
 						}
 
 						@Override
-						public @NotNull ByteBuf serialize(@NotNull Short deserialized) {
-							var out = dictionary.getAllocator().directBuffer(Short.BYTES);
-							try {
+						public @NotNull Send<Buffer> serialize(@NotNull Short deserialized) {
+							try (var out = dictionary.getAllocator().allocate(Short.BYTES)) {
 								out.writeShort(deserialized);
-								out.writerIndex(Short.BYTES);
-								return out.retain();
-							} finally {
-								out.release();
+								out.writerOffset(Short.BYTES);
+								return out.send();
 							}
 						}
 					}

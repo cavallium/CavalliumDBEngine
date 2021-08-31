@@ -82,8 +82,8 @@ public class LLUtils {
 		return bool ? RESPONSE_TRUE : RESPONSE_FALSE;
 	}
 
-	public static Buffer booleanToResponseByteBuffer(BufferAllocator alloc, boolean bool) {
-		return alloc.allocate(1).writeByte(bool ? (byte) 1 : 0);
+	public static Send<Buffer> booleanToResponseByteBuffer(BufferAllocator alloc, boolean bool) {
+		return alloc.allocate(1).writeByte(bool ? (byte) 1 : 0).send();
 	}
 
 	@Nullable
@@ -349,18 +349,6 @@ public class LLUtils {
 		return result;
 	}
 
-	/*
-	public static Buffer toDirectCopy(Buffer buffer) {
-		try {
-			Buffer directCopyBuf = buffer.alloc().buffer(buffer.capacity(), buffer.maxCapacity());
-			directCopyBuf.writeBytes(buffer, 0, buffer.writerIndex());
-			return directCopyBuf;
-		} finally {
-			buffer.release();
-		}
-	}
-	 */
-
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {
 		Buffer result = alloc.allocate(array.length);
 		result.writeBytes(array);
@@ -378,7 +366,6 @@ public class LLUtils {
 
 	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
 		try (var composite = buffer.receive().compact()) {
-			assert composite.countReadableComponents() == 1 || composite.countReadableComponents() == 0;
 			return composite.send();
 		}
 	}
@@ -387,7 +374,6 @@ public class LLUtils {
 		try (buffer1) {
 			try (buffer2) {
 				try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2).compact()) {
-					assert composite.countReadableComponents() == 1 || composite.countReadableComponents() == 0;
 					return composite.send();
 				}
 			}
@@ -399,7 +385,6 @@ public class LLUtils {
 			try (buffer2) {
 				try (buffer3) {
 					try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2, buffer3).compact()) {
-						assert composite.countReadableComponents() == 1 || composite.countReadableComponents() == 0;
 						return composite.send();
 					}
 				}
@@ -407,6 +392,7 @@ public class LLUtils {
 		}
 	}
 
+	@SafeVarargs
 	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer>... buffers) {
 		try {
 			return switch (buffers.length) {
@@ -416,7 +402,6 @@ public class LLUtils {
 				case 3 -> compositeBuffer(alloc, buffers[0], buffers[1], buffers[2]);
 				default -> {
 					try (var composite = CompositeBuffer.compose(alloc, buffers).compact()) {
-						assert composite.countReadableComponents() == 1 || composite.countReadableComponents() == 0;
 						yield composite.send();
 					}
 				}
@@ -738,7 +723,10 @@ public class LLUtils {
 	}
 
 	public static boolean isDirect(Buffer key) {
-		if (key.countReadableComponents() == 1) {
+		var readableComponents = key.countReadableComponents();
+		if (readableComponents == 0) {
+			return true;
+		} else if (readableComponents == 1) {
 			return key.forEachReadable(0, (index, component) -> component.readableBuffer().isDirect()) >= 0;
 		} else {
 			return false;

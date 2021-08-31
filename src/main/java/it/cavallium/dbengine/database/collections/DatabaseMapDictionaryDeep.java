@@ -44,7 +44,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	private static Send<Buffer> incrementPrefix(BufferAllocator alloc, Send<Buffer> originalKeySend, int prefixLength) {
 		try (var originalKey = originalKeySend.receive()) {
 			assert originalKey.readableBytes() >= prefixLength;
-			try (Buffer copiedBuf = alloc.allocate(originalKey.writerOffset())) {
+			var originalKeyStartOffset = originalKey.readerOffset();
+			var originalKeyLength = originalKey.readableBytes();
+			try (Buffer copiedBuf = alloc.allocate(originalKey.readableBytes())) {
 				boolean overflowed = true;
 				final int ff = 0xFF;
 				int writtenBytes = 0;
@@ -67,17 +69,19 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 					originalKey.copyInto(0, copiedBuf, 0, (prefixLength - writtenBytes));
 				}
 
-				copiedBuf.writerOffset(copiedBuf.capacity());
+				copiedBuf.writerOffset(originalKeyLength);
 
-				if (originalKey.writerOffset() - prefixLength > 0) {
-					originalKey.copyInto(prefixLength, copiedBuf, prefixLength, originalKey.writerOffset() - prefixLength);
+				if (originalKeyLength - prefixLength > 0) {
+					originalKey.copyInto(prefixLength, copiedBuf, prefixLength, originalKeyLength - prefixLength);
 				}
 
 				if (overflowed) {
-					for (int i = 0; i < copiedBuf.writerOffset(); i++) {
+					copiedBuf.ensureWritable(originalKeyLength + 1);
+					copiedBuf.writerOffset(originalKeyLength + 1);
+					for (int i = 0; i < originalKeyLength; i++) {
 						copiedBuf.setUnsignedByte(i, 0xFF);
 					}
-					copiedBuf.writeByte((byte) 0x00);
+					copiedBuf.setUnsignedByte(originalKeyLength, (byte) 0x00);
 				}
 				return copiedBuf.send();
 			}
@@ -118,8 +122,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				for (int i = 0; i < suffixLength + extLength; i++) {
 					zeroSuffixAndExt.writeByte((byte) 0x0);
 				}
-				try (Send<Buffer> result = LLUtils.compositeBuffer(alloc, prefixKey.send(), zeroSuffixAndExt.send())) {
-					return result;
+				try (Buffer result = LLUtils.compositeBuffer(alloc, prefixKey.send(), zeroSuffixAndExt.send()).receive()) {
+					return result.send();
 				}
 			}
 		}
@@ -214,36 +218,38 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
+			Send<Buffer> prefixKeyToReceive,
 			SerializerFixedBinaryLength<T, Send<Buffer>> keySuffixSerializer,
 			SubStageGetter<U, US> subStageGetter,
 			int keyExtLength) {
-		this.dictionary = dictionary;
-		this.alloc = dictionary.getAllocator();
-		this.subStageGetter = subStageGetter;
-		this.keySuffixSerializer = keySuffixSerializer;
-		this.keyPrefix = prefixKey.receive();
-		assert keyPrefix.isAccessible();
-		this.keyPrefixLength = keyPrefix.readableBytes();
-		this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
-		this.keyExtLength = keyExtLength;
-		try (Buffer firstKey = firstRangeKey(alloc,
-				keyPrefix.copy().send(),
-				keyPrefixLength,
-				keySuffixLength,
-				keyExtLength
-		).receive()) {
-			try (Buffer nextRangeKey = nextRangeKey(alloc,
-					keyPrefix.copy().send(),
+		try (var prefixKey = prefixKeyToReceive.receive()) {
+			this.dictionary = dictionary;
+			this.alloc = dictionary.getAllocator();
+			this.subStageGetter = subStageGetter;
+			this.keySuffixSerializer = keySuffixSerializer;
+			this.keyPrefix = prefixKey.copy();
+			assert keyPrefix.isAccessible();
+			this.keyPrefixLength = keyPrefix.readableBytes();
+			this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
+			this.keyExtLength = keyExtLength;
+			try (Buffer firstKey = firstRangeKey(alloc,
+					prefixKey.copy().send(),
 					keyPrefixLength,
 					keySuffixLength,
 					keyExtLength
-			).receive()) {
-				assert keyPrefix.isAccessible();
-				assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
-				this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.send(), nextRangeKey.send());
-				this.rangeMono = LLUtils.lazyRetainRange(this.range);
-				assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
+			).receive().compact()) {
+				try (Buffer nextRangeKey = nextRangeKey(alloc,
+						prefixKey.copy().send(),
+						keyPrefixLength,
+						keySuffixLength,
+						keyExtLength
+				).receive().compact()) {
+					assert keyPrefix.isAccessible();
+					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
+					this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.send(), nextRangeKey.send());
+					this.rangeMono = LLUtils.lazyRetainRange(this.range);
+					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
+				}
 			}
 		}
 	}

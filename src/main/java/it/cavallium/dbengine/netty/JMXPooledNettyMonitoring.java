@@ -1,50 +1,98 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty.buffer.api.BufferAllocatorMetric;
-import io.netty.buffer.PooledByteBufAllocatorMetric;
+import io.netty.buffer.api.pool.BufferAllocatorMetric;
+import io.netty.buffer.api.pool.BufferAllocatorMetric;
+import io.netty.buffer.api.pool.PooledBufferAllocator;
+import java.lang.reflect.Field;
 
 public class JMXPooledNettyMonitoring extends JMXNettyMonitoring implements JMXNettyMonitoringMBean {
 
-	private final PooledByteBufAllocatorMetric metric;
+	private final PooledBufferAllocator alloc;
+	private final BufferAllocatorMetric metric;
+	private Field smallCacheSize;
+	private Field numThreadLocalCaches;
+	private Field normalCacheSize;
+	private Field chunkSize;
 
-	public JMXPooledNettyMonitoring(String name, PooledByteBufAllocatorMetric metric) {
-		super(name, metric);
-		this.metric = metric;
+	public JMXPooledNettyMonitoring(String name, PooledBufferAllocator alloc) {
+		super(name, alloc.isDirectBufferPooled(), alloc.metric());
+		this.alloc = alloc;
+		this.metric = alloc.metric();
+		try {
+			//noinspection JavaReflectionMemberAccess
+			numThreadLocalCaches = metric.getClass().getDeclaredField("numThreadLocalCaches");
+		} catch (NoSuchFieldException e) {
+			e.printStackTrace();
+		}
+		try {
+			//noinspection JavaReflectionMemberAccess
+			smallCacheSize = metric.getClass().getDeclaredField("smallCacheSize");
+		} catch (NoSuchFieldException e) {
+			e.printStackTrace();
+		}
+		try {
+			//noinspection JavaReflectionMemberAccess
+			normalCacheSize = metric.getClass().getDeclaredField("normalCacheSize");
+		} catch (NoSuchFieldException e) {
+			e.printStackTrace();
+		}
+		try {
+			//noinspection JavaReflectionMemberAccess
+			chunkSize = metric.getClass().getDeclaredField("chunkSize");
+		} catch (NoSuchFieldException e) {
+			e.printStackTrace();
+		}
 	}
 
 	@Override
 	public Integer getNumHeapArenas() {
-		return metric.numHeapArenas();
+		return direct ? 0 : alloc.numArenas();
 	}
 
 	@Override
 	public Integer getNumDirectArenas() {
-		return metric.numDirectArenas();
+		return direct ? alloc.numArenas() : 0;
 	}
 
 	@Override
 	public Integer getNumThreadLocalCachesArenas() {
-		return metric.numThreadLocalCaches();
+		try {
+			return numThreadLocalCaches.getInt(metric);
+		} catch (IllegalAccessException e) {
+			return 0;
+		}
 	}
 
 	@Deprecated
 	@Override
 	public Integer getTinyCacheSize() {
-		return metric.tinyCacheSize();
+		return 0;
 	}
 
 	@Override
 	public Integer getSmallCacheSize() {
-		return metric.smallCacheSize();
+		try {
+			return smallCacheSize.getInt(metric);
+		} catch (IllegalAccessException e) {
+			return 0;
+		}
 	}
 
 	@Override
 	public Integer getNormalCacheSize() {
-		return metric.normalCacheSize();
+		try {
+			return normalCacheSize.getInt(metric);
+		} catch (IllegalAccessException e) {
+			return 0;
+		}
 	}
 
 	@Override
 	public Integer getChunkSize() {
-		return metric.chunkSize();
+		try {
+			return chunkSize.getInt(metric);
+		} catch (IllegalAccessException e) {
+			return 0;
+		}
 	}
 }

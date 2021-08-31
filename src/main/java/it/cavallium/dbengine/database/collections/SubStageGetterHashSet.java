@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -16,13 +17,13 @@ import reactor.core.publisher.Mono;
 public class SubStageGetterHashSet<T, TH> implements
 		SubStageGetter<Map<T, Nothing>, DatabaseSetDictionaryHashed<T, TH>> {
 
-	private final Serializer<T, Buffer> keySerializer;
+	private final Serializer<T, Send<Buffer>> keySerializer;
 	private final Function<T, TH> keyHashFunction;
-	private final SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer;
+	private final SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer;
 
-	public SubStageGetterHashSet(Serializer<T, Buffer> keySerializer,
+	public SubStageGetterHashSet(Serializer<T, Send<Buffer>> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer) {
 		this.keySerializer = keySerializer;
 		this.keyHashFunction = keyHashFunction;
 		this.keyHashSerializer = keyHashSerializer;
@@ -31,18 +32,18 @@ public class SubStageGetterHashSet<T, TH> implements
 	@Override
 	public Mono<DatabaseSetDictionaryHashed<T, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Buffer> prefixKeyMono) {
+			Mono<Send<Buffer>> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseSetDictionaryHashed
 								.tail(dictionary,
-										prefixKey.retain(),
+										prefixKey,
 										keySerializer,
 										keyHashFunction,
 										keyHashSerializer
 								)
 						),
-				prefixKey -> Mono.fromRunnable(prefixKey::release)
+				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);
 	}
 

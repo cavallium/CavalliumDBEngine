@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import io.netty.buffer.ByteBuf;
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.BufferAllocator;
 import io.netty.buffer.api.CompositeBuffer;
@@ -70,8 +71,8 @@ public class LLUtils {
 		return response[0] == 1;
 	}
 
-	public static boolean responseToBoolean(Buffer response) {
-		try (response) {
+	public static boolean responseToBoolean(Send<Buffer> responseToReceive) {
+		try (var response = responseToReceive.receive()) {
 			assert response.readableBytes() == 1;
 			return response.getByte(response.readerOffset()) == 1;
 		}
@@ -226,6 +227,29 @@ public class LLUtils {
 		} else {
 			return false;
 		}
+	}
+
+
+	/**
+	 * Returns {@code true} if and only if the two specified buffers are
+	 * identical to each other for {@code length} bytes starting at {@code aStartIndex}
+	 * index for the {@code a} buffer and {@code bStartIndex} index for the {@code b} buffer.
+	 * A more compact way to express this is:
+	 * <p>
+	 * {@code a[aStartIndex : aStartIndex + length] == b[bStartIndex : bStartIndex + length]}
+	 */
+	public static boolean equals(Buffer a, int aStartIndex, Buffer b, int bStartIndex, int length) {
+		var aCur = a.openCursor(aStartIndex, length);
+		var bCur = b.openCursor(bStartIndex, length);
+		if (aCur.bytesLeft() != bCur.bytesLeft()) {
+			return false;
+		}
+		while (aCur.readByte() && bCur.readByte()) {
+			if (aCur.getByte() != bCur.getByte()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	public static byte[] toArray(Buffer key) {
@@ -731,9 +755,5 @@ public class LLUtils {
 
 	public static int utf8MaxBytes(String deserialized) {
 		return deserialized.length() * 3;
-	}
-
-	public static void writeString(Buffer buf, String deserialized, Charset charset) {
-		buf.writeBytes(deserialized.getBytes(charset));
 	}
 }

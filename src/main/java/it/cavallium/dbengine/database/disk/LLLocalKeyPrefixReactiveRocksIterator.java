@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.disk;
 
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.BufferUtil;
 import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
@@ -34,15 +33,17 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 			ReadOptions readOptions,
 			boolean canFillCache,
 			String debugName) {
-		this.db = db;
-		this.alloc = alloc;
-		this.cfh = cfh;
-		this.prefixLength = prefixLength;
-		this.range = range;
-		this.allowNettyDirect = allowNettyDirect;
-		this.readOptions = readOptions;
-		this.canFillCache = canFillCache;
-		this.debugName = debugName;
+		try (range) {
+			this.db = db;
+			this.alloc = alloc;
+			this.cfh = cfh;
+			this.prefixLength = prefixLength;
+			this.range = range.receive();
+			this.allowNettyDirect = allowNettyDirect;
+			this.readOptions = readOptions;
+			this.canFillCache = canFillCache;
+			this.debugName = debugName;
+		}
 	}
 
 
@@ -54,54 +55,48 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(canFillCache);
 					}
-					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.retain(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
-					range.retain();
 					try {
 						var rocksIterator = tuple.getT1();
 						rocksIterator.status();
 						Buffer firstGroupKey = null;
 						try {
 							while (rocksIterator.isValid()) {
-								Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-								try {
+								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
 									if (firstGroupKey == null) {
-										firstGroupKey = key.retain();
-									} else if (!ByteBufUtil.equals(firstGroupKey, firstGroupKey.readerIndex(), key, key.readerIndex(), prefixLength)) {
+										firstGroupKey = key.copy();
+									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(), key, key.readerOffset(), prefixLength)) {
 										break;
 									}
 									rocksIterator.next();
 									rocksIterator.status();
-								} finally {
-									key.release();
 								}
 							}
 							if (firstGroupKey != null) {
-								var groupKeyPrefix = firstGroupKey.slice(0, prefixLength);
-								sink.next(groupKeyPrefix.retain());
+								var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
+								sink.next(groupKeyPrefix.send());
 							} else {
 								sink.complete();
 							}
 						} finally {
 							if (firstGroupKey != null) {
-								firstGroupKey.release();
+								firstGroupKey.close();
 							}
 						}
 					} catch (RocksDBException ex) {
 						sink.error(ex);
-					} finally {
-						range.release();
 					}
 					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
-					tuple.getT2().release();
-					tuple.getT3().release();
+					tuple.getT2().close();
+					tuple.getT3().close();
 				});
 	}
 
 	public void release() {
-		range.release();
+		range.close();
 	}
 }

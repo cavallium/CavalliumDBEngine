@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.Send;
+import io.netty.buffer.api.internal.ResourceSupport;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
@@ -82,9 +83,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), rangeMono, existsAlmostCertainly)
-				.<Entry<T, U>>handle((entry, sink) -> {
-					try {
-						var key = deserializeSuffix(stripPrefix(entry.getKey(), false));
+				.<Entry<T, U>>handle((entrySend, sink) -> {
+					try (var entry = entrySend.receive()) {
+						var key = deserializeSuffix(stripPrefix(entry.getKey()));
 						var value = valueSerializer.deserialize(entry.getValue());
 						sink.next(Map.entry(key, value));
 					} catch (SerializationException ex) {
@@ -103,8 +104,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						.fromIterable(Collections.unmodifiableMap(value).entrySet())
 						.handle((entry, sink) -> {
 							try {
-								sink.next(new LLEntry(this.toKey(serializeSuffix(entry.getKey())),
-										valueSerializer.serialize(entry.getValue())));
+								sink.next(LLEntry.of(this.toKey(serializeSuffix(entry.getKey())),
+										valueSerializer.serialize(entry.getValue())).send());
 							} catch (SerializationException e) {
 								sink.error(e);
 							}
@@ -141,30 +142,19 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T keySuffix, boolean existsAlmostCertainly) {
-		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary
-								.get(resolveSnapshot(snapshot), LLUtils.lazyRetain(keyBuf), existsAlmostCertainly)
-								.handle(this::deserializeValue),
-						ReferenceCounted::release
-				);
+		return dictionary
+				.get(resolveSnapshot(snapshot), Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix))), existsAlmostCertainly)
+				.handle(this::deserializeValue);
 	}
 
 	@Override
 	public Mono<Void> putValue(T keySuffix, U value) {
-		return Mono.using(() -> serializeSuffix(keySuffix),
-				keySuffixBuf -> Mono.using(() -> toKey(keySuffixBuf.retain()),
-						keyBuf -> Mono.using(() -> valueSerializer.serialize(value),
-								valueBuf -> dictionary
-										.put(LLUtils.lazyRetain(keyBuf), LLUtils.lazyRetain(valueBuf), LLDictionaryResultType.VOID)
-										.doOnNext(ReferenceCounted::release),
-								ReferenceCounted::release
-						),
-						ReferenceCounted::release
-				),
-				ReferenceCounted::release
-		).then();
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		var valueMono = Mono.fromCallable(() -> valueSerializer.serialize(value));
+		return dictionary
+				.put(keyMono, valueMono, LLDictionaryResultType.VOID)
+				.doOnNext(Send::close)
+				.then();
 	}
 
 	@Override
@@ -177,70 +167,55 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary
-								.update(LLUtils.lazyRetain(keyBuf), getSerializedUpdater(updater), updateReturnMode, existsAlmostCertainly)
-								.handle(this::deserializeValue),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		return dictionary
+				.update(keyMono, getSerializedUpdater(updater), updateReturnMode, existsAlmostCertainly)
+				.handle(this::deserializeValue);
 	}
 
 	@Override
 	public Mono<Delta<U>> updateValueAndGetDelta(T keySuffix,
 			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary
-								.updateAndGetDelta(LLUtils.lazyRetain(keyBuf), getSerializedUpdater(updater), existsAlmostCertainly)
-								.transform(mono -> LLUtils.mapDelta(mono, valueSerializer::deserialize)),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		return  dictionary
+				.updateAndGetDelta(keyMono, getSerializedUpdater(updater), existsAlmostCertainly)
+				.transform(mono -> LLUtils.mapLLDelta(mono, valueSerializer::deserialize));
 	}
 
-	public SerializationFunction<@Nullable Buffer, @Nullable Buffer> getSerializedUpdater(SerializationFunction<@Nullable U, @Nullable U> updater) {
+	public SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> getSerializedUpdater(
+			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return oldSerialized -> {
-			try {
+			try (oldSerialized) {
 				U result;
 				if (oldSerialized == null) {
 					result = updater.apply(null);
 				} else {
-					result = updater.apply(valueSerializer.deserialize(oldSerialized.retain()));
+					result = updater.apply(valueSerializer.deserialize(oldSerialized));
 				}
 				if (result == null) {
 					return null;
 				} else {
 					return valueSerializer.serialize(result);
-				}
-			} finally {
-				if (oldSerialized != null) {
-					oldSerialized.release();
 				}
 			}
 		};
 	}
 
-	public <X> BiSerializationFunction<@Nullable Buffer, X, @Nullable Buffer> getSerializedUpdater(
+	public <X> BiSerializationFunction<@Nullable Send<Buffer>, X, @Nullable Send<Buffer>> getSerializedUpdater(
 			BiSerializationFunction<@Nullable U, X, @Nullable U> updater) {
 		return (oldSerialized, extra) -> {
-			try {
+			try (oldSerialized) {
 				U result;
 				if (oldSerialized == null) {
 					result = updater.apply(null, extra);
 				} else {
-					result = updater.apply(valueSerializer.deserialize(oldSerialized.retain()), extra);
+					result = updater.apply(valueSerializer.deserialize(oldSerialized), extra);
 				}
 				if (result == null) {
 					return null;
 				} else {
 					return valueSerializer.serialize(result);
-				}
-			} finally {
-				if (oldSerialized != null) {
-					oldSerialized.release();
 				}
 			}
 		};
@@ -248,141 +223,93 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<U> putValueAndGetPrevious(T keySuffix, U value) {
-		return Mono
-				.using(
-						() -> serializeSuffix(keySuffix),
-						keySuffixBuf -> Mono
-								.using(
-										() -> toKey(keySuffixBuf.retain()),
-										keyBuf -> Mono
-												.using(() -> valueSerializer.serialize(value),
-														valueBuf -> dictionary
-																.put(LLUtils.lazyRetain(keyBuf),
-																		LLUtils.lazyRetain(valueBuf),
-																		LLDictionaryResultType.PREVIOUS_VALUE)
-																.handle(this::deserializeValue),
-														ReferenceCounted::release
-												),
-										ReferenceCounted::release
-								),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		var valueMono = Mono.fromCallable(() -> valueSerializer.serialize(value));
+		return dictionary
+				.put(keyMono,
+						valueMono,
+						LLDictionaryResultType.PREVIOUS_VALUE)
+				.handle(this::deserializeValue);
 	}
 
 	@Override
 	public Mono<Boolean> putValueAndGetChanged(T keySuffix, U value) {
-		return Mono
-				.using(
-						() -> serializeSuffix(keySuffix),
-						keySuffixBuf -> Mono
-								.using(
-										() -> toKey(keySuffixBuf.retain()),
-										keyBuf -> Mono
-												.using(() -> valueSerializer.serialize(value),
-														valueBuf -> dictionary
-																.put(LLUtils.lazyRetain(keyBuf),
-																		LLUtils.lazyRetain(valueBuf),
-																		LLDictionaryResultType.PREVIOUS_VALUE
-																)
-																.handle(this::deserializeValue)
-																.map(oldValue -> !Objects.equals(oldValue, value))
-																.defaultIfEmpty(value != null),
-														ReferenceCounted::release
-												),
-										ReferenceCounted::release
-								),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		var valueMono = Mono.fromCallable(() -> valueSerializer.serialize(value));
+		return dictionary
+				.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE)
+				.handle(this::deserializeValue)
+				.map(oldValue -> !Objects.equals(oldValue, value))
+				.defaultIfEmpty(value != null);
 	}
 
 	@Override
 	public Mono<Void> remove(T keySuffix) {
-		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary
-								.remove(LLUtils.lazyRetain(keyBuf), LLDictionaryResultType.VOID)
-								.doOnNext(ReferenceCounted::release)
-								.then(),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		return dictionary
+				.remove(keyMono, LLDictionaryResultType.VOID)
+				.doOnNext(Send::close)
+				.then();
 	}
 
 	@Override
 	public Mono<U> removeAndGetPrevious(T keySuffix) {
-		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary
-								.remove(LLUtils.lazyRetain(keyBuf), LLDictionaryResultType.PREVIOUS_VALUE)
-								.handle(this::deserializeValue),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		return dictionary
+				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE)
+				.handle(this::deserializeValue);
 	}
 
 	@Override
 	public Mono<Boolean> removeAndGetStatus(T keySuffix) {
-		return Mono
-				.using(
-						() -> toKey(serializeSuffix(keySuffix)),
-						keyBuf -> dictionary
-								.remove(LLUtils.lazyRetain(keyBuf), LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE)
-								.map(LLUtils::responseToBoolean),
-						ReferenceCounted::release
-				);
+		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
+		return dictionary
+				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE)
+				.map(LLUtils::responseToBoolean);
 	}
 
 	@Override
 	public Flux<Entry<T, Optional<U>>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		return dictionary.getMulti(resolveSnapshot(snapshot), keys.flatMap(keySuffix -> Mono.fromCallable(() -> {
-			Buffer keySuffixBuf = serializeSuffix(keySuffix);
-			try {
-				var key = toKey(keySuffixBuf.retain());
-				try {
-					return Tuples.of(keySuffix, key.retain());
-				} finally {
-					key.release();
-				}
-			} finally {
-				keySuffixBuf.release();
-			}
-		})), existsAlmostCertainly).flatMapSequential(entry -> {
-			entry.getT2().release();
-			return Mono.fromCallable(() -> {
-				Optional<U> valueOpt;
-				if (entry.getT3().isPresent()) {
-					var buf = entry.getT3().get();
+		var mappedKeys = keys
+				.<Tuple2<T, Send<Buffer>>>handle((keySuffix, sink) -> {
 					try {
-						valueOpt = Optional.of(valueSerializer.deserialize(buf.retain()));
-					} finally {
-						buf.release();
+						sink.next(Tuples.of(keySuffix, toKey(serializeSuffix(keySuffix))));
+					} catch (SerializationException ex) {
+						sink.error(ex);
 					}
-				} else {
-					valueOpt = Optional.empty();
-				}
-				return Map.entry(entry.getT1(), valueOpt);
-			});
-		}).transform(LLUtils::handleDiscard);
+				});
+		return dictionary
+				.getMulti(resolveSnapshot(snapshot), mappedKeys, existsAlmostCertainly)
+				.<Entry<T, Optional<U>>>handle((entry, sink) -> {
+					try {
+						Optional<U> valueOpt;
+						if (entry.getT3().isPresent()) {
+							try (var buf = entry.getT3().get()) {
+								valueOpt = Optional.of(valueSerializer.deserialize(buf));
+							}
+						} else {
+							valueOpt = Optional.empty();
+						}
+						sink.next(Map.entry(entry.getT1(), valueOpt));
+					} catch (SerializationException ex) {
+						sink.error(ex);
+					}
+				})
+				.transform(LLUtils::handleDiscard);
 	}
 
-	private LLEntry serializeEntry(T key, U value) throws SerializationException {
-		Buffer serializedKey = toKey(serializeSuffix(key));
-		try {
-			Buffer serializedValue = valueSerializer.serialize(value);
-			try {
-				return new LLEntry(serializedKey.retain(), serializedValue.retain());
-			} finally {
-				serializedValue.release();
+	private Send<LLEntry> serializeEntry(T key, U value) throws SerializationException {
+		try (var serializedKey = toKey(serializeSuffix(key)).receive()) {
+			try (var serializedValue = valueSerializer.serialize(value).receive()) {
+				return LLEntry.of(serializedKey.send(), serializedValue.send()).send();
 			}
-		} finally {
-			serializedKey.release();
 		}
 	}
 
 	@Override
 	public Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
 		var serializedEntries = entries
-				.<LLEntry>handle((entry, sink) -> {
+				.<Send<LLEntry>>handle((entry, sink) -> {
 					try {
 						sink.next(serializeEntry(entry.getKey(), entry.getValue()));
 					} catch (SerializationException e) {
@@ -392,26 +319,26 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.putMulti(serializedEntries, false)
 				.then()
-				.doOnDiscard(LLEntry.class, entry -> {
-					if (!entry.isReleased()) {
-						entry.release();
-					}
-				});
+				.doOnDiscard(LLEntry.class, ResourceSupport::close);
 	}
 
 	@Override
 	public <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries,
 			BiSerializationFunction<@Nullable U, X, @Nullable U> updater) {
-		Flux<Tuple2<Buffer, X>> serializedEntries = entries
-				.flatMap(entry -> Mono
-						.fromCallable(() -> Tuples.of(serializeSuffix(entry.getT1()), entry.getT2()))
-				)
+		var serializedEntries = entries
+				.<Tuple2<Send<Buffer>, X>>handle((entry, sink) -> {
+					try {
+						sink.next(Tuples.of(serializeSuffix(entry.getT1()), entry.getT2()));
+					} catch (SerializationException ex) {
+						sink.error(ex);
+					}
+				})
 				.doOnDiscard(Tuple2.class, uncastedEntry -> {
 					if (uncastedEntry.getT1() instanceof Buffer byteBuf) {
-						byteBuf.release();
+						byteBuf.close();
 					}
 					if (uncastedEntry.getT2() instanceof Buffer byteBuf) {
-						byteBuf.release();
+						byteBuf.close();
 					}
 				});
 		var serializedUpdater = getSerializedUpdater(updater);
@@ -433,22 +360,17 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), rangeMono)
 				.handle((key, sink) -> {
-					try {
-						Buffer keySuffixWithExt = stripPrefix(key.retain(), false);
-						try {
-							sink.next(Map.entry(deserializeSuffix(keySuffixWithExt.retainedSlice()),
+					try (key) {
+						try (var keySuffixWithExt = stripPrefix(key).receive()) {
+							sink.next(Map.entry(deserializeSuffix(keySuffixWithExt.copy().send()),
 									new DatabaseSingleMapped<>(new DatabaseSingle<>(dictionary,
-											toKey(keySuffixWithExt.retainedSlice()),
+											toKey(keySuffixWithExt.send()),
 											Serializer.noop()
 									), valueSerializer)
 							));
-						} catch (SerializationException ex) {
-							sink.error(ex);
-						} finally {
-							keySuffixWithExt.release();
 						}
-					} finally {
-						key.release();
+					} catch (SerializationException ex) {
+						sink.error(ex);
 					}
 				});
 	}
@@ -457,34 +379,20 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), rangeMono)
-				.<Entry<T, U>>handle((serializedEntry, sink) -> {
-					Buffer key = serializedEntry.getKey();
-					Buffer value = serializedEntry.getValue();
-					try {
-						Buffer keySuffix = stripPrefix(key.retain(), false);
-						try {
-							sink.next(Map.entry(deserializeSuffix(keySuffix.retain()),
-									valueSerializer.deserialize(value.retain())));
-						} finally {
-							keySuffix.release();
-						}
+				.<Entry<T, U>>handle((serializedEntryToReceive, sink) -> {
+					try (var serializedEntry = serializedEntryToReceive.receive()) {
+						sink.next(Map.entry(deserializeSuffix(stripPrefix(serializedEntry.getKey())),
+								valueSerializer.deserialize(serializedEntry.getValue())));
 					} catch (SerializationException e) {
 						sink.error(e);
-					} finally {
-						key.release();
-						value.release();
 					}
 				})
 				.doOnDiscard(Entry.class, uncastedEntry -> {
 					if (uncastedEntry.getKey() instanceof Buffer byteBuf) {
-						if (byteBuf.refCnt() > 0) {
-							byteBuf.release();
-						}
+						byteBuf.close();
 					}
 					if (uncastedEntry.getValue() instanceof Buffer byteBuf) {
-						if (byteBuf.refCnt() > 0) {
-							byteBuf.release();
-						}
+						byteBuf.close();
 					}
 				});
 	}
@@ -495,17 +403,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				this.getAllValues(null),
 				dictionary.setRange(rangeMono, entries.handle((entry, sink) -> {
 					try {
-						Buffer serializedKey = toKey(serializeSuffix(entry.getKey()));
-						try {
-							Buffer serializedValue = valueSerializer.serialize(entry.getValue());
-							try {
-								sink.next(new LLEntry(serializedKey.retain(), serializedValue.retain()));
-							} finally {
-								serializedValue.release();
-							}
-						} finally {
-							serializedKey.release();
-						}
+						sink.next(LLEntry.of(toKey(serializeSuffix(entry.getKey())),
+								valueSerializer.serialize(entry.getValue())).send());
 					} catch (SerializationException e) {
 						sink.error(e);
 					}
@@ -515,18 +414,16 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<Void> clear() {
-		return Mono.defer(() -> {
-			if (range.isAll()) {
-				return dictionary.clear();
-			} else if (range.isSingle()) {
-				return dictionary
-						.remove(LLUtils.lazyRetain(range.getSingle()), LLDictionaryResultType.VOID)
-						.doOnNext(ReferenceCounted::release)
-						.then();
-			} else {
-				return dictionary.setRange(rangeMono, Flux.empty());
-			}
-		});
+		if (range.isAll()) {
+			return dictionary.clear();
+		} else if (range.isSingle()) {
+			return dictionary
+					.remove(Mono.fromCallable(range::getSingle), LLDictionaryResultType.VOID)
+					.doOnNext(Send::close)
+					.then();
+		} else {
+			return dictionary.setRange(rangeMono, Flux.empty());
+		}
 	}
 
 }

@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.disk;
 
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.BufferUtil;
 import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
@@ -37,15 +36,17 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 			ReadOptions readOptions,
 			boolean canFillCache,
 			boolean readValues) {
-		this.db = db;
-		this.alloc = alloc;
-		this.cfh = cfh;
-		this.prefixLength = prefixLength;
-		this.range = range;
-		this.allowNettyDirect = allowNettyDirect;
-		this.readOptions = readOptions;
-		this.canFillCache = canFillCache;
-		this.readValues = readValues;
+		try (range) {
+			this.db = db;
+			this.alloc = alloc;
+			this.cfh = cfh;
+			this.prefixLength = prefixLength;
+			this.range = range.receive();
+			this.allowNettyDirect = allowNettyDirect;
+			this.readOptions = readOptions;
+			this.canFillCache = canFillCache;
+			this.readValues = readValues;
+		}
 	}
 
 
@@ -54,9 +55,8 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
-					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.retain(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
-					range.retain();
 					try {
 						var rocksIterator = tuple.getT1();
 						ObjectArrayList<T> values = new ObjectArrayList<>();
@@ -64,34 +64,32 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						try {
 							rocksIterator.status();
 							while (rocksIterator.isValid()) {
-								Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-								try {
+								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
 									if (firstGroupKey == null) {
-										firstGroupKey = key.retain();
-									} else if (!ByteBufUtil.equals(firstGroupKey, firstGroupKey.readerIndex(), key, key.readerIndex(), prefixLength)) {
+										firstGroupKey = key.copy();
+									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(),
+											key, key.readerOffset(), prefixLength)) {
 										break;
 									}
 									Buffer value;
 									if (readValues) {
 										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 									} else {
-										value = alloc.buffer(0);
+										value = alloc.allocate(0);
 									}
 									try {
 										rocksIterator.next();
 										rocksIterator.status();
-										T entry = getEntry(key.retain(), value.retain());
+										T entry = getEntry(key.send(), value.send());
 										values.add(entry);
 									} finally {
-										value.release();
+										value.close();
 									}
-								} finally {
-									key.release();
 								}
 							}
 						} finally {
 							if (firstGroupKey != null) {
-								firstGroupKey.release();
+								firstGroupKey.close();
 							}
 						}
 						if (!values.isEmpty()) {
@@ -101,21 +99,19 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						}
 					} catch (RocksDBException ex) {
 						sink.error(ex);
-					} finally {
-						range.release();
 					}
 					return tuple;
 				}, tuple -> {
 					var rocksIterator = tuple.getT1();
 					rocksIterator.close();
-					tuple.getT2().release();
-					tuple.getT3().release();
+					tuple.getT2().close();
+					tuple.getT3().close();
 				});
 	}
 
 	public abstract T getEntry(Send<Buffer> key, Send<Buffer> value);
 
 	public void release() {
-		range.release();
+		range.close();
 	}
 }

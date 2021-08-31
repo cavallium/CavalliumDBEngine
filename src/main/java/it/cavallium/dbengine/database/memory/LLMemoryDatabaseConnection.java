@@ -26,14 +26,14 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 		JMXNettyMonitoringManager.initialize();
 	}
 
-	private final ByteBufAllocator allocator;
+	private final BufferAllocator allocator;
 
-	public LLMemoryDatabaseConnection(ByteBufAllocator allocator) {
+	public LLMemoryDatabaseConnection(BufferAllocator allocator) {
 		this.allocator = allocator;
 	}
 
 	@Override
-	public ByteBufAllocator getAllocator() {
+	public BufferAllocator getAllocator() {
 		return allocator;
 	}
 

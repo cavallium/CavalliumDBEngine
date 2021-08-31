@@ -41,11 +41,10 @@ public interface Serializer<A, B> {
 
 			@Override
 			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) {
-				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
-				int length = LLUtils.utf8MaxBytes(deserialized);
-				try (Buffer buf = allocator.allocate(Integer.BYTES + length)) {
-					buf.writeInt(length);
-					LLUtils.writeString(buf, deserialized, StandardCharsets.UTF_8);
+				var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
+				try (Buffer buf = allocator.allocate(Integer.BYTES + bytes.length)) {
+					buf.writeInt(bytes.length);
+					buf.writeBytes(bytes);
 					return buf.send();
 				}
 			}

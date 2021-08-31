@@ -64,7 +64,7 @@ public interface SerializerFixedBinaryLength<A, B> extends Serializer<A, B> {
 			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) throws SerializationException {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
 				try (Buffer buf = allocator.allocate(LLUtils.utf8MaxBytes(deserialized))) {
-					LLUtils.writeString(buf, deserialized, StandardCharsets.UTF_8);
+					buf.writeBytes(deserialized.getBytes(StandardCharsets.UTF_8));
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
 						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
 								+ " bytes has tried to serialize an element with "

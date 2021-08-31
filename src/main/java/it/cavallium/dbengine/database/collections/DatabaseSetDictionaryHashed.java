@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -17,25 +18,25 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHashed<T, Nothing, TH> {
 
 	protected DatabaseSetDictionaryHashed(LLDictionary dictionary,
-			Buffer prefixKey,
-			Serializer<T, Buffer> keySuffixSerializer,
+			Send<Buffer> prefixKey,
+			Serializer<T, Send<Buffer>> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, Buffer> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH, Send<Buffer>> keySuffixHashSerializer) {
 		super(dictionary,
 				prefixKey,
 				keySuffixSerializer,
-				DatabaseEmpty.NOTHING_SERIALIZER,
+				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
 				keySuffixHashFunction,
 				keySuffixHashSerializer
 		);
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
-			Serializer<T, Buffer> keySerializer,
+			Serializer<T, Send<Buffer>> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
-				dictionary.getAllocator().buffer(0),
+				dictionary.getAllocator().allocate(0).send(),
 				keySerializer,
 				keyHashFunction,
 				keyHashSerializer
@@ -43,10 +44,10 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
-			Buffer prefixKey,
-			Serializer<T, Buffer> keySuffixSerializer,
+			Send<Buffer> prefixKey,
+			Serializer<T, Send<Buffer>> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, Buffer> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

@@ -2,18 +2,15 @@ package it.cavallium.dbengine.database.serialization;
 
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.BufferInputStream;
-import io.netty.buffer.api.BufferOutputStream;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.Unpooled;
+import io.netty.buffer.api.Send;
 import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
 
-public class CodecSerializer<A> implements Serializer<A, Buffer> {
+public class CodecSerializer<A> implements Serializer<A, Send<Buffer>> {
 
-	private final ByteBufAllocator allocator;
+	private final BufferAllocator allocator;
 	private final Codecs<A> deserializationCodecs;
 	private final Codec<A> serializationCodec;
 	private final int serializationCodecId;
@@ -24,7 +21,7 @@ public class CodecSerializer<A> implements Serializer<A, Buffer> {
 	 * @param microCodecs if true, allow only codecs with a value from 0 to 255 to save disk space
 	 */
 	public CodecSerializer(
-			ByteBufAllocator allocator,
+			BufferAllocator allocator,
 			Codecs<A> deserializationCodecs,
 			Codec<A> serializationCodec,
 			int serializationCodecId,
@@ -40,8 +37,8 @@ public class CodecSerializer<A> implements Serializer<A, Buffer> {
 	}
 
 	@Override
-	public @NotNull A deserialize(@NotNull Buffer serialized) {
-		try (var is = new ByteBufInputStream(serialized)) {
+	public @NotNull A deserialize(@NotNull Send<Buffer> serialized) {
+		try (var is = new BufferDataInput(serialized)) {
 			int codecId;
 			if (microCodecs) {
 				codecId = is.readUnsignedByte();
@@ -53,26 +50,24 @@ public class CodecSerializer<A> implements Serializer<A, Buffer> {
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);
-		} finally {
-			serialized.release();
 		}
 	}
 
 	@Override
-	public @NotNull Buffer serialize(@NotNull A deserialized) {
-		Buffer buf = allocator.buffer();
-		try (var os = new ByteBufOutputStream(buf)) {
+	public @NotNull Send<Buffer> serialize(@NotNull A deserialized) {
+		try (Buffer buf = allocator.allocate(64)) {
+			var os = new BufferDataOutput(buf);
 			if (microCodecs) {
 				os.writeByte(serializationCodecId);
 			} else {
 				os.writeInt(serializationCodecId);
 			}
 			serializationCodec.serialize(os, deserialized);
+			return buf.send();
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);
 		}
-		return buf;
 	}
 
 	@SuppressWarnings("unused")

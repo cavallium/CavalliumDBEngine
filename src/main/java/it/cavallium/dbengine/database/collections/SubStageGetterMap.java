@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.Send;
 import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -14,11 +15,11 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseMapDictionary<T, U>> {
 
-	private final SerializerFixedBinaryLength<T, Buffer> keySerializer;
-	private final Serializer<U, Buffer> valueSerializer;
+	private final SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer;
+	private final Serializer<U, Send<Buffer>> valueSerializer;
 
-	public SubStageGetterMap(SerializerFixedBinaryLength<T, Buffer> keySerializer,
-			Serializer<U, Buffer> valueSerializer) {
+	public SubStageGetterMap(SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer,
+			Serializer<U, Send<Buffer>> valueSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 	}
@@ -26,17 +27,17 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	@Override
 	public Mono<DatabaseMapDictionary<T, U>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Buffer> prefixKeyMono) {
+			Mono<Send<Buffer>> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseMapDictionary
 								.tail(dictionary,
-										prefixKey.retain(),
+										prefixKey,
 										keySerializer,
 										valueSerializer
 								)
 						),
-				prefixKey -> Mono.fromRunnable(prefixKey::release)
+				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);
 	}
 

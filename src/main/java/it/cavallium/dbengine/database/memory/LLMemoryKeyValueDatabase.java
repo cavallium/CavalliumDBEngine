@@ -28,7 +28,7 @@ import reactor.core.publisher.Mono;
 
 public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 
-	private final ByteBufAllocator allocator;
+	private final BufferAllocator allocator;
 	private final String name;
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 
@@ -36,7 +36,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	private final ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>> mainDb;
 	private final ConcurrentHashMap<String, LLMemoryDictionary> singletons = new ConcurrentHashMap<>();
 
-	public LLMemoryKeyValueDatabase(ByteBufAllocator allocator, String name, List<Column> columns) {
+	public LLMemoryKeyValueDatabase(BufferAllocator allocator, String name, List<Column> columns) {
 		this.allocator = allocator;
 		this.name = name;
 		this.mainDb = new ConcurrentHashMap<>();
@@ -87,7 +87,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public ByteBufAllocator getAllocator() {
+	public BufferAllocator getAllocator() {
 		return allocator;
 	}
 

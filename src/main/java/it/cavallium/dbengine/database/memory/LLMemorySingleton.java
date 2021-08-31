@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.memory;
 
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.Unpooled;
+import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -18,8 +19,10 @@ public class LLMemorySingleton implements LLSingleton {
 	public LLMemorySingleton(LLMemoryDictionary dict, byte[] singletonName) {
 		this.dict = dict;
 		this.singletonName = singletonName;
-		Buffer singletonNameBuf = Unpooled.wrappedBuffer(singletonName);
-		this.singletonNameBufMono = Mono.just(singletonNameBuf).map(Buffer::retain);
+		this.singletonNameBufMono = Mono.fromCallable(() -> dict
+				.getAllocator()
+				.allocate(singletonName.length)
+				.writeBytes(singletonName));
 	}
 
 	@Override
@@ -32,18 +35,16 @@ public class LLMemorySingleton implements LLSingleton {
 		return dict
 				.get(snapshot, singletonNameBufMono, false)
 				.map(b -> {
-					try {
+					try (b) {
 						return LLUtils.toArray(b);
-					} finally {
-						b.release();
 					}
 				});
 	}
 
 	@Override
 	public Mono<Void> set(byte[] value) {
-		var bbKey = Mono.just(Unpooled.wrappedBuffer(singletonName)).map(Buffer::retain);
-		var bbVal = Mono.just(Unpooled.wrappedBuffer(value)).map(Buffer::retain);
+		var bbKey = singletonNameBufMono;
+		var bbVal = Mono.fromCallable(() -> dict.getAllocator().allocate(value.length).writeBytes(value));
 		return dict
 				.put(bbKey, bbVal, LLDictionaryResultType.VOID)
 				.then();

@@ -43,7 +43,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			Serializer<T, Send<Buffer>> keySuffixSerializer,
 			Serializer<U, Send<Buffer>> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, Buffer> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH, Send<Buffer>> keySuffixHashSerializer) {
 		if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
 			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
@@ -61,13 +61,13 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> simple(LLDictionary dictionary,
-			Serializer<T, Buffer> keySerializer,
-			Serializer<U, Buffer> valueSerializer,
+			Serializer<T, Send<Buffer>> keySerializer,
+			Serializer<U, Send<Buffer>> valueSerializer,
 			Function<T, UH> keyHashFunction,
-			SerializerFixedBinaryLength<UH, Buffer> keyHashSerializer) {
+			SerializerFixedBinaryLength<UH, Send<Buffer>> keyHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
-				dictionary.getAllocator().buffer(0),
+				dictionary.getAllocator().allocate(0).send(),
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,
@@ -76,11 +76,11 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
-			Buffer prefixKey,
-			Serializer<T, Buffer> keySuffixSerializer,
-			Serializer<U, Buffer> valueSerializer,
+			Send<Buffer> prefixKey,
+			Serializer<T, Send<Buffer>> keySuffixSerializer,
+			Serializer<U, Send<Buffer>> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<UH, Buffer> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<UH, Send<Buffer>> keySuffixHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

@@ -38,7 +38,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	private final String databaseName;
 	private final String columnName;
-	private final ByteBufAllocator allocator;
+	private final BufferAllocator allocator;
 	private final UpdateMode updateMode;
 	private final Getter<Long, ConcurrentSkipListMap<ByteList, ByteList>> snapshots;
 	private final ConcurrentSkipListMap<ByteList, ByteList> mainDb;
@@ -47,7 +47,7 @@ public class LLMemoryDictionary implements LLDictionary {
 		U get(T argument);
 	}
 
-	public LLMemoryDictionary(ByteBufAllocator allocator,
+	public LLMemoryDictionary(BufferAllocator allocator,
 			String databaseName,
 			String columnName,
 			UpdateMode updateMode,
@@ -67,7 +67,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public ByteBufAllocator getAllocator() {
+	public BufferAllocator getAllocator() {
 		return allocator;
 	}
 

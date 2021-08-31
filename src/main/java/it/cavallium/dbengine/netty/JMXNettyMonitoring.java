@@ -1,14 +1,14 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty.buffer.api.BufferAllocatorMetric;
-
 public class JMXNettyMonitoring implements JMXNettyMonitoringMBean {
 
 	private final String name;
-	private final ByteBufAllocatorMetric metric;
+	protected final boolean direct;
+	private final io.netty.buffer.api.pool.BufferAllocatorMetric metric;
 
-	public JMXNettyMonitoring(String name, io.netty.buffer.api.BufferAllocatorMetric metric) {
+	public JMXNettyMonitoring(String name, boolean direct, io.netty.buffer.api.pool.BufferAllocatorMetric metric) {
 		this.name = name;
+		this.direct = direct;
 		this.metric = metric;
 	}
 
@@ -19,12 +19,12 @@ public class JMXNettyMonitoring implements JMXNettyMonitoringMBean {
 
 	@Override
 	public Long getHeapUsed() {
-		return metric.usedHeapMemory();
+		return direct ? 0 : metric.usedMemory();
 	}
 
 	@Override
 	public Long getDirectUsed() {
-		return metric.usedDirectMemory();
+		return direct ? metric.usedMemory() : 0;
 	}
 
 	@Override

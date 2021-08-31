@@ -15,6 +15,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -211,19 +212,19 @@ public class TestDictionaryMap {
 											return "error?";
 										}),
 										map.updateValue(key, false, old -> {
-											assert Objects.equals(old, "error?");
+											Assertions.assertEquals("error?", old);
 											return "error?";
 										}),
 										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, "error?");
+											Assertions.assertEquals("error?", old);
 											return "error?";
 										}),
 										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, "error?");
+											Assertions.assertEquals("error?", old);
 											return value;
 										}),
 										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, value);
+											Assertions.assertEquals(value, old);
 											return value;
 										})
 								)

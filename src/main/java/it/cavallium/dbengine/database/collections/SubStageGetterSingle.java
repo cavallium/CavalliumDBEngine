@@ -14,9 +14,9 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageEntry<T>> {
 
-	private final Serializer<T, Send<Buffer>> serializer;
+	private final Serializer<T> serializer;
 
-	public SubStageGetterSingle(Serializer<T, Send<Buffer>> serializer) {
+	public SubStageGetterSingle(Serializer<T> serializer) {
 		this.serializer = serializer;
 	}
 

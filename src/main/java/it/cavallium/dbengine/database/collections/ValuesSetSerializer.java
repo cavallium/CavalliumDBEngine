@@ -14,23 +14,23 @@ import java.util.HashSet;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 
-class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>, Send<Buffer>> {
+class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 
 	private final BufferAllocator allocator;
-	private final Serializer<X, Send<Buffer>> entrySerializer;
+	private final Serializer<X> entrySerializer;
 
-	ValuesSetSerializer(BufferAllocator allocator, Serializer<X, Send<Buffer>> entrySerializer) {
+	ValuesSetSerializer(BufferAllocator allocator, Serializer<X> entrySerializer) {
 		this.allocator = allocator;
 		this.entrySerializer = entrySerializer;
 	}
 
 	@Override
-	public @NotNull ObjectArraySet<X> deserialize(@NotNull Send<Buffer> serializedToReceive) throws SerializationException {
+	public @NotNull DeserializationResult<ObjectArraySet<X>> deserialize(@NotNull Send<Buffer> serializedToReceive) throws SerializationException {
 		try (var serialized = serializedToReceive.receive()) {
 			int entriesLength = serialized.readInt();
 			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
 			for (int i = 0; i < entriesLength; i++) {
-				X entry = entrySerializer.deserialize(serialized.send());
+				X entry = entrySerializer.deserialize(serialized.copy().send());
 				deserializedElements.add(entry);
 			}
 			return new ObjectArraySet<>(deserializedElements);

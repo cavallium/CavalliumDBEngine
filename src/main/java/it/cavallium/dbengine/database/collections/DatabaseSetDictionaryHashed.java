@@ -19,9 +19,9 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 
 	protected DatabaseSetDictionaryHashed(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			Serializer<T, Send<Buffer>> keySuffixSerializer,
+			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, Send<Buffer>> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH> keySuffixHashSerializer) {
 		super(dictionary,
 				prefixKey,
 				keySuffixSerializer,
@@ -32,9 +32,9 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
-			Serializer<T, Send<Buffer>> keySerializer,
+			Serializer<T> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				dictionary.getAllocator().allocate(0).send(),
 				keySerializer,
@@ -45,9 +45,9 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			Serializer<T, Send<Buffer>> keySuffixSerializer,
+			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

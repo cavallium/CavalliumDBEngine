@@ -7,16 +7,21 @@ import it.cavallium.dbengine.database.LLUtils;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.NotNull;
 
-public interface Serializer<A, B> {
+public interface Serializer<A> {
 
-	@NotNull A deserialize(@NotNull B serialized) throws SerializationException;
+	record DeserializationResult<T>(T deserializedData, int bytesRead) {}
 
-	@NotNull B serialize(@NotNull A deserialized) throws SerializationException;
+	@NotNull DeserializationResult<A> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException;
 
-	Serializer<Send<Buffer>, Send<Buffer>> NOOP_SERIALIZER = new Serializer<>() {
+	@NotNull Send<Buffer> serialize(@NotNull A deserialized) throws SerializationException;
+
+	Serializer<Send<Buffer>> NOOP_SERIALIZER = new Serializer<>() {
 		@Override
-		public @NotNull Send<Buffer> deserialize(@NotNull Send<Buffer> serialized) {
-			return serialized;
+		public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
+			try (var serializedBuf = serialized.receive()) {
+				var readableBytes = serializedBuf.readableBytes();
+				return new DeserializationResult<>(serializedBuf.send(), readableBytes);
+			}
 		}
 
 		@Override
@@ -25,17 +30,20 @@ public interface Serializer<A, B> {
 		}
 	};
 
-	static Serializer<Send<Buffer>, Send<Buffer>> noop() {
+	static Serializer<Send<Buffer>> noop() {
 		return NOOP_SERIALIZER;
 	}
 
-	static Serializer<String, Send<Buffer>> utf8(BufferAllocator allocator) {
+	static Serializer<String> utf8(BufferAllocator allocator) {
 		return new Serializer<>() {
 			@Override
-			public @NotNull String deserialize(@NotNull Send<Buffer> serializedToReceive) {
+			public @NotNull DeserializationResult<String> deserialize(@NotNull Send<Buffer> serializedToReceive) {
 				try (Buffer serialized = serializedToReceive.receive()) {
 					int length = serialized.readInt();
-					return LLUtils.deserializeString(serialized.send(), serialized.readerOffset(), length, StandardCharsets.UTF_8);
+					var readerOffset = serialized.readerOffset();
+					var readableBytes = serialized.readableBytes();
+					return new DeserializationResult<>(LLUtils.deserializeString(serialized.send(),
+							readerOffset, length, StandardCharsets.UTF_8), readableBytes);
 				}
 			}
 

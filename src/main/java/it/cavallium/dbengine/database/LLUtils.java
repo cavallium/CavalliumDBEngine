@@ -3,11 +3,15 @@ package it.cavallium.dbengine.database;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.netty.buffer.ByteBuf;
+import io.netty.buffer.UnpooledDirectByteBuf;
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.BufferAllocator;
 import io.netty.buffer.api.CompositeBuffer;
+import io.netty.buffer.api.MemoryManager;
 import io.netty.buffer.api.Send;
+import io.netty.buffer.api.unsafe.UnsafeMemoryManager;
 import io.netty.util.IllegalReferenceCountException;
+import io.netty.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
@@ -47,6 +51,8 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
+import reactor.util.function.Tuples;
+import sun.misc.Unsafe;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -284,69 +290,91 @@ public class LLUtils {
 	 *
 	 * @return null if size is equal to RocksDB.NOT_FOUND
 	 */
+	@SuppressWarnings("ConstantConditions")
 	@Nullable
-	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		Buffer buffer = alloc.allocate(4096);
-		ByteBuffer nioBuffer;
-		int size;
-		do {
-			nioBuffer = LLUtils.toDirect(buffer);
-			nioBuffer.limit(nioBuffer.capacity());
-			assert nioBuffer.isDirect();
-			size = reader.applyAsInt(nioBuffer);
-			if (size != RocksDB.NOT_FOUND) {
-				if (size == nioBuffer.limit()) {
-					buffer.readerOffset(0).writerOffset(size);
-					return buffer;
-				} else {
-					assert size > nioBuffer.limit();
-					assert nioBuffer.limit() > 0;
-					buffer.ensureWritable(size);
+	public static Send<Buffer> readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
+		ByteBuffer directBuffer;
+		Buffer buffer;
+		{
+			var direct = LLUtils.newDirect(alloc, 4096);
+			directBuffer = direct.byteBuffer();
+			buffer = direct.buffer().receive();
+		}
+		try {
+			int size;
+			do {
+				directBuffer.limit(directBuffer.capacity());
+				assert directBuffer.isDirect();
+				size = reader.applyAsInt(directBuffer);
+				if (size != RocksDB.NOT_FOUND) {
+					if (size == directBuffer.limit()) {
+						buffer.readerOffset(0).writerOffset(size);
+						return buffer.send();
+					} else {
+						assert size > directBuffer.limit();
+						assert directBuffer.limit() > 0;
+						// Free the buffer
+						if (directBuffer != null) {
+							// todo: check if free is needed
+							PlatformDependent.freeDirectBuffer(directBuffer);
+							directBuffer = null;
+						}
+						directBuffer = LLUtils.obtainDirect(buffer);
+						buffer.ensureWritable(size);
+					}
+				}
+			} while (size != RocksDB.NOT_FOUND);
+
+			// Return null if size is equal to RocksDB.NOT_FOUND
+			return null;
+		} finally {
+			// Free the buffer
+			if (directBuffer != null) {
+				// todo: check if free is needed
+				PlatformDependent.freeDirectBuffer(directBuffer);
+				directBuffer = null;
+			}
+			buffer.close();
+		}
+	}
+
+	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}
+
+	@NotNull
+	public static DirectBuffer newDirect(BufferAllocator allocator, int size) {
+		try (var buf = allocator.allocate(size)) {
+			var direct = obtainDirect(buf);
+			return new DirectBuffer(buf.send(), direct);
+		}
+	}
+
+	@NotNull
+	public static DirectBuffer convertToDirect(BufferAllocator allocator, Send<Buffer> content) {
+		try (var buf = content.receive()) {
+			if (buf.nativeAddress() != 0) {
+				var direct = obtainDirect(buf);
+				return new DirectBuffer(buf.send(), direct);
+			} else {
+				var direct = newDirect(allocator, buf.readableBytes());
+				try (var buf2 = direct.buffer().receive()) {
+					buf.copyInto(buf.readerOffset(), buf2, buf2.writerOffset(), buf.readableBytes());
+					return new DirectBuffer(buf2.send(), direct.byteBuffer());
 				}
 			}
-		} while (size != RocksDB.NOT_FOUND);
-
-		// Return null if size is equal to RocksDB.NOT_FOUND
-		return null;
+		}
 	}
 
-	@Nullable
-	public static ByteBuffer toDirectFast(Buffer buffer) {
-		int readableComponents = buffer.countReadableComponents();
-		if (readableComponents > 0) {
-			AtomicReference<ByteBuffer> byteBufferReference = new AtomicReference<>(null);
-			buffer.forEachReadable(0, (index, component) -> {
-				byteBufferReference.setPlain(component.readableBuffer());
-				return false;
-			});
-			ByteBuffer byteBuffer = byteBufferReference.getPlain();
-			if (byteBuffer != null && byteBuffer.isDirect()) {
-				byteBuffer.limit(buffer.writerOffset());
-
-				assert byteBuffer.isDirect();
-				assert byteBuffer.capacity() == buffer.capacity();
-				assert buffer.readerOffset() == byteBuffer.position();
-				assert byteBuffer.limit() - byteBuffer.position() == buffer.readableBytes();
-
-				return byteBuffer;
-			} else {
-				return null;
-			}
-		} else if (readableComponents == 0) {
+	@NotNull
+	public static ByteBuffer obtainDirect(Buffer buffer) {
+		assert buffer.isAccessible();
+		if (buffer.readableBytes() == 0) {
 			return EMPTY_BYTE_BUFFER;
-		} else {
-			return null;
 		}
-	}
-
-	public static ByteBuffer toDirect(Buffer buffer) {
-		ByteBuffer result = toDirectFast(buffer);
-		if (result == null) {
-			throw new IllegalArgumentException("The supplied Buffer is not direct "
-					+ "(if it's a CompositeByteBuf it must be consolidated before)");
+		long nativeAddress;
+		if ((nativeAddress = buffer.nativeAddress()) == 0) {
+			throw new IllegalStateException("Buffer is not direct");
 		}
-		assert result.isDirect();
-		return result;
+		return PlatformDependent.directBuffer(nativeAddress, buffer.capacity());
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {
@@ -356,12 +384,14 @@ public class LLUtils {
 	}
 
 	@NotNull
-	public static Buffer readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		var buffer = readNullableDirectNioBuffer(alloc, reader);
-		if (buffer == null) {
-			throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
+	public static Send<Buffer> readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
+		var nullableSend = readNullableDirectNioBuffer(alloc, reader);
+		try (var buffer = nullableSend != null ? nullableSend.receive() : null) {
+			if (buffer == null) {
+				throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
+			}
+			return buffer.send();
 		}
-		return buffer;
 	}
 
 	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {

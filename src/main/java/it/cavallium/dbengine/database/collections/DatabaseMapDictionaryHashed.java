@@ -40,10 +40,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			Serializer<T, Send<Buffer>> keySuffixSerializer,
-			Serializer<U, Send<Buffer>> valueSerializer,
+			Serializer<T> keySuffixSerializer,
+			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH, Send<Buffer>> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH> keySuffixHashSerializer) {
 		if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
 			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
@@ -61,10 +61,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> simple(LLDictionary dictionary,
-			Serializer<T, Send<Buffer>> keySerializer,
-			Serializer<U, Send<Buffer>> valueSerializer,
+			Serializer<T> keySerializer,
+			Serializer<U> valueSerializer,
 			Function<T, UH> keyHashFunction,
-			SerializerFixedBinaryLength<UH, Send<Buffer>> keyHashSerializer) {
+			SerializerFixedBinaryLength<UH> keyHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
 				dictionary.getAllocator().allocate(0).send(),
@@ -77,10 +77,10 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			Serializer<T, Send<Buffer>> keySuffixSerializer,
-			Serializer<U, Send<Buffer>> valueSerializer,
+			Serializer<T> keySuffixSerializer,
+			Serializer<U> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<UH, Send<Buffer>> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<UH> keySuffixHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,

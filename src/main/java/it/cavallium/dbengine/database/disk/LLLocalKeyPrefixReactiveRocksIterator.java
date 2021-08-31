@@ -55,7 +55,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(canFillCache);
 					}
-					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.copy().send(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
 					try {
 						var rocksIterator = tuple.getT1();
@@ -63,7 +63,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 						Buffer firstGroupKey = null;
 						try {
 							while (rocksIterator.isValid()) {
-								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.copy();
 									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(), key, key.readerOffset(), prefixLength)) {
@@ -93,6 +93,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 					rocksIterator.close();
 					tuple.getT2().close();
 					tuple.getT3().close();
+					tuple.getT4().close();
 				});
 	}
 

@@ -10,26 +10,28 @@ import java.util.Map;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.NotNull;
 
-class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>, Send<Buffer>> {
+class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 
 	private final BufferAllocator allocator;
-	private final Serializer<X, Send<Buffer>> keySuffixSerializer;
-	private final Serializer<Y, Send<Buffer>> valueSerializer;
+	private final Serializer<X> keySuffixSerializer;
+	private final Serializer<Y> valueSerializer;
 
 	ValueWithHashSerializer(BufferAllocator allocator,
-			Serializer<X, Send<Buffer>> keySuffixSerializer,
-			Serializer<Y, Send<Buffer>> valueSerializer) {
+			Serializer<X> keySuffixSerializer,
+			Serializer<Y> valueSerializer) {
 		this.allocator = allocator;
 		this.keySuffixSerializer = keySuffixSerializer;
 		this.valueSerializer = valueSerializer;
 	}
 
 	@Override
-	public @NotNull Entry<X, Y> deserialize(@NotNull Send<Buffer> serializedToReceive) throws SerializationException {
+	public @NotNull DeserializationResult<Entry<X, Y>> deserialize(@NotNull Send<Buffer> serializedToReceive)
+			throws SerializationException {
 		try (var serialized = serializedToReceive.receive()) {
-			X deserializedKey = keySuffixSerializer.deserialize(serialized.copy().send());
-			Y deserializedValue = valueSerializer.deserialize(serialized.send());
-			return Map.entry(deserializedKey, deserializedValue);
+			DeserializationResult<X> deserializedKey = keySuffixSerializer.deserialize(serialized.copy().send());
+			DeserializationResult<Y> deserializedValue = valueSerializer.deserialize(serialized.send());
+			return new DeserializationResult<>(Map.entry(deserializedKey.deserializedData(),
+					deserializedValue.deserializedData()), deserializedKey.bytesRead() + deserializedValue.bytesRead());
 		}
 	}
 

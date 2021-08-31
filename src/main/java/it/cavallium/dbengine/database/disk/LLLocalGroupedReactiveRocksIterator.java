@@ -55,7 +55,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				.generate(() -> {
 					var readOptions = new ReadOptions(this.readOptions);
 					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
-					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range.copy().send(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
 					try {
 						var rocksIterator = tuple.getT1();
@@ -64,7 +64,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						try {
 							rocksIterator.status();
 							while (rocksIterator.isValid()) {
-								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.copy();
 									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(),
@@ -73,7 +73,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 									}
 									Buffer value;
 									if (readValues) {
-										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
 									} else {
 										value = alloc.allocate(0);
 									}
@@ -106,6 +106,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 					rocksIterator.close();
 					tuple.getT2().close();
 					tuple.getT3().close();
+					tuple.getT4().close();
 				});
 	}
 

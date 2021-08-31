@@ -62,16 +62,16 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(false);
 					}
-					return getRocksIterator(allowNettyDirect, readOptions, range.copy().send(), db, cfh);
+					return getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
 					try {
 						var rocksIterator = tuple.getT1();
 						rocksIterator.status();
 						if (rocksIterator.isValid()) {
-							try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+							try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
 								Buffer value;
 								if (readValues) {
-									value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+									value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
 								} else {
 									value = alloc.allocate(0);
 								}
@@ -95,6 +95,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 					rocksIterator.close();
 					tuple.getT2().close();
 					tuple.getT3().close();
+					tuple.getT4().close();
 				});
 	}
 

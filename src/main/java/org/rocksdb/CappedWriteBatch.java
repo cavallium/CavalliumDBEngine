@@ -3,7 +3,9 @@ package org.rocksdb;
 import static it.cavallium.dbengine.database.LLUtils.isDirect;
 
 import io.netty.buffer.api.Buffer;
+import io.netty.buffer.api.BufferAllocator;
 import io.netty.buffer.api.Send;
+import io.netty.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -25,25 +27,30 @@ public class CappedWriteBatch extends WriteBatch {
 	 */
 	private static final boolean USE_FAST_DIRECT_BUFFERS = true;
 	private final RocksDB db;
+	private final BufferAllocator alloc;
 	private final int cap;
 	private final WriteOptions writeOptions;
-	
+
 	private final List<Buffer> buffersToRelease;
+	private final List<ByteBuffer> byteBuffersToRelease;
 
 	/**
 	 * @param cap The limit of operations
 	 */
 	public CappedWriteBatch(RocksDB db,
+			BufferAllocator alloc,
 			int cap,
 			int reservedWriteBatchSize,
 			long maxWriteBatchSize,
 			WriteOptions writeOptions) {
 		super(reservedWriteBatchSize);
 		this.db = db;
+		this.alloc = alloc;
 		this.cap = cap;
 		this.writeOptions = writeOptions;
 		this.setMaxBytes(maxWriteBatchSize);
 		this.buffersToRelease = new ArrayList<>();
+		this.byteBuffersToRelease = new ArrayList<>();
 	}
 
 	private synchronized void flushIfNeeded(boolean force) throws RocksDBException {
@@ -60,6 +67,12 @@ public class CappedWriteBatch extends WriteBatch {
 				byteBuffer.close();
 			}
 			buffersToRelease.clear();
+		}
+		if (!byteBuffersToRelease.isEmpty()) {
+			for (var byteBuffer : byteBuffersToRelease) {
+				PlatformDependent.freeDirectBuffer(byteBuffer);
+			}
+			byteBuffersToRelease.clear();
 		}
 	}
 
@@ -98,14 +111,20 @@ public class CappedWriteBatch extends WriteBatch {
 		var key = keyToReceive.receive();
 		var value = valueToReceive.receive();
 		if (USE_FAST_DIRECT_BUFFERS && isDirect(key) && isDirect(value)) {
-			buffersToRelease.add(key);
 			buffersToRelease.add(value);
-			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
-			assert keyNioBuffer.isDirect();
+			var keyNioBuffer = LLUtils.convertToDirect(alloc, key.send());
+			key = keyNioBuffer.buffer().receive();
+			buffersToRelease.add(key);
+			byteBuffersToRelease.add(keyNioBuffer.byteBuffer());
+			assert keyNioBuffer.byteBuffer().isDirect();
 
-			ByteBuffer valueNioBuffer = LLUtils.toDirect(value);
-			assert valueNioBuffer.isDirect();
-			super.put(columnFamilyHandle, keyNioBuffer, valueNioBuffer);
+			var valueNioBuffer = LLUtils.convertToDirect(alloc, value.send());
+			value = valueNioBuffer.buffer().receive();
+			buffersToRelease.add(value);
+			byteBuffersToRelease.add(valueNioBuffer.byteBuffer());
+			assert valueNioBuffer.byteBuffer().isDirect();
+
+			super.put(columnFamilyHandle, keyNioBuffer.byteBuffer(), valueNioBuffer.byteBuffer());
 		} else {
 			try {
 				byte[] keyArray = LLUtils.toArray(key);
@@ -160,16 +179,18 @@ public class CappedWriteBatch extends WriteBatch {
 	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
 		var key = keyToReceive.receive();
 		if (USE_FAST_DIRECT_BUFFERS) {
+			var keyNioBuffer = LLUtils.convertToDirect(alloc, key.send());
+			key = keyNioBuffer.buffer().receive();
 			buffersToRelease.add(key);
-			ByteBuffer keyNioBuffer = LLUtils.toDirect(key);
-			assert keyNioBuffer.isDirect();
+			byteBuffersToRelease.add(keyNioBuffer.byteBuffer());
+			assert keyNioBuffer.byteBuffer().isDirect();
 			removeDirect(nativeHandle_,
-					keyNioBuffer,
-					keyNioBuffer.position(),
-					keyNioBuffer.remaining(),
+					keyNioBuffer.byteBuffer(),
+					keyNioBuffer.byteBuffer().position(),
+					keyNioBuffer.byteBuffer().remaining(),
 					columnFamilyHandle.nativeHandle_
 			);
-			keyNioBuffer.position(keyNioBuffer.limit());
+			keyNioBuffer.byteBuffer().position(keyNioBuffer.byteBuffer().limit());
 		} else {
 			try {
 				super.delete(columnFamilyHandle, LLUtils.toArray(key));

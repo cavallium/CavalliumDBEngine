@@ -6,21 +6,22 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.NotNull;
 
-public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryLength<B, Send<Buffer>> {
+public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryLength<B> {
 
-	private final SerializerFixedBinaryLength<A, Send<Buffer>> fixedLengthSerializer;
+	private final SerializerFixedBinaryLength<A> fixedLengthSerializer;
 	private final Mapper<A, B> keyMapper;
 
-	public MappedSerializerFixedLength(SerializerFixedBinaryLength<A, Send<Buffer>> fixedLengthSerializer,
+	public MappedSerializerFixedLength(SerializerFixedBinaryLength<A> fixedLengthSerializer,
 			Mapper<A, B> keyMapper) {
 		this.fixedLengthSerializer = fixedLengthSerializer;
 		this.keyMapper = keyMapper;
 	}
 
 	@Override
-	public @NotNull B deserialize(@NotNull Send<Buffer> serialized) throws SerializationException {
+	public @NotNull DeserializationResult<B> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException {
 		try (serialized) {
-			return keyMapper.map(fixedLengthSerializer.deserialize(serialized));
+			var deserialized = fixedLengthSerializer.deserialize(serialized);
+			return new DeserializationResult<>(keyMapper.map(deserialized.deserializedData()), deserialized.bytesRead());
 		}
 	}
 

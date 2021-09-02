@@ -117,10 +117,10 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 
 		@Override
 		public void drop(LLDelta obj) {
-			if (obj.previous != null) {
+			if (obj.previous != null && obj.previous.isAccessible()) {
 				obj.previous.close();
 			}
-			if (obj.current != null) {
+			if (obj.current != null && obj.current.isAccessible()) {
 				obj.current.close();
 			}
 			delegate.drop(obj);

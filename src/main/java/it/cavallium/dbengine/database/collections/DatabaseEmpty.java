@@ -5,6 +5,7 @@ import io.netty.buffer.api.BufferAllocator;
 import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.database.serialization.Serializer.DeserializationResult;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 
@@ -12,13 +13,14 @@ public class DatabaseEmpty {
 
 	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
+	public static final DeserializationResult<Nothing> NOTHING_RESULT = new DeserializationResult<>(NOTHING, 0);
 
-	public static Serializer<Nothing, Send<Buffer>> nothingSerializer(BufferAllocator bufferAllocator) {
+	public static Serializer<Nothing> nothingSerializer(BufferAllocator bufferAllocator) {
 		return new Serializer<>() {
 			@Override
-			public @NotNull Nothing deserialize(@NotNull Send<Buffer> serialized) {
+			public @NotNull DeserializationResult<Nothing> deserialize(@NotNull Send<Buffer> serialized) {
 				try (serialized) {
-					return NOTHING;
+					return NOTHING_RESULT;
 				}
 			}
 

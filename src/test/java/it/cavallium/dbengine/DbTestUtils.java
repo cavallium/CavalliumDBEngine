@@ -99,7 +99,7 @@ public class DbTestUtils {
 					.flatMap(conn -> conn
 							.getDatabase("testdb",
 									List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-									new DatabaseOptions(Map.of(), true, false, true, false, true, true, true, -1)
+									new DatabaseOptions(Map.of(), true, false, true, false, true, false, false, -1)
 							)
 							.map(db -> new TempDb(alloc, conn, db, wrkspcPath))
 					);
@@ -165,12 +165,10 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull Short deserialize(@NotNull Send<Buffer> serializedToReceive) {
+						public @NotNull DeserializationResult<Short> deserialize(@NotNull Send<Buffer> serializedToReceive) {
 							try (var serialized = serializedToReceive.receive()) {
-								var prevReaderIdx = serialized.readerOffset();
 								var val = serialized.readShort();
-								serialized.readerOffset(prevReaderIdx + Short.BYTES);
-								return val;
+								return new DeserializationResult<>(val, Short.BYTES);
 							}
 						}
 

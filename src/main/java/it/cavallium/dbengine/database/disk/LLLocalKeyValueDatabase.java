@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.netty.buffer.api.BufferAllocator;
+import io.netty.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -89,6 +90,19 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			DatabaseOptions databaseOptions) throws IOException {
 		this.name = name;
 		this.allocator = allocator;
+
+		if (databaseOptions.allowNettyDirect()) {
+			if (!PlatformDependent.hasUnsafe()) {
+				throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
+						PlatformDependent.getUnsafeUnavailabilityCause()
+				);
+			}
+			if (!PlatformDependent.hasDirectBufferNoCleanerConstructor()) {
+				throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers:"
+						+ " DirectBufferNoCleanerConstructor is not available");
+			}
+		}
+
 		Options rocksdbOptions = openRocksDb(path, databaseOptions);
 		try {
 			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();

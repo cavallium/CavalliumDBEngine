@@ -17,13 +17,13 @@ import reactor.core.publisher.Mono;
 public class SubStageGetterHashSet<T, TH> implements
 		SubStageGetter<Map<T, Nothing>, DatabaseSetDictionaryHashed<T, TH>> {
 
-	private final Serializer<T, Send<Buffer>> keySerializer;
+	private final Serializer<T> keySerializer;
 	private final Function<T, TH> keyHashFunction;
-	private final SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer;
+	private final SerializerFixedBinaryLength<TH> keyHashSerializer;
 
-	public SubStageGetterHashSet(Serializer<T, Send<Buffer>> keySerializer,
+	public SubStageGetterHashSet(Serializer<T> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH, Send<Buffer>> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer) {
 		this.keySerializer = keySerializer;
 		this.keyHashFunction = keyHashFunction;
 		this.keyHashSerializer = keyHashSerializer;

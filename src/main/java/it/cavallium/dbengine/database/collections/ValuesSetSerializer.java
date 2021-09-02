@@ -27,13 +27,17 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 	@Override
 	public @NotNull DeserializationResult<ObjectArraySet<X>> deserialize(@NotNull Send<Buffer> serializedToReceive) throws SerializationException {
 		try (var serialized = serializedToReceive.receive()) {
+			int initialReaderOffset = serialized.readerOffset();
 			int entriesLength = serialized.readInt();
 			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
 			for (int i = 0; i < entriesLength; i++) {
-				X entry = entrySerializer.deserialize(serialized.copy().send());
-				deserializedElements.add(entry);
+				var deserializationResult = entrySerializer.deserialize(serialized
+						.copy(serialized.readerOffset(), serialized.readableBytes())
+						.send());
+				deserializedElements.add(deserializationResult.deserializedData());
+				serialized.readerOffset(serialized.readerOffset() + deserializationResult.bytesRead());
 			}
-			return new ObjectArraySet<>(deserializedElements);
+			return new DeserializationResult<>(new ObjectArraySet<>(deserializedElements), serialized.readerOffset() - initialReaderOffset);
 		}
 	}
 
@@ -43,6 +47,7 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 			output.writeInt(deserialized.size());
 			for (X entry : deserialized) {
 				try (Buffer serialized = entrySerializer.serialize(entry).receive()) {
+					output.ensureWritable(serialized.readableBytes());
 					output.writeBytes(serialized);
 				}
 			}

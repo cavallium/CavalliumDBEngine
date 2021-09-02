@@ -15,11 +15,11 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, DatabaseMapDictionary<T, U>> {
 
-	private final SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer;
-	private final Serializer<U, Send<Buffer>> valueSerializer;
+	private final SerializerFixedBinaryLength<T> keySerializer;
+	private final Serializer<U> valueSerializer;
 
-	public SubStageGetterMap(SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer,
-			Serializer<U, Send<Buffer>> valueSerializer) {
+	public SubStageGetterMap(SerializerFixedBinaryLength<T> keySerializer,
+			Serializer<U> valueSerializer) {
 		this.keySerializer = keySerializer;
 		this.valueSerializer = valueSerializer;
 	}

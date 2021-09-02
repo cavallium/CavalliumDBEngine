@@ -1,15 +1,13 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.api.Buffer;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.Mapper;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.database.serialization.Serializer;
-import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -19,16 +17,16 @@ import reactor.core.publisher.SynchronousSink;
 public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 
 	private final DatabaseStageEntry<B> serializedSingle;
-	private final Serializer<A, B> serializer;
+	private final Mapper<A, B> mapper;
 
-	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Serializer<A, B> serializer) {
+	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Mapper<A, B> mapper) {
 		this.serializedSingle = serializedSingle;
-		this.serializer = serializer;
+		this.mapper = mapper;
 	}
 
 	private void deserializeSink(B value, SynchronousSink<A> sink) {
 		try {
-			sink.next(this.deserialize(value));
+			sink.next(this.unMap(value));
 		} catch (SerializationException ex) {
 			sink.error(ex);
 		}
@@ -47,14 +45,14 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	@Override
 	public Mono<Void> set(A value) {
 		return Mono
-				.fromCallable(() -> serialize(value))
+				.fromCallable(() -> map(value))
 				.flatMap(serializedSingle::set);
 	}
 
 	@Override
 	public Mono<A> setAndGetPrevious(A value) {
 		return Mono
-				.fromCallable(() -> serialize(value))
+				.fromCallable(() -> map(value))
 				.flatMap(serializedSingle::setAndGetPrevious)
 				.handle(this::deserializeSink);
 	}
@@ -62,7 +60,7 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	@Override
 	public Mono<Boolean> setAndGetChanged(A value) {
 		return Mono
-				.fromCallable(() -> serialize(value))
+				.fromCallable(() -> map(value))
 				.flatMap(serializedSingle::setAndGetChanged)
 				.single();
 	}
@@ -72,11 +70,11 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return serializedSingle.update(oldValue -> {
-			var result = updater.apply(oldValue == null ? null : this.deserialize(oldValue));
+			var result = updater.apply(oldValue == null ? null : this.unMap(oldValue));
 			if (result == null) {
 				return null;
 			} else {
-				return this.serialize(result);
+				return this.map(result);
 			}
 		}, updateReturnMode, existsAlmostCertainly).handle(this::deserializeSink);
 	}
@@ -85,13 +83,13 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	public Mono<Delta<A>> updateAndGetDelta(SerializationFunction<@Nullable A, @Nullable A> updater,
 			boolean existsAlmostCertainly) {
 		return serializedSingle.updateAndGetDelta(oldValue -> {
-			var result = updater.apply(oldValue == null ? null : this.deserialize(oldValue));
+			var result = updater.apply(oldValue == null ? null : this.unMap(oldValue));
 			if (result == null) {
 				return null;
 			} else {
-				return this.serialize(result);
+				return this.map(result);
 			}
-		}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::deserialize));
+		}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::unMap));
 	}
 
 	@Override
@@ -140,12 +138,12 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private A deserialize(B bytes) throws SerializationException {
-		return serializer.deserialize(bytes);
+	private A unMap(B bytes) throws SerializationException {
+		return mapper.unmap(bytes);
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	private B serialize(A bytes) throws SerializationException {
-		return serializer.serialize(bytes);
+	private B map(A bytes) throws SerializationException {
+		return mapper.map(bytes);
 	}
 }

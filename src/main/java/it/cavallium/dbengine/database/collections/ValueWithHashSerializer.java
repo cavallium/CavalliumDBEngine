@@ -29,7 +29,11 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 			throws SerializationException {
 		try (var serialized = serializedToReceive.receive()) {
 			DeserializationResult<X> deserializedKey = keySuffixSerializer.deserialize(serialized.copy().send());
-			DeserializationResult<Y> deserializedValue = valueSerializer.deserialize(serialized.send());
+			DeserializationResult<Y> deserializedValue = valueSerializer.deserialize(serialized
+					.copy(serialized.readerOffset() + deserializedKey.bytesRead(),
+							serialized.readableBytes() - deserializedKey.bytesRead()
+					)
+					.send());
 			return new DeserializationResult<>(Map.entry(deserializedKey.deserializedData(),
 					deserializedValue.deserializedData()), deserializedKey.bytesRead() + deserializedValue.bytesRead());
 		}

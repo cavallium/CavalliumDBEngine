@@ -6,21 +6,22 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.NotNull;
 
-public class MappedSerializer<A, B> implements Serializer<B, Send<Buffer>> {
+public class MappedSerializer<A, B> implements Serializer<B> {
 
-	private final Serializer<A, Send<Buffer>> serializer;
+	private final Serializer<A> serializer;
 	private final Mapper<A, B> keyMapper;
 
-	public MappedSerializer(Serializer<A, Send<Buffer>> serializer,
+	public MappedSerializer(Serializer<A> serializer,
 			Mapper<A, B> keyMapper) {
 		this.serializer = serializer;
 		this.keyMapper = keyMapper;
 	}
 
 	@Override
-	public @NotNull B deserialize(@NotNull Send<Buffer> serialized) throws SerializationException {
+	public @NotNull DeserializationResult<B> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException {
 		try (serialized) {
-			return keyMapper.map(serializer.deserialize(serialized));
+			var deserialized = serializer.deserialize(serialized);
+			return new DeserializationResult<>(keyMapper.map(deserialized.deserializedData()), deserialized.bytesRead());
 		}
 	}
 

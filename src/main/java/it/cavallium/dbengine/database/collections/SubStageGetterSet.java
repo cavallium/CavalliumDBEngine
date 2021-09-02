@@ -15,9 +15,9 @@ import reactor.core.publisher.Mono;
 
 public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, DatabaseSetDictionary<T>> {
 
-	private final SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer;
+	private final SerializerFixedBinaryLength<T> keySerializer;
 
-	public SubStageGetterSet(SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer) {
+	public SubStageGetterSet(SerializerFixedBinaryLength<T> keySerializer) {
 		this.keySerializer = keySerializer;
 	}
 

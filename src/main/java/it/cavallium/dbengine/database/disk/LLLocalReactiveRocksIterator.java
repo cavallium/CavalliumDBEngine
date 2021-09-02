@@ -68,10 +68,20 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						var rocksIterator = tuple.getT1();
 						rocksIterator.status();
 						if (rocksIterator.isValid()) {
-							try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
+							Buffer key;
+							if (allowNettyDirect) {
+								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive();
+							} else {
+								key = LLUtils.fromByteArray(alloc, rocksIterator.key());
+							}
+							try (key) {
 								Buffer value;
 								if (readValues) {
-									value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
+									if (allowNettyDirect) {
+										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
+									} else {
+										value = LLUtils.fromByteArray(alloc, rocksIterator.value());
+									}
 								} else {
 									value = alloc.allocate(0);
 								}

@@ -39,11 +39,11 @@ public interface Serializer<A> {
 			@Override
 			public @NotNull DeserializationResult<String> deserialize(@NotNull Send<Buffer> serializedToReceive) {
 				try (Buffer serialized = serializedToReceive.receive()) {
+					assert serialized.isAccessible();
 					int length = serialized.readInt();
 					var readerOffset = serialized.readerOffset();
-					var readableBytes = serialized.readableBytes();
 					return new DeserializationResult<>(LLUtils.deserializeString(serialized.send(),
-							readerOffset, length, StandardCharsets.UTF_8), readableBytes);
+							readerOffset, length, StandardCharsets.UTF_8), Integer.BYTES + length);
 				}
 			}
 
@@ -51,8 +51,10 @@ public interface Serializer<A> {
 			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) {
 				var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
 				try (Buffer buf = allocator.allocate(Integer.BYTES + bytes.length)) {
+					assert buf.isAccessible();
 					buf.writeInt(bytes.length);
 					buf.writeBytes(bytes);
+					assert buf.isAccessible();
 					return buf.send();
 				}
 			}

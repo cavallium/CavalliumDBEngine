@@ -376,7 +376,8 @@ public class LLLocalDictionary implements LLDictionary {
 					PlatformDependent.freeDirectBuffer(keyNioBuffer.byteBuffer());
 				}
 			} else {
-				try (ReadOptions validReadOptions = Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS)) {
+				ReadOptions validReadOptions = Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS);
+				try {
 					byte[] keyArray = LLUtils.toArray(key);
 					requireNonNull(keyArray);
 					Holder<byte[]> data = existsAlmostCertainly ? null : new Holder<>();
@@ -393,6 +394,10 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					} else {
 						return null;
+					}
+				} finally {
+					if (!(validReadOptions instanceof UnreleasableReadOptions)) {
+						validReadOptions.close();
 					}
 				}
 			}
@@ -440,9 +445,9 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> {
 					try (var range = rangeSend.receive()) {
 						if (range.isSingle()) {
-							return this.containsKey(snapshot, LLUtils.lazyRetain((range.getSingle().receive())));
+							return this.containsKey(snapshot, Mono.fromCallable(range::getSingle));
 						} else {
-							return this.containsRange(snapshot, LLUtils.lazyRetainRange(range));
+							return this.containsRange(snapshot, rangeMono);
 						}
 					}
 				},
@@ -794,7 +799,7 @@ public class LLLocalDictionary implements LLDictionary {
 											prevData = null;
 										}
 									} else {
-										var obtainedPrevData = dbGet(cfh, null, key.send(), existsAlmostCertainly);
+										var obtainedPrevData = dbGet(cfh, null, key.copy().send(), existsAlmostCertainly);
 										if (obtainedPrevData == null) {
 											prevData = null;
 										} else {
@@ -852,6 +857,8 @@ public class LLLocalDictionary implements LLDictionary {
 												logger.trace("Writing {}: {}",
 														LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
 											}
+											assert key.isAccessible();
+											assert newData.isAccessible();
 											dbPut(cfh, null, key.send(), newData.copy().send());
 										}
 										return LLDelta.of(
@@ -1128,7 +1135,15 @@ public class LLLocalDictionary implements LLDictionary {
 										for (LLEntry entry : entriesWindow) {
 											var k = entry.getKey();
 											var v = entry.getValue();
-											batch.put(cfh, k, v);
+											if (databaseOptions.allowNettyDirect()) {
+												batch.put(cfh, k, v);
+											} else {
+												try (var key = k.receive()) {
+													try (var value = v.receive()) {
+														batch.put(cfh, LLUtils.toArray(key), LLUtils.toArray(value));
+													}
+												}
+											}
 										}
 										batch.writeToDbAndClose();
 										batch.close();
@@ -1655,7 +1670,14 @@ public class LLLocalDictionary implements LLDictionary {
 															)) {
 																for (LLEntry entry : entriesList) {
 																	assert entry.isAccessible();
-																	batch.put(cfh, entry.getKey(), entry.getValue());
+																	if (databaseOptions.allowNettyDirect()) {
+																		batch.put(cfh, entry.getKey(), entry.getValue());
+																	} else {
+																		batch.put(cfh,
+																				LLUtils.toArray(entry.getKeyUnsafe()),
+																				LLUtils.toArray(entry.getValueUnsafe())
+																		);
+																	}
 																}
 																batch.writeToDbAndClose();
 															}

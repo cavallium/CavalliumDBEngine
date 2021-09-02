@@ -199,7 +199,7 @@ public class LLUtils {
 				b.append('[');
 				int i = 0;
 
-				while(true) {
+				while (true) {
 					b.append(key.getByte(startIndex + i));
 					if (i == iLimit) {
 						b.append("…");
@@ -237,10 +237,9 @@ public class LLUtils {
 
 
 	/**
-	 * Returns {@code true} if and only if the two specified buffers are
-	 * identical to each other for {@code length} bytes starting at {@code aStartIndex}
-	 * index for the {@code a} buffer and {@code bStartIndex} index for the {@code b} buffer.
-	 * A more compact way to express this is:
+	 * Returns {@code true} if and only if the two specified buffers are identical to each other for {@code length} bytes
+	 * starting at {@code aStartIndex} index for the {@code a} buffer and {@code bStartIndex} index for the {@code b}
+	 * buffer. A more compact way to express this is:
 	 * <p>
 	 * {@code a[aStartIndex : aStartIndex + length] == b[bStartIndex : bStartIndex + length]}
 	 */
@@ -273,8 +272,9 @@ public class LLUtils {
 	}
 
 	public static int hashCode(Buffer buf) {
-		if (buf == null)
+		if (buf == null) {
 			return 0;
+		}
 
 		int result = 1;
 		var cur = buf.openCursor();
@@ -287,7 +287,6 @@ public class LLUtils {
 	}
 
 	/**
-	 *
 	 * @return null if size is equal to RocksDB.NOT_FOUND
 	 */
 	@SuppressWarnings("ConstantConditions")
@@ -366,12 +365,21 @@ public class LLUtils {
 
 	@NotNull
 	public static ByteBuffer obtainDirect(Buffer buffer) {
-		assert buffer.isAccessible();
-		if (buffer.readableBytes() == 0) {
-			return EMPTY_BYTE_BUFFER;
+		if (!PlatformDependent.hasUnsafe()) {
+			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
+					PlatformDependent.getUnsafeUnavailabilityCause()
+			);
 		}
+		if (!PlatformDependent.hasDirectBufferNoCleanerConstructor()) {
+			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers:"
+					+ " DirectBufferNoCleanerConstructor is not available");
+		}
+		assert buffer.isAccessible();
 		long nativeAddress;
 		if ((nativeAddress = buffer.nativeAddress()) == 0) {
+			if (buffer.capacity() == 0) {
+				return EMPTY_BYTE_BUFFER;
+			}
 			throw new IllegalStateException("Buffer is not direct");
 		}
 		return PlatformDependent.directBuffer(nativeAddress, buffer.capacity());
@@ -395,7 +403,7 @@ public class LLUtils {
 	}
 
 	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
-		try (var composite = buffer.receive().compact()) {
+		try (var composite = buffer.receive()) {
 			return composite.send();
 		}
 	}
@@ -403,18 +411,21 @@ public class LLUtils {
 	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2) {
 		try (buffer1) {
 			try (buffer2) {
-				try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2).compact()) {
+				try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2)) {
 					return composite.send();
 				}
 			}
 		}
 	}
 
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2, Send<Buffer> buffer3) {
+	public static Send<Buffer> compositeBuffer(BufferAllocator alloc,
+			Send<Buffer> buffer1,
+			Send<Buffer> buffer2,
+			Send<Buffer> buffer3) {
 		try (buffer1) {
 			try (buffer2) {
 				try (buffer3) {
-					try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2, buffer3).compact()) {
+					try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2, buffer3)) {
 						return composite.send();
 					}
 				}
@@ -431,7 +442,7 @@ public class LLUtils {
 				case 2 -> compositeBuffer(alloc, buffers[0], buffers[1]);
 				case 3 -> compositeBuffer(alloc, buffers[0], buffers[1], buffers[2]);
 				default -> {
-					try (var composite = CompositeBuffer.compose(alloc, buffers).compact()) {
+					try (var composite = CompositeBuffer.compose(alloc, buffers)) {
 						yield composite.send();
 					}
 				}
@@ -568,30 +579,29 @@ public class LLUtils {
 	}
 
 	public static <T> Mono<T> handleDiscard(Mono<T> mono) {
-		return mono
-				.doOnDiscard(Object.class, obj -> {
-					if (obj instanceof SafeCloseable o) {
-						discardRefCounted(o);
-					} else if (obj instanceof Entry o) {
-						discardEntry(o);
-					} else if (obj instanceof Collection o) {
-						discardCollection(o);
-					} else if (obj instanceof Tuple3 o) {
-						discardTuple3(o);
-					} else if (obj instanceof Tuple2 o) {
-						discardTuple2(o);
-					} else if (obj instanceof LLEntry o) {
-						discardLLEntry(o);
-					} else if (obj instanceof LLRange o) {
-						discardLLRange(o);
-					} else if (obj instanceof Delta o) {
-						discardDelta(o);
-					} else if (obj instanceof Send o) {
-						discardSend(o);
-					} else if (obj instanceof Map o) {
-						discardMap(o);
-					}
-				});
+		return mono.doOnDiscard(Object.class, obj -> {
+			if (obj instanceof SafeCloseable o) {
+				discardRefCounted(o);
+			} else if (obj instanceof Entry o) {
+				discardEntry(o);
+			} else if (obj instanceof Collection o) {
+				discardCollection(o);
+			} else if (obj instanceof Tuple3 o) {
+				discardTuple3(o);
+			} else if (obj instanceof Tuple2 o) {
+				discardTuple2(o);
+			} else if (obj instanceof LLEntry o) {
+				discardLLEntry(o);
+			} else if (obj instanceof LLRange o) {
+				discardLLRange(o);
+			} else if (obj instanceof Delta o) {
+				discardDelta(o);
+			} else if (obj instanceof Send o) {
+				discardSend(o);
+			} else if (obj instanceof Map o) {
+				discardMap(o);
+			}
+		});
 		// todo: check if the single object discard hook is more performant
 		/*
 				.doOnDiscard(SafeCloseable.class, LLUtils::discardRefCounted)
@@ -609,30 +619,29 @@ public class LLUtils {
 	}
 
 	public static <T> Flux<T> handleDiscard(Flux<T> mono) {
-		return mono
-				.doOnDiscard(Object.class, obj -> {
-					if (obj instanceof SafeCloseable o) {
-						discardRefCounted(o);
-					} else if (obj instanceof Entry o) {
-						discardEntry(o);
-					} else if (obj instanceof Collection o) {
-						discardCollection(o);
-					} else if (obj instanceof Tuple3 o) {
-						discardTuple3(o);
-					} else if (obj instanceof Tuple2 o) {
-						discardTuple2(o);
-					} else if (obj instanceof LLEntry o) {
-						discardLLEntry(o);
-					} else if (obj instanceof LLRange o) {
-						discardLLRange(o);
-					} else if (obj instanceof Delta o) {
-						discardDelta(o);
-					} else if (obj instanceof Send o) {
-						discardSend(o);
-					} else if (obj instanceof Map o) {
-						discardMap(o);
-					}
-				});
+		return mono.doOnDiscard(Object.class, obj -> {
+			if (obj instanceof SafeCloseable o) {
+				discardRefCounted(o);
+			} else if (obj instanceof Entry o) {
+				discardEntry(o);
+			} else if (obj instanceof Collection o) {
+				discardCollection(o);
+			} else if (obj instanceof Tuple3 o) {
+				discardTuple3(o);
+			} else if (obj instanceof Tuple2 o) {
+				discardTuple2(o);
+			} else if (obj instanceof LLEntry o) {
+				discardLLEntry(o);
+			} else if (obj instanceof LLRange o) {
+				discardLLRange(o);
+			} else if (obj instanceof Delta o) {
+				discardDelta(o);
+			} else if (obj instanceof Send o) {
+				discardSend(o);
+			} else if (obj instanceof Map o) {
+				discardMap(o);
+			}
+		});
 		// todo: check if the single object discard hook is more performant
 		/*
 				.doOnDiscard(SafeCloseable.class, LLUtils::discardRefCounted)

@@ -32,7 +32,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected final LLDictionary dictionary;
 	private final BufferAllocator alloc;
 	protected final SubStageGetter<U, US> subStageGetter;
-	protected final SerializerFixedBinaryLength<T, Send<Buffer>> keySuffixSerializer;
+	protected final SerializerFixedBinaryLength<T> keySuffixSerializer;
 	protected final Buffer keyPrefix;
 	protected final int keyPrefixLength;
 	protected final int keySuffixLength;
@@ -191,14 +191,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	 */
 	@Deprecated
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer,
+			SerializerFixedBinaryLength<T> keySerializer,
 			SubStageGetterSingle<U> subStageGetter) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, dictionary.getAllocator().allocate(0).send(),
 				keySerializer, subStageGetter, 0);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer,
+			SerializerFixedBinaryLength<T> keySerializer,
 			int keyExtLength,
 			SubStageGetter<U, US> subStageGetter) {
 		return new DatabaseMapDictionaryDeep<>(dictionary,
@@ -211,7 +211,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySuffixSerializer,
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			SubStageGetter<U, US> subStageGetter,
 			int keyExtLength) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter, keyExtLength);
@@ -219,7 +219,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary,
 			Send<Buffer> prefixKeyToReceive,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySuffixSerializer,
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			SubStageGetter<U, US> subStageGetter,
 			int keyExtLength) {
 		try (var prefixKey = prefixKeyToReceive.receive()) {
@@ -436,7 +436,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 								.doOnNext(Send::close)
 								.then();
 					} else {
-						return dictionary.setRange(LLUtils.lazyRetainRange(range), Flux.empty());
+						return dictionary.setRange(rangeMono, Flux.empty());
 					}
 				});
 	}
@@ -447,7 +447,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			assert suffixKeyConsistency(keySuffix.readableBytes());
 			var result = keySuffixSerializer.deserialize(keySuffix.send());
 			assert keyPrefix.isAccessible();
-			return result;
+			return result.deserializedData();
 		}
 	}
 

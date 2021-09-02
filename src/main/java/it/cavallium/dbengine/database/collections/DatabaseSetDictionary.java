@@ -17,12 +17,12 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySuffixSerializer) {
+			SerializerFixedBinaryLength<T> keySuffixSerializer) {
 		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()));
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer) {
+			SerializerFixedBinaryLength<T> keySerializer) {
 		try (var buf = dictionary.getAllocator().allocate(0)) {
 			return new DatabaseSetDictionary<>(dictionary, buf.send(), keySerializer);
 		}
@@ -30,7 +30,7 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySuffixSerializer) {
+			SerializerFixedBinaryLength<T> keySuffixSerializer) {
 		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer);
 	}
 

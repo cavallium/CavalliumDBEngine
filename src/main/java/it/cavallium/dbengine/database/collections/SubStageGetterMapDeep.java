@@ -16,11 +16,11 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		SubStageGetter<Map<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
 
 	private final SubStageGetter<U, US> subStageGetter;
-	private final SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer;
+	private final SerializerFixedBinaryLength<T> keySerializer;
 	private final int keyExtLength;
 
 	public SubStageGetterMapDeep(SubStageGetter<U, US> subStageGetter,
-			SerializerFixedBinaryLength<T, Send<Buffer>> keySerializer,
+			SerializerFixedBinaryLength<T> keySerializer,
 			int keyExtLength) {
 		this.subStageGetter = subStageGetter;
 		this.keySerializer = keySerializer;

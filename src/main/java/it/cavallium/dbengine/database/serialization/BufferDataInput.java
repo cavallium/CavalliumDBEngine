@@ -12,9 +12,11 @@ import org.jetbrains.annotations.NotNull;
 public class BufferDataInput implements DataInput, SafeCloseable {
 
 	private final Buffer buf;
+	private final int initialReaderOffset;
 
 	public BufferDataInput(Send<Buffer> bufferSend) {
 		this.buf = bufferSend.receive().makeReadOnly();
+		this.initialReaderOffset = buf.readerOffset();
 	}
 
 	@Override
@@ -103,5 +105,9 @@ public class BufferDataInput implements DataInput, SafeCloseable {
 	@Override
 	public void close() {
 		buf.close();
+	}
+
+	public int getReadBytesCount() {
+		return buf.readerOffset() - initialReaderOffset;
 	}
 }

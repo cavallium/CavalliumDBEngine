@@ -58,9 +58,8 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 										+ serialized.readableBytes() + " bytes instead");
 					}
 					var readerOffset = serialized.readerOffset();
-					var readableBytes = serialized.readableBytes();
 					return new DeserializationResult<>(LLUtils.deserializeString(serialized.send(),
-							readerOffset, length, StandardCharsets.UTF_8), readableBytes);
+							readerOffset, length, StandardCharsets.UTF_8), length);
 				}
 			}
 
@@ -68,12 +67,14 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) throws SerializationException {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
 				try (Buffer buf = allocator.allocate(LLUtils.utf8MaxBytes(deserialized))) {
+					assert buf.isAccessible();
 					buf.writeBytes(deserialized.getBytes(StandardCharsets.UTF_8));
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
 						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
 								+ " bytes has tried to serialize an element with "
 								+ buf.readableBytes() + " bytes instead");
 					}
+					assert buf.isAccessible();
 					return buf.send();
 				}
 			}
@@ -95,8 +96,7 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
 										+ serialized.readableBytes() + " bytes instead");
 					}
-					var readableBytes = serialized.readableBytes();
-					return new DeserializationResult<>(serialized.readInt(), readableBytes);
+					return new DeserializationResult<>(serialized.readInt(), Integer.BYTES);
 				}
 			}
 
@@ -125,7 +125,7 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 										+ serialized.readableBytes() + " bytes instead");
 					}
 					var readableBytes = serialized.readableBytes();
-					return new DeserializationResult<>(serialized.readLong(), readableBytes);
+					return new DeserializationResult<>(serialized.readLong(), Long.BYTES);
 				}
 			}
 

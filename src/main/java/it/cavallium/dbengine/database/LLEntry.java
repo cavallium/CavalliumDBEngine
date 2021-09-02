@@ -16,9 +16,9 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 
 	private LLEntry(Send<Buffer> key, Send<Buffer> value, Drop<LLEntry> drop) {
 		super(new LLEntry.CloseOnDrop(drop));
-		assert isAllAccessible();
 		this.key = key.receive().makeReadOnly();
 		this.value = value.receive().makeReadOnly();
+		assert isAllAccessible();
 	}
 
 	private boolean isAllAccessible() {
@@ -119,8 +119,12 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 
 		@Override
 		public void drop(LLEntry obj) {
-			obj.key.close();
-			obj.value.close();
+			if (obj.key.isAccessible()) {
+				obj.key.close();
+			}
+			if (obj.value.isAccessible()) {
+				obj.value.close();
+			}
 			delegate.drop(obj);
 		}
 	}

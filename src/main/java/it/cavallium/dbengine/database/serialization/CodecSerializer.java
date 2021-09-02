@@ -8,7 +8,7 @@ import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
 
-public class CodecSerializer<A> implements Serializer<A, Send<Buffer>> {
+public class CodecSerializer<A> implements Serializer<A> {
 
 	private final BufferAllocator allocator;
 	private final Codecs<A> deserializationCodecs;
@@ -37,8 +37,8 @@ public class CodecSerializer<A> implements Serializer<A, Send<Buffer>> {
 	}
 
 	@Override
-	public @NotNull A deserialize(@NotNull Send<Buffer> serialized) {
-		try (var is = new BufferDataInput(serialized)) {
+	public @NotNull DeserializationResult<A> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+		try (var is = new BufferDataInput(serializedToReceive)) {
 			int codecId;
 			if (microCodecs) {
 				codecId = is.readUnsignedByte();
@@ -46,7 +46,7 @@ public class CodecSerializer<A> implements Serializer<A, Send<Buffer>> {
 				codecId = is.readInt();
 			}
 			var serializer = deserializationCodecs.getCodec(codecId);
-			return serializer.deserialize(is);
+			return new DeserializationResult<>(serializer.deserialize(is), is.getReadBytesCount());
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);

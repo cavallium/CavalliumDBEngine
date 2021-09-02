@@ -27,9 +27,9 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	private final LLDictionary dictionary;
 	private final Buffer key;
 	private final Mono<Send<Buffer>> keyMono;
-	private final Serializer<U, Send<Buffer>> serializer;
+	private final Serializer<U> serializer;
 
-	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U, Send<Buffer>> serializer) {
+	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U> serializer) {
 		try (key) {
 			this.dictionary = dictionary;
 			this.key = key.receive();
@@ -48,7 +48,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 
 	private void deserializeValue(Send<Buffer> value, SynchronousSink<U> sink) {
 		try {
-			sink.next(serializer.deserialize(value));
+			sink.next(serializer.deserialize(value).deserializedData());
 		} catch (SerializationException ex) {
 			sink.error(ex);
 		}
@@ -74,7 +74,8 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 			boolean existsAlmostCertainly) {
 		return dictionary
 				.update(keyMono, (oldValueSer) -> {
-					var result = updater.apply(oldValueSer == null ? null : serializer.deserialize(oldValueSer));
+					var result = updater.apply(
+							oldValueSer == null ? null : serializer.deserialize(oldValueSer).deserializedData());
 					if (result == null) {
 						return null;
 					} else {
@@ -89,13 +90,16 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 			boolean existsAlmostCertainly) {
 		return dictionary
 				.updateAndGetDelta(keyMono, (oldValueSer) -> {
-					var result = updater.apply(oldValueSer == null ? null : serializer.deserialize(oldValueSer));
+					var result = updater.apply(
+							oldValueSer == null ? null : serializer.deserialize(oldValueSer).deserializedData());
 					if (result == null) {
 						return null;
 					} else {
 						return serializer.serialize(result);
 					}
-				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono, serializer::deserialize));
+				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono,
+						serialized -> serializer.deserialize(serialized).deserializedData()
+				));
 	}
 
 	@Override

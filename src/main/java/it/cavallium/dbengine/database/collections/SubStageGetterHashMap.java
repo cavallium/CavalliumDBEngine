@@ -6,11 +6,9 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
@@ -50,11 +48,6 @@ public class SubStageGetterHashMap<T, U, TH> implements
 						),
 				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);
-	}
-
-	@Override
-	public boolean isMultiKey() {
-		return true;
 	}
 
 	public int getKeyHashBinaryLength() {

@@ -48,53 +48,65 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 
 
 	public Flux<Send<Buffer>> flux() {
-		return Flux
-				.generate(() -> {
-					var readOptions = new ReadOptions(this.readOptions);
-					if (!range.hasMin() || !range.hasMax()) {
-						readOptions.setReadaheadSize(32 * 1024); // 32KiB
-						readOptions.setFillCache(canFillCache);
-					}
-					return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
-				}, (tuple, sink) -> {
-					try {
-						var rocksIterator = tuple.getT1();
-						rocksIterator.status();
-						Buffer firstGroupKey = null;
-						try {
-							while (rocksIterator.isValid()) {
-								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
-									if (firstGroupKey == null) {
-										firstGroupKey = key.copy();
-									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(), key, key.readerOffset(), prefixLength)) {
-										break;
+		return Flux.using(
+				() -> range.copy().send(),
+				rangeSend -> Flux
+						.generate(() -> {
+							var readOptions = new ReadOptions(this.readOptions);
+							if (!range.hasMin() || !range.hasMax()) {
+								readOptions.setReadaheadSize(32 * 1024); // 32KiB
+								readOptions.setFillCache(canFillCache);
+							}
+							return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, rangeSend, db, cfh);
+						}, (tuple, sink) -> {
+							try {
+								var rocksIterator = tuple.getT1();
+								rocksIterator.status();
+								Buffer firstGroupKey = null;
+								try {
+									while (rocksIterator.isValid()) {
+										Buffer key;
+										if (allowNettyDirect) {
+											key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive();
+										} else {
+											key = LLUtils.fromByteArray(alloc, rocksIterator.key());
+										}
+										try (key) {
+											if (firstGroupKey == null) {
+												firstGroupKey = key.copy();
+											} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(), key, key.readerOffset(),
+													prefixLength)) {
+												break;
+											}
+											rocksIterator.next();
+											rocksIterator.status();
+										}
 									}
-									rocksIterator.next();
-									rocksIterator.status();
+									if (firstGroupKey != null) {
+										var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
+										assert groupKeyPrefix.isAccessible();
+										sink.next(groupKeyPrefix.send());
+									} else {
+										sink.complete();
+									}
+								} finally {
+									if (firstGroupKey != null) {
+										firstGroupKey.close();
+									}
 								}
+							} catch (RocksDBException ex) {
+								sink.error(ex);
 							}
-							if (firstGroupKey != null) {
-								var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
-								sink.next(groupKeyPrefix.send());
-							} else {
-								sink.complete();
-							}
-						} finally {
-							if (firstGroupKey != null) {
-								firstGroupKey.close();
-							}
-						}
-					} catch (RocksDBException ex) {
-						sink.error(ex);
-					}
-					return tuple;
-				}, tuple -> {
-					var rocksIterator = tuple.getT1();
-					rocksIterator.close();
-					tuple.getT2().close();
-					tuple.getT3().close();
-					tuple.getT4().close();
-				});
+							return tuple;
+						}, tuple -> {
+							var rocksIterator = tuple.getT1();
+							rocksIterator.close();
+							tuple.getT2().close();
+							tuple.getT3().close();
+							tuple.getT4().close();
+						}),
+				Send::close
+		);
 	}
 
 	public void release() {

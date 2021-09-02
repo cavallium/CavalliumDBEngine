@@ -5,7 +5,6 @@ import io.netty.buffer.api.BufferAllocator;
 import io.netty.buffer.api.Resource;
 import io.netty.buffer.api.Send;
 import io.netty.util.IllegalReferenceCountException;
-import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -14,16 +13,14 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.database.disk.LLLocalDictionary;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.util.Collection;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 // todo: implement optimized methods (which?)
@@ -44,7 +41,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	private static Send<Buffer> incrementPrefix(BufferAllocator alloc, Send<Buffer> originalKeySend, int prefixLength) {
 		try (var originalKey = originalKeySend.receive()) {
 			assert originalKey.readableBytes() >= prefixLength;
-			var originalKeyStartOffset = originalKey.readerOffset();
 			var originalKeyLength = originalKey.readableBytes();
 			try (Buffer copiedBuf = alloc.allocate(originalKey.readableBytes())) {
 				boolean overflowed = true;
@@ -279,15 +275,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	/**
-	 * Remove ext from full key
-	 */
-	protected Send<Buffer> removeExtFromFullKey(Send<Buffer> keyToReceive) {
-		try (var key = keyToReceive.receive()) {
-			return key.copy(key.readerOffset(), keyPrefixLength + keySuffixLength).send();
-		}
-	}
-
-	/**
 	 * Add prefix to suffix
 	 */
 	protected Send<Buffer> toKeyWithoutExt(Send<Buffer> suffixKeyToReceive) {
@@ -308,26 +295,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	protected Send<LLRange> toExtRange(Buffer keySuffix) {
-		try (Buffer first = firstRangeKey(alloc,
-				keyPrefix.copy().send(),
-				keySuffix.copy().send(),
-				keyPrefixLength,
-				keySuffixLength,
-				keyExtLength
-		).receive()) {
-			try (Buffer end = nextRangeKey(alloc,
-					keyPrefix.copy().send(),
-					keySuffix.copy().send(),
-					keyPrefixLength,
-					keySuffixLength,
-					keyExtLength
-			).receive()) {
-				return LLRange.of(first.send(), end.send()).send();
-			}
-		}
-	}
-
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary.sizeRange(resolveSnapshot(snapshot), rangeMono, fast);
@@ -340,16 +307,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		return Mono.using(
-				() -> serializeSuffix(keySuffix).receive(),
-				keySuffixData -> Mono.using(
-						() -> toKeyWithoutExt(keySuffixData.send()).receive(),
-						keyWithoutExt -> this.subStageGetter
-								.subStage(dictionary, snapshot, LLUtils.lazyRetain(keyWithoutExt)),
-						Resource::close
-				),
-				Resource::close
-		).transform(LLUtils::handleDiscard).doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+		return this.subStageGetter
+				.subStage(dictionary, snapshot, Mono.fromCallable(() -> toKeyWithoutExt(serializeSuffix(keySuffix))))
+				.transform(LLUtils::handleDiscard)
+				.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
 	}
 
 	@Override
@@ -362,43 +323,43 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return dictionary.badBlocks(rangeMono);
 	}
 
-	private static record GroupBuffers(Buffer groupKeyWithExt, Buffer groupKeyWithoutExt, Buffer groupSuffix) {}
-
 	@Override
 	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-
-		return Flux
-				.defer(() -> dictionary.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength))
-				.flatMapSequential(groupKeyWithoutExtSend -> Mono
-						.using(
-								() -> {
-									try (var groupKeyWithoutExt = groupKeyWithoutExtSend.receive()) {
-										try (var groupSuffix = this.stripPrefix(groupKeyWithoutExt.copy().send()).receive()) {
-											assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
-											return Tuples.of(groupKeyWithoutExt, groupSuffix);
-										}
+		return dictionary
+				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength)
+				.flatMapSequential(groupKeyWithoutExtSend_ -> Mono.using(
+						groupKeyWithoutExtSend_::receive,
+						groupKeyWithoutExtSend -> this.subStageGetter
+								.subStage(dictionary, snapshot, getGroupKeyWithoutExt(groupKeyWithoutExtSend.copy().send()))
+								.<Entry<T, US>>handle((us, sink) -> {
+									try {
+										sink.next(Map.entry(this.deserializeSuffix(getGroupSuffix(groupKeyWithoutExtSend.send())),
+												us));
+									} catch (SerializationException ex) {
+										sink.error(ex);
 									}
-								},
-								groupKeyWithoutExtAndGroupSuffix -> this.subStageGetter
-										.subStage(dictionary,
-												snapshot,
-												LLUtils.lazyRetain(groupKeyWithoutExtAndGroupSuffix.getT1())
-										)
-										.<Entry<T, US>>handle((us, sink) -> {
-											try {
-												sink.next(Map.entry(this.deserializeSuffix(groupKeyWithoutExtAndGroupSuffix.getT2().send()),
-														us));
-											} catch (SerializationException ex) {
-												sink.error(ex);
-											}
-										}),
-								entry -> {
-									entry.getT1().close();
-									entry.getT2().close();
-								}
-						)
-				)
+								}),
+						Resource::close
+				))
 				.transform(LLUtils::handleDiscard);
+	}
+
+	private Send<Buffer> getGroupSuffix(Send<Buffer> groupKeyWithoutExtSend) {
+		try (var groupKeyWithoutExt = groupKeyWithoutExtSend.receive()) {
+			try (var groupSuffix = this.stripPrefix(groupKeyWithoutExt.copy().send()).receive()) {
+				assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
+				return groupSuffix.send();
+			}
+		}
+	}
+
+	private Mono<Send<Buffer>> getGroupKeyWithoutExt(Send<Buffer> groupKeyWithoutExtSend) {
+		return Mono.fromCallable(() -> {
+			try (var groupKeyWithoutExt = groupKeyWithoutExtSend.receive()) {
+				assert subStageKeysConsistency(groupKeyWithoutExt.readableBytes() + keyExtLength);
+				return groupKeyWithoutExt.send();
+			}
+		});
 	}
 
 	private boolean subStageKeysConsistency(int totalKeyLength) {
@@ -432,7 +393,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 						return dictionary.clear();
 					} else if (range.isSingle()) {
 						return dictionary
-								.remove(LLUtils.lazyRetain(range::getSingle), LLDictionaryResultType.VOID)
+								.remove(Mono.fromCallable(range::getSingle), LLDictionaryResultType.VOID)
 								.doOnNext(Send::close)
 								.then();
 					} else {

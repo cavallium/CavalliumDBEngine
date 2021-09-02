@@ -2,16 +2,12 @@ package it.cavallium.dbengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.ByteBufAllocator;
-import io.netty.buffer.PoolArenaMetric;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.UnpooledByteBufAllocator;
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.MemoryManager;
 import io.netty.buffer.api.Send;
 import io.netty.buffer.api.pool.BufferAllocatorMetric;
 import io.netty.buffer.api.pool.PooledBufferAllocator;
+import io.netty.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -26,6 +22,7 @@ import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
+import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.io.IOException;
@@ -78,6 +75,7 @@ public class DbTestUtils {
 															Path path) {}
 
 	public static Mono<TempDb> openTempDb(TestAllocator alloc) {
+		boolean canUseNettyDirect = computeCanUseNettyDirect();
 		return Mono.defer(() -> {
 			var wrkspcPath = Path.of("/tmp/.cache/tempdb-" + dbId.incrementAndGet() + "/");
 			return Mono
@@ -99,11 +97,31 @@ public class DbTestUtils {
 					.flatMap(conn -> conn
 							.getDatabase("testdb",
 									List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-									new DatabaseOptions(Map.of(), true, false, true, false, true, false, false, -1)
+									new DatabaseOptions(Map.of(), true, false, true, false, true, canUseNettyDirect, canUseNettyDirect, -1)
 							)
 							.map(db -> new TempDb(alloc, conn, db, wrkspcPath))
 					);
 		});
+	}
+
+	private static boolean computeCanUseNettyDirect() {
+		boolean canUse = true;
+		if (!PlatformDependent.hasUnsafe()) {
+			System.err.println("Warning! Unsafe is not available!"
+					+ " Netty direct buffers will not be used in tests!");
+			canUse = false;
+		}
+		if (!MemorySegmentUtils.isSupported()) {
+			System.err.println("Warning! Foreign Memory Access API is not available!"
+					+ " Netty direct buffers will not be used in tests!"
+					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign --foreign.restricted=permit\"");
+			if (MemorySegmentUtils.getUnsupportedCause() != null) {
+				System.err.println("\tCause: " + MemorySegmentUtils.getUnsupportedCause().getClass().getName()
+						+ ":" + MemorySegmentUtils.getUnsupportedCause().getLocalizedMessage());
+			}
+			canUse = false;
+		}
+		return canUse;
 	}
 
 	public static Mono<Void> closeTempDb(TempDb tempDb) {

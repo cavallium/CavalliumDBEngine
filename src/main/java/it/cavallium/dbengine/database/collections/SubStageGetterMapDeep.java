@@ -2,14 +2,11 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.Send;
-import io.netty.util.ReferenceCounted;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.util.List;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
@@ -44,22 +41,10 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
-				prefixKey -> Mono
-						.fromSupplier(() -> DatabaseMapDictionaryDeep
-								.deepIntermediate(dictionary,
-										prefixKey,
-										keySerializer,
-										subStageGetter,
-										keyExtLength
-								)
-						),
+				prefixKey -> Mono.fromSupplier(() -> DatabaseMapDictionaryDeep
+						.deepIntermediate(dictionary, prefixKey, keySerializer, subStageGetter, keyExtLength)),
 				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);
-	}
-
-	@Override
-	public boolean isMultiKey() {
-		return true;
 	}
 
 	public int getKeyBinaryLength() {

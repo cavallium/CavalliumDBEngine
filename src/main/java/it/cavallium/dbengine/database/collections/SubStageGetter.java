@@ -16,5 +16,4 @@ public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKey);
 
-	boolean isMultiKey();
 }

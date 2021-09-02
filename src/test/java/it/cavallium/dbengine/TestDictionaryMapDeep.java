@@ -10,6 +10,7 @@ import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -214,18 +215,22 @@ public class TestDictionaryMapDeep {
 		Step<Tuple3<String, String, String>> stpVer = StepVerifier
 				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> map
+						.flatMapMany(map_ -> Flux.using(
+								() -> map_,
+								map -> map
 								.at(null, key)
-								.flatMap(v -> v
-										.set(value)
-										.doAfterTerminate(v::release)
-								)
+								.flatMap(v_ -> Mono.using(
+										() -> v_,
+										v -> v.set(value),
+										DatabaseMapDictionaryDeep::release
+								))
 								.then(map
 										.at(null, "capra")
-										.flatMap(v -> v
-												.set(Map.of("normal", "123", "ormaln", "456"))
-												.doAfterTerminate(v::release)
-										)
+										.flatMap(v_ -> Mono.using(
+												() -> v_,
+												v -> v.set(Map.of("normal", "123", "ormaln", "456")),
+												DatabaseMapDictionaryDeep::release
+										))
 								)
 								.thenMany(map
 										.getAllStages(null)
@@ -234,9 +239,9 @@ public class TestDictionaryMapDeep {
 												.map(result -> Tuples.of(v.getKey(), result.getKey(), result.getValue()))
 												.doAfterTerminate(() -> v.getValue().release())
 										)
-								)
-								.doAfterTerminate(map::release)
-						)
+								),
+								DatabaseMapDictionaryDeep::release
+						))
 				));
 		if (shouldFail) {
 			stpVer.verifyError();

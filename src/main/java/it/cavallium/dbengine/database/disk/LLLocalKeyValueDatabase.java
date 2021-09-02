@@ -97,9 +97,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						PlatformDependent.getUnsafeUnavailabilityCause()
 				);
 			}
-			if (!PlatformDependent.hasDirectBufferNoCleanerConstructor()) {
-				throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers:"
-						+ " DirectBufferNoCleanerConstructor is not available");
+			if (!MemorySegmentUtils.isSupported()) {
+				throw new UnsupportedOperationException("Please enable Foreign Memory Access API support or disable"
+						+ " netty direct buffers");
 			}
 		}
 

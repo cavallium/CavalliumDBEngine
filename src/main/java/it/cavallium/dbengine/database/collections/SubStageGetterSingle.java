@@ -4,12 +4,8 @@ import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import java.util.Arrays;
-import java.util.List;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageEntry<T>> {
@@ -30,11 +26,6 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 						.<DatabaseStageEntry<T>>fromSupplier(() -> new DatabaseSingle<>(dictionary, keyPrefix, serializer)),
 				keyPrefix -> Mono.fromRunnable(keyPrefix::close)
 		);
-	}
-
-	@Override
-	public boolean isMultiKey() {
-		return false;
 	}
 
 }

@@ -2,16 +2,13 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.UnpooledDirectByteBuf;
 import io.netty.buffer.api.Buffer;
 import io.netty.buffer.api.BufferAllocator;
 import io.netty.buffer.api.CompositeBuffer;
-import io.netty.buffer.api.MemoryManager;
 import io.netty.buffer.api.Send;
-import io.netty.buffer.api.unsafe.UnsafeMemoryManager;
 import io.netty.util.IllegalReferenceCountException;
 import io.netty.util.internal.PlatformDependent;
+import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
@@ -25,8 +22,6 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -51,8 +46,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
-import reactor.util.function.Tuples;
-import sun.misc.Unsafe;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -370,9 +363,9 @@ public class LLUtils {
 					PlatformDependent.getUnsafeUnavailabilityCause()
 			);
 		}
-		if (!PlatformDependent.hasDirectBufferNoCleanerConstructor()) {
-			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers:"
-					+ " DirectBufferNoCleanerConstructor is not available");
+		if (!MemorySegmentUtils.isSupported()) {
+			throw new UnsupportedOperationException("Please enable Foreign Memory Access API support or disable"
+					+ " netty direct buffers");
 		}
 		assert buffer.isAccessible();
 		long nativeAddress;
@@ -382,7 +375,7 @@ public class LLUtils {
 			}
 			throw new IllegalStateException("Buffer is not direct");
 		}
-		return PlatformDependent.directBuffer(nativeAddress, buffer.capacity());
+		return MemorySegmentUtils.directBuffer(nativeAddress, buffer.capacity());
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {

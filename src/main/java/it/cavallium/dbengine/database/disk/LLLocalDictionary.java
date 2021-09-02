@@ -1506,8 +1506,8 @@ public class LLLocalDictionary implements LLDictionary {
 										true,
 										"getRangeKeysGrouped"
 								),
-								LLLocalKeyPrefixReactiveRocksIterator::flux,
-								LLLocalKeyPrefixReactiveRocksIterator::release
+								it -> it.flux(),
+								it -> it.release()
 						)
 						.subscribeOn(dbScheduler),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)

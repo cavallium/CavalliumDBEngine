@@ -22,25 +22,21 @@ public class JMXPooledNettyMonitoring extends JMXNettyMonitoring implements JMXN
 			//noinspection JavaReflectionMemberAccess
 			numThreadLocalCaches = metric.getClass().getDeclaredField("numThreadLocalCaches");
 		} catch (NoSuchFieldException e) {
-			e.printStackTrace();
 		}
 		try {
 			//noinspection JavaReflectionMemberAccess
 			smallCacheSize = metric.getClass().getDeclaredField("smallCacheSize");
 		} catch (NoSuchFieldException e) {
-			e.printStackTrace();
 		}
 		try {
 			//noinspection JavaReflectionMemberAccess
 			normalCacheSize = metric.getClass().getDeclaredField("normalCacheSize");
 		} catch (NoSuchFieldException e) {
-			e.printStackTrace();
 		}
 		try {
 			//noinspection JavaReflectionMemberAccess
 			chunkSize = metric.getClass().getDeclaredField("chunkSize");
 		} catch (NoSuchFieldException e) {
-			e.printStackTrace();
 		}
 	}
 

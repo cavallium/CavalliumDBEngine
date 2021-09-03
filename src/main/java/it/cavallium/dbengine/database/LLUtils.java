@@ -364,8 +364,8 @@ public class LLUtils {
 			);
 		}
 		if (!MemorySegmentUtils.isSupported()) {
-			throw new UnsupportedOperationException("Please enable Foreign Memory Access API support or disable"
-					+ " netty direct buffers");
+			throw new UnsupportedOperationException("Foreign Memory Access API support is disabled."
+					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
 		}
 		assert buffer.isAccessible();
 		long nativeAddress;

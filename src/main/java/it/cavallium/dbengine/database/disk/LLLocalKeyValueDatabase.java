@@ -98,8 +98,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				);
 			}
 			if (!MemorySegmentUtils.isSupported()) {
-				throw new UnsupportedOperationException("Please enable Foreign Memory Access API support or disable"
-						+ " netty direct buffers");
+				throw new UnsupportedOperationException("Foreign Memory Access API support is disabled."
+						+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
 			}
 		}
 

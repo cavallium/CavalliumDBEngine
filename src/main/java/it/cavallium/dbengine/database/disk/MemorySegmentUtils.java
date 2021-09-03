@@ -75,12 +75,14 @@ public class MemorySegmentUtils {
 				if (PlatformDependent.hasDirectBufferNoCleanerConstructor()) {
 					return PlatformDependent.directBuffer(address, (int) size);
 				}
-				throw new UnsupportedOperationException("Foreign Memory Access API is not enabled!");
+				throw new UnsupportedOperationException("Foreign Memory Access API is disabled!"
+						+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
 			}
 			var memorySegment = AS_SLICE.invoke(NATIVE, address, size);
 			return (ByteBuffer) AS_BYTE_BUFFER.invoke(memorySegment);
 		} catch (Throwable e) {
-			throw new UnsupportedOperationException("Foreign Memory Access API is not enabled!", e);
+			throw new UnsupportedOperationException("Foreign Memory Access API is disabled!"
+					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"", e);
 		}
 	}
 

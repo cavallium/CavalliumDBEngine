@@ -96,10 +96,10 @@ public class BufferDataInput implements DataInput, SafeCloseable {
 	@Override
 	public String readUTF() {
 		var len = buf.readUnsignedShort();
-		try (var copiedBuf = buf.copy(buf.readerOffset(), len)) {
-			var off = copiedBuf.readerOffset();
-			return LLUtils.deserializeString(copiedBuf.send(), off, len, StandardCharsets.UTF_8);
-		}
+		byte[] bytes = new byte[len];
+		buf.copyInto(buf.readerOffset(), bytes, 0, len);
+		buf.readerOffset(buf.readerOffset() + len);
+		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
 	@Override

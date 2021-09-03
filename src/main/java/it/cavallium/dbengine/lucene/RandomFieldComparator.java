@@ -75,7 +75,7 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 			}
 		};
 		if (!(scorer instanceof ScoreCachingWrappingScorer)) {
-			this.scorer = ScoreCachingWrappingScorer.wrap(randomizedScorer);
+			this.scorer = new ScoreCachingWrappingScorer(randomizedScorer);
 		} else {
 			this.scorer = randomizedScorer;
 		}

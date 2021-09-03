@@ -660,7 +660,7 @@ public class LLLocalDictionary implements LLDictionary {
 											prevData = null;
 										}
 									} else {
-										var obtainedPrevData = dbGet(cfh, null, key.send(), existsAlmostCertainly);
+										var obtainedPrevData = dbGet(cfh, null, key.copy().send(), existsAlmostCertainly);
 										if (obtainedPrevData == null) {
 											prevData = null;
 										} else {

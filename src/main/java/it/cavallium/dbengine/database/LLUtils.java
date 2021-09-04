@@ -373,6 +373,9 @@ public class LLUtils {
 			if (buffer.capacity() == 0) {
 				return EMPTY_BYTE_BUFFER;
 			}
+			if (!buffer.isAccessible()) {
+				throw new IllegalStateException("Buffer is not accessible");
+			}
 			throw new IllegalStateException("Buffer is not direct");
 		}
 		return MemorySegmentUtils.directBuffer(nativeAddress, buffer.capacity());
@@ -402,9 +405,9 @@ public class LLUtils {
 	}
 
 	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2) {
-		try (buffer1) {
-			try (buffer2) {
-				try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2)) {
+		try (var buf1 = buffer1.receive()) {
+			try (var buf2 = buffer2.receive()) {
+				try (var composite = CompositeBuffer.compose(alloc, buf1.split().send(), buf2.split().send())) {
 					return composite.send();
 				}
 			}
@@ -415,10 +418,14 @@ public class LLUtils {
 			Send<Buffer> buffer1,
 			Send<Buffer> buffer2,
 			Send<Buffer> buffer3) {
-		try (buffer1) {
-			try (buffer2) {
-				try (buffer3) {
-					try (var composite = CompositeBuffer.compose(alloc, buffer1, buffer2, buffer3)) {
+		try (var buf1 = buffer1.receive()) {
+			try (var buf2 = buffer2.receive()) {
+				try (var buf3 = buffer3.receive()) {
+					try (var composite = CompositeBuffer.compose(alloc,
+							buf1.split().send(),
+							buf2.split().send(),
+							buf3.split().send()
+					)) {
 						return composite.send();
 					}
 				}
@@ -435,8 +442,23 @@ public class LLUtils {
 				case 2 -> compositeBuffer(alloc, buffers[0], buffers[1]);
 				case 3 -> compositeBuffer(alloc, buffers[0], buffers[1], buffers[2]);
 				default -> {
-					try (var composite = CompositeBuffer.compose(alloc, buffers)) {
-						yield composite.send();
+					Buffer[] bufs = new Buffer[buffers.length];
+					for (int i = 0; i < buffers.length; i++) {
+						bufs[i] = buffers[i].receive();
+					}
+					try {
+						//noinspection unchecked
+						Send<Buffer>[] sentBufs = new Send[buffers.length];
+						for (int i = 0; i < buffers.length; i++) {
+							sentBufs[i] = bufs[i].split().send();
+						}
+						try (var composite = CompositeBuffer.compose(alloc, sentBufs)) {
+							yield composite.send();
+						}
+					} finally {
+						for (Buffer buf : bufs) {
+							buf.close();
+						}
 					}
 				}
 			};

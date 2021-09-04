@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.util.internal.PlatformDependent;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -41,8 +41,6 @@ import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
-import org.rocksdb.LRUCache;
-import org.rocksdb.MemoryUtil;
 import org.rocksdb.Options;
 import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;

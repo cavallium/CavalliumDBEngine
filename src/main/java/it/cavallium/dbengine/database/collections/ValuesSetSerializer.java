@@ -1,17 +1,12 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
-import it.unimi.dsi.fastutil.objects.ObjectOpenHashSet;
-import it.unimi.dsi.fastutil.objects.ObjectSets;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
-import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 
 class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {

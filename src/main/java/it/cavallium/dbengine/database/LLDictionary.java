@@ -1,15 +1,13 @@
 package it.cavallium.dbengine.database;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;

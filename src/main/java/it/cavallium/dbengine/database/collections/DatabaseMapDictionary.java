@@ -1,11 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.Send;
-import io.netty.buffer.api.internal.ResourceSupport;
-import io.netty.util.ReferenceCounted;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.client.NoMapper;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.ExtraKeyOperationResult;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -19,21 +17,17 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
 import reactor.util.function.Tuples;
 
 /**

@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.Resource;
-import io.netty.buffer.api.Send;
-import io.netty.util.IllegalReferenceCountException;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Resource;
+import io.netty5.buffer.api.Send;
+import io.netty5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -20,8 +20,6 @@ import java.util.Map.Entry;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 // todo: implement optimized methods (which?)
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {

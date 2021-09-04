@@ -2,12 +2,12 @@ package it.cavallium.dbengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.MemoryManager;
-import io.netty.buffer.api.Send;
-import io.netty.buffer.api.pool.BufferAllocatorMetric;
-import io.netty.buffer.api.pool.PooledBufferAllocator;
-import io.netty.util.internal.PlatformDependent;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.MemoryManager;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.pool.BufferAllocatorMetric;
+import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;

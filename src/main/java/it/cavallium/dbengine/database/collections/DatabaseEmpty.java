@@ -1,12 +1,11 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.Serializer.DeserializationResult;
-import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 
 public class DatabaseEmpty {

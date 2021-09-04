@@ -2,21 +2,14 @@ package org.rocksdb;
 
 import static it.cavallium.dbengine.database.LLUtils.isDirect;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.Send;
-import io.netty.util.internal.PlatformDependent;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import org.rocksdb.AbstractWriteBatch;
-import org.rocksdb.ColumnFamilyHandle;
-import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDBException;
-import org.rocksdb.WriteBatch;
-import org.rocksdb.WriteBatchInterface;
-import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 
 @NotAtomic

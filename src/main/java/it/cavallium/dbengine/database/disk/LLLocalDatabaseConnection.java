@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
@@ -11,7 +11,6 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
 import reactor.core.publisher.Mono;

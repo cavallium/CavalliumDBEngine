@@ -1,8 +1,7 @@
 package it.cavallium.dbengine.database.memory;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.Unpooled;
-import io.netty.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;

@@ -1,11 +1,9 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.Send;
-import it.cavallium.dbengine.database.LLUtils;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.io.DataInput;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.NotNull;
 

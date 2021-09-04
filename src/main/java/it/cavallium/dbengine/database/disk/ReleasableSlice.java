@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.Resource;
+import io.netty5.buffer.api.Buffer;
 import it.cavallium.dbengine.database.SafeCloseable;
 import org.rocksdb.AbstractSlice;
 

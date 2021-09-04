@@ -94,7 +94,7 @@
       <artifactId>common-utils</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.netty</groupId>
+      <groupId>io.netty5</groupId>
       <artifactId>netty-buffer</artifactId>
     </dependency>
     <dependency>
@@ -250,7 +250,7 @@
         <version>1.1.4</version>
       </dependency>
       <dependency>
-        <groupId>io.netty</groupId>
+        <groupId>io.netty5</groupId>
         <artifactId>netty-buffer</artifactId>
         <version>5.0.0.Final-SNAPSHOT</version>
       </dependency>

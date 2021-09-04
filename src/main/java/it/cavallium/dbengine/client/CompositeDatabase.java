@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import io.netty.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 

@@ -2,12 +2,12 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.api.CompositeBuffer;
-import io.netty.buffer.api.Send;
-import io.netty.util.IllegalReferenceCountException;
-import io.netty.util.internal.PlatformDependent;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.CompositeBuffer;
+import io.netty5.buffer.api.Send;
+import io.netty5.util.IllegalReferenceCountException;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;

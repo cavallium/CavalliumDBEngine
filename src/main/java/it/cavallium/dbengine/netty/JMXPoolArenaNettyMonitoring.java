@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty.buffer.PoolArenaMetric;
+import io.netty5.buffer.PoolArenaMetric;
 
 public class JMXPoolArenaNettyMonitoring implements JMXPoolArenaNettyMonitoringMBean {
 

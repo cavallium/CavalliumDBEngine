@@ -1,9 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty.buffer.api.Buffer;
-import io.netty.buffer.api.Send;
-import io.netty.buffer.api.internal.ResourceSupport;
-import io.netty.util.ReferenceCounted;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
@@ -16,7 +15,6 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;

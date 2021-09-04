@@ -1,17 +1,9 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty.buffer.api.BufferAllocator;
-import io.netty.buffer.PoolArenaMetric;
-import io.netty.buffer.PooledByteBufAllocator;
-import io.netty.buffer.PooledByteBufAllocatorMetric;
-import io.netty.buffer.UnpooledByteBufAllocator;
-import io.netty.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.pool.PooledBufferAllocator;
 import java.lang.management.ManagementFactory;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Stream;
 import javax.management.InstanceAlreadyExistsException;
 import javax.management.MBeanRegistrationException;
 import javax.management.MBeanServer;

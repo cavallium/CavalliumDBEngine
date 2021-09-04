@@ -14,15 +14,12 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName,
-			Scheduler scheduler) {
-		//noinspection BlockingMethodInNonBlockingContext
+			String keyFieldName) {
 		return Mono
 				.fromCallable(() -> new LuceneSearchResult(
 						TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
 						Flux.empty(),
 						releaseIndexSearcher)
-				)
-				.subscribeOn(scheduler);
+				);
 	}
 }

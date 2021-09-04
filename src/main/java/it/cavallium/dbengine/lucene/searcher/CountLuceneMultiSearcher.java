@@ -24,20 +24,17 @@ public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 						@Override
 						public Mono<Void> searchOn(IndexSearcher indexSearcher,
 								Mono<Void> releaseIndexSearcher,
-								LocalQueryParams queryParams,
-								Scheduler scheduler) {
+								LocalQueryParams queryParams) {
 							return Mono
 									.<Void>fromCallable(() -> {
-										//noinspection BlockingMethodInNonBlockingContext
 										totalHits.addAndGet(indexSearcher.count(queryParams.query()));
 										release.add(releaseIndexSearcher);
 										return null;
-									})
-									.subscribeOn(scheduler);
+									});
 						}
 
 						@Override
-						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
 							return Mono.fromCallable(() -> new LuceneSearchResult(TotalHitsCount.of(totalHits.get(), true), Flux.empty(), Mono.when(release)));
 						}
 					};

@@ -22,8 +22,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName,
-			Scheduler scheduler) {
+			String keyFieldName) {
 		return Mono
 				.fromCallable(() -> {
 					Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
@@ -42,7 +41,6 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 								LuceneUtils.totalHitsThreshold(),
 								!paginationInfo.forceSinglePage(),
 								queryParams.isScored());
-						//noinspection BlockingMethodInNonBlockingContext
 						indexSearcher.search(queryParams.query(), firstPageCollector);
 						firstPageTopDocs = firstPageCollector.topDocs(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
 								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit())
@@ -53,7 +51,6 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 									firstPageTopDocs.scoreDocs,
 									IndexSearchers.unsharded(indexSearcher),
 									keyFieldName,
-									scheduler,
 									true
 							)
 							.take(queryParams.limit(), true);
@@ -63,43 +60,40 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 					if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
 						nextHits = null;
 					} else {
-						nextHits = Flux.defer(() -> {
-							return Flux
-									.<TopDocs, CurrentPageInfo>generate(
-											() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
-											(s, sink) -> {
-												if (s.last() != null && s.remainingLimit() > 0) {
-													TopDocs pageTopDocs;
-													try {
-														TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
-																s.currentPageLimit(),
-																s.last(),
-																LuceneUtils.totalHitsThreshold(),
-																true,
-																queryParams.isScored()
-														);
-														//noinspection BlockingMethodInNonBlockingContext
-														indexSearcher.search(queryParams.query(), collector);
-														pageTopDocs = collector.topDocs();
-													} catch (IOException e) {
-														sink.error(e);
-														return EMPTY_STATUS;
-													}
-													var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
-													sink.next(pageTopDocs);
-													return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
-												} else {
-													sink.complete();
-													return EMPTY_STATUS;
-												}
-											},
-											s -> {}
-									)
-									.subscribeOn(scheduler)
-									.flatMapSequential(topFieldDoc -> LuceneUtils
-											.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true)
-									);
-						});
+						nextHits = Flux.defer(() -> Flux
+							.<TopDocs, CurrentPageInfo>generate(
+									() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
+									(s, sink) -> {
+										if (s.last() != null && s.remainingLimit() > 0) {
+											TopDocs pageTopDocs;
+											try {
+												TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
+														s.currentPageLimit(),
+														s.last(),
+														LuceneUtils.totalHitsThreshold(),
+														true,
+														queryParams.isScored()
+												);
+												indexSearcher.search(queryParams.query(), collector);
+												pageTopDocs = collector.topDocs();
+											} catch (IOException e) {
+												sink.error(e);
+												return EMPTY_STATUS;
+											}
+											var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
+											sink.next(pageTopDocs);
+											return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
+										} else {
+											sink.complete();
+											return EMPTY_STATUS;
+										}
+									},
+									s -> {}
+							)
+							.flatMapSequential(topFieldDoc -> LuceneUtils
+									.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, true)
+							)
+						);
 					}
 
 					Flux<LLKeyScore> combinedFlux;
@@ -115,7 +109,6 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 							//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							releaseIndexSearcher
 					);
-				})
-				.subscribeOn(scheduler);
+				});
 	}
 }

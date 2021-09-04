@@ -40,31 +40,28 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 	@Override
 	public Mono<Void> searchOn(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
-			LocalQueryParams queryParams,
-			Scheduler scheduler) {
-		return Mono.<Void>fromCallable(() -> {
+			LocalQueryParams queryParams) {
+		return Mono.fromCallable(() -> {
 			TopDocsCollector<ScoreDoc> collector;
 			synchronized (lock) {
-				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageUnsortedCollectorManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
 				indexSearcherReleasersArray.add(releaseIndexSearcher);
 				collectors.add(collector);
 			}
-			//noinspection BlockingMethodInNonBlockingContext
 			indexSearcher.search(luceneQuery, collector);
 			return null;
-		}).subscribeOn(scheduler);
+		});
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
 		return Mono
 				.fromCallable(() -> {
 					TopDocs result;
 					Mono<Void> release;
 					synchronized (lock) {
-						//noinspection BlockingMethodInNonBlockingContext
+						
 						result = firstPageUnsortedCollectorManager.reduce(collectors);
 						release = Mono.when(indexSearcherReleasersArray);
 					}
@@ -73,7 +70,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler, false);
+							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, false);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
 						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
@@ -91,23 +88,19 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 														() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), s.currentPageLimit(),
 																s.last(), LuceneUtils.totalHitsThreshold(), true, queryParams.isScored()),
 														0, s.currentPageLimit(), queryParams.sort());
-												//noinspection BlockingMethodInNonBlockingContext
+												
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)
 														.flatMapSequential(indexSearcher -> Mono
 																.fromCallable(() -> {
-																	//noinspection BlockingMethodInNonBlockingContext
 																	var collector = currentPageUnsortedCollectorManager.newCollector();
-																	//noinspection BlockingMethodInNonBlockingContext
 																	indexSearcher.search(luceneQuery, collector);
 																	return collector;
 																})
-																.subscribeOn(scheduler)
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
 														.flatMap(collectors -> Mono
 																.fromCallable(() -> currentPageUnsortedCollectorManager.reduce(collectors))
-																.subscribeOn(scheduler)
 														)
 														.blockOptional().orElseThrow();
 
@@ -122,9 +115,8 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 										},
 										s -> {}
 								)
-								.subscribeOn(scheduler)
 								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler, false)
+										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, false)
 								);
 					});
 
@@ -133,8 +125,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 							//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							release
 					);
-				})
-				.subscribeOn(scheduler);
+				});
 		}
 
 }

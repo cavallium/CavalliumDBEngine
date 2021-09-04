@@ -22,6 +22,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -65,7 +66,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 
 	private final BufferAllocator allocator;
-	private final Scheduler dbScheduler;
 
 	// Configurations
 
@@ -112,6 +112,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			}
 
 			// Get databases directory path
+			Objects.requireNonNull(path);
 			Path databasesDirPath = path.toAbsolutePath().getParent();
 			String dbPathString = databasesDirPath.toString() + File.separatorChar + path.getFileName();
 			Path dbPath = Paths.get(dbPathString);
@@ -127,12 +128,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				// 8 or more
 				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
 			}
-			this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
-					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-					"db-" + name,
-					60,
-					true
-			);
 			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
 			createIfNotExists(descriptors, rocksdbOptions, databaseOptions, dbPath, dbPathString);
@@ -300,6 +295,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setAllowFAllocate(true);
 		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
 
+		Objects.requireNonNull(databasesDirPath);
+		Objects.requireNonNull(path.getFileName());
 		List<DbPath> paths = List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
 						10L * 1024L * 1024L * 1024L), // 10GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
@@ -455,11 +452,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						LLLocalKeyValueDatabase.this.name,
 						name,
-						dbScheduler,
 						defaultValue
 				))
-				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause))
-				.subscribeOn(dbScheduler);
+				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause));
 	}
 
 	@Override
@@ -471,12 +466,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						getCfh(columnName),
 						name,
 						Column.toString(columnName),
-						dbScheduler,
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						updateMode,
 						databaseOptions
-				))
-				.subscribeOn(dbScheduler);
+				));
 	}
 
 	private ColumnFamilyHandle getCfh(byte[] columnName) throws RocksDBException {
@@ -492,8 +485,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
-				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
-				.subscribeOn(dbScheduler);
+				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause));
 	}
 
 	@Override
@@ -504,8 +496,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					return null;
 				})
 				.onErrorMap(cause -> new IOException("Failed to verify checksum of database \""
-						+ getDatabaseName() + "\"", cause))
-				.subscribeOn(dbScheduler);
+						+ getDatabaseName() + "\"", cause));
 	}
 
 	@Override
@@ -521,22 +512,20 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					long currentSnapshotSequenceNumber = nextSnapshotNumbers.getAndIncrement();
 					this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
 					return new LLSnapshot(currentSnapshotSequenceNumber);
-				})
-				.subscribeOn(dbScheduler);
+				});
 	}
 
 	@Override
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return Mono
-				.<Void>fromCallable(() -> {
+				.fromCallable(() -> {
 					Snapshot dbSnapshot = this.snapshotsHandles.remove(snapshot.getSequenceNumber());
 					if (dbSnapshot == null) {
 						throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
 					}
 					db.releaseSnapshot(dbSnapshot);
 					return null;
-				})
-				.subscribeOn(dbScheduler);
+				});
 	}
 
 	@Override
@@ -551,8 +540,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					}
 					return null;
 				})
-				.onErrorMap(cause -> new IOException("Failed to close", cause))
-				.subscribeOn(dbScheduler);
+				.onErrorMap(cause -> new IOException("Failed to close", cause));
 	}
 
 	/**

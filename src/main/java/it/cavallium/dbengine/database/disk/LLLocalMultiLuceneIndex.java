@@ -218,7 +218,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(luceneIndexWithSnapshot -> luceneIndexWithSnapshot.luceneIndex()
 								.distributedMoreLikeThis(luceneIndexWithSnapshot.snapshot.orElse(null), queryParams, mltDocumentFields, shardSearcher))
 						// Collect all the shards results into a single global result
-						.then(shardSearcher.collect(localQueryParams, keyFieldName, Schedulers.boundedElastic()))
+						.then(shardSearcher.collect(localQueryParams, keyFieldName))
 				)
 				// Fix the result type
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));
@@ -246,7 +246,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(luceneIndexWithSnapshot -> luceneIndexWithSnapshot.luceneIndex()
 								.distributedSearch(luceneIndexWithSnapshot.snapshot.orElse(null), queryParams, shardSearcher))
 						// Collect all the shards results into a single global result
-						.then(shardSearcher.collect(localQueryParams, keyFieldName, Schedulers.boundedElastic()))
+						.then(shardSearcher.collect(localQueryParams, keyFieldName))
 				)
 				// Fix the result type
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));

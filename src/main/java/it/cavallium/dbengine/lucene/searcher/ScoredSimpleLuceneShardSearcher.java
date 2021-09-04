@@ -48,25 +48,22 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	@Override
 	public Mono<Void> searchOn(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
-			LocalQueryParams queryParams,
-			Scheduler scheduler) {
-		return Mono.<Void>fromCallable(() -> {
+			LocalQueryParams queryParams) {
+		return Mono.fromCallable(() -> {
 			TopFieldCollector collector;
 			synchronized (lock) {
-				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageSharedManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
 				indexSearcherReleasersArray.add(releaseIndexSearcher);
 				collectors.add(collector);
 			}
-			//noinspection BlockingMethodInNonBlockingContext
 			indexSearcher.search(luceneQuery, collector);
 			return null;
-		}).subscribeOn(scheduler);
+		});
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler collectorScheduler) {
+	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
 		if (!queryParams.isScored()) {
 			return Mono.error(
 					new UnsupportedOperationException("Can't execute an unscored query with a scored lucene shard searcher")
@@ -86,7 +83,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true);
+							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, true);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
 						if (paginationInfo.forceSinglePage()
@@ -115,21 +112,24 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 													TopDocs pageTopDocs = Flux
 															.fromIterable(indexSearchersArray)
 															.index()
-															.flatMapSequential(tuple -> Mono
-																	.fromCallable(() -> {
-																		long shardIndex = tuple.getT1();
-																		IndexSearcher indexSearcher = tuple.getT2();
-																		TopFieldCollector collector = sharedManager.newCollector();
-																		indexSearcher.search(luceneQuery, collector);
-																		return collector;
-																	})
-																	.subscribeOn(Schedulers.immediate())
-															)
+															.<TopFieldCollector>handle((tuple, sink) -> {
+																try {
+																	IndexSearcher indexSearcher = tuple.getT2();
+																	TopFieldCollector collector = sharedManager.newCollector();
+																	indexSearcher.search(luceneQuery, collector);
+																	sink.next(collector);
+																} catch (Exception ex) {
+																	sink.error(ex);
+																}
+															})
 															.collect(Collectors.toCollection(ObjectArrayList::new))
-															.flatMap(collectors -> Mono
-																	.fromCallable(() -> sharedManager.reduce(collectors))
-																	.subscribeOn(Schedulers.immediate())
-															)
+															.<TopDocs>handle((collectors, sink) -> {
+																try {
+																	sink.next(sharedManager.reduce(collectors));
+																} catch (Exception ex) {
+																	sink.error(ex);
+																}
+															})
 															.single()
 															.takeUntilOther(cancelEvent.asMono())
 															.block();
@@ -154,9 +154,8 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 									emitter.onCancel(cancelEvent::tryEmitEmpty);
 								})
-								.subscribeOn(collectorScheduler)
 								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true)
+										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, true)
 								);
 					});
 
@@ -166,8 +165,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 									//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							release
 					);
-				})
-				.subscribeOn(Schedulers.boundedElastic());
+				});
 	}
 
 }

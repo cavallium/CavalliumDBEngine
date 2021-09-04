@@ -10,17 +10,14 @@ public interface LuceneShardSearcher {
 	/**
 	 * @param indexSearcher the index searcher, which contains all the lucene data
 	 * @param queryParams the query parameters
-	 * @param scheduler a blocking scheduler
 	 */
 	Mono<Void> searchOn(IndexSearcher indexSearcher,
 			Mono<Void> indexSearcherRelease,
-			LocalQueryParams queryParams,
-			Scheduler scheduler);
+			LocalQueryParams queryParams);
 
 	/**
 	 * @param queryParams the query parameters
 	 * @param keyFieldName the name of the key field
-	 * @param collectorScheduler a blocking scheduler
 	 */
-	Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler collectorScheduler);
+	Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName);
 }

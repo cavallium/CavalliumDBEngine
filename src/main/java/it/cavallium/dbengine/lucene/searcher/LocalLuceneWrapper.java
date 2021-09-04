@@ -16,13 +16,12 @@ public class LocalLuceneWrapper implements LuceneLocalSearcher {
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName,
-			Scheduler scheduler) {
+			String keyFieldName) {
 		var shardSearcher = luceneMultiSearcher.createShardSearcher(queryParams);
 		return shardSearcher
 				.flatMap(luceneShardSearcher -> luceneShardSearcher
-						.searchOn(indexSearcher, releaseIndexSearcher, queryParams, scheduler)
-						.then(luceneShardSearcher.collect(queryParams, keyFieldName, scheduler))
+						.searchOn(indexSearcher, releaseIndexSearcher, queryParams)
+						.then(luceneShardSearcher.collect(queryParams, keyFieldName))
 				);
 	}
 }

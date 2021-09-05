@@ -13,6 +13,7 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 public class LLLocalSingleton implements LLSingleton {
 
@@ -33,6 +34,9 @@ public class LLLocalSingleton implements LLSingleton {
 		this.databaseName = databaseName;
 		this.snapshotResolver = snapshotResolver;
 		this.name = name;
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Initialized in a nonblocking thread");
+		}
 		if (db.get(cfh, this.name) == null) {
 			db.put(cfh, this.name, defaultValue);
 		}
@@ -49,7 +53,12 @@ public class LLLocalSingleton implements LLSingleton {
 	@Override
 	public Mono<byte[]> get(@Nullable LLSnapshot snapshot) {
 		return Mono
-				.fromCallable(() -> db.get(cfh, resolveSnapshot(snapshot), name))
+				.fromCallable(() -> {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called get in a nonblocking thread");
+					}
+					return db.get(cfh, resolveSnapshot(snapshot), name);
+				})
 				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause));
 	}
 
@@ -57,6 +66,9 @@ public class LLLocalSingleton implements LLSingleton {
 	public Mono<Void> set(byte[] value) {
 		return Mono
 				.<Void>fromCallable(() -> {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called set in a nonblocking thread");
+					}
 					db.put(cfh, name, value);
 					return null;
 				})

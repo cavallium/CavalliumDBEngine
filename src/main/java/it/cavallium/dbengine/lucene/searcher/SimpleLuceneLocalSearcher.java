@@ -15,6 +15,7 @@ import org.apache.lucene.search.TopDocsCollector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
@@ -25,6 +26,9 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			String keyFieldName) {
 		return Mono
 				.fromCallable(() -> {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+					}
 					Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 					PaginationInfo paginationInfo;
 					if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
@@ -64,6 +68,9 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 							.<TopDocs, CurrentPageInfo>generate(
 									() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
 									(s, sink) -> {
+										if (Schedulers.isInNonBlockingThread()) {
+											throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+										}
 										if (s.last() != null && s.remainingLimit() > 0) {
 											TopDocs pageTopDocs;
 											try {

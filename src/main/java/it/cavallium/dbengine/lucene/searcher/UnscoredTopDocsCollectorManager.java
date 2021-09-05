@@ -15,6 +15,7 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldDocs;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.scheduler.Schedulers;
 
 public class UnscoredTopDocsCollectorManager implements
 		CollectorManager<TopDocsCollector<ScoreDoc>, TopDocs> {
@@ -41,6 +42,9 @@ public class UnscoredTopDocsCollectorManager implements
 
 	@Override
 	public TopDocs reduce(Collection<TopDocsCollector<ScoreDoc>> collection) throws IOException {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called reduce in a nonblocking thread");
+		}
 		int i = 0;
 		TopDocs[] topDocsArray;
 		if (sort != null) {

@@ -7,6 +7,7 @@ import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 
@@ -16,10 +17,15 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName) {
 		return Mono
-				.fromCallable(() -> new LuceneSearchResult(
-						TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
-						Flux.empty(),
-						releaseIndexSearcher)
+				.fromCallable(() -> {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+					}
+					return new LuceneSearchResult(
+									TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
+									Flux.empty(),
+									releaseIndexSearcher);
+						}
 				);
 	}
 }

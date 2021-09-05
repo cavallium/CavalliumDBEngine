@@ -18,6 +18,7 @@ import org.apache.lucene.search.TopDocsCollector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 
@@ -42,6 +43,9 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams) {
 		return Mono.fromCallable(() -> {
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
+			}
 			TopDocsCollector<ScoreDoc> collector;
 			synchronized (lock) {
 				collector = firstPageUnsortedCollectorManager.newCollector();
@@ -58,6 +62,9 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
 		return Mono
 				.fromCallable(() -> {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+					}
 					TopDocs result;
 					Mono<Void> release;
 					synchronized (lock) {

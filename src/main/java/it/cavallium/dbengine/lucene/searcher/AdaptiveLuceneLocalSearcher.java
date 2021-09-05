@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene.searcher;
 import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 
@@ -17,6 +18,9 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName) {
+		if (Schedulers.isInNonBlockingThread()) {
+			return Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread"));
+		}
 		if (queryParams.limit() == 0) {
 			return countSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName);
 		} else if (!queryParams.isScored() && queryParams.offset() == 0 && queryParams.limit() >= 2147483630

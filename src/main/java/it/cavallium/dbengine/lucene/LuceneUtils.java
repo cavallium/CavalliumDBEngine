@@ -190,6 +190,9 @@ public class LuceneUtils {
 	@NotNull
 	public static String keyOfTopDoc(int docId, IndexReader indexReader,
 			String keyFieldName) throws IOException, NoSuchElementException {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called keyOfTopDoc in a nonblocking thread");
+		}
 		if (docId > indexReader.maxDoc()) {
 			throw new IOException("Document " + docId + " > maxDoc (" +indexReader.maxDoc() + ")");
 		}
@@ -269,7 +272,16 @@ public class LuceneUtils {
 		}
 	}
 
-	public static void readInternalAligned(Object ref, FileChannel channel, long pos, ByteBuffer b, int readLength, int usefulLength, long end) throws IOException {
+	public static void readInternalAligned(Object ref,
+			FileChannel channel,
+			long pos,
+			ByteBuffer b,
+			int readLength,
+			int usefulLength,
+			long end) throws IOException {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called readInternalAligned in a nonblocking thread");
+		}
 		int startBufPosition = b.position();
 		int readData = 0;
 		int i;
@@ -365,7 +377,7 @@ public class LuceneUtils {
 					} else {
 						return hitsFlux
 								.parallel()
-								.runOn(Schedulers.parallel())
+								.runOn(Schedulers.boundedElastic())
 								.map(hit -> {
 									var result = mapHitBlocking(hit, indexSearchers, keyFieldName);
 									// The "else" value is an errored key score, to filter out next
@@ -382,6 +394,9 @@ public class LuceneUtils {
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
 			IndexSearchers indexSearchers,
 			String keyFieldName) {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called mapHitBlocking in a nonblocking thread");
+		}
 		int shardDocId = hit.doc;
 		int shardIndex = hit.shardIndex;
 		float score = hit.score;
@@ -413,7 +428,11 @@ public class LuceneUtils {
 		}
 	}
 
-	public static TopDocs mergeTopDocs(Sort sort, @Nullable Integer startN, @Nullable Integer topN, TopDocs[] topDocs, Comparator<ScoreDoc> tieBreaker) {
+	public static TopDocs mergeTopDocs(Sort sort,
+			@Nullable Integer startN,
+			@Nullable Integer topN,
+			TopDocs[] topDocs,
+			Comparator<ScoreDoc> tieBreaker) {
 		if ((startN == null) != (topN == null)) {
 			throw new IllegalArgumentException("You must pass startN and topN together or nothing");
 		}

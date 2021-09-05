@@ -13,6 +13,7 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopFieldDocs;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.scheduler.Schedulers;
 
 public class ScoringShardsCollectorManager implements CollectorManager<TopFieldCollector, TopDocs> {
 
@@ -62,6 +63,9 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 
 	@Override
 	public TopDocs reduce(Collection<TopFieldCollector> collectors) throws IOException {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called reduce in a nonblocking thread");
+		}
 		TopDocs result;
 		if (sort != null) {
 			TopFieldDocs[] topDocs = new TopFieldDocs[collectors.size()];

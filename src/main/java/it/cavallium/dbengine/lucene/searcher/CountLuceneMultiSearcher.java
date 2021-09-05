@@ -11,6 +11,7 @@ import org.apache.lucene.search.Query;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
+import reactor.core.scheduler.Schedulers;
 
 public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 
@@ -35,7 +36,15 @@ public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 
 						@Override
 						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
-							return Mono.fromCallable(() -> new LuceneSearchResult(TotalHitsCount.of(totalHits.get(), true), Flux.empty(), Mono.when(release)));
+							return Mono.fromCallable(() -> {
+								if (Schedulers.isInNonBlockingThread()) {
+									throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+								}
+								return new LuceneSearchResult(TotalHitsCount.of(totalHits.get(), true),
+										Flux.empty(),
+										Mono.when(release)
+								);
+							});
 						}
 					};
 				});

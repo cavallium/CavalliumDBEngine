@@ -287,6 +287,9 @@ public class LLLocalDictionary implements LLDictionary {
 			Send<Buffer> keySend,
 			boolean existsAlmostCertainly) throws RocksDBException {
 		try (var key = keySend.receive()) {
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called dbGet in a nonblocking thread");
+			}
 			if (databaseOptions.allowNettyDirect()) {
 
 				//todo: implement keyMayExist if existsAlmostCertainly is false.
@@ -404,6 +407,9 @@ public class LLLocalDictionary implements LLDictionary {
 		try {
 			try (var key = keyToReceive.receive()) {
 				try (var value = valueToReceive.receive()) {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called dbPut in a nonblocking thread");
+					}
 					if (databaseOptions.allowNettyDirect()) {
 						var keyNioBuffer = LLUtils.convertToDirect(alloc, key.send());
 						try (var ignored1 = keyNioBuffer.buffer().receive()) {
@@ -460,6 +466,9 @@ public class LLLocalDictionary implements LLDictionary {
 					AbstractSlice<?> slice2 = null;
 					try {
 						try (var range = rangeSend.receive()) {
+							if (Schedulers.isInNonBlockingThread()) {
+								throw new UnsupportedOperationException("Called containsRange in a nonblocking thread");
+							}
 							try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 								readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 								readOpts.setFillCache(false);
@@ -525,6 +534,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(keyMono,
 				keySend -> runOnDb(() -> {
 					try (var key = keySend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
+						}
 						StampedLock lock;
 						long stamp;
 						if (updateMode == UpdateMode.ALLOW) {
@@ -623,6 +635,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(keyMono,
 				keySend -> runOnDb(() -> {
 					try (var key = keySend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called update in a nonblocking thread");
+						}
 						if (updateMode == UpdateMode.DISALLOW) {
 							throw new UnsupportedOperationException("update() is disallowed");
 						}
@@ -762,6 +777,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(keyMono,
 				keySend -> this.runOnDb(() -> {
 					try (var key = keySend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called update in a nonblocking thread");
+						}
 						if (updateMode == UpdateMode.DISALLOW) {
 							throw new UnsupportedOperationException("update() is disallowed");
 						}
@@ -883,6 +901,9 @@ public class LLLocalDictionary implements LLDictionary {
 	private void dbDelete(ColumnFamilyHandle cfh, @Nullable WriteOptions writeOptions, Send<Buffer> keyToReceive)
 			throws RocksDBException {
 		try (var key = keyToReceive.receive()) {
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called dbDelete in a nonblocking thread");
+			}
 			var validWriteOptions = Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS);
 			if (databaseOptions.allowNettyDirect()) {
 				var keyNioBuffer = LLUtils.convertToDirect(alloc, key.send());
@@ -947,6 +968,9 @@ public class LLLocalDictionary implements LLDictionary {
 					keySend -> this
 							.runOnDb(() -> {
 								try (var key = keySend.receive()) {
+									if (Schedulers.isInNonBlockingThread()) {
+										throw new UnsupportedOperationException("Called getPreviousData in a nonblocking thread");
+									}
 									StampedLock lock;
 									long stamp;
 									if (updateMode == UpdateMode.ALLOW) {
@@ -1012,6 +1036,9 @@ public class LLLocalDictionary implements LLDictionary {
 							keyBufsWindow.add(bufferSend.receive());
 						}
 						try {
+							if (Schedulers.isInNonBlockingThread()) {
+								throw new UnsupportedOperationException("Called getMulti in a nonblocking thread");
+							}
 							Iterable<StampedLock> locks;
 							ArrayList<Long> stamps;
 							if (updateMode == UpdateMode.ALLOW) {
@@ -1088,6 +1115,9 @@ public class LLLocalDictionary implements LLDictionary {
 								entriesWindow.add(entrySend.receive());
 							}
 							try {
+								if (Schedulers.isInNonBlockingThread()) {
+									throw new UnsupportedOperationException("Called putMulti in a nonblocking thread");
+								}
 								Iterable<StampedLock> locks;
 								ArrayList<Long> stamps;
 								if (updateMode == UpdateMode.ALLOW) {
@@ -1188,6 +1218,9 @@ public class LLLocalDictionary implements LLDictionary {
 						entriesWindow.add(tuple.mapT1(Send::receive));
 					}
 					try {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called updateMulti in a nonblocking thread");
+						}
 						List<Buffer> keyBufsWindow = new ArrayList<>(entriesWindow.size());
 						for (Tuple2<Buffer, X> objects : entriesWindow) {
 							keyBufsWindow.add(objects.getT1());
@@ -1542,6 +1575,9 @@ public class LLLocalDictionary implements LLDictionary {
 						return this
 								.<Void>runOnDb(() -> {
 									try (var range = rangeSend.receive()) {
+										if (Schedulers.isInNonBlockingThread()) {
+											throw new UnsupportedOperationException("Called setRange in a nonblocking thread");
+										}
 										if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
 											assert EMPTY_READ_OPTIONS.isOwningHandle();
 											try (var opts = new ReadOptions(EMPTY_READ_OPTIONS)) {
@@ -1912,6 +1948,9 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Void> clear() {
 		return Mono
 				.<Void>fromCallable(() -> {
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called clear in a nonblocking thread");
+					}
 					try (var readOpts = new ReadOptions(getReadOptions(null))) {
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
@@ -1971,6 +2010,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> {
 					try (var range = rangeSend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called sizeRange in a nonblocking thread");
+						}
 						if (range.isAll()) {
 							return this
 									.runOnDb(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
@@ -2044,6 +2086,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> runOnDb(() -> {
 					try (var range = rangeSend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called getOne in a nonblocking thread");
+						}
 						try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
@@ -2102,6 +2147,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> runOnDb(() -> {
 					try (var range = rangeSend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called getOneKey in a nonblocking thread");
+						}
 						try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
@@ -2183,6 +2231,9 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called exactSizeAll in a nonblocking thread");
+		}
 		try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 			readOpts.setFillCache(false);
 			readOpts.setReadaheadSize(32 * 1024); // 32KiB
@@ -2264,6 +2315,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> runOnDb(() -> {
 					try (var range = rangeSend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called removeOne in a nonblocking thread");
+						}
 						try (var readOpts = new ReadOptions(getReadOptions(null))) {
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
@@ -2325,6 +2379,9 @@ public class LLLocalDictionary implements LLDictionary {
 			RocksDB db,
 			ColumnFamilyHandle cfh) {
 		try (var range = rangeToReceive.receive()) {
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called getRocksIterator in a nonblocking thread");
+			}
 			ReleasableSlice sliceMin;
 			ReleasableSlice sliceMax;
 			if (range.hasMin()) {

@@ -50,6 +50,9 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 
 							@Override
 							public void collect(int i) {
+								if (Schedulers.isInNonBlockingThread()) {
+									throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+								}
 								var scoreDoc = new ScoreDoc(context.docBase + i, 0, shardIndex);
 								synchronized (scoreDocsSink) {
 									while (scoreDocsSink.tryEmitNext(scoreDoc) == EmitResult.FAIL_OVERFLOW) {
@@ -94,6 +97,9 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 								LocalQueryParams queryParams) {
 							return Mono
 									.fromCallable(() -> {
+										if (Schedulers.isInNonBlockingThread()) {
+											throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
+										}
 										var collector = cm.newCollector();
 										int collectorShardIndex;
 										synchronized (lock) {
@@ -123,6 +129,9 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 								String keyFieldName) {
 							return Mono
 									.fromCallable(() -> {
+										if (Schedulers.isInNonBlockingThread()) {
+											throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+										}
 										synchronized (scoreDocsSink) {
 											decrementRemainingCollectors(scoreDocsSink, remainingCollectors);
 										}

@@ -23,6 +23,7 @@ import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
 import org.apache.lucene.search.TotalHits.Relation;
+import reactor.core.scheduler.Schedulers;
 
 class TopDocsSearcher {
 

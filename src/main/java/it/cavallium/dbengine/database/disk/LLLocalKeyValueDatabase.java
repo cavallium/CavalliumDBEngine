@@ -213,6 +213,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
+		if (Schedulers.isInNonBlockingThread()) {
+			logger.error("Called flushDb in a nonblocking thread");
+		}
 		// force flush the database
 		try (var flushOptions = new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true)) {
 			db.flush(flushOptions);
@@ -227,6 +230,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	@SuppressWarnings("unused")
 	private void compactDb(RocksDB db, List<ColumnFamilyHandle> handles) {
+		if (Schedulers.isInNonBlockingThread()) {
+			logger.error("Called compactDb in a nonblocking thread");
+		}
 		// force compact the database
 		for (ColumnFamilyHandle cfh : handles) {
 			var t = new Thread(() -> {

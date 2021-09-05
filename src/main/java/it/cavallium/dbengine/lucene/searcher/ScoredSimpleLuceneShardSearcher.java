@@ -50,6 +50,9 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams) {
 		return Mono.fromCallable(() -> {
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
+			}
 			TopFieldCollector collector;
 			synchronized (lock) {
 				collector = firstPageSharedManager.newCollector();
@@ -64,10 +67,12 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 	@Override
 	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
+		if (Schedulers.isInNonBlockingThread()) {
+			return Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread"));
+		}
 		if (!queryParams.isScored()) {
-			return Mono.error(
-					new UnsupportedOperationException("Can't execute an unscored query with a scored lucene shard searcher")
-			);
+			return Mono.error(() -> new UnsupportedOperationException("Can't execute an unscored query"
+					+ " with a scored lucene shard searcher"));
 		}
 		return Mono
 				.fromCallable(() -> {
@@ -92,10 +97,19 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 						}
 						return Flux
 								.<TopDocs>create(emitter -> {
+									if (Schedulers.isInNonBlockingThread()) {
+										emitter.error(new UnsupportedOperationException("Called collect in a nonblocking thread"));
+										return;
+									}
 									Empty<Void> cancelEvent = Sinks.empty();
 									AtomicReference<CurrentPageInfo> currentPageInfoAtomicReference = new AtomicReference<>(new CurrentPageInfo(LuceneUtils.getLastFieldDoc(result.scoreDocs),
 											paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1));
 									emitter.onRequest(requests -> {
+										if (Schedulers.isInNonBlockingThread()) {
+											emitter.error(new UnsupportedOperationException("Called collect"
+													+ ", onRequest in a nonblocking thread"));
+											return;
+										}
 										synchronized (currentPageInfoAtomicReference) {
 											var s	 = currentPageInfoAtomicReference.get();
 											while (requests > 0 && !emitter.isCancelled()) {

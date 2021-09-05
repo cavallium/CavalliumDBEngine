@@ -1,5 +1,6 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.BIG_STRING;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
@@ -31,7 +32,7 @@ import reactor.util.function.Tuple3;
 import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
 
-public class TestDictionaryMapDeepHashMap {
+public abstract class TestDictionaryMapDeepHashMap {
 
 	private TestAllocator allocator;
 
@@ -39,13 +40,7 @@ public class TestDictionaryMapDeepHashMap {
 		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
 	}
 
-	private static final String BIG_STRING
-			= "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
-			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
-			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
-			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
-			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789"
-			+ "01234567890123456789012345678901234567890123456789012345678901234567890123456789";
+	protected abstract TemporaryDbGenerator getTempDbGenerator();
 
 	private static Stream<Arguments> provideArgumentsPut() {
 		var goodKeys1 = Set.of("12345", "zebra");
@@ -118,7 +113,7 @@ public class TestDictionaryMapDeepHashMap {
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueGetAllValues(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
 		var stpVer = StepVerifier
-				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMapHashMap(dict, 5))
 						.flatMapMany(map -> map
 								.at(null, key1).flatMap(v -> v.putValue(key2, value).doAfterTerminate(v::release))

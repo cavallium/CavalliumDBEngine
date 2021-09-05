@@ -154,7 +154,11 @@ public class LLMemoryDictionary implements LLDictionary {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.usingWhen(valueMono,
 						value -> Mono
-								.fromCallable(() -> mainDb.put(k(key), k(value)))
+								.fromCallable(() -> {
+									var k = k(key);
+									var v = k(value);
+									return mainDb.put(k, v);
+								})
 								.transform(result -> this.transformResult(result, resultType))
 								.onErrorMap(cause -> new IOException("Failed to read", cause)),
 						value -> Mono.fromRunnable(value::close)

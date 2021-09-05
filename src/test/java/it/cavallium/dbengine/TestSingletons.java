@@ -20,9 +20,11 @@ import org.junit.jupiter.params.provider.ValueSource;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-public class TestSingletons {
+public abstract class TestSingletons {
 
 	private TestAllocator allocator;
+
+	protected abstract TemporaryDbGenerator getTempDbGenerator();
 
 	private static Stream<Arguments> provideNumberWithRepeats() {
 		return Stream.of(
@@ -57,7 +59,7 @@ public class TestSingletons {
 	@Test
 	public void testCreateInteger() {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempInt(db, "test", 0)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempInt(db, "test", 0)
 						.flatMap(dbInt -> dbInt.get(null))
 						.then()
 				))
@@ -67,7 +69,7 @@ public class TestSingletons {
 	@Test
 	public void testCreateLong() {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempLong(db, "test", 0)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempLong(db, "test", 0)
 						.flatMap(dbLong -> dbLong.get(null))
 						.then()
 				))
@@ -78,7 +80,7 @@ public class TestSingletons {
 	@ValueSource(ints = {Integer.MIN_VALUE, -192, -2, -1, 0, 1, 2, 1292, Integer.MAX_VALUE})
 	public void testDefaultValueInteger(int i) {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempInt(db, "test", i)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempInt(db, "test", i)
 						.flatMap(dbInt -> dbInt.get(null))
 				))
 				.expectNext(i)
@@ -89,7 +91,7 @@ public class TestSingletons {
 	@ValueSource(longs = {Long.MIN_VALUE, -192, -2, -1, 0, 1, 2, 1292, Long.MAX_VALUE})
 	public void testDefaultValueLong(long i) {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempLong(db, "test", i)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempLong(db, "test", i)
 						.flatMap(dbLong -> dbLong.get(null))
 				))
 				.expectNext(i)
@@ -100,7 +102,7 @@ public class TestSingletons {
 	@MethodSource("provideNumberWithRepeats")
 	public void testSetInteger(Integer i, Integer repeats) {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempInt(db, "test", 0)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempInt(db, "test", 0)
 						.flatMap(dbInt -> Mono
 								.defer(() -> dbInt.set((int) System.currentTimeMillis()))
 								.repeat(repeats)
@@ -115,7 +117,7 @@ public class TestSingletons {
 	@MethodSource("provideLongNumberWithRepeats")
 	public void testSetLong(Long i, Integer repeats) {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempLong(db, "test", 0)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempLong(db, "test", 0)
 						.flatMap(dbLong -> Mono
 								.defer(() -> dbLong.set(System.currentTimeMillis()))
 								.repeat(repeats)

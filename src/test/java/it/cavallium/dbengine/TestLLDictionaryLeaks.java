@@ -30,23 +30,25 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-public class TestLLDictionaryLeaks {
+public abstract class TestLLDictionaryLeaks {
 
 	private TestAllocator allocator;
 	private TempDb tempDb;
 	private LLKeyValueDatabase db;
 
+	protected abstract TemporaryDbGenerator getTempDbGenerator();
+
 	@BeforeEach
 	public void beforeEach() {
 		this.allocator = newAllocator();
 		ensureNoLeaks(allocator.allocator(), false);
-		tempDb = Objects.requireNonNull(DbTestUtils.openTempDb(allocator).block(), "TempDB");
+		tempDb = Objects.requireNonNull(getTempDbGenerator().openTempDb(allocator).block(), "TempDB");
 		db = tempDb.db();
 	}
 
 	@AfterEach
 	public void afterEach() {
-		DbTestUtils.closeTempDb(tempDb).block();
+		getTempDbGenerator().closeTempDb(tempDb).block();
 		ensureNoLeaks(allocator.allocator(), true);
 		destroyAllocator(allocator);
 	}

@@ -18,9 +18,11 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import reactor.test.StepVerifier;
 
-public class TestDictionary {
+public abstract class TestDictionary {
 
 	private TestAllocator allocator;
+
+	protected abstract TemporaryDbGenerator getTempDbGenerator();
 
 	private static Stream<Arguments> provideArgumentsCreate() {
 		return Arrays.stream(UpdateMode.values()).map(Arguments::of);
@@ -42,7 +44,7 @@ public class TestDictionary {
 	@MethodSource("provideArgumentsCreate")
 	public void testCreate(UpdateMode updateMode) {
 		StepVerifier
-				.create(tempDb(allocator, db -> tempDictionary(db, updateMode)
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.flatMap(LLDictionary::clear)
 						.then()
 				))

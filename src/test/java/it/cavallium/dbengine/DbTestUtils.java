@@ -42,6 +42,17 @@ import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
+
+	public static final String BIG_STRING = generateBigString();
+
+	private static String generateBigString() {
+		var sb = new StringBuilder();
+		for (int i = 0; i < 1024; i++) {
+			sb.append("0123456789");
+		}
+		return sb.toString();
+	}
+
 	public static record TestAllocator(PooledBufferAllocator allocator) {}
 
 	public static TestAllocator newAllocator() {
@@ -51,8 +62,6 @@ public class DbTestUtils {
 	public static void destroyAllocator(TestAllocator testAllocator) {
 		testAllocator.allocator().close();
 	}
-
-	public static final AtomicInteger dbId = new AtomicInteger(0);
 
 	@SuppressWarnings("SameParameterValue")
 	private static long getUsedMemory(PooledBufferAllocator allocator, boolean printStats) {
@@ -64,47 +73,20 @@ public class DbTestUtils {
 		return usedMemory;
 	}
 
-	public static <U> Flux<U> tempDb(TestAllocator alloc, Function<LLKeyValueDatabase, Publisher<U>> action) {
-		return Flux.usingWhen(openTempDb(alloc),
+	public static <U> Flux<U> tempDb(TemporaryDbGenerator temporaryDbGenerator,
+			TestAllocator alloc,
+			Function<LLKeyValueDatabase, Publisher<U>> action) {
+		return Flux.usingWhen(
+				temporaryDbGenerator.openTempDb(alloc),
 				tempDb -> action.apply(tempDb.db()),
-				DbTestUtils::closeTempDb
+				temporaryDbGenerator::closeTempDb
 		);
 	}
 
 	public static record TempDb(TestAllocator allocator, LLDatabaseConnection connection, LLKeyValueDatabase db,
 															Path path) {}
 
-	public static Mono<TempDb> openTempDb(TestAllocator alloc) {
-		boolean canUseNettyDirect = computeCanUseNettyDirect();
-		return Mono.defer(() -> {
-			var wrkspcPath = Path.of("/tmp/.cache/tempdb-" + dbId.incrementAndGet() + "/");
-			return Mono
-					.<LLKeyValueDatabase>fromCallable(() -> {
-						if (Files.exists(wrkspcPath)) {
-							Files.walk(wrkspcPath).sorted(Comparator.reverseOrder()).forEach(file -> {
-								try {
-									Files.delete(file);
-								} catch (IOException ex) {
-									throw new CompletionException(ex);
-								}
-							});
-						}
-						Files.createDirectories(wrkspcPath);
-						return null;
-					})
-					.subscribeOn(Schedulers.boundedElastic())
-					.then(new LLLocalDatabaseConnection(alloc.allocator(), wrkspcPath).connect())
-					.flatMap(conn -> conn
-							.getDatabase("testdb",
-									List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-									new DatabaseOptions(Map.of(), true, false, true, false, true, canUseNettyDirect, canUseNettyDirect, -1)
-							)
-							.map(db -> new TempDb(alloc, conn, db, wrkspcPath))
-					);
-		});
-	}
-
-	private static boolean computeCanUseNettyDirect() {
+	static boolean computeCanUseNettyDirect() {
 		boolean canUse = true;
 		if (!PlatformDependent.hasUnsafe()) {
 			System.err.println("Warning! Unsafe is not available!"
@@ -124,22 +106,6 @@ public class DbTestUtils {
 		return canUse;
 	}
 
-	public static Mono<Void> closeTempDb(TempDb tempDb) {
-		return tempDb.db().close().then(tempDb.connection().disconnect()).then(Mono.fromCallable(() -> {
-			ensureNoLeaks(tempDb.allocator().allocator(), false);
-			if (Files.exists(tempDb.path())) {
-				Files.walk(tempDb.path()).sorted(Comparator.reverseOrder()).forEach(file -> {
-					try {
-						Files.delete(file);
-					} catch (IOException ex) {
-						throw new CompletionException(ex);
-					}
-				});
-			}
-			return null;
-		}).subscribeOn(Schedulers.boundedElastic())).then();
-	}
-
 	public static void ensureNoLeaks(PooledBufferAllocator allocator, boolean printStats) {
 		if (allocator != null) {
 			assertEquals(0L, getUsedMemory(allocator, printStats));
@@ -157,16 +123,16 @@ public class DbTestUtils {
 	}
 
 
-	public enum DbType {
+	public enum MapType {
 		MAP,
 		HASH_MAP
 	}
 
 	public static DatabaseStageMap<String, String, DatabaseStageEntry<String>> tempDatabaseMapDictionaryMap(
 			LLDictionary dictionary,
-			DbType dbType,
+			MapType mapType,
 			int keyBytes) {
-		if (dbType == DbType.MAP) {
+		if (mapType == MapType.MAP) {
 			return DatabaseMapDictionary.simple(dictionary,
 					SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), keyBytes),
 					Serializer.utf8(dictionary.getAllocator())

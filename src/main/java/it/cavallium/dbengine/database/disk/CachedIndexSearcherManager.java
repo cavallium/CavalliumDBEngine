@@ -17,14 +17,13 @@ import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Empty;
 import reactor.core.scheduler.Schedulers;
 
-public class PooledIndexSearcherManager {
+public class CachedIndexSearcherManager {
 
 	private final SnapshotsManager snapshotsManager;
 	private final Similarity similarity;
@@ -38,7 +37,7 @@ public class PooledIndexSearcherManager {
 	private final Empty<Void> closeRequested = Sinks.empty();
 	private final Empty<Void> refresherClosed = Sinks.empty();
 
-	public PooledIndexSearcherManager(IndexWriter indexWriter,
+	public CachedIndexSearcherManager(IndexWriter indexWriter,
 			SnapshotsManager snapshotsManager,
 			Similarity similarity,
 			boolean applyAllDeletes,
@@ -69,7 +68,7 @@ public class PooledIndexSearcherManager {
 				.build(new CacheLoader<>() {
 					@Override
 					public Mono<CachedIndexSearcher> load(@NotNull LLSnapshot snapshot) {
-						return PooledIndexSearcherManager.this.generateCachedSearcher(snapshot);
+						return CachedIndexSearcherManager.this.generateCachedSearcher(snapshot);
 					}
 				});
 		this.cachedMainSearcher = this.generateCachedSearcher(null);

@@ -80,7 +80,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final String luceneIndexName;
 	private final IndexWriter indexWriter;
 	private final SnapshotsManager snapshotsManager;
-	private final PooledIndexSearcherManager searcherManager;
+	private final CachedIndexSearcherManager searcherManager;
 	private final Similarity similarity;
 	private final Directory directory;
 	private final boolean lowMemory;
@@ -196,7 +196,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
 		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter, scheduledTasksLifecycle);
-		this.searcherManager = new PooledIndexSearcherManager(indexWriter,
+		this.searcherManager = new CachedIndexSearcherManager(indexWriter,
 				snapshotsManager,
 				getSimilarity(),
 				luceneOptions.applyAllDeletes(),

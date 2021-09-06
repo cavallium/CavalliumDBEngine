@@ -376,7 +376,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.flatMap(indexSearcher -> {
 							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
 							return localSearcher
-											.collect(indexSearcher, releaseMono, modifiedLocalQuery, keyFieldName)
+											.collect(indexSearcher.getIndexSearcher(), releaseMono, modifiedLocalQuery, keyFieldName)
 											.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
 											.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
 						})
@@ -392,7 +392,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.flatMap(indexSearcher -> {
 							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
 							return shardSearcher
-									.searchOn(indexSearcher, releaseMono, modifiedLocalQuery)
+									.searchOn(indexSearcher.getIndexSearcher(), releaseMono, modifiedLocalQuery)
 									.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
 						})
 				);
@@ -469,7 +469,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return searcherManager.captureIndexSearcher(snapshot).flatMap(indexSearcher -> {
 			Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
 			return localSearcher
-					.collect(indexSearcher, releaseMono, localQueryParams, keyFieldName)
+					.collect(indexSearcher.getIndexSearcher(), releaseMono, localQueryParams, keyFieldName)
 					.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
 					.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
 		});
@@ -482,7 +482,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return searcherManager.captureIndexSearcher(snapshot)
 				.flatMap(indexSearcher -> {
 					Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
-					return shardSearcher.searchOn(indexSearcher, releaseMono, localQueryParams)
+					return shardSearcher.searchOn(indexSearcher.getIndexSearcher(), releaseMono, localQueryParams)
 							.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
 				});
 	}

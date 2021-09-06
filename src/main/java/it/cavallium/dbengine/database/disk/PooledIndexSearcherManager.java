@@ -93,17 +93,15 @@ public class PooledIndexSearcherManager {
 								),
 						indexSearcher -> {
 							try {
-								//noinspection SynchronizationOnLocalVariableOrMethodParameter
-								synchronized (indexSearcher) {
+								// Mark as removed from cache
+								if (indexSearcher.removeFromCache()) {
 									// Close
-									if (indexSearcher.removeFromCache()) {
-										try {
-											if (snapshot == null) {
-												searcherManager.release(indexSearcher.getIndexSearcher());
-											}
-										} finally {
-											activeSearchers.decrementAndGet();
+									try {
+										if (snapshot == null) {
+											searcherManager.release(indexSearcher.getIndexSearcher());
 										}
+									} finally {
+										activeSearchers.decrementAndGet();
 									}
 								}
 							} catch (IOException e) {
@@ -177,18 +175,15 @@ public class PooledIndexSearcherManager {
 	public Mono<Void> releaseUsedIndexSearcher(@Nullable LLSnapshot snapshot, CachedIndexSearcher indexSearcher) {
 		return Mono.fromRunnable(() -> {
 			try {
-				synchronized (indexSearcher) {
-					// Decrement reference count
-					indexSearcher.getIndexReader().decRef();
+				// Decrement reference count
+				if (indexSearcher.decUsage()) {
 					// Close
-					if (indexSearcher.decUsage()) {
-						try {
-							if (snapshot == null) {
-								searcherManager.release(indexSearcher.getIndexSearcher());
-							}
-						} finally {
-							activeSearchers.decrementAndGet();
+					try {
+						if (snapshot == null) {
+							searcherManager.release(indexSearcher.getIndexSearcher());
 						}
+					} finally {
+						activeSearchers.decrementAndGet();
 					}
 				}
 			} catch (IOException e) {

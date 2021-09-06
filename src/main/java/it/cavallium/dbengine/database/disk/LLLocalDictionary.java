@@ -82,7 +82,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final int RESERVED_WRITE_BATCH_SIZE = 2 * 1024 * 1024; // 2MiB
 	static final long MAX_WRITE_BATCH_SIZE = 1024L * 1024L * 1024L; // 1GiB
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
-	static final int MULTI_GET_WINDOW = 500;
+	static final int MULTI_GET_WINDOW = 16;
 	static final Duration MULTI_GET_WINDOW_TIMEOUT = Duration.ofSeconds(1);
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());

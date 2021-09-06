@@ -15,7 +15,6 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
@@ -27,6 +26,7 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexWriter;
@@ -85,7 +85,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final Directory directory;
 	private final boolean lowMemory;
 
-	private final ScheduledTaskLifecycle scheduledTasksLifecycle;
+	private final Phaser activeTasks = new Phaser(1);
 
 	public LLLocalLuceneIndex(@Nullable Path luceneBasePath,
 			String name,
@@ -170,9 +170,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.lowMemory = lowMemory;
 		this.similarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 
-		// Create scheduled tasks lifecycle manager
-		this.scheduledTasksLifecycle = new ScheduledTaskLifecycle();
-
 		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers));
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
@@ -195,7 +192,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setReaderPooling(false);
 		indexWriterConfig.setSimilarity(getSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
-		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter, scheduledTasksLifecycle);
+		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter);
 		this.searcherManager = new CachedIndexSearcherManager(indexWriter,
 				snapshotsManager,
 				getSimilarity(),
@@ -205,53 +202,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		);
 
 		// Start scheduled tasks
-		registerScheduledFixedTask(this::scheduledCommit, luceneOptions.commitDebounceTime());
+		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
+		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledCommit, commitMillis, commitMillis,
+				TimeUnit.MILLISECONDS);
 	}
 
 	private Similarity getSimilarity() {
 		return similarity;
-	}
-
-	private void registerScheduledFixedTask(Runnable task, Duration duration) {
-		new PeriodicTask(task, duration).start();
-	}
-
-	private class PeriodicTask implements Runnable {
-
-		private final Runnable task;
-		private final Duration duration;
-		private volatile boolean cancelled = false;
-
-		public PeriodicTask(Runnable task, Duration duration) {
-			this.task = task;
-			this.duration = duration;
-		}
-
-		public void start() {
-			luceneHeavyTasksScheduler.schedule(this,
-					duration.toMillis(),
-					TimeUnit.MILLISECONDS
-			);
-		}
-
-		@Override
-		public void run() {
-			if (!scheduledTasksLifecycle.tryStartScheduledTask()) {
-				return;
-			}
-			try {
-				if (scheduledTasksLifecycle.isCancelled() || cancelled) return;
-				task.run();
-				if (scheduledTasksLifecycle.isCancelled() || cancelled) return;
-				luceneHeavyTasksScheduler.schedule(this, duration.toMillis(), TimeUnit.MILLISECONDS);
-			} finally {
-				scheduledTasksLifecycle.endScheduledTask();
-			}
-		}
-
-		public void cancel() {
-			cancelled = true;
-		}
 	}
 
 	@Override
@@ -272,12 +229,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
 		return Mono.fromCallable(() -> {
-			scheduledTasksLifecycle.startScheduledTask();
+			activeTasks.register();
 			try {
 				indexWriter.addDocument(LLUtils.toDocument(doc));
 				return null;
 			} finally {
-				scheduledTasksLifecycle.endScheduledTask();
+				activeTasks.arriveAndDeregister();
 			}
 		});
 	}
@@ -288,12 +245,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.collectList()
 				.flatMap(documentsList -> Mono
 						.fromCallable(() -> {
-							scheduledTasksLifecycle.startScheduledTask();
+							activeTasks.register();
 							try {
 								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
 								return null;
 							} finally {
-								scheduledTasksLifecycle.endScheduledTask();
+								activeTasks.arriveAndDeregister();
 							}
 						})
 				);
@@ -303,12 +260,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
 		return Mono.fromCallable(() -> {
-			scheduledTasksLifecycle.startScheduledTask();
+			activeTasks.register();
 			try {
 				indexWriter.deleteDocuments(LLUtils.toTerm(id));
 				return null;
 			} finally {
-				scheduledTasksLifecycle.endScheduledTask();
+				activeTasks.arriveAndDeregister();
 			}
 		});
 	}
@@ -316,11 +273,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
 		return Mono.fromCallable(() -> {
-			scheduledTasksLifecycle.startScheduledTask();
+			activeTasks.register();
 			try {
 				indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
 			} finally {
-				scheduledTasksLifecycle.endScheduledTask();
+				activeTasks.arriveAndDeregister();
 			}
 			return null;
 		});
@@ -334,7 +291,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private Mono<Void> updateDocuments(Map<LLTerm, LLDocument> documentsMap) {
 		return Mono
 				.fromCallable(() -> {
-					scheduledTasksLifecycle.startScheduledTask();
+					activeTasks.register();
 					try {
 						for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
 							LLTerm key = entry.getKey();
@@ -343,7 +300,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						}
 						return null;
 					} finally {
-						scheduledTasksLifecycle.endScheduledTask();
+						activeTasks.arriveAndDeregister();
 					}
 				});
 	}
@@ -351,7 +308,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> deleteAll() {
 		return Mono.<Void>fromCallable(() -> {
-			scheduledTasksLifecycle.startScheduledTask();
+			activeTasks.register();
 			try {
 				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.deleteAll();
@@ -361,7 +318,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				indexWriter.commit();
 				return null;
 			} finally {
-				scheduledTasksLifecycle.endScheduledTask();
+				activeTasks.arriveAndDeregister();
 			}
 		}).subscribeOn(luceneHeavyTasksScheduler);
 	}
@@ -492,7 +449,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono
 				.<Void>fromCallable(() -> {
 					logger.debug("Closing IndexWriter...");
-					scheduledTasksLifecycle.cancelAndWait();
+					activeTasks.arriveAndAwaitAdvance();
 					return null;
 				})
 				.subscribeOn(luceneHeavyTasksScheduler)
@@ -511,13 +468,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> flush() {
 		return Mono
 				.<Void>fromCallable(() -> {
-					scheduledTasksLifecycle.startScheduledTask();
+					activeTasks.register();
 					try {
-						if (scheduledTasksLifecycle.isCancelled()) return null;
+						if (activeTasks.isTerminated()) return null;
 						//noinspection BlockingMethodInNonBlockingContext
 						indexWriter.commit();
 					} finally {
-						scheduledTasksLifecycle.endScheduledTask();
+						activeTasks.arriveAndDeregister();
 					}
 					return null;
 				})
@@ -528,11 +485,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> refresh(boolean force) {
 		return Mono
 				.<Void>fromCallable(() -> {
-					scheduledTasksLifecycle.startScheduledTask();
+					activeTasks.register();
 					try {
-						if (scheduledTasksLifecycle.isCancelled()) return null;
+						if (activeTasks.isTerminated()) return null;
 						if (force) {
-							if (scheduledTasksLifecycle.isCancelled()) return null;
+							if (activeTasks.isTerminated()) return null;
 							//noinspection BlockingMethodInNonBlockingContext
 							searcherManager.maybeRefreshBlocking();
 						} else {
@@ -540,7 +497,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							searcherManager.maybeRefresh();
 						}
 					} finally {
-						scheduledTasksLifecycle.endScheduledTask();
+						activeTasks.arriveAndDeregister();
 					}
 					return null;
 				})

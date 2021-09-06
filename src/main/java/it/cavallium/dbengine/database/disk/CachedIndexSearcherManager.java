@@ -18,6 +18,8 @@ import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -26,11 +28,14 @@ import reactor.core.scheduler.Schedulers;
 
 public class CachedIndexSearcherManager {
 
+	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
+
 	private final SnapshotsManager snapshotsManager;
 	private final Similarity similarity;
 	private final SearcherManager searcherManager;
 	private final Duration queryRefreshDebounceTime;
 	private final Phaser activeSearchers = new Phaser(1);
+	private final Phaser activeRefreshes = new Phaser(1);
 
 	private final LoadingCache<LLSnapshot, Mono<CachedIndexSearcher>> cachedSnapshotSearchers;
 	private final Mono<CachedIndexSearcher> cachedMainSearcher;
@@ -55,7 +60,13 @@ public class CachedIndexSearcherManager {
 		);
 
 		Mono
-				.fromRunnable(this::scheduledQueryRefresh)
+				.fromRunnable(() -> {
+					try {
+						maybeRefreshBlocking();
+					} catch (Exception ex) {
+						logger.error("Failed to refresh the searcher manager", ex);
+					}
+				})
 				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime, Schedulers.boundedElastic()))
 				.subscribeOn(Schedulers.boundedElastic())
 				.takeUntilOther(closeRequested.asMono())
@@ -98,37 +109,31 @@ public class CachedIndexSearcherManager {
 							try {
 								// Mark as removed from cache
 								indexSearcher.removeFromCache();
-							} catch (IOException e) {
-								e.printStackTrace();
+							} catch (Exception ex) {
+								logger.error("Failed to release an old cached IndexSearcher", ex);
 							}
 						});
 	}
 
-	@SuppressWarnings("unused")
-	private void scheduledQueryRefresh() {
-		try {
-			boolean refreshStarted = searcherManager.maybeRefresh();
-			// if refreshStarted == false, another thread is currently already refreshing
-		} catch (AlreadyClosedException ignored) {
-
-		} catch (IOException ex) {
-			ex.printStackTrace();
-		}
-	}
-
 	public void maybeRefreshBlocking() throws IOException {
 		try {
+			activeRefreshes.register();
 			searcherManager.maybeRefreshBlocking();
 		} catch (AlreadyClosedException ignored) {
 
+		} finally {
+			activeRefreshes.arriveAndDeregister();
 		}
 	}
 
 	public void maybeRefresh() throws IOException {
 		try {
+			activeRefreshes.register();
 			searcherManager.maybeRefresh();
 		} catch (AlreadyClosedException ignored) {
 
+		} finally {
+			activeRefreshes.arriveAndDeregister();
 		}
 	}
 
@@ -171,8 +176,8 @@ public class CachedIndexSearcherManager {
 			try {
 				// Decrement reference count
 				indexSearcher.decUsage();
-			} catch (IOException e) {
-				e.printStackTrace();
+			} catch (Exception ex) {
+				logger.error("Failed to release an used IndexSearcher", ex);
 			}
 		});
 	}
@@ -182,7 +187,12 @@ public class CachedIndexSearcherManager {
 				.fromRunnable(this.closeRequested::tryEmitEmpty)
 				.then(refresherClosed.asMono())
 				.then(Mono.fromRunnable(() -> {
-					activeSearchers.arriveAndAwaitAdvance();
+					if (!activeRefreshes.isTerminated()) {
+						activeRefreshes.arriveAndAwaitAdvance();
+					}
+					if (!activeSearchers.isTerminated()) {
+						activeSearchers.arriveAndAwaitAdvance();
+					}
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
 				}));

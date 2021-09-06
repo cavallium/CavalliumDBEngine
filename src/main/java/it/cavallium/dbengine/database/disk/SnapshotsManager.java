@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.lucene.ScheduledTaskLifecycle;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
@@ -17,7 +17,7 @@ public class SnapshotsManager {
 
 	private final IndexWriter indexWriter;
 	private final SnapshotDeletionPolicy snapshotter;
-	private final ScheduledTaskLifecycle scheduledTasksLifecycle;
+	private final Phaser activeTasks = new Phaser(1);
 	/**
 	 * Last snapshot sequence number. 0 is not used
 	 */
@@ -28,11 +28,9 @@ public class SnapshotsManager {
 	private final ConcurrentHashMap<Long, LuceneIndexSnapshot> snapshots = new ConcurrentHashMap<>();
 
 	public SnapshotsManager(IndexWriter indexWriter,
-			SnapshotDeletionPolicy snapshotter,
-			ScheduledTaskLifecycle scheduledTasksLifecycle) {
+			SnapshotDeletionPolicy snapshotter) {
 		this.indexWriter = indexWriter;
 		this.snapshotter = snapshotter;
-		this.scheduledTasksLifecycle = scheduledTasksLifecycle;
 	}
 
 	public LuceneIndexSnapshot resolveSnapshot(@Nullable LLSnapshot snapshot) {
@@ -64,12 +62,12 @@ public class SnapshotsManager {
 						.defer(() -> {
 							if (ex instanceof IllegalStateException && "No index commit to snapshot".equals(ex.getMessage())) {
 								return Mono.fromCallable(() -> {
-									scheduledTasksLifecycle.startScheduledTask();
+									activeTasks.register();
 									try {
 										indexWriter.commit();
 										return snapshotter.snapshot();
 									} finally {
-										scheduledTasksLifecycle.endScheduledTask();
+										activeTasks.arriveAndDeregister();
 									}
 								});
 							} else {
@@ -81,7 +79,7 @@ public class SnapshotsManager {
 
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return Mono.<Void>fromCallable(() -> {
-			scheduledTasksLifecycle.startScheduledTask();
+			activeTasks.register();
 			try {
 				var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
 				if (indexSnapshot == null) {
@@ -96,8 +94,14 @@ public class SnapshotsManager {
 				indexWriter.deleteUnusedFiles();
 				return null;
 			} finally {
-				scheduledTasksLifecycle.endScheduledTask();
+				activeTasks.arriveAndDeregister();
 			}
 		}).subscribeOn(Schedulers.boundedElastic());
+	}
+
+	public void close() {
+		if (!activeTasks.isTerminated()) {
+			activeTasks.arriveAndAwaitAdvance();
+		}
 	}
 }

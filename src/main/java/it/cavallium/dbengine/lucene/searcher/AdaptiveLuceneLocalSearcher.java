@@ -19,7 +19,8 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName) {
 		if (Schedulers.isInNonBlockingThread()) {
-			return Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread"));
+			return releaseIndexSearcher
+					.then(Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread")));
 		}
 		if (queryParams.limit() == 0) {
 			return countSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName);

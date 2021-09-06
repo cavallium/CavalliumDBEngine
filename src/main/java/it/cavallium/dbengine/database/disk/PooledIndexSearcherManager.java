@@ -78,13 +78,16 @@ public class PooledIndexSearcherManager {
 	private Mono<CachedIndexSearcher> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
 		return Mono.fromCallable(() -> {
 					IndexSearcher indexSearcher;
+					SearcherManager associatedSearcherManager;
 					if (snapshot == null) {
 						indexSearcher = searcherManager.acquire();
 						indexSearcher.setSimilarity(similarity);
+						associatedSearcherManager = searcherManager;
 					} else {
 						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
+						associatedSearcherManager = null;
 					}
-					return new CachedIndexSearcher(indexSearcher);
+					return new CachedIndexSearcher(indexSearcher, associatedSearcherManager, activeSearchers::decrementAndGet);
 				})
 				.cacheInvalidateWhen(indexSearcher -> Mono
 								.firstWithSignal(
@@ -94,16 +97,7 @@ public class PooledIndexSearcherManager {
 						indexSearcher -> {
 							try {
 								// Mark as removed from cache
-								if (indexSearcher.removeFromCache()) {
-									// Close
-									try {
-										if (snapshot == null) {
-											searcherManager.release(indexSearcher.getIndexSearcher());
-										}
-									} finally {
-										activeSearchers.decrementAndGet();
-									}
-								}
+								indexSearcher.removeFromCache();
 							} catch (IOException e) {
 								e.printStackTrace();
 							}
@@ -142,7 +136,7 @@ public class PooledIndexSearcherManager {
 		return Flux.usingWhen(
 				this.captureIndexSearcher(snapshot),
 				indexSearcher -> searcherFunction.apply(indexSearcher.getIndexSearcher()),
-				indexSearcher -> this.releaseUsedIndexSearcher(snapshot, indexSearcher)
+				this::releaseUsedIndexSearcher
 		);
 	}
 
@@ -150,7 +144,7 @@ public class PooledIndexSearcherManager {
 		return Mono.usingWhen(
 				this.captureIndexSearcher(snapshot),
 				indexSearcher -> searcherFunction.apply(indexSearcher.getIndexSearcher()),
-				indexSearcher -> this.releaseUsedIndexSearcher(snapshot, indexSearcher)
+				this::releaseUsedIndexSearcher
 		);
 	}
 
@@ -172,20 +166,11 @@ public class PooledIndexSearcherManager {
 		}
 	}
 
-	public Mono<Void> releaseUsedIndexSearcher(@Nullable LLSnapshot snapshot, CachedIndexSearcher indexSearcher) {
+	public Mono<Void> releaseUsedIndexSearcher(CachedIndexSearcher indexSearcher) {
 		return Mono.fromRunnable(() -> {
 			try {
 				// Decrement reference count
-				if (indexSearcher.decUsage()) {
-					// Close
-					try {
-						if (snapshot == null) {
-							searcherManager.release(indexSearcher.getIndexSearcher());
-						}
-					} finally {
-						activeSearchers.decrementAndGet();
-					}
-				}
+				indexSearcher.decUsage();
 			} catch (IOException e) {
 				e.printStackTrace();
 			}

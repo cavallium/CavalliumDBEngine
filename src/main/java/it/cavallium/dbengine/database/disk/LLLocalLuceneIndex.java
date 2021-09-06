@@ -374,7 +374,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
 				.flatMap(modifiedLocalQuery -> searcherManager.captureIndexSearcher(snapshot)
 						.flatMap(indexSearcher -> {
-							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
+							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
 							return localSearcher
 											.collect(indexSearcher.getIndexSearcher(), releaseMono, modifiedLocalQuery, keyFieldName)
 											.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
@@ -390,7 +390,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
 				.flatMap(modifiedLocalQuery -> searcherManager.captureIndexSearcher(snapshot)
 						.flatMap(indexSearcher -> {
-							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
+							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
 							return shardSearcher
 									.searchOn(indexSearcher.getIndexSearcher(), releaseMono, modifiedLocalQuery)
 									.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
@@ -467,7 +467,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
 		return searcherManager.captureIndexSearcher(snapshot).flatMap(indexSearcher -> {
-			Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
+			Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
 			return localSearcher
 					.collect(indexSearcher.getIndexSearcher(), releaseMono, localQueryParams, keyFieldName)
 					.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
@@ -481,7 +481,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
 		return searcherManager.captureIndexSearcher(snapshot)
 				.flatMap(indexSearcher -> {
-					Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(snapshot, indexSearcher);
+					Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
 					return shardSearcher.searchOn(indexSearcher.getIndexSearcher(), releaseMono, localQueryParams)
 							.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
 				});

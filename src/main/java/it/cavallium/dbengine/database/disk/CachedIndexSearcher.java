@@ -1,16 +1,25 @@
 package it.cavallium.dbengine.database.disk;
 
+import java.io.IOException;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.SearcherManager;
+import org.jetbrains.annotations.Nullable;
 
 public class CachedIndexSearcher {
 
 	private final IndexSearcher indexSearcher;
+	private final SearcherManager associatedSearcherManager;
+	private final Runnable afterFinalization;
 	private boolean inCache = true;
 	private int usages = 0;
 
-	public CachedIndexSearcher(IndexSearcher indexSearcher) {
+	public CachedIndexSearcher(IndexSearcher indexSearcher,
+			@Nullable SearcherManager associatedSearcherManager,
+			@Nullable Runnable afterFinalization) {
 		this.indexSearcher = indexSearcher;
+		this.associatedSearcherManager = associatedSearcherManager;
+		this.afterFinalization = afterFinalization;
 	}
 
 	public void incUsage() {
@@ -19,30 +28,40 @@ public class CachedIndexSearcher {
 		}
 	}
 
-	/**
-	 *
-	 * @return true if closed
-	 */
-	public boolean decUsage() {
+	public void decUsage() throws IOException {
 		synchronized (this) {
 			usages--;
-			return isClosed();
+			if (mustClose()) {
+				try {
+					close();
+				} finally {
+					if (afterFinalization != null) afterFinalization.run();
+				}
+			}
 		}
 	}
 
-	/**
-	 *
-	 * @return true if closed
-	 */
-	public boolean removeFromCache() {
+	public void removeFromCache() throws IOException {
 		synchronized (this) {
 			inCache = false;
-			return isClosed();
+			if (mustClose()) {
+				try {
+					close();
+				} finally {
+					if (afterFinalization != null) afterFinalization.run();
+				}
+			}
 		}
 	}
 
-	private boolean isClosed() {
-		return this.inCache || this.usages > 0;
+	private void close() throws IOException {
+		if (associatedSearcherManager != null) {
+			associatedSearcherManager.release(indexSearcher);
+		}
+	}
+
+	private boolean mustClose() {
+		return !this.inCache && this.usages == 0;
 	}
 
 	public IndexReader getIndexReader() {

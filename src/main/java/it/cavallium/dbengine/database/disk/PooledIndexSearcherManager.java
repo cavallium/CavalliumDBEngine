@@ -61,6 +61,8 @@ public class PooledIndexSearcherManager {
 
 		this.cachedSnapshotSearchers = CacheBuilder.newBuilder()
 				.expireAfterWrite(queryRefreshDebounceTime)
+				// Max 3 cached non-main index writers
+				.maximumSize(3)
 				.build(new CacheLoader<>() {
 					@Override
 					public Mono<IndexSearcher> load(@NotNull LLSnapshot snapshot) {

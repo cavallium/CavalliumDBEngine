@@ -159,12 +159,12 @@ public abstract class TestDictionaryMapDeep {
 	@BeforeEach
 	public void beforeEach() {
 		this.allocator = newAllocator();
-		ensureNoLeaks(allocator.allocator(), false);
+		ensureNoLeaks(allocator.allocator(), false, false);
 	}
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(allocator.allocator(), true);
+		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);
 	}
 

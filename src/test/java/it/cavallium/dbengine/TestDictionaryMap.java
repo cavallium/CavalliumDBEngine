@@ -3,6 +3,7 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.*;
 
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
 import java.util.List;
@@ -81,12 +82,12 @@ public abstract class TestDictionaryMap {
 	@BeforeEach
 	public void beforeEach() {
 		this.allocator = newAllocator();
-		ensureNoLeaks(allocator.allocator(), false);
+		ensureNoLeaks(allocator.allocator(), false, false);
 	}
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(allocator.allocator(), true);
+		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);
 	}
 

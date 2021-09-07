@@ -57,7 +57,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 	@Override
 	public Mono<Void> closeTempDb(TempDb tempDb) {
 		return tempDb.db().close().then(tempDb.connection().disconnect()).then(Mono.fromCallable(() -> {
-			ensureNoLeaks(tempDb.allocator().allocator(), false);
+			ensureNoLeaks(tempDb.allocator().allocator(), false, false);
 			if (Files.exists(tempDb.path())) {
 				Files.walk(tempDb.path()).sorted(Comparator.reverseOrder()).forEach(file -> {
 					try {

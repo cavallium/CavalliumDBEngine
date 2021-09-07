@@ -5,10 +5,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.Send;
-import io.netty5.buffer.api.pool.BufferAllocatorMetric;
+import io.netty5.buffer.api.pool.MetricUtils;
+import io.netty5.buffer.api.pool.PoolArenaMetric;
 import io.netty5.buffer.api.pool.PooledBufferAllocator;
 import io.netty5.util.internal.PlatformDependent;
-import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -20,25 +20,16 @@ import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
-import it.cavallium.dbengine.client.DatabaseOptions;
-import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CompletionException;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
@@ -56,7 +47,7 @@ public class DbTestUtils {
 	public static record TestAllocator(PooledBufferAllocator allocator) {}
 
 	public static TestAllocator newAllocator() {
-		return new TestAllocator(new PooledBufferAllocator(MemoryManager.instance(), true, 1, 8192, 9, 0, 0, false));
+		return new TestAllocator(new PooledBufferAllocator(MemoryManager.instance(), true, 1, 8192, 9, 0, 0, true));
 	}
 
 	public static void destroyAllocator(TestAllocator testAllocator) {
@@ -64,13 +55,22 @@ public class DbTestUtils {
 	}
 
 	@SuppressWarnings("SameParameterValue")
-	private static long getUsedMemory(PooledBufferAllocator allocator, boolean printStats) {
+	private static long getActiveAllocations(PooledBufferAllocator allocator, boolean printStats) {
 		allocator.trimCurrentThreadCache();
-		var usedMemory = ((BufferAllocatorMetric) allocator.metric()).usedMemory();
-		if (printStats) {
-			System.out.println("usedMemory=" + usedMemory);
+		var metrics = MetricUtils.getPoolArenaMetrics(allocator);
+		int allocations = 0;
+		int deallocations = 0;
+		int activeAllocations = 0;
+		for (PoolArenaMetric metric : metrics) {
+			allocations += metric.numAllocations();
+			deallocations += metric.numDeallocations();
+			activeAllocations += metric.numActiveAllocations();
 		}
-		return usedMemory;
+		if (printStats) {
+			System.out.println("allocations=" + allocations + ", deallocations=" + deallocations
+					+ ", activeAllocations=" + activeAllocations);
+		}
+		return activeAllocations;
 	}
 
 	public static <U> Flux<U> tempDb(TemporaryDbGenerator temporaryDbGenerator,
@@ -106,9 +106,16 @@ public class DbTestUtils {
 		return canUse;
 	}
 
-	public static void ensureNoLeaks(PooledBufferAllocator allocator, boolean printStats) {
+	public static void ensureNoLeaks(PooledBufferAllocator allocator, boolean printStats, boolean useClassicException) {
 		if (allocator != null) {
-			assertEquals(0L, getUsedMemory(allocator, printStats));
+			var allocs = getActiveAllocations(allocator, printStats);
+			if (useClassicException) {
+				if (allocs != 0) {
+					throw new IllegalStateException("Active allocations: " + allocs);
+				}
+			} else {
+				assertEquals(0L, allocs);
+			}
 		}
 	}
 

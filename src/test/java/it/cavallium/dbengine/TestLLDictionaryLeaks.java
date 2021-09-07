@@ -41,7 +41,7 @@ public abstract class TestLLDictionaryLeaks {
 	@BeforeEach
 	public void beforeEach() {
 		this.allocator = newAllocator();
-		ensureNoLeaks(allocator.allocator(), false);
+		ensureNoLeaks(allocator.allocator(), false, false);
 		tempDb = Objects.requireNonNull(getTempDbGenerator().openTempDb(allocator).block(), "TempDB");
 		db = tempDb.db();
 	}
@@ -49,7 +49,7 @@ public abstract class TestLLDictionaryLeaks {
 	@AfterEach
 	public void afterEach() {
 		getTempDbGenerator().closeTempDb(tempDb).block();
-		ensureNoLeaks(allocator.allocator(), true);
+		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);
 	}
 

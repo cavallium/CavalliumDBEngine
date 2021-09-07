@@ -80,6 +80,7 @@ public class CachedIndexSearcher {
 		return indexSearcher;
 	}
 
+	@SuppressWarnings("deprecation")
 	@Override
 	protected void finalize() throws Throwable {
 		if (usages > 0) {

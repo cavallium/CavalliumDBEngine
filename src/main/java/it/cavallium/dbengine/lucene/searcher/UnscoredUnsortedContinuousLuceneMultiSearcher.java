@@ -102,10 +102,11 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 								LocalQueryParams queryParams,
 								Scheduler scheduler) {
 							return Mono
-									.fromCallable(() -> {
+									.<Void>fromCallable(() -> {
 										if (Schedulers.isInNonBlockingThread()) {
 											throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
 										}
+										//noinspection BlockingMethodInNonBlockingContext
 										var collector = cm.newCollector();
 										int collectorShardIndex;
 										synchronized (lock) {

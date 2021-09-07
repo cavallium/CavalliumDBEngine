@@ -43,7 +43,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
 			Scheduler scheduler) {
-		return Mono.fromCallable(() -> {
+		return Mono.<Void>fromCallable(() -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
 			}

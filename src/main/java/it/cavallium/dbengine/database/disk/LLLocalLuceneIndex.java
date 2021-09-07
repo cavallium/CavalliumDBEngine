@@ -241,7 +241,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
-		return Mono.fromCallable(() -> {
+		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
 				//noinspection BlockingMethodInNonBlockingContext
@@ -274,7 +274,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
-		return Mono.fromCallable(() -> {
+		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
 				//noinspection BlockingMethodInNonBlockingContext
@@ -288,7 +288,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
-		return Mono.fromCallable(() -> {
+		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
 				//noinspection BlockingMethodInNonBlockingContext
@@ -307,7 +307,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	private Mono<Void> updateDocuments(Map<LLTerm, LLDocument> documentsMap) {
 		return Mono
-				.fromCallable(() -> {
+				.<Void>fromCallable(() -> {
 					activeTasks.register();
 					try {
 						for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {

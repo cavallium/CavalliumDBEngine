@@ -29,6 +29,7 @@ import reactor.util.function.Tuples;
 public abstract class TestDictionaryMap {
 
 	private TestAllocator allocator;
+	private boolean checkLeaks = true;
 
 	private static boolean isTestBadKeysEnabled() {
 		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
@@ -87,7 +88,9 @@ public abstract class TestDictionaryMap {
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(allocator.allocator(), true, false);
+		if (checkLeaks) {
+			ensureNoLeaks(allocator.allocator(), true, false);
+		}
 		destroyAllocator(allocator);
 	}
 
@@ -104,6 +107,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(value).verifyComplete();
@@ -123,6 +127,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(value).verifyComplete();
@@ -145,6 +150,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext("error?").expectNext(value).verifyComplete();
@@ -167,6 +173,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(value).verifyComplete();
@@ -189,6 +196,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(false, true, false).verifyComplete();
@@ -229,6 +237,7 @@ public abstract class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.transform(LLUtils::handleDiscard)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
 			stpVer.verifyError();
@@ -271,6 +280,7 @@ public abstract class TestDictionaryMap {
 								)
 								.doAfterTerminate(map::release)
 						)
+						.transform(LLUtils::handleDiscard)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
 			stpVer.verifyError();
@@ -297,6 +307,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(true, true, false, true).verifyComplete();
@@ -358,6 +369,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -382,8 +394,10 @@ public abstract class TestDictionaryMap {
 						)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -411,6 +425,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -437,8 +452,10 @@ public abstract class TestDictionaryMap {
 						)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
+						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -476,6 +493,7 @@ public abstract class TestDictionaryMap {
 						})
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(!entries.isEmpty(), false, !entries.isEmpty()).verifyComplete();
@@ -497,6 +515,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -522,6 +541,7 @@ public abstract class TestDictionaryMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -549,6 +569,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -578,6 +599,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -612,6 +634,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
@@ -641,6 +664,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(true, entries.isEmpty()).verifyComplete();
@@ -667,6 +691,7 @@ public abstract class TestDictionaryMap {
 						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(true, entries.isEmpty(), true).verifyComplete();

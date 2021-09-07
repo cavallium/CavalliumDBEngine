@@ -49,11 +49,11 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		return update(key, updater, returnMode, false);
 	}
 
-	Mono<LLDelta> updateAndGetDelta(Mono<Send<Buffer>> key,
+	Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly);
 
-	default Mono<LLDelta> updateAndGetDelta(Mono<Send<Buffer>> key,
+	default Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater) {
 		return updateAndGetDelta(key, updater, false);
 	}

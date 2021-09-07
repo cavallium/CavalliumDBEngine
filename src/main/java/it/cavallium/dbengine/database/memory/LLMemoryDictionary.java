@@ -94,7 +94,9 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	private ByteList k(Send<Buffer> buf) {
-		return new BinaryLexicographicList(LLUtils.toArray(buf.receive()));
+		try (var b = buf.receive()) {
+			return new BinaryLexicographicList(LLUtils.toArray(b));
+		}
 	}
 
 	private Send<Buffer> kk(ByteList bytesList) {
@@ -168,20 +170,13 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<Buffer>> put(Mono<Send<Buffer>> keyMono, Mono<Send<Buffer>> valueMono, LLDictionaryResultType resultType) {
-		return Mono.usingWhen(keyMono,
-				key -> Mono.usingWhen(valueMono,
-						value -> Mono
-								.fromCallable(() -> {
-									var k = k(key);
-									var v = k(value);
-									return mainDb.put(k, v);
-								})
-								.transform(result -> this.transformResult(result, resultType))
-								.onErrorMap(cause -> new IOException("Failed to read", cause)),
-						value -> Mono.fromRunnable(value::close)
-				),
-				key -> Mono.fromRunnable(key::close)
-		);
+		var kMono = keyMono.map(this::k);
+		var vMono = valueMono.map(this::k);
+		return Mono
+				.zip(kMono, vMono)
+				.mapNotNull(tuple -> mainDb.put(tuple.getT1(), tuple.getT2()))
+				.transform(result -> this.transformResult(result, resultType))
+				.onErrorMap(cause -> new IOException("Failed to read", cause));
 	}
 
 	@Override
@@ -190,38 +185,41 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<LLDelta> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
+	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
-					if (updateMode == UpdateMode.DISALLOW) {
-						throw new UnsupportedOperationException("update() is disallowed");
+					try (key) {
+						if (updateMode == UpdateMode.DISALLOW) {
+							throw new UnsupportedOperationException("update() is disallowed");
+						}
+						AtomicReference<Send<Buffer>> oldRef = new AtomicReference<>(null);
+						var newValue = mainDb.compute(k(key), (_unused, old) -> {
+							if (old != null) {
+								oldRef.set(kk(old));
+							}
+							Buffer v;
+							try (var oldToSend = old != null ? kk(old) : null) {
+								var vToReceive = updater.apply(oldToSend);
+								v = vToReceive != null ? vToReceive.receive() : null;
+							} catch (SerializationException e) {
+								throw new IllegalStateException(e);
+							}
+							try {
+								if (v != null) {
+									return k(v.send());
+								} else {
+									return null;
+								}
+							} finally {
+								if (v != null) {
+									v.close();
+								}
+							}
+						});
+						return LLDelta.of(oldRef.get(), newValue != null ? kk(newValue) : null).send();
 					}
-					AtomicReference<Send<Buffer>> oldRef = new AtomicReference<>(null);
-					var newValue = mainDb.compute(k(key), (_unused, old) -> {
-						if (old != null) {
-							oldRef.set(kk(old));
-						}
-						Send<Buffer> v;
-						try {
-							v = updater.apply(old != null ? kk(old) : null);
-						} catch (SerializationException e) {
-							throw new IllegalStateException(e);
-						}
-						try {
-							if (v != null) {
-								return k(v);
-							} else {
-								return null;
-							}
-						} finally {
-							if (v != null) {
-								v.close();
-							}
-						}
-					});
-					return LLDelta.of(oldRef.get(), newValue != null ? kk(newValue) : null);
 				}),
 				key -> Mono.fromRunnable(key::close)
 		);

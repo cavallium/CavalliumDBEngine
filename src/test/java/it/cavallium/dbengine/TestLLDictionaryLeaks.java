@@ -175,7 +175,7 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		var value = Mono.fromCallable(() -> fromString("test-value"));
-		runVoid(dict.put(key, value, resultType).then());
+		runVoid(dict.put(key, value, resultType).then().doOnDiscard(Send.class, Send::close));
 	}
 
 	@ParameterizedTest
@@ -229,6 +229,6 @@ public abstract class TestLLDictionaryLeaks {
 	public void testRemove(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		runVoid(dict.remove(key, resultType).then());
+		runVoid(dict.remove(key, resultType).then().doOnDiscard(Send.class, Send::close));
 	}
 }

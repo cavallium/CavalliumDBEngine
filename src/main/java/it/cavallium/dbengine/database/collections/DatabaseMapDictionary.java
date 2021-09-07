@@ -19,6 +19,7 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -287,6 +288,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.next(Map.entry(entry.getT1(), valueOpt));
 					} catch (SerializationException ex) {
 						sink.error(ex);
+					} finally {
+						entry.getT2().close();
+						entry.getT3().ifPresent(Send::close);
 					}
 				})
 				.transform(LLUtils::handleDiscard);
@@ -309,11 +313,22 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					} catch (SerializationException e) {
 						sink.error(e);
 					}
-				});
+				})
+				.doOnDiscard(Send.class, Send::close);
 		return dictionary
 				.putMulti(serializedEntries, false)
 				.then()
-				.doOnDiscard(LLEntry.class, ResourceSupport::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(LLEntry.class, ResourceSupport::close)
+				.doOnDiscard(List.class, list -> {
+					for (Object o : list) {
+						if (o instanceof Send send) {
+							send.close();
+						} else if (o instanceof Buffer buf) {
+							buf.close();
+						}
+					}
+				});
 	}
 
 	@Override

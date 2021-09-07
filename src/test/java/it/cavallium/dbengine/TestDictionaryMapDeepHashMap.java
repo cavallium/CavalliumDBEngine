@@ -35,6 +35,7 @@ import reactor.util.function.Tuples;
 public abstract class TestDictionaryMapDeepHashMap {
 
 	private TestAllocator allocator;
+	private boolean checkLeaks = true;
 
 	private static boolean isTestBadKeysEnabled() {
 		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
@@ -105,7 +106,9 @@ public abstract class TestDictionaryMapDeepHashMap {
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(allocator.allocator(), true, false);
+		if (checkLeaks) {
+			ensureNoLeaks(allocator.allocator(), true, false);
+		}
 		destroyAllocator(allocator);
 	}
 
@@ -127,6 +130,7 @@ public abstract class TestDictionaryMapDeepHashMap {
 						)
 				));
 		if (shouldFail) {
+			this.checkLeaks = false;
 			stpVer.verifyError();
 		} else {
 			stpVer.expectNext(value).verifyComplete();

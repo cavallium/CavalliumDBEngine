@@ -37,11 +37,7 @@ public class DbTestUtils {
 	public static final String BIG_STRING = generateBigString();
 
 	private static String generateBigString() {
-		var sb = new StringBuilder();
-		for (int i = 0; i < 1024; i++) {
-			sb.append("0123456789");
-		}
-		return sb.toString();
+		return "0123456789".repeat(1024);
 	}
 
 	public static record TestAllocator(PooledBufferAllocator allocator) {}
@@ -78,7 +74,9 @@ public class DbTestUtils {
 			Function<LLKeyValueDatabase, Publisher<U>> action) {
 		return Flux.usingWhen(
 				temporaryDbGenerator.openTempDb(alloc),
-				tempDb -> action.apply(tempDb.db()),
+				tempDb -> Flux.from(action.apply(tempDb.db())).doOnDiscard(Object.class, o -> {
+					System.out.println("Discarded: " + o.getClass().getName() + ", " + o);
+				}),
 				temporaryDbGenerator::closeTempDb
 		);
 	}

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.netty5.buffer.api.Buffer;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.ExtraKeyOperationResult;
@@ -148,7 +149,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 						.getValue(snapshot, key, existsAlmostCertainly)
 						.map(value -> Map.entry(key, Optional.of(value)))
 						.switchIfEmpty(Mono.fromSupplier(() -> Map.entry(key, Optional.empty())))
-				);
+				)
+				.doOnDiscard(Entry.class, unknownEntry -> {
+					if (unknownEntry.getValue() instanceof Optional optionalBuffer
+							&& optionalBuffer.isPresent()
+							&& optionalBuffer.get() instanceof Buffer buffer) {
+						buffer.close();
+					}
+				});
 	}
 
 	/**

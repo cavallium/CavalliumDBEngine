@@ -774,7 +774,7 @@ public class LLLocalDictionary implements LLDictionary {
 	// Remember to change also update() if you are modifying this function
 	@SuppressWarnings("DuplicatedCode")
 	@Override
-	public Mono<LLDelta> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
+	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
@@ -878,7 +878,7 @@ public class LLLocalDictionary implements LLDictionary {
 										return LLDelta.of(
 												prevData != null ? prevData.send() : null,
 												newData != null ? newData.send() : null
-										);
+										).send();
 									} finally {
 										if (newData != null) {
 											newData.close();
@@ -1536,8 +1536,8 @@ public class LLLocalDictionary implements LLDictionary {
 										true,
 										"getRangeKeysGrouped"
 								),
-								it -> it.flux(),
-								it -> it.release()
+								LLLocalKeyPrefixReactiveRocksIterator::flux,
+								LLLocalKeyPrefixReactiveRocksIterator::release
 						)
 						.subscribeOn(dbScheduler),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)

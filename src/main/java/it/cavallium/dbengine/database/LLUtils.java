@@ -8,6 +8,7 @@ import io.netty5.buffer.api.CompositeBuffer;
 import io.netty5.buffer.api.Send;
 import io.netty5.util.IllegalReferenceCountException;
 import io.netty5.util.internal.PlatformDependent;
+import it.cavallium.dbengine.database.collections.DatabaseStage;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -494,9 +495,9 @@ public class LLUtils {
 		});
 	}
 
-	public static Mono<Send<Buffer>> resolveLLDelta(Mono<LLDelta> prev, UpdateReturnMode updateReturnMode) {
-		return prev.handle((delta, sink) -> {
-			try (delta) {
+	public static Mono<Send<Buffer>> resolveLLDelta(Mono<Send<LLDelta>> prev, UpdateReturnMode updateReturnMode) {
+		return prev.handle((deltaToReceive, sink) -> {
+			try (var delta = deltaToReceive.receive()) {
 				switch (updateReturnMode) {
 					case GET_NEW_VALUE -> {
 						var current = delta.current();
@@ -546,10 +547,10 @@ public class LLUtils {
 		});
 	}
 
-	public static <U> Mono<Delta<U>> mapLLDelta(Mono<LLDelta> mono,
+	public static <U> Mono<Delta<U>> mapLLDelta(Mono<Send<LLDelta>> mono,
 			SerializationFunction<@NotNull Send<Buffer>, @Nullable U> mapper) {
-		return mono.handle((delta, sink) -> {
-			try {
+		return mono.handle((deltaToReceive, sink) -> {
+			try (var delta = deltaToReceive.receive()) {
 				try (Send<Buffer> prev = delta.previous()) {
 					try (Send<Buffer> curr = delta.current()) {
 						U newPrev;
@@ -609,12 +610,16 @@ public class LLUtils {
 				discardLLEntry(o);
 			} else if (obj instanceof LLRange o) {
 				discardLLRange(o);
+			} else if (obj instanceof LLDelta o) {
+				discardLLDelta(o);
 			} else if (obj instanceof Delta o) {
 				discardDelta(o);
 			} else if (obj instanceof Send o) {
 				discardSend(o);
 			} else if (obj instanceof Map o) {
 				discardMap(o);
+			} else if (obj instanceof DatabaseStage o) {
+				discardStage(o);
 			}
 		});
 		// todo: check if the single object discard hook is more performant
@@ -627,8 +632,10 @@ public class LLUtils {
 				.doOnDiscard(LLEntry.class, LLUtils::discardLLEntry)
 				.doOnDiscard(LLRange.class, LLUtils::discardLLRange)
 				.doOnDiscard(Delta.class, LLUtils::discardDelta)
+				.doOnDiscard(LLDelta.class, LLUtils::discardLLDelta)
 				.doOnDiscard(Send.class, LLUtils::discardSend)
-				.doOnDiscard(Map.class, LLUtils::discardMap);
+				.doOnDiscard(Map.class, LLUtils::discardMap)
+				.doOnDiscard(DatabaseStage.class, LLUtils::discardStage);
 
 		 */
 	}
@@ -651,10 +658,14 @@ public class LLUtils {
 				discardLLRange(o);
 			} else if (obj instanceof Delta o) {
 				discardDelta(o);
+			} else if (obj instanceof LLDelta o) {
+				discardLLDelta(o);
 			} else if (obj instanceof Send o) {
 				discardSend(o);
 			} else if (obj instanceof Map o) {
 				discardMap(o);
+			} else if (obj instanceof DatabaseStage o) {
+				discardStage(o);
 			}
 		});
 		// todo: check if the single object discard hook is more performant
@@ -667,8 +678,10 @@ public class LLUtils {
 				.doOnDiscard(LLEntry.class, LLUtils::discardLLEntry)
 				.doOnDiscard(LLRange.class, LLUtils::discardLLRange)
 				.doOnDiscard(Delta.class, LLUtils::discardDelta)
+				.doOnDiscard(LLDelta.class, LLUtils::discardLLDelta)
 				.doOnDiscard(Send.class, LLUtils::discardSend)
-				.doOnDiscard(Map.class, LLUtils::discardMap);
+				.doOnDiscard(Map.class, LLUtils::discardMap)
+				.doOnDiscard(DatabaseStage.class, LLUtils::discardStage);
 
 		 */
 	}
@@ -681,6 +694,11 @@ public class LLUtils {
 	private static void discardLLRange(LLRange range) {
 		logger.trace("Releasing discarded Buffer");
 		range.close();
+	}
+
+	private static void discardLLDelta(LLDelta delta) {
+		logger.trace("Releasing discarded LLDelta");
+		delta.close();
 	}
 
 	private static void discardEntry(Map.Entry<?, ?> e) {
@@ -774,6 +792,10 @@ public class LLUtils {
 				break;
 			}
 		}
+	}
+
+	private static void discardStage(DatabaseStage<?> stage) {
+		stage.release();
 	}
 
 	public static boolean isDirect(Buffer key) {

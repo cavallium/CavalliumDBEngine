@@ -45,7 +45,7 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	private void deserializeValue(Send<Buffer> value, SynchronousSink<U> sink) {
-		try {
+		try (value) {
 			sink.next(serializer.deserialize(value).deserializedData());
 		} catch (SerializationException ex) {
 			sink.error(ex);
@@ -72,12 +72,14 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 			boolean existsAlmostCertainly) {
 		return dictionary
 				.update(keyMono, (oldValueSer) -> {
-					var result = updater.apply(
-							oldValueSer == null ? null : serializer.deserialize(oldValueSer).deserializedData());
-					if (result == null) {
-						return null;
-					} else {
-						return serializer.serialize(result);
+					try (oldValueSer) {
+						var result = updater.apply(oldValueSer == null ? null
+								: serializer.deserialize(oldValueSer).deserializedData());
+						if (result == null) {
+							return null;
+						} else {
+							return serializer.serialize(result);
+						}
 					}
 				}, updateReturnMode, existsAlmostCertainly)
 				.handle(this::deserializeValue);
@@ -88,12 +90,14 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 			boolean existsAlmostCertainly) {
 		return dictionary
 				.updateAndGetDelta(keyMono, (oldValueSer) -> {
-					var result = updater.apply(
-							oldValueSer == null ? null : serializer.deserialize(oldValueSer).deserializedData());
-					if (result == null) {
-						return null;
-					} else {
-						return serializer.serialize(result);
+					try (oldValueSer) {
+						var result = updater.apply(oldValueSer == null ? null
+								: serializer.deserialize(oldValueSer).deserializedData());
+						if (result == null) {
+							return null;
+						} else {
+							return serializer.serialize(result);
+						}
 					}
 				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono,
 						serialized -> serializer.deserialize(serialized).deserializedData()

@@ -25,8 +25,13 @@ import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.publisher.Sinks.Many;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.concurrent.Queues;
 
 public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMultiSearcher {
+
+	private static final Scheduler UNSCORED_UNSORTED_EXECUTOR = Schedulers.newBoundedElastic(Runtime
+			.getRuntime()
+			.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "UnscoredUnsortedExecutor");
 
 	@Override
 	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
@@ -62,7 +67,7 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 							}
 
 							@Override
-							protected void doSetNextReader(LeafReaderContext context) throws IOException {
+							protected void doSetNextReader(LeafReaderContext context) {
 								this.context = context;
 							}
 
@@ -109,7 +114,7 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 										}
 										collector.setShardIndex(collectorShardIndex);
 										remainingCollectors.incrementAndGet();
-										Schedulers.boundedElastic().schedule(() -> {
+										UNSCORED_UNSORTED_EXECUTOR.schedule(() -> {
 											try {
 												indexSearcher.search(queryParams.query(), collector);
 

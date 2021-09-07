@@ -178,6 +178,9 @@ public class LLMemoryDictionary implements LLDictionary {
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
+					if (updateMode == UpdateMode.DISALLOW) {
+						throw new UnsupportedOperationException("update() is disallowed");
+					}
 					AtomicReference<Send<Buffer>> oldRef = new AtomicReference<>(null);
 					var newValue = mainDb.compute(k(key), (_unused, old) -> {
 						if (old != null) {

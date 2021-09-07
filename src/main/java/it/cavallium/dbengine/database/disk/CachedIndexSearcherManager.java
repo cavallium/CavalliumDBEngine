@@ -7,6 +7,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.Phaser;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
@@ -184,15 +185,31 @@ public class CachedIndexSearcherManager {
 
 	public Mono<Void> close() {
 		return Mono
-				.fromRunnable(this.closeRequested::tryEmitEmpty)
+				.fromRunnable(() -> {
+					logger.info("Closing IndexSearcherManager...");
+					this.closeRequested.tryEmitEmpty();
+				})
 				.then(refresherClosed.asMono())
 				.then(Mono.fromRunnable(() -> {
+					logger.info("Closed IndexSearcherManager");
+					logger.info("Closing refreshes...");
 					if (!activeRefreshes.isTerminated()) {
-						activeRefreshes.arriveAndAwaitAdvance();
+						try {
+							activeRefreshes.awaitAdvanceInterruptibly(activeRefreshes.arrive(), 15, TimeUnit.SECONDS);
+						} catch (Exception ex) {
+							logger.error("Failed to terminate active refreshes", ex);
+						}
 					}
+					logger.info("Closed refreshes...");
+					logger.info("Closing active searchers...");
 					if (!activeSearchers.isTerminated()) {
-						activeSearchers.arriveAndAwaitAdvance();
+						try {
+							activeSearchers.awaitAdvanceInterruptibly(activeSearchers.arrive(), 15, TimeUnit.SECONDS);
+						} catch (Exception ex) {
+							logger.error("Failed to terminate active searchers", ex);
+						}
 					}
+					logger.info("Closed active searchers");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
 				}));

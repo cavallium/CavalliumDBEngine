@@ -5,8 +5,12 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.SearcherManager;
 import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class CachedIndexSearcher {
+
+	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcher.class);
 
 	private final IndexSearcher indexSearcher;
 	private final SearcherManager associatedSearcherManager;
@@ -30,12 +34,14 @@ public class CachedIndexSearcher {
 
 	public void decUsage() throws IOException {
 		synchronized (this) {
-			usages--;
-			if (mustClose()) {
-				try {
-					close();
-				} finally {
-					if (afterFinalization != null) afterFinalization.run();
+			if (usages > 0) {
+				usages--;
+				if (mustClose()) {
+					try {
+						close();
+					} finally {
+						if (afterFinalization != null) afterFinalization.run();
+					}
 				}
 			}
 		}
@@ -43,12 +49,14 @@ public class CachedIndexSearcher {
 
 	public void removeFromCache() throws IOException {
 		synchronized (this) {
-			inCache = false;
-			if (mustClose()) {
-				try {
-					close();
-				} finally {
-					if (afterFinalization != null) afterFinalization.run();
+			if (inCache) {
+				inCache = false;
+				if (mustClose()) {
+					try {
+						close();
+					} finally {
+						if (afterFinalization != null) afterFinalization.run();
+					}
 				}
 			}
 		}
@@ -70,5 +78,18 @@ public class CachedIndexSearcher {
 
 	public IndexSearcher getIndexSearcher() {
 		return indexSearcher;
+	}
+
+	@Override
+	protected void finalize() throws Throwable {
+		if (usages > 0) {
+			logger.error("A cached index searcher has been garbage collected, but "
+					+ usages + " usages have not been released");
+		}
+		if (inCache) {
+			logger.error("A cached index searcher has been garbage collected, but it's marked"
+					+ " as still actively cached");
+		}
+		super.finalize();
 	}
 }

@@ -448,18 +448,20 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> close() {
 		return Mono
 				.<Void>fromCallable(() -> {
-					logger.debug("Closing IndexWriter...");
+					logger.info("Waiting IndexWriter tasks...");
 					activeTasks.arriveAndAwaitAdvance();
+					logger.info("IndexWriter tasks ended");
 					return null;
 				})
 				.subscribeOn(luceneHeavyTasksScheduler)
 				.then(searcherManager.close())
 				.then(Mono.<Void>fromCallable(() -> {
+					logger.info("Closing IndexWriter...");
 					//noinspection BlockingMethodInNonBlockingContext
 					indexWriter.close();
 					//noinspection BlockingMethodInNonBlockingContext
 					directory.close();
-					logger.debug("IndexWriter closed");
+					logger.info("IndexWriter closed");
 					return null;
 				}).subscribeOn(luceneHeavyTasksScheduler));
 	}

@@ -1111,8 +1111,9 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues) {
 		return entries
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.flatMapSequential(ew -> this
-						.<List<Send<LLEntry>>>runOnDb(() -> {
+				.publishOn(dbScheduler)
+				.flatMapSequential(ew -> Mono
+						.<List<Send<LLEntry>>>fromCallable(() -> {
 							var entriesWindow = new ArrayList<LLEntry>(ew.size());
 							for (Send<LLEntry> entrySend : ew) {
 								entriesWindow.add(entrySend.receive());

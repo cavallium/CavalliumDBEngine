@@ -69,7 +69,6 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 public class LuceneUtils {
 
@@ -366,6 +365,7 @@ public class LuceneUtils {
 	public static Flux<LLKeyScore> convertHits(ScoreDoc[] hits,
 			IndexSearchers indexSearchers,
 			String keyFieldName,
+			Scheduler scheduler,
 			boolean preserveOrder) {
 
 		return Flux
@@ -373,11 +373,12 @@ public class LuceneUtils {
 				.transform(hitsFlux -> {
 					if (preserveOrder) {
 						return hitsFlux
+								.publishOn(scheduler)
 								.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
 					} else {
 						return hitsFlux
 								.parallel()
-								.runOn(Schedulers.boundedElastic())
+								.runOn(scheduler)
 								.map(hit -> {
 									var result = mapHitBlocking(hit, indexSearchers, keyFieldName);
 									// The "else" value is an errored key score, to filter out next

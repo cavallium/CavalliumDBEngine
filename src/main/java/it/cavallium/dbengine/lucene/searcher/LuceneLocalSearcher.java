@@ -11,9 +11,11 @@ public interface LuceneLocalSearcher {
 	 * @param indexSearcher Lucene index searcher
 	 * @param queryParams   the query parameters
 	 * @param keyFieldName  the name of the key field
+	 * @param scheduler     a blocking scheduler
 	 */
 	Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName);
+			String keyFieldName,
+			Scheduler scheduler);
 }

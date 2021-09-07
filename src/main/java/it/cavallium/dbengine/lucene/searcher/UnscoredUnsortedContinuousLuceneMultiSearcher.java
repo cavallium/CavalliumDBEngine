@@ -99,7 +99,8 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 						@Override
 						public Mono<Void> searchOn(IndexSearcher indexSearcher,
 								Mono<Void> releaseIndexSearcher,
-								LocalQueryParams queryParams) {
+								LocalQueryParams queryParams,
+								Scheduler scheduler) {
 							return Mono
 									.fromCallable(() -> {
 										if (Schedulers.isInNonBlockingThread()) {
@@ -126,12 +127,14 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 											}
 										});
 										return null;
-									});
+									})
+									.subscribeOn(scheduler);
 						}
 
 						@Override
 						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams,
-								String keyFieldName) {
+								String keyFieldName,
+								Scheduler scheduler) {
 							return Mono
 									.fromCallable(() -> {
 										if (Schedulers.isInNonBlockingThread()) {
@@ -166,6 +169,7 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 												.flatMap(scoreDocs -> LuceneUtils.convertHits(scoreDocs.toArray(ScoreDoc[]::new),
 														indexSearchers,
 														keyFieldName,
+														scheduler,
 														false
 												));
 

@@ -23,7 +23,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
 					if (Schedulers.isInNonBlockingThread()) {
@@ -45,6 +46,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 								LuceneUtils.totalHitsThreshold(),
 								!paginationInfo.forceSinglePage(),
 								queryParams.isScored());
+						//noinspection BlockingMethodInNonBlockingContext
 						indexSearcher.search(queryParams.query(), firstPageCollector);
 						firstPageTopDocs = firstPageCollector.topDocs(LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset()),
 								LuceneUtils.safeLongToInt(paginationInfo.firstPageLimit())
@@ -55,6 +57,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 									firstPageTopDocs.scoreDocs,
 									IndexSearchers.unsharded(indexSearcher),
 									keyFieldName,
+									scheduler,
 									true
 							)
 							.take(queryParams.limit(), true);
@@ -97,8 +100,9 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 									},
 									s -> {}
 							)
+									.subscribeOn(scheduler)
 							.flatMapSequential(topFieldDoc -> LuceneUtils
-									.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, true)
+									.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true)
 							)
 						);
 					}
@@ -116,6 +120,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 							//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							releaseIndexSearcher
 					);
-				});
+				})
+				.subscribeOn(scheduler);
 	}
 }

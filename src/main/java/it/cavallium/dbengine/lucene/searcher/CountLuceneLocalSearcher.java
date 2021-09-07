@@ -15,7 +15,9 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			Scheduler scheduler) {
+		//noinspection BlockingMethodInNonBlockingContext
 		return Mono
 				.fromCallable(() -> {
 					if (Schedulers.isInNonBlockingThread()) {
@@ -26,6 +28,7 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 									Flux.empty(),
 									releaseIndexSearcher);
 						}
-				);
+				)
+				.subscribeOn(scheduler);
 	}
 }

@@ -23,17 +23,20 @@ public class LLLocalSingleton implements LLSingleton {
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final byte[] name;
 	private final String databaseName;
+	private final Scheduler dbScheduler;
 
 	public LLLocalSingleton(RocksDB db, ColumnFamilyHandle singletonListColumn,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			String databaseName,
 			byte[] name,
+			Scheduler dbScheduler,
 			byte[] defaultValue) throws RocksDBException {
 		this.db = db;
 		this.cfh = singletonListColumn;
 		this.databaseName = databaseName;
 		this.snapshotResolver = snapshotResolver;
 		this.name = name;
+		this.dbScheduler = dbScheduler;
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Initialized in a nonblocking thread");
 		}
@@ -59,7 +62,8 @@ public class LLLocalSingleton implements LLSingleton {
 					}
 					return db.get(cfh, resolveSnapshot(snapshot), name);
 				})
-				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause));
+				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause))
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -72,7 +76,8 @@ public class LLLocalSingleton implements LLSingleton {
 					db.put(cfh, name, value);
 					return null;
 				})
-				.onErrorMap(cause -> new IOException("Failed to write " + Arrays.toString(name), cause));
+				.onErrorMap(cause -> new IOException("Failed to write " + Arrays.toString(name), cause))
+				.subscribeOn(dbScheduler);
 	}
 
 	@Override

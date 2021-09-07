@@ -48,25 +48,28 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 	@Override
 	public Mono<Void> searchOn(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
-			LocalQueryParams queryParams) {
+			LocalQueryParams queryParams,
+			Scheduler scheduler) {
 		return Mono.fromCallable(() -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
 			}
 			TopFieldCollector collector;
 			synchronized (lock) {
+				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageSharedManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
 				indexSearcherReleasersArray.add(releaseIndexSearcher);
 				collectors.add(collector);
 			}
+			//noinspection BlockingMethodInNonBlockingContext
 			indexSearcher.search(luceneQuery, collector);
 			return null;
-		});
+		}).subscribeOn(scheduler);
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
+	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler collectorScheduler) {
 		if (Schedulers.isInNonBlockingThread()) {
 			return Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread"));
 		}
@@ -88,7 +91,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, true);
+							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
 						if (paginationInfo.forceSinglePage()
@@ -168,8 +171,9 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 
 									emitter.onCancel(cancelEvent::tryEmitEmpty);
 								})
+								.subscribeOn(collectorScheduler)
 								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, true)
+										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true)
 								);
 					});
 
@@ -179,7 +183,8 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 									//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							release
 					);
-				});
+				})
+				.subscribeOn(collectorScheduler);
 	}
 
 }

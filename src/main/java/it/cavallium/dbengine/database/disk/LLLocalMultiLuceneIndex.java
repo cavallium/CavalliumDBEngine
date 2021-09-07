@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.disk.LLLocalLuceneIndex.luceneSearcherScheduler;
+
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
@@ -218,7 +220,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(luceneIndexWithSnapshot -> luceneIndexWithSnapshot.luceneIndex()
 								.distributedMoreLikeThis(luceneIndexWithSnapshot.snapshot.orElse(null), queryParams, mltDocumentFields, shardSearcher))
 						// Collect all the shards results into a single global result
-						.then(shardSearcher.collect(localQueryParams, keyFieldName))
+						.then(shardSearcher.collect(localQueryParams, keyFieldName, luceneSearcherScheduler))
 				)
 				// Fix the result type
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));
@@ -246,7 +248,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(luceneIndexWithSnapshot -> luceneIndexWithSnapshot.luceneIndex()
 								.distributedSearch(luceneIndexWithSnapshot.snapshot.orElse(null), queryParams, shardSearcher))
 						// Collect all the shards results into a single global result
-						.then(shardSearcher.collect(localQueryParams, keyFieldName))
+						.then(shardSearcher.collect(localQueryParams, keyFieldName, luceneSearcherScheduler))
 				)
 				// Fix the result type
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));

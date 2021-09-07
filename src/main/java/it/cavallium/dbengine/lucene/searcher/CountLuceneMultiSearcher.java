@@ -25,17 +25,20 @@ public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 						@Override
 						public Mono<Void> searchOn(IndexSearcher indexSearcher,
 								Mono<Void> releaseIndexSearcher,
-								LocalQueryParams queryParams) {
+								LocalQueryParams queryParams,
+								Scheduler scheduler) {
 							return Mono
 									.<Void>fromCallable(() -> {
+										//noinspection BlockingMethodInNonBlockingContext
 										totalHits.addAndGet(indexSearcher.count(queryParams.query()));
 										release.add(releaseIndexSearcher);
 										return null;
-									});
+									})
+									.subscribeOn(scheduler);
 						}
 
 						@Override
-						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
+						public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 							return Mono.fromCallable(() -> {
 								if (Schedulers.isInNonBlockingThread()) {
 									throw new UnsupportedOperationException("Called collect in a nonblocking thread");

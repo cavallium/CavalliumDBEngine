@@ -41,25 +41,28 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 	@Override
 	public Mono<Void> searchOn(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
-			LocalQueryParams queryParams) {
+			LocalQueryParams queryParams,
+			Scheduler scheduler) {
 		return Mono.fromCallable(() -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
 			}
 			TopDocsCollector<ScoreDoc> collector;
 			synchronized (lock) {
+				//noinspection BlockingMethodInNonBlockingContext
 				collector = firstPageUnsortedCollectorManager.newCollector();
 				indexSearchersArray.add(indexSearcher);
 				indexSearcherReleasersArray.add(releaseIndexSearcher);
 				collectors.add(collector);
 			}
+			//noinspection BlockingMethodInNonBlockingContext
 			indexSearcher.search(luceneQuery, collector);
 			return null;
-		});
+		}).subscribeOn(scheduler);
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName) {
+	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
 		return Mono
 				.fromCallable(() -> {
 					if (Schedulers.isInNonBlockingThread()) {
@@ -68,7 +71,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 					TopDocs result;
 					Mono<Void> release;
 					synchronized (lock) {
-						
+						//noinspection BlockingMethodInNonBlockingContext
 						result = firstPageUnsortedCollectorManager.reduce(collectors);
 						release = Mono.when(indexSearcherReleasersArray);
 					}
@@ -77,7 +80,7 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, false);
+							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler, false);
 
 					Flux<LLKeyScore> nextHits = Flux.defer(() -> {
 						if (paginationInfo.forceSinglePage() || paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
@@ -95,19 +98,23 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 														() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), s.currentPageLimit(),
 																s.last(), LuceneUtils.totalHitsThreshold(), true, queryParams.isScored()),
 														0, s.currentPageLimit(), queryParams.sort());
-												
+												//noinspection BlockingMethodInNonBlockingContext
 												TopDocs pageTopDocs = Flux
 														.fromIterable(indexSearchersArray)
 														.flatMapSequential(indexSearcher -> Mono
 																.fromCallable(() -> {
+																	//noinspection BlockingMethodInNonBlockingContext
 																	var collector = currentPageUnsortedCollectorManager.newCollector();
+																	//noinspection BlockingMethodInNonBlockingContext
 																	indexSearcher.search(luceneQuery, collector);
 																	return collector;
 																})
+																.subscribeOn(scheduler)
 														)
 														.collect(Collectors.toCollection(ObjectArrayList::new))
 														.flatMap(collectors -> Mono
 																.fromCallable(() -> currentPageUnsortedCollectorManager.reduce(collectors))
+																.subscribeOn(scheduler)
 														)
 														.blockOptional().orElseThrow();
 
@@ -122,8 +129,9 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 										},
 										s -> {}
 								)
+								.subscribeOn(scheduler)
 								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, false)
+										.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler, false)
 								);
 					});
 
@@ -132,7 +140,8 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 							//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
 							release
 					);
-				});
+				})
+				.subscribeOn(scheduler);
 		}
 
 }

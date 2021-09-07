@@ -143,6 +143,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;
 	private final String columnName;
+	private final Scheduler dbScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final Striped<StampedLock> itemsLock = Striped.readWriteStampedLock(STRIPES);
 	private final UpdateMode updateMode;
@@ -157,6 +158,7 @@ public class LLLocalDictionary implements LLDictionary {
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
 			String columnName,
+			Scheduler dbScheduler,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			UpdateMode updateMode,
 			DatabaseOptions databaseOptions) {
@@ -166,6 +168,7 @@ public class LLLocalDictionary implements LLDictionary {
 		this.cfh = columnFamilyHandle;
 		this.databaseName = databaseName;
 		this.columnName = columnName;
+		this.dbScheduler = dbScheduler;
 		this.snapshotResolver = snapshotResolver;
 		this.updateMode = updateMode;
 		this.getRangeMultiDebugName = databaseName + "(" + columnName + ")" + "::getRangeMulti";
@@ -241,7 +244,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private <T> @NotNull Mono<T> runOnDb(Callable<@Nullable T> callable) {
-		return Mono.fromCallable(callable);
+		return Mono.fromCallable(callable).subscribeOn(dbScheduler);
 	}
 
 	@Override
@@ -1420,7 +1423,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalEntryReactiveRocksIterator(db, alloc, cfh, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeMultiDebugName),
-						LLLocalReactiveRocksIterator::flux,
+						llLocalEntryReactiveRocksIterator -> llLocalEntryReactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalReactiveRocksIterator::release
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -1432,7 +1435,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalGroupedEntryReactiveRocksIterator(db, alloc, cfh, prefixLength, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), "getRangeMultiGrouped"),
-						LLLocalGroupedReactiveRocksIterator::flux,
+						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalGroupedReactiveRocksIterator::release
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -1463,7 +1466,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalGroupedKeyReactiveRocksIterator(db, alloc, cfh, prefixLength, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), "getRangeKeysGrouped"),
-						LLLocalGroupedReactiveRocksIterator::flux,
+						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalGroupedReactiveRocksIterator::release
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -1474,7 +1477,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<BadBlock> badBlocks(Mono<Send<LLRange>> rangeMono) {
 		return Flux.usingWhen(rangeMono,
 				rangeSend -> Flux
-						.create(sink -> {
+						.<BadBlock>create(sink -> {
 							var range = rangeSend.receive();
 							sink.onDispose(range::close);
 							try (var ro = new ReadOptions(getReadOptions(null))) {
@@ -1511,7 +1514,8 @@ public class LLLocalDictionary implements LLDictionary {
 							} catch (Throwable ex) {
 								sink.error(ex);
 							}
-						}),
+						})
+						.subscribeOn(dbScheduler),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}
@@ -1531,9 +1535,10 @@ public class LLLocalDictionary implements LLDictionary {
 										true,
 										"getRangeKeysGrouped"
 								),
-								LLLocalKeyPrefixReactiveRocksIterator::flux,
-								LLLocalKeyPrefixReactiveRocksIterator::release
-						),
+								it -> it.flux(),
+								it -> it.release()
+						)
+						.subscribeOn(dbScheduler),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}
@@ -1560,7 +1565,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalKeyReactiveRocksIterator(db, alloc, cfh, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeKeysMultiDebugName),
-						LLLocalReactiveRocksIterator::flux,
+						llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalReactiveRocksIterator::release
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -2001,7 +2006,8 @@ public class LLLocalDictionary implements LLDictionary {
 						return null;
 					}
 				})
-				.onErrorMap(cause -> new IOException("Failed to clear", cause));
+				.onErrorMap(cause -> new IOException("Failed to clear", cause))
+				.subscribeOn(dbScheduler);
 
 	}
 

@@ -17,22 +17,24 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
 			Mono<Void> releaseIndexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			Scheduler scheduler) {
 		if (Schedulers.isInNonBlockingThread()) {
 			return releaseIndexSearcher
 					.then(Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread")));
 		}
 		if (queryParams.limit() == 0) {
-			return countSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName);
+			return countSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName, scheduler);
 		} else if (!queryParams.isScored() && queryParams.offset() == 0 && queryParams.limit() >= 2147483630
 				&& !queryParams.isSorted()) {
 			return unscoredPagedLuceneLocalSearcher.collect(indexSearcher,
 					releaseIndexSearcher,
 					queryParams,
-					keyFieldName
+					keyFieldName,
+					scheduler
 			);
 		} else {
-			return localSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName);
+			return localSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName, scheduler);
 		}
 	}
 }

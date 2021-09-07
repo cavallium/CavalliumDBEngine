@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
@@ -197,7 +198,11 @@ public class CachedIndexSearcherManager {
 						try {
 							activeRefreshes.awaitAdvanceInterruptibly(activeRefreshes.arrive(), 15, TimeUnit.SECONDS);
 						} catch (Exception ex) {
-							logger.error("Failed to terminate active refreshes", ex);
+							if (ex instanceof TimeoutException) {
+								logger.error("Failed to terminate active refreshes: timeout");
+							} else {
+								logger.error("Failed to terminate active refreshes", ex);
+							}
 						}
 					}
 					logger.info("Closed refreshes...");
@@ -206,7 +211,11 @@ public class CachedIndexSearcherManager {
 						try {
 							activeSearchers.awaitAdvanceInterruptibly(activeSearchers.arrive(), 15, TimeUnit.SECONDS);
 						} catch (Exception ex) {
-							logger.error("Failed to terminate active searchers", ex);
+							if (ex instanceof TimeoutException) {
+								logger.error("Failed to terminate active searchers: timeout");
+							} else {
+								logger.error("Failed to terminate active searchers", ex);
+							}
 						}
 					}
 					logger.info("Closed active searchers");

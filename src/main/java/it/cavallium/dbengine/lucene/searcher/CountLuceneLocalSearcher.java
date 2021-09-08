@@ -12,23 +12,17 @@ import reactor.core.scheduler.Schedulers;
 public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
-	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
-			Mono<Void> releaseIndexSearcher,
-			LocalQueryParams queryParams,
-			String keyFieldName,
-			Scheduler scheduler) {
-		//noinspection BlockingMethodInNonBlockingContext
-		return Mono
-				.fromCallable(() -> {
-					if (Schedulers.isInNonBlockingThread()) {
-						throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-					}
-					return new LuceneSearchResult(
-									TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
-									Flux.empty(),
-									releaseIndexSearcher);
-						}
-				)
-				.subscribeOn(scheduler);
+	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher, Mono<Void> releaseIndexSearcher,
+			LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
+		return Mono.fromCallable(() -> {
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+			}
+			//noinspection BlockingMethodInNonBlockingContext
+			return new LuceneSearchResult(TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
+					Flux.empty(),
+					releaseIndexSearcher
+			);
+		}).subscribeOn(scheduler);
 	}
 }

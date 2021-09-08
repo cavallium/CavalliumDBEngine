@@ -175,7 +175,8 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 												));
 
 										return new LuceneSearchResult(TotalHitsCount.of(0, false), resultsFlux, release);
-									});
+									})
+									.subscribeOn(scheduler);
 						}
 					};
 				});

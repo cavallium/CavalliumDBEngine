@@ -5,6 +5,7 @@ import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -98,30 +99,28 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 														() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), s.currentPageLimit(),
 																s.last(), LuceneUtils.totalHitsThreshold(), true, queryParams.isScored()),
 														0, s.currentPageLimit(), queryParams.sort());
-												//noinspection BlockingMethodInNonBlockingContext
-												TopDocs pageTopDocs = Flux
-														.fromIterable(indexSearchersArray)
-														.flatMapSequential(indexSearcher -> Mono
-																.fromCallable(() -> {
-																	//noinspection BlockingMethodInNonBlockingContext
-																	var collector = currentPageUnsortedCollectorManager.newCollector();
-																	//noinspection BlockingMethodInNonBlockingContext
-																	indexSearcher.search(luceneQuery, collector);
-																	return collector;
-																})
-																.subscribeOn(scheduler)
-														)
-														.collect(Collectors.toCollection(ObjectArrayList::new))
-														.flatMap(collectors -> Mono
-																.fromCallable(() -> currentPageUnsortedCollectorManager.reduce(collectors))
-																.subscribeOn(scheduler)
-														)
-														.blockOptional().orElseThrow();
 
-												var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
-												sink.next(pageTopDocs);
-												return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(),
-														s.pageIndex() + 1);
+												try {
+													var collectors = new ObjectArrayList<TopDocsCollector<ScoreDoc>>(indexSearchersArray.size());
+													for (IndexSearcher indexSearcher : indexSearchersArray) {
+														//noinspection BlockingMethodInNonBlockingContext
+														var collector = currentPageUnsortedCollectorManager.newCollector();
+														//noinspection BlockingMethodInNonBlockingContext
+														indexSearcher.search(luceneQuery, collector);
+
+														collectors.add(collector);
+													}
+													//noinspection BlockingMethodInNonBlockingContext
+													TopDocs pageTopDocs = currentPageUnsortedCollectorManager.reduce(collectors);
+													var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
+
+													sink.next(pageTopDocs);
+													return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(),
+															s.pageIndex() + 1);
+												} catch (IOException ex) {
+													sink.error(ex);
+													return EMPTY_STATUS;
+												}
 											} else {
 												sink.complete();
 												return EMPTY_STATUS;

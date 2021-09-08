@@ -141,6 +141,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 										}
 										return s;
 							})
+							.subscribeOn(collectorScheduler)
 							.transform(flux -> {
 								if (paginationInfo.forceSinglePage()
 										|| paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
@@ -149,7 +150,6 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 									return flux;
 								}
 							})
-							.subscribeOn(collectorScheduler)
 							.flatMapSequential(topFieldDoc -> LuceneUtils
 									.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true)
 							);

@@ -47,7 +47,7 @@ public class CountLuceneMultiSearcher implements LuceneMultiSearcher {
 										Flux.empty(),
 										Mono.when(release)
 								);
-							});
+							}).subscribeOn(scheduler);
 						}
 					};
 				});

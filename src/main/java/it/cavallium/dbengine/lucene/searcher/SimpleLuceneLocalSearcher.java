@@ -68,43 +68,44 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 						nextHits = null;
 					} else {
 						nextHits = Flux.defer(() -> Flux
-							.<TopDocs, CurrentPageInfo>generate(
-									() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
-									(s, sink) -> {
-										if (Schedulers.isInNonBlockingThread()) {
-											throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-										}
-										if (s.last() != null && s.remainingLimit() > 0) {
-											TopDocs pageTopDocs;
-											try {
-												TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
-														s.currentPageLimit(),
-														s.last(),
-														LuceneUtils.totalHitsThreshold(),
-														true,
-														queryParams.isScored()
-												);
-												indexSearcher.search(queryParams.query(), collector);
-												pageTopDocs = collector.topDocs();
-											} catch (IOException e) {
-												sink.error(e);
+								.<TopDocs, CurrentPageInfo>generate(
+										() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(firstPageTopDocs.scoreDocs), paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
+										(s, sink) -> {
+											if (Schedulers.isInNonBlockingThread()) {
+												throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+											}
+											if (s.last() != null && s.remainingLimit() > 0) {
+												TopDocs pageTopDocs;
+												try {
+													TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
+															s.currentPageLimit(),
+															s.last(),
+															LuceneUtils.totalHitsThreshold(),
+															true,
+															queryParams.isScored()
+													);
+													//noinspection BlockingMethodInNonBlockingContext
+													indexSearcher.search(queryParams.query(), collector);
+													pageTopDocs = collector.topDocs();
+												} catch (IOException e) {
+													sink.error(e);
+													return EMPTY_STATUS;
+												}
+												var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
+												sink.next(pageTopDocs);
+												return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
+											} else {
+												sink.complete();
 												return EMPTY_STATUS;
 											}
-											var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
-											sink.next(pageTopDocs);
-											return new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(), s.pageIndex() + 1);
-										} else {
-											sink.complete();
-											return EMPTY_STATUS;
-										}
-									},
-									s -> {}
-							)
-									.subscribeOn(scheduler)
-							.flatMapSequential(topFieldDoc -> LuceneUtils
-									.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true)
-							)
-						);
+										},
+										s -> {}
+								)
+								.subscribeOn(scheduler)
+								.flatMapSequential(topFieldDoc -> LuceneUtils
+										.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true)
+								)
+							);
 					}
 
 					Flux<LLKeyScore> combinedFlux;

@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.database.disk.LLLocalLuceneIndex.luceneSearcherScheduler;
-
 import com.google.common.cache.Cache;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
@@ -53,11 +51,15 @@ import org.warp.commonutils.functional.IOBiConsumer;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
+
+	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
+	protected final Scheduler luceneSearcherScheduler = LuceneUtils.newLuceneSearcherScheduler(true);
 
 	private final ConcurrentHashMap<Long, LLSnapshot[]> registeredSnapshots = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);

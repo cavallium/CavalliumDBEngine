@@ -6,9 +6,11 @@ import com.google.common.cache.LoadingCache;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.time.Duration;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
@@ -44,6 +46,7 @@ public class CachedIndexSearcherManager {
 
 	private final Empty<Void> closeRequested = Sinks.empty();
 	private final Empty<Void> refresherClosed = Sinks.empty();
+	private final Mono<Void> closeMono;
 
 	public CachedIndexSearcherManager(IndexWriter indexWriter,
 			SnapshotsManager snapshotsManager,
@@ -64,7 +67,7 @@ public class CachedIndexSearcherManager {
 		Mono
 				.fromRunnable(() -> {
 					try {
-						maybeRefreshBlocking();
+						maybeRefresh();
 					} catch (Exception ex) {
 						logger.error("Failed to refresh the searcher manager", ex);
 					}
@@ -86,10 +89,49 @@ public class CachedIndexSearcherManager {
 					}
 				});
 		this.cachedMainSearcher = this.generateCachedSearcher(null);
+
+		this.closeMono = Mono
+				.fromRunnable(() -> {
+					logger.info("Closing IndexSearcherManager...");
+					this.closeRequested.tryEmitEmpty();
+				})
+				.then(refresherClosed.asMono())
+				.then(Mono.<Void>fromRunnable(() -> {
+					logger.info("Closed IndexSearcherManager");
+					logger.info("Closing refreshes...");
+					if (!activeRefreshes.isTerminated()) {
+						try {
+							activeRefreshes.awaitAdvanceInterruptibly(activeRefreshes.arrive(), 15, TimeUnit.SECONDS);
+						} catch (Exception ex) {
+							if (ex instanceof TimeoutException) {
+								logger.error("Failed to terminate active refreshes: timeout");
+							} else {
+								logger.error("Failed to terminate active refreshes", ex);
+							}
+						}
+					}
+					logger.info("Closed refreshes...");
+					logger.info("Closing active searchers...");
+					if (!activeSearchers.isTerminated()) {
+						try {
+							activeSearchers.awaitAdvanceInterruptibly(activeSearchers.arrive(), 15, TimeUnit.SECONDS);
+						} catch (Exception ex) {
+							if (ex instanceof TimeoutException) {
+								logger.error("Failed to terminate active searchers: timeout");
+							} else {
+								logger.error("Failed to terminate active searchers", ex);
+							}
+						}
+					}
+					logger.info("Closed active searchers");
+					cachedSnapshotSearchers.invalidateAll();
+					cachedSnapshotSearchers.cleanUp();
+				})).cache();
 	}
 
 	private Mono<CachedIndexSearcher> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
 		return Mono.fromCallable(() -> {
+					activeSearchers.register();
 					IndexSearcher indexSearcher;
 					SearcherManager associatedSearcherManager;
 					if (snapshot == null) {
@@ -100,7 +142,18 @@ public class CachedIndexSearcherManager {
 						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
 						associatedSearcherManager = null;
 					}
-					return new CachedIndexSearcher(indexSearcher, associatedSearcherManager, activeSearchers::arriveAndDeregister);
+					AtomicBoolean alreadyDeregistered = new AtomicBoolean(false);
+					return new CachedIndexSearcher(indexSearcher, associatedSearcherManager,
+							() -> {
+								// This shouldn't happen more than once,
+								// but I put this AtomicBoolean to be sure that this will NEVER happen more than once.
+								if (alreadyDeregistered.compareAndSet(false, true)) {
+									activeSearchers.arriveAndDeregister();
+								} else {
+									logger.error("Disposed CachedIndexSearcher twice! This is an implementation bug!");
+								}
+							}
+					);
 				})
 				.cacheInvalidateWhen(indexSearcher -> Mono
 								.firstWithSignal(
@@ -159,10 +212,7 @@ public class CachedIndexSearcherManager {
 		return this
 				.retrieveCachedIndexSearcher(snapshot)
 				// Increment reference count
-				.doOnNext(indexSearcher -> {
-					activeSearchers.register();
-					indexSearcher.incUsage();
-				});
+				.doOnNext(CachedIndexSearcher::incUsage);
 	}
 
 	private Mono<CachedIndexSearcher> retrieveCachedIndexSearcher(LLSnapshot snapshot) {
@@ -185,42 +235,6 @@ public class CachedIndexSearcherManager {
 	}
 
 	public Mono<Void> close() {
-		return Mono
-				.fromRunnable(() -> {
-					logger.info("Closing IndexSearcherManager...");
-					this.closeRequested.tryEmitEmpty();
-				})
-				.then(refresherClosed.asMono())
-				.then(Mono.fromRunnable(() -> {
-					logger.info("Closed IndexSearcherManager");
-					logger.info("Closing refreshes...");
-					if (!activeRefreshes.isTerminated()) {
-						try {
-							activeRefreshes.awaitAdvanceInterruptibly(activeRefreshes.arrive(), 15, TimeUnit.SECONDS);
-						} catch (Exception ex) {
-							if (ex instanceof TimeoutException) {
-								logger.error("Failed to terminate active refreshes: timeout");
-							} else {
-								logger.error("Failed to terminate active refreshes", ex);
-							}
-						}
-					}
-					logger.info("Closed refreshes...");
-					logger.info("Closing active searchers...");
-					if (!activeSearchers.isTerminated()) {
-						try {
-							activeSearchers.awaitAdvanceInterruptibly(activeSearchers.arrive(), 15, TimeUnit.SECONDS);
-						} catch (Exception ex) {
-							if (ex instanceof TimeoutException) {
-								logger.error("Failed to terminate active searchers: timeout");
-							} else {
-								logger.error("Failed to terminate active searchers", ex);
-							}
-						}
-					}
-					logger.info("Closed active searchers");
-					cachedSnapshotSearchers.invalidateAll();
-					cachedSnapshotSearchers.cleanUp();
-				}));
+		return closeMono;
 	}
 }

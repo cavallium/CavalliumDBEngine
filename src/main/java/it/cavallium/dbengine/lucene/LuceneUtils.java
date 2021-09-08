@@ -374,8 +374,10 @@ public class LuceneUtils {
 				.transform(hitsFlux -> {
 					if (preserveOrder) {
 						return hitsFlux
-								.publishOn(scheduler)
-								.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
+								.flatMapSequential(hit -> Mono
+										.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
+										.subscribeOn(scheduler)
+								);
 					} else {
 						return hitsFlux
 								.parallel()
@@ -507,5 +509,15 @@ public class LuceneUtils {
 		} else {
 			return totalHitsCount.value() + "+";
 		}
+	}
+
+	public static Scheduler newLuceneSearcherScheduler(boolean multi) {
+		return Schedulers.newBoundedElastic(
+				4,
+				Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+				multi ? "lucene-searcher-multi" : "lucene-searcher-shard",
+				60,
+				true
+		);
 	}
 }

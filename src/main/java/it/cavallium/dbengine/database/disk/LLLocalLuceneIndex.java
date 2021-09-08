@@ -77,13 +77,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			true
 	);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
-	protected static final Scheduler luceneSearcherScheduler = Schedulers.newBoundedElastic(
-			4,
-			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			"lucene-searcher",
-			60,
-			true
-	);
+	protected final Scheduler luceneSearcherScheduler = LuceneUtils.newLuceneSearcherScheduler(false);
 	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
 	private static final Scheduler luceneWriterScheduler = Schedulers.boundedElastic();
 
@@ -257,9 +251,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
 		return documents
 				.collectList()
-				.publishOn(luceneWriterScheduler)
 				.flatMap(documentsList -> Mono
-						.fromCallable(() -> {
+						.<Void>fromCallable(() -> {
 							activeTasks.register();
 							try {
 								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
@@ -267,7 +260,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 							} finally {
 								activeTasks.arriveAndDeregister();
 							}
-						})
+						}).subscribeOn(luceneWriterScheduler)
 				);
 	}
 
@@ -510,7 +503,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					try {
 						if (activeTasks.isTerminated()) return null;
 						if (force) {
-							if (activeTasks.isTerminated()) return null;
 							//noinspection BlockingMethodInNonBlockingContext
 							searcherManager.maybeRefreshBlocking();
 						} else {

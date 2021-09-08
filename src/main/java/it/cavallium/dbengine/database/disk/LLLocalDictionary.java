@@ -1111,7 +1111,6 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues) {
 		return entries
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.publishOn(dbScheduler)
 				.flatMapSequential(ew -> Mono
 						.<List<Send<LLEntry>>>fromCallable(() -> {
 							var entriesWindow = new ArrayList<LLEntry>(ew.size());
@@ -1206,7 +1205,7 @@ public class LLLocalDictionary implements LLDictionary {
 									llEntry.close();
 								}
 							}
-						}), 2) // Max concurrency is 2 to read data while preparing the next segment
+						}).subscribeOn(dbScheduler), 2) // Max concurrency is 2 to read data while preparing the next segment
 				.flatMapIterable(oldValuesList -> oldValuesList)
 				.transform(LLUtils::handleDiscard);
 	}

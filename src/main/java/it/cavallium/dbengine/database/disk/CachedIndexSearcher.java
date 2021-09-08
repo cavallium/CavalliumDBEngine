@@ -83,13 +83,23 @@ public class CachedIndexSearcher {
 	@SuppressWarnings("deprecation")
 	@Override
 	protected void finalize() throws Throwable {
+		boolean failedToRelease = false;
 		if (usages > 0) {
+			failedToRelease = true;
 			logger.error("A cached index searcher has been garbage collected, but "
 					+ usages + " usages have not been released");
 		}
 		if (inCache) {
+			failedToRelease = true;
 			logger.error("A cached index searcher has been garbage collected, but it's marked"
 					+ " as still actively cached");
+		}
+		if (failedToRelease) {
+			try {
+				this.close();
+			} catch (Throwable ex) {
+				logger.warn("Error when closing cached index searcher", ex);
+			}
 		}
 		super.finalize();
 	}

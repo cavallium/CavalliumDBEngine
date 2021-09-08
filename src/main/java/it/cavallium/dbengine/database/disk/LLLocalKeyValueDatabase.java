@@ -129,12 +129,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				// 8 or more
 				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
 			}
-			this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
+			this.dbScheduler = Schedulers.boundedElastic(); /*Schedulers.newBoundedElastic(threadCap,
 					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 					"db-" + name,
 					60,
 					true
-			);
+			);*/
 			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
 			createIfNotExists(descriptors, rocksdbOptions, databaseOptions, dbPath, dbPathString);

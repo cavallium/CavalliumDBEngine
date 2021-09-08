@@ -379,17 +379,9 @@ public class LuceneUtils {
 										.subscribeOn(scheduler)
 								);
 					} else {
-						return hitsFlux
-								.parallel()
-								.runOn(scheduler)
-								.map(hit -> {
-									var result = mapHitBlocking(hit, indexSearchers, keyFieldName);
-									// The "else" value is an errored key score, to filter out next
-									return Objects.requireNonNullElseGet(result, () -> new LLKeyScore(-1, -1, null));
-								})
-								.sequential()
-								// Filter out the errored key scores
-								.filter(ks -> !(ks.docId() == -1 && ks.score() == -1));
+						return hitsFlux.flatMap(hit -> Mono
+								.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
+								.subscribeOn(scheduler));
 					}
 				});
 	}

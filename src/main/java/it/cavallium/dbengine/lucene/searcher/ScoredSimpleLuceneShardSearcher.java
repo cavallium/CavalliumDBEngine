@@ -149,6 +149,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 															})
 															.single()
 															.takeUntilOther(cancelEvent.asMono())
+															.subscribeOn(Schedulers.immediate())
 															.block();
 													if (!emitter.isCancelled()) {
 														Objects.requireNonNull(pageTopDocs);

@@ -53,13 +53,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 						);
 					}
 					Flux<LLKeyScore> firstPageMono = LuceneUtils
-							.convertHits(
-									firstPageTopDocs.scoreDocs,
-									IndexSearchers.unsharded(indexSearcher),
-									keyFieldName,
-									scheduler,
-									true
-							)
+							.convertHits(Flux.fromArray(firstPageTopDocs.scoreDocs), IndexSearchers.unsharded(indexSearcher),
+									keyFieldName, scheduler, true)
 							.take(queryParams.limit(), true);
 
 
@@ -78,12 +73,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 												TopDocs pageTopDocs;
 												try {
 													TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
-															s.currentPageLimit(),
-															s.last(),
-															LuceneUtils.totalHitsThreshold(),
-															true,
-															queryParams.isScored()
-													);
+															s.currentPageLimit(), s.last(), LuceneUtils.totalHitsThreshold(), true,
+															queryParams.isScored());
 													//noinspection BlockingMethodInNonBlockingContext
 													indexSearcher.search(queryParams.query(), collector);
 													pageTopDocs = collector.topDocs();
@@ -102,9 +93,8 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 										s -> {}
 								)
 								.subscribeOn(scheduler)
-								.flatMapSequential(topFieldDoc -> LuceneUtils
-										.convertHits(topFieldDoc.scoreDocs, IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true)
-								)
+								.flatMapSequential(topFieldDoc -> LuceneUtils.convertHits(Flux.fromArray(topFieldDoc.scoreDocs),
+										IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true), 2)
 							);
 					}
 

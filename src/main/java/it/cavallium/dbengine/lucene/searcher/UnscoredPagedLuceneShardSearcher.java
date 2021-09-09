@@ -82,17 +82,17 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, scheduler, false);
+							.convertHits(Flux.fromArray(result.scoreDocs), indexSearchers, keyFieldName, scheduler, false);
 
 					Flux<LLKeyScore> nextHits = Flux
 							.<TopDocs, CurrentPageInfo>generate(
 									() -> new CurrentPageInfo(LuceneUtils.getLastScoreDoc(result.scoreDocs),
 											paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
 									(s, sink) -> {
-										int perShardCollectorLimit = s.currentPageLimit() / indexSearchersArray.size();
 										if (s.last() != null && s.remainingLimit() > 0 && s.currentPageLimit() > 0) {
 											Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 											Query luceneQuery = queryParams.query();
+											int perShardCollectorLimit = s.currentPageLimit() / indexSearchersArray.size();
 											UnscoredTopDocsCollectorManager currentPageUnsortedCollectorManager
 													= new UnscoredTopDocsCollectorManager(
 															() -> TopDocsSearcher.getTopDocsCollector(queryParams.sort(), perShardCollectorLimit,
@@ -127,9 +127,8 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 									}
 							)
 							.subscribeOn(scheduler)
-							.flatMapSequential(topFieldDoc -> LuceneUtils
-									.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, scheduler, false)
-							)
+							.flatMapSequential(topFieldDoc -> LuceneUtils.convertHits(Flux.fromArray(topFieldDoc.scoreDocs),
+									indexSearchers, keyFieldName, scheduler, false), 2)
 							.transform(flux -> {
 								if (paginationInfo.forceSinglePage()
 										|| paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {

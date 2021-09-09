@@ -77,11 +77,7 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 				}
 				i++;
 			}
-			result = LuceneUtils.mergeTopDocs(sort, startN,
-					topN,
-					topDocs,
-					TIE_BREAKER
-			);
+			result = LuceneUtils.mergeTopDocs(sort, startN, topN, topDocs, TIE_BREAKER);
 		} else {
 			TopDocs[] topDocs = new TopDocs[collectors.size()];
 			var i = 0;
@@ -92,11 +88,7 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 				}
 				i++;
 			}
-			result = LuceneUtils.mergeTopDocs(null, startN,
-					topN,
-					topDocs,
-					TIE_BREAKER
-			);
+			result = LuceneUtils.mergeTopDocs(null, startN, topN, topDocs, TIE_BREAKER);
 		}
 		return result;
 	}

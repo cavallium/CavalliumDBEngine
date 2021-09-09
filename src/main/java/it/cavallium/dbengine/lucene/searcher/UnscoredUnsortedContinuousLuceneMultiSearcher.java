@@ -158,21 +158,13 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 
 										AtomicBoolean resultsAlreadySubscribed = new AtomicBoolean(false);
 
-										var resultsFlux = Mono
-												.<Void>fromCallable(() -> {
-													if (!resultsAlreadySubscribed.compareAndSet(false, true)) {
-														throw new UnsupportedOperationException("Already subscribed!");
-													}
-													return null;
-												})
-												.thenMany(scoreDocsSink.asFlux())
-												.buffer(1024, ObjectArrayList::new)
-												.flatMap(scoreDocs -> LuceneUtils.convertHits(scoreDocs.toArray(ScoreDoc[]::new),
-														indexSearchers,
-														keyFieldName,
-														scheduler,
-														false
-												));
+										var scoreDocsFlux = Mono.<Void>fromCallable(() -> {
+											if (!resultsAlreadySubscribed.compareAndSet(false, true)) {
+												throw new UnsupportedOperationException("Already subscribed!");
+											}
+											return null;
+										}).thenMany(scoreDocsSink.asFlux());
+										var resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, indexSearchers, keyFieldName, scheduler, false);
 
 										return new LuceneSearchResult(TotalHitsCount.of(0, false), resultsFlux, release);
 									})

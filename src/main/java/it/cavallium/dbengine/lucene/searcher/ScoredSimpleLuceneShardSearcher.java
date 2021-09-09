@@ -92,7 +92,7 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 						indexSearchers = IndexSearchers.of(indexSearchersArray);
 					}
 					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(result.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true);
+							.convertHits(Flux.fromArray(result.scoreDocs), indexSearchers, keyFieldName, collectorScheduler, true);
 
 					Flux<LLKeyScore> nextHits;
 					nextHits = Flux
@@ -151,7 +151,9 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 								}
 							})
 							.flatMapSequential(topFieldDoc -> LuceneUtils
-									.convertHits(topFieldDoc.scoreDocs, indexSearchers, keyFieldName, collectorScheduler, true)
+									.convertHits(Flux.fromArray(topFieldDoc.scoreDocs), indexSearchers,
+											keyFieldName, collectorScheduler, true),
+									2
 							);
 
 					return new LuceneSearchResult(LuceneUtils.convertTotalHitsCount(result.totalHits),

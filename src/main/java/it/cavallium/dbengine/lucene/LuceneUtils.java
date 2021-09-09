@@ -363,27 +363,27 @@ public class LuceneUtils {
 		);
 	}
 
-	public static Flux<LLKeyScore> convertHits(ScoreDoc[] hits,
+	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hits,
 			IndexSearchers indexSearchers,
 			String keyFieldName,
 			Scheduler scheduler,
 			boolean preserveOrder) {
 
-		return Flux
-				.fromArray(hits)
-				.transform(hitsFlux -> {
-					if (preserveOrder) {
-						return hitsFlux
-								.flatMapSequential(hit -> Mono
-										.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
-										.subscribeOn(scheduler)
-								);
-					} else {
-						return hitsFlux.flatMap(hit -> Mono
-								.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
-								.subscribeOn(scheduler));
-					}
-				});
+		return hits.transform(hitsFlux -> {
+			if (preserveOrder) {
+				return hitsFlux.flatMapSequential(hit -> Mono
+						.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
+						.subscribeOn(scheduler),
+						2
+				);
+			} else {
+				return hitsFlux.flatMap(hit -> Mono
+						.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
+						.subscribeOn(scheduler),
+						2
+				);
+			}
+		});
 	}
 
 	@Nullable

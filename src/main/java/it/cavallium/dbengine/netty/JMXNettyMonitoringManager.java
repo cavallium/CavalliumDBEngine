@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.netty;
 
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.DefaultGlobalBufferAllocator;
 import io.netty5.buffer.api.pool.MetricUtils;
 import io.netty5.buffer.api.pool.PoolArenaMetric;
 import io.netty5.buffer.api.pool.PooledBufferAllocator;
@@ -29,7 +30,8 @@ public class JMXNettyMonitoringManager {
 	}
 
 	public static void initialize() {
-		getInstance();
+		var instance = getInstance();
+		instance.register("global", DefaultGlobalBufferAllocator.DEFAUL_GLOBAL_BUFFER_ALLOCATOR);
 	}
 
 	public synchronized static JMXNettyMonitoringManager getInstance() {
@@ -55,10 +57,10 @@ public class JMXNettyMonitoringManager {
 				var jmx = new JMXPooledNettyMonitoring(name, pooledAllocator);
 				type = "pooled";
 				mbean = new StandardMBean(jmx, JMXNettyMonitoringMBean.class);
-
 				ObjectName botObjectName = new ObjectName("io.netty.stats:name=ByteBufAllocator,allocatorName=" + name + ",type=" + type);
 				platformMBeanServer.registerMBean(mbean, botObjectName);
 			}
+
 		} catch (MalformedObjectNameException | NotCompliantMBeanException | InstanceAlreadyExistsException | MBeanRegistrationException e) {
 			throw new RuntimeException(e);
 		}

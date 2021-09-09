@@ -72,8 +72,8 @@ public class CachedIndexSearcherManager {
 						logger.error("Failed to refresh the searcher manager", ex);
 					}
 				})
-				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime, Schedulers.boundedElastic()))
 				.subscribeOn(Schedulers.boundedElastic())
+				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime))
 				.takeUntilOther(closeRequested.asMono())
 				.doAfterTerminate(refresherClosed::tryEmitEmpty)
 				.subscribe();
@@ -158,7 +158,7 @@ public class CachedIndexSearcherManager {
 				.cacheInvalidateWhen(indexSearcher -> Mono
 								.firstWithSignal(
 										this.closeRequested.asMono(),
-										Mono.delay(queryRefreshDebounceTime, Schedulers.boundedElastic()).then()
+										Mono.delay(queryRefreshDebounceTime).then()
 								),
 						indexSearcher -> {
 							try {

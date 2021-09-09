@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty5.buffer.PoolArenaMetric;
+
+import io.netty5.buffer.api.pool.PoolArenaMetric;
 
 public class JMXPoolArenaNettyMonitoring implements JMXPoolArenaNettyMonitoringMBean {
 
@@ -18,7 +19,7 @@ public class JMXPoolArenaNettyMonitoring implements JMXPoolArenaNettyMonitoringM
 	@Deprecated
 	@Override
 	public Integer getNumTinySubpages() {
-		return metric.numTinySubpages();
+		return 0;
 	}
 
 	@Override
@@ -38,7 +39,7 @@ public class JMXPoolArenaNettyMonitoring implements JMXPoolArenaNettyMonitoringM
 
 	@Override
 	public Long getNumTinyAllocations() {
-		return metric.numTinyAllocations();
+		return 0L;
 	}
 
 	@Override
@@ -63,7 +64,7 @@ public class JMXPoolArenaNettyMonitoring implements JMXPoolArenaNettyMonitoringM
 
 	@Override
 	public Long getNumTinyDeallocations() {
-		return metric.numTinyDeallocations();
+		return 0L;
 	}
 
 	@Override
@@ -89,7 +90,7 @@ public class JMXPoolArenaNettyMonitoring implements JMXPoolArenaNettyMonitoringM
 	@Deprecated
 	@Override
 	public Long getNumActiveTinyAllocations() {
-		return metric.numActiveTinyAllocations();
+		return 0L;
 	}
 
 	@Override

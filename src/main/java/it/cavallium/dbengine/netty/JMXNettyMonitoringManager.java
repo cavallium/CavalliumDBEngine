@@ -1,9 +1,14 @@
 package it.cavallium.dbengine.netty;
 
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.pool.MetricUtils;
+import io.netty5.buffer.api.pool.PoolArenaMetric;
 import io.netty5.buffer.api.pool.PooledBufferAllocator;
 import java.lang.management.ManagementFactory;
+import java.util.Map;
+import java.util.Map.Entry;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 import javax.management.InstanceAlreadyExistsException;
 import javax.management.MBeanRegistrationException;
 import javax.management.MBeanServer;
@@ -40,6 +45,13 @@ public class JMXNettyMonitoringManager {
 			String type;
 			StandardMBean mbean;
 			if (metric instanceof PooledBufferAllocator pooledMetric) {
+				for (var arenaMetric : MetricUtils.getPoolArenaMetrics(pooledMetric)) {
+					String arenaType = pooledMetric.isDirectBufferPooled() ? "direct" : "heap";
+					var jmx = new JMXPoolArenaNettyMonitoring(arenaMetric);
+					mbean = new StandardMBean(jmx, JMXPoolArenaNettyMonitoringMBean.class);
+					ObjectName botObjectName = new ObjectName("io.netty.stats:name=PoolArena,type=" + arenaType + ",arenaId=" + nextArenaId.getAndIncrement());
+					platformMBeanServer.registerMBean(mbean, botObjectName);
+				}
 				var jmx = new JMXPooledNettyMonitoring(name, pooledMetric);
 				type = "pooled";
 				mbean = new StandardMBean(jmx, JMXNettyMonitoringMBean.class);

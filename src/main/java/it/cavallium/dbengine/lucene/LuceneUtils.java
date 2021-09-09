@@ -371,17 +371,13 @@ public class LuceneUtils {
 
 		return hits.transform(hitsFlux -> {
 			if (preserveOrder) {
-				return hitsFlux.flatMapSequential(hit -> Mono
-						.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
-						.subscribeOn(scheduler),
-						3
-				);
+				return hitsFlux
+						.publishOn(scheduler)
+						.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
 			} else {
-				return hitsFlux.flatMap(hit -> Mono
-						.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
-						.subscribeOn(scheduler),
-						3
-				);
+				return hitsFlux
+						.publishOn(scheduler)
+						.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
 			}
 		});
 	}

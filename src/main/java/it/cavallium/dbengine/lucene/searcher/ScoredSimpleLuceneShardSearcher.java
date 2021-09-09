@@ -8,6 +8,7 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -150,8 +151,9 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 									return flux;
 								}
 							})
-							.flatMapSequential(topFieldDoc -> LuceneUtils.convertHits(Flux.fromArray(topFieldDoc.scoreDocs),
-									indexSearchers, keyFieldName, collectorScheduler, true), 3);
+							.flatMapIterable(topFieldDoc -> Arrays.asList(topFieldDoc.scoreDocs))
+							.transform(scoreDocs -> LuceneUtils.convertHits(scoreDocs,
+									indexSearchers, keyFieldName, collectorScheduler, true));
 
 					return new LuceneSearchResult(LuceneUtils.convertTotalHitsCount(result.totalHits),
 							firstPageHits

@@ -19,7 +19,7 @@ public class MetricUtils {
 		MethodHandle handle = null;
 		try {
 			// Find the class
-			var pooledBufferClass = Class.forName("io.netty5.buffer.api.pool.PooledBufferAllocatorMetricUtils");
+			var pooledBufferClass = Class.forName("io.netty5.buffer.api.pool.PooledBufferAllocatorMetric");
 			// Find the handle of the method
 			handle = lookup.findVirtual(pooledBufferClass, "arenaMetrics", MethodType.methodType(List.class));
 		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException ignored) {
@@ -40,7 +40,7 @@ public class MetricUtils {
 			// Invoke the method to get the metrics
 			return (List<PoolArenaMetric>) GET_ARENA_METRICS.invoke(metric);
 		} catch (Throwable e) {
-			throw new RuntimeException(e);
+			return List.of();
 		}
 	}
 }

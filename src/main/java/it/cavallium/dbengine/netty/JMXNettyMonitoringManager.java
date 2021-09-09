@@ -39,20 +39,20 @@ public class JMXNettyMonitoringManager {
 		return instance;
 	}
 
-	public void register(String name, BufferAllocator metric) {
+	public void register(String name, BufferAllocator allocator) {
 		try {
 			name = name.replaceAll("[^\\p{IsAlphabetic}\\p{IsDigit}_]", "_");
 			String type;
 			StandardMBean mbean;
-			if (metric instanceof PooledBufferAllocator pooledMetric) {
-				for (var arenaMetric : MetricUtils.getPoolArenaMetrics(pooledMetric)) {
-					String arenaType = pooledMetric.isDirectBufferPooled() ? "direct" : "heap";
+			if (allocator instanceof PooledBufferAllocator pooledAllocator) {
+				for (var arenaMetric : MetricUtils.getPoolArenaMetrics(pooledAllocator)) {
+					String arenaType = pooledAllocator.isDirectBufferPooled() ? "direct" : "heap";
 					var jmx = new JMXPoolArenaNettyMonitoring(arenaMetric);
 					mbean = new StandardMBean(jmx, JMXPoolArenaNettyMonitoringMBean.class);
 					ObjectName botObjectName = new ObjectName("io.netty.stats:name=PoolArena,type=" + arenaType + ",arenaId=" + nextArenaId.getAndIncrement());
 					platformMBeanServer.registerMBean(mbean, botObjectName);
 				}
-				var jmx = new JMXPooledNettyMonitoring(name, pooledMetric);
+				var jmx = new JMXPooledNettyMonitoring(name, pooledAllocator);
 				type = "pooled";
 				mbean = new StandardMBean(jmx, JMXNettyMonitoringMBean.class);
 

@@ -374,13 +374,13 @@ public class LuceneUtils {
 				return hitsFlux.flatMapSequential(hit -> Mono
 						.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
 						.subscribeOn(scheduler),
-						2
+						3
 				);
 			} else {
 				return hitsFlux.flatMap(hit -> Mono
 						.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
 						.subscribeOn(scheduler),
-						2
+						3
 				);
 			}
 		});

@@ -150,11 +150,8 @@ class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
 									return flux;
 								}
 							})
-							.flatMapSequential(topFieldDoc -> LuceneUtils
-									.convertHits(Flux.fromArray(topFieldDoc.scoreDocs), indexSearchers,
-											keyFieldName, collectorScheduler, true),
-									2
-							);
+							.flatMapSequential(topFieldDoc -> LuceneUtils.convertHits(Flux.fromArray(topFieldDoc.scoreDocs),
+									indexSearchers, keyFieldName, collectorScheduler, true), 3);
 
 					return new LuceneSearchResult(LuceneUtils.convertTotalHitsCount(result.totalHits),
 							firstPageHits

@@ -7,6 +7,7 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -127,8 +128,9 @@ class UnscoredPagedLuceneShardSearcher implements LuceneShardSearcher {
 									}
 							)
 							.subscribeOn(scheduler)
-							.flatMapSequential(topFieldDoc -> LuceneUtils.convertHits(Flux.fromArray(topFieldDoc.scoreDocs),
-									indexSearchers, keyFieldName, scheduler, false), 2)
+							.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
+							.transform(scoreDocsFlux -> LuceneUtils.convertHits(scoreDocsFlux,
+									indexSearchers, keyFieldName, scheduler, false))
 							.transform(flux -> {
 								if (paginationInfo.forceSinglePage()
 										|| paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {

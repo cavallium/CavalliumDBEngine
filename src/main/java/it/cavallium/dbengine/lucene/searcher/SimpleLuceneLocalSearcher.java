@@ -7,6 +7,7 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SE
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.Objects;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
@@ -93,8 +94,9 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 										s -> {}
 								)
 								.subscribeOn(scheduler)
-								.flatMapSequential(topFieldDoc -> LuceneUtils.convertHits(Flux.fromArray(topFieldDoc.scoreDocs),
-										IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true), 2)
+								.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
+								.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux,
+										IndexSearchers.unsharded(indexSearcher), keyFieldName, scheduler, true))
 							);
 					}
 

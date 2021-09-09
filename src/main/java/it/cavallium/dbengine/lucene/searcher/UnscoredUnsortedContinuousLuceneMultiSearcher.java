@@ -164,7 +164,8 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 											}
 											return null;
 										}).thenMany(scoreDocsSink.asFlux());
-										var resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, indexSearchers, keyFieldName, scheduler, false);
+										var resultsFlux = LuceneUtils
+												.convertHits(scoreDocsFlux, indexSearchers, keyFieldName, scheduler, false);
 
 										return new LuceneSearchResult(TotalHitsCount.of(0, false), resultsFlux, release);
 									})

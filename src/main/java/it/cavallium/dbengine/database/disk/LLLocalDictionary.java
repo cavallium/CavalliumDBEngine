@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import static io.netty5.buffer.Unpooled.wrappedBuffer;
+import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
 import static java.util.Objects.requireNonNull;
 
@@ -266,8 +267,8 @@ public class LLLocalDictionary implements LLDictionary {
 								stamp = 0;
 							}
 							try {
-								if (logger.isTraceEnabled()) {
-									logger.trace("Reading {}", LLUtils.toStringSafe(key));
+								if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
+									logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toStringSafe(key));
 								}
 								return dbGet(cfh, resolveSnapshot(snapshot), key.send(), existsAlmostCertainly);
 							} finally {
@@ -603,7 +604,7 @@ public class LLLocalDictionary implements LLDictionary {
 											}
 											try {
 												if (logger.isTraceEnabled()) {
-													logger.trace("Writing {}: {}",
+													logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
 															LLUtils.toStringSafe(key), LLUtils.toStringSafe(value));
 												}
 												dbPut(cfh, null, key.send(), value.send());
@@ -656,7 +657,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try {
 							if (logger.isTraceEnabled()) {
-								logger.trace("Reading {}", LLUtils.toStringSafe(key));
+								logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toStringSafe(key));
 							}
 							while (true) {
 								@Nullable Buffer prevData;
@@ -708,7 +709,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Deleting {}", LLUtils.toStringSafe(key));
+												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.send());
 										} else if (newData != null
@@ -726,7 +727,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Writing {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
+												logger.trace(MARKER_ROCKSDB, "Writing {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
 											}
 											Buffer dataToPut;
 											if (updateReturnMode == UpdateReturnMode.GET_NEW_VALUE) {
@@ -798,7 +799,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try {
 							if (logger.isTraceEnabled()) {
-								logger.trace("Reading {}", LLUtils.toStringSafe(key));
+								logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toStringSafe(key));
 							}
 							while (true) {
 								@Nullable Buffer prevData;
@@ -850,7 +851,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Deleting {}", LLUtils.toStringSafe(key));
+												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.send());
 										} else if (newData != null
@@ -868,7 +869,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace("Writing {}: {}",
+												logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
 														LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
 											}
 											assert key.isAccessible();
@@ -942,7 +943,7 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										try {
 											if (logger.isTraceEnabled()) {
-												logger.trace("Deleting {}", LLUtils.toStringSafe(key));
+												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.send());
 											return null;
@@ -986,7 +987,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 									try {
 										if (logger.isTraceEnabled()) {
-											logger.trace("Reading {}", LLUtils.toArray(key));
+											logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toArray(key));
 										}
 										var data = new Holder<byte[]>();
 										if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
@@ -2211,7 +2212,7 @@ public class LLLocalDictionary implements LLDictionary {
 				try {
 					return db.getLongProperty(cfh, "rocksdb.estimate-num-keys");
 				} catch (RocksDBException e) {
-					e.printStackTrace();
+					logger.error(MARKER_ROCKSDB, "Failed to get RocksDB estimated keys count property", e);
 					return 0;
 				}
 			} else if (PARALLEL_EXACT_SIZE) {

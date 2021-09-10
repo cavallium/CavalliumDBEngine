@@ -43,6 +43,8 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.Marker;
+import org.slf4j.MarkerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
@@ -52,6 +54,9 @@ import reactor.util.function.Tuple3;
 public class LLUtils {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLUtils.class);
+	public static final Marker MARKER_DB_BUFFER = MarkerFactory.getMarker("DB_BUFFER");
+	public static final Marker MARKER_ROCKSDB = MarkerFactory.getMarker("ROCKSDB");
+	public static final Marker MARKER_LUCENE = MarkerFactory.getMarker("LUCENE");
 
 	private static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0);
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
@@ -687,17 +692,17 @@ public class LLUtils {
 	}
 
 	private static void discardLLEntry(LLEntry entry) {
-		logger.trace("Releasing discarded Buffer");
+		logger.trace(MARKER_ROCKSDB, "Releasing discarded Buffer");
 		entry.close();
 	}
 
 	private static void discardLLRange(LLRange range) {
-		logger.trace("Releasing discarded Buffer");
+		logger.trace(MARKER_ROCKSDB, "Releasing discarded LLRange");
 		range.close();
 	}
 
 	private static void discardLLDelta(LLDelta delta) {
-		logger.trace("Releasing discarded LLDelta");
+		logger.trace(MARKER_ROCKSDB, "Releasing discarded LLDelta");
 		delta.close();
 	}
 

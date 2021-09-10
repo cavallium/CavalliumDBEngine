@@ -1,5 +1,8 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
+import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+
 import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -255,6 +258,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.<Void>fromCallable(() -> {
 							activeTasks.register();
 							try {
+								//noinspection BlockingMethodInNonBlockingContext
 								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
 								return null;
 							} finally {
@@ -402,7 +406,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						if (similarity instanceof TFIDFSimilarity) {
 							mlt.setSimilarity((TFIDFSimilarity) similarity);
 						} else {
-							logger.trace("Using an unsupported similarity algorithm for MoreLikeThis:"
+							logger.trace(MARKER_ROCKSDB, "Using an unsupported similarity algorithm for MoreLikeThis:"
 									+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
 						}
 
@@ -523,7 +527,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				indexWriter.commit();
 			}
 		} catch (IOException ex) {
-			ex.printStackTrace();
+			logger.error(MARKER_LUCENE, "Failed to execute a scheduled commit", ex);
 		}
 	}
 

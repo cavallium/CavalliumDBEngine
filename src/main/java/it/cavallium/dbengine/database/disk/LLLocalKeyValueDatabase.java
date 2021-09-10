@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
@@ -639,11 +641,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							Files.deleteIfExists(path);
 							System.out.println("Deleted log file \"" + path + "\"");
 						} catch (IOException e) {
-							e.printStackTrace();
+							logger.error(MARKER_ROCKSDB, "Failed to delete log file \"" + path + "\"", e);
 						}
 					});
 		} catch (IOException ex) {
-			ex.printStackTrace();
+			logger.error(MARKER_ROCKSDB, "Failed to delete unused log files", ex);
 		}
 	}
 }

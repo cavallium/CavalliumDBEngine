@@ -476,7 +476,6 @@
             <arg>--enable-preview</arg>
             <arg>--add-modules</arg>
             <arg>jdk.incubator.foreign</arg>
-            <arg>-Dforeign.restricted=permit</arg>
             <arg>--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED</arg>
           </compilerArgs>
         </configuration>

@@ -1,13 +1,48 @@
-CavalliumDB Engine
-==================
+# CavalliumDB Engine
+
 ![Maven Package](https://github.com/Cavallium/CavalliumDBEngine/workflows/Maven%20Package/badge.svg)
 
-A very simple reactive wrapper for RocksDB and Lucene.
+[Reactive](https://www.reactive-streams.org/) database engine written in Java using [Project Reactor](https://github.com/reactor/reactor-core).
 
-This is not a database, but only a wrapper for Lucene Core and RocksDB, with a bit of abstraction.
+This library provides a basic reactive abstraction and implementation of a **key-value store** and a **search engine**.
+
+Four implementations exists out-of-the-box, two for the key-value store, two for the search engine, but it's possible to add more implementations.
+
+## Key-value store implementations 
+
+1. [RocksDB](https://github.com/facebook/rocksdb): A persistent key-value store for flash storage
+3. [ConcurrentSkipListMap](https://docs.oracle.com/en/java/javase/16/docs/api/java.base/java/util/concurrent/ConcurrentSkipListMap.html): A concurrent in-memory key-value store
+
+## Search engine implementations
+
+1. Persistent [Lucene Core](https://github.com/apache/lucene) with custom sharding: One of the featureful and fastest text search engine libraries in the world
+2. In-memory temporary [Lucene Core](https://github.com/apache/lucene) instance: Useful for building and analyzing temporary indices
+
+## Extra features
+
+### Serializable search engine queries
+
+Queries can be serialized and deserialized using an efficient custom serialization format
+
+### Direct byte buffer
+
+The database abstraction can avoid copying the data multiple times by using RocksDB JNI and Netty 5 buffers
+
+### Declarative data records generator and versioned codecs
+
+A data generator that generates [Java 16 records](https://www.baeldung.com/java-record-keyword) is available:
+it allows you to generate custom records by defining the fields using a .yaml file.
+
+The generator also generates at compile time the source of specialized serializers,
+deserializers, and upgraders, for each custom record.
+
+The key-value store abstraction allows you to deserialize old versions of your data transparently, by using
+the custom upgraders and the custom deserializers automatically.
+
+The data generator can be found in the [Data generator](https://github.com/Cavallium/data-generator) repository.
 
 # Features
-- **RocksDB key-value database engine**
+- **RocksDB key-value store**
   - Snapshots
   - Multi-column database
   - Write-ahead log and corruption recovery
@@ -54,9 +89,9 @@ This is not a database, but only a wrapper for Lucene Core and RocksDB, with a b
   
 - **Why there is a snapshot function for each database part?**
   
-  Since RocksDB and lucene indices are different software, you can't take a snapshot of everything in the same instant.
+  Since RocksDB and lucene indices are different libraries, you can't take a snapshot of every database atomically.
   
-  A single snapshot must be implemented as a collection of all the snapshots.
+  An universal snapshot must be implemented as a collection of each database snapshot.
   
 - **Is CavalliumDB Engine suitable for your project?**
   
@@ -66,4 +101,4 @@ This is not a database, but only a wrapper for Lucene Core and RocksDB, with a b
 
 # Examples
 
-In `src/example/java` you can find some quick implementations of each core feature.
+In `src/example/java` you can find some *(ugly)* examples.

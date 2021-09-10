@@ -44,8 +44,6 @@ jobs:
         run: |
           echo "REVISION: $REVISION"
 
-          export MAVEN_OPTS="--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED"
-
           mvn -B -Drevision=${REVISION} clean deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}

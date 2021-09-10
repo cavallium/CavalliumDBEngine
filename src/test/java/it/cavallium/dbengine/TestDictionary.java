@@ -2,6 +2,7 @@ package it.cavallium.dbengine;
 
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.isCIMode;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
@@ -36,7 +37,9 @@ public abstract class TestDictionary {
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(allocator.allocator(), true, false);
+		if (!isCIMode()) {
+			ensureNoLeaks(allocator.allocator(), true, false);
+		}
 		destroyAllocator(allocator);
 	}
 

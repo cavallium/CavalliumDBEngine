@@ -108,7 +108,7 @@ public abstract class TestDictionaryMapDeepHashMap {
 
 	@AfterEach
 	public void afterEach() {
-		if (checkLeaks) {
+		if (!isCIMode() && checkLeaks) {
 			ensureNoLeaks(allocator.allocator(), true, false);
 		}
 		destroyAllocator(allocator);

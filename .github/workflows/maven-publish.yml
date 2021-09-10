@@ -44,7 +44,7 @@ jobs:
         run: |
           echo "REVISION: $REVISION"
 
-          mvn -B -Drevision=${REVISION} clean deploy
+          mvn -B -Drevision=${REVISION} -Ddbengine.ci=true clean deploy
         env:
           MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}

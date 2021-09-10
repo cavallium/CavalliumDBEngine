@@ -32,7 +32,7 @@ public abstract class TestDictionaryMap {
 	private boolean checkLeaks = true;
 
 	private static boolean isTestBadKeysEnabled() {
-		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
+		return !isCIMode() && System.getProperty("badkeys", "true").equalsIgnoreCase("true");
 	}
 
 	protected abstract TemporaryDbGenerator getTempDbGenerator();
@@ -49,7 +49,7 @@ public abstract class TestDictionaryMap {
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toList());
-		var values = List.of("", "\0", BIG_STRING);
+		var values = isCIMode() ? List.of("val") : List.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()
@@ -315,7 +315,7 @@ public abstract class TestDictionaryMap {
 	}
 
 	private static Stream<Arguments> provideArgumentsPutMulti() {
-		var goodKeys = List.of(List.of("12345", "67890"), List.<String>of());
+		var goodKeys = isCIMode() ? List.of(List.of("12345")) : List.of(List.of("12345", "67890"), List.<String>of());
 		List<List<String>> badKeys;
 		if (isTestBadKeysEnabled()) {
 			badKeys = List.of(List.of("", "12345"), List.of("45678", "aaaa"), List.of("aaaaaa", "capra"));
@@ -326,7 +326,7 @@ public abstract class TestDictionaryMap {
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toList());
-		var values = List.of("", "\0", BIG_STRING);
+		var values = isCIMode() ? List.of("val") : List.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()

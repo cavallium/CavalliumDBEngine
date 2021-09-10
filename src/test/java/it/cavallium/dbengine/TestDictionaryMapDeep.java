@@ -2,6 +2,7 @@ package it.cavallium.dbengine;
 
 import static it.cavallium.dbengine.DbTestUtils.BIG_STRING;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.isCIMode;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
@@ -45,7 +46,7 @@ public abstract class TestDictionaryMapDeep {
 	private boolean checkLeaks = true;
 
 	private static boolean isTestBadKeysEnabled() {
-		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
+		return !isCIMode() && System.getProperty("badkeys", "true").equalsIgnoreCase("true");
 	}
 
 	protected abstract TemporaryDbGenerator getTempDbGenerator();
@@ -87,14 +88,14 @@ public abstract class TestDictionaryMapDeep {
 	}
 
 	private static Stream<Arguments> provideArgumentsPut() {
-		var goodKeys1 = List.of("12345", "zebra");
+		var goodKeys1 = isCIMode() ? List.of("12345") : List.of("12345", "zebra");
 		List<String> badKeys1;
 		if (isTestBadKeysEnabled()) {
 			badKeys1 = List.of("", "a", "aaaa", "aaaaaa");
 		} else {
 			badKeys1 = List.of();
 		}
-		var goodKeys2 = List.of("123456", "anatra");
+		var goodKeys2 = isCIMode() ? List.of("123456") : List.of("123456", "anatra");
 		List<String> badKeys2;
 		if (isTestBadKeysEnabled()) {
 			badKeys2 = List.of("", "a", "aaaaa", "aaaaaaa");
@@ -102,7 +103,7 @@ public abstract class TestDictionaryMapDeep {
 			badKeys2 = List.of();
 		}
 
-		var values = List.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
+		var values = isCIMode() ? List.of("val") : List.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
 
 		Flux<Tuple4<String, String, String, Boolean>> failOnKeys1 = Flux
 				.fromIterable(badKeys1)
@@ -679,7 +680,7 @@ public abstract class TestDictionaryMapDeep {
 	}
 
 	private static Stream<Arguments> provideArgumentsSetMulti() {
-		var goodKeys = List.of(List.of("12345", "67890"), List.<String>of());
+		var goodKeys = isCIMode() ? List.of(List.of("12345")) : List.of(List.of("12345", "67890"), List.<String>of());
 		List<List<String>> badKeys;
 		if (isTestBadKeysEnabled()) {
 			badKeys = List.of(List.of("", "12345"), List.of("45678", "aaaa"), List.of("aaaaaa", "capra"));
@@ -690,7 +691,7 @@ public abstract class TestDictionaryMapDeep {
 				goodKeys.stream().map(s -> Tuples.of(s, false)),
 				badKeys.stream().map(s -> Tuples.of(s, true))
 		).collect(Collectors.toList());
-		var values = List.of(
+		var values = isCIMode() ? List.of(Map.of("123456", "val")) : List.of(
 				Map.of("123456", "a", "234567", ""),
 				Map.of("123456", "\0", "234567", "\0\0", "345678", BIG_STRING)
 		);

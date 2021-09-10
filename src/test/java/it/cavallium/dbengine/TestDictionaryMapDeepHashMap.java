@@ -3,6 +3,7 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.BIG_STRING;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
+import static it.cavallium.dbengine.DbTestUtils.isCIMode;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMapHashMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
@@ -11,6 +12,7 @@ import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -38,22 +40,22 @@ public abstract class TestDictionaryMapDeepHashMap {
 	private boolean checkLeaks = true;
 
 	private static boolean isTestBadKeysEnabled() {
-		return System.getProperty("badkeys", "true").equalsIgnoreCase("true");
+		return !isCIMode() && System.getProperty("badkeys", "true").equalsIgnoreCase("true");
 	}
 
 	protected abstract TemporaryDbGenerator getTempDbGenerator();
 
 	private static Stream<Arguments> provideArgumentsPut() {
-		var goodKeys1 = Set.of("12345", "zebra");
-		Set<String> badKeys1;
+		var goodKeys1 = isCIMode() ? List.of("12345") : List.of("12345", "zebra");
+		List<String> badKeys1;
 		if (isTestBadKeysEnabled()) {
-			badKeys1 = Set.of("", "a", "aaaa", "aaaaaa");
+			badKeys1 = List.of("", "a", "aaaa", "aaaaaa");
 		} else {
-			badKeys1 = Set.of();
+			badKeys1 = List.of();
 		}
-		var goodKeys2 = Set.of("123456", "anatra", "", "a", "aaaaa", "aaaaaaa");
+		var goodKeys2 = isCIMode() ? List.of("123456") : List.of("123456", "anatra", "", "a", "aaaaa", "aaaaaaa");
 
-		var values = Set.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
+		var values = isCIMode() ? List.of("val") : List.of("a", "", "\0", "\0\0", "z", "azzszgzczqz", BIG_STRING);
 
 		Flux<Tuple4<String, String, String, Boolean>> failOnKeys1 = Flux
 				.fromIterable(badKeys1)

@@ -69,6 +69,10 @@ public class DbTestUtils {
 		return activeAllocations;
 	}
 
+	public static boolean isCIMode() {
+		return System.getProperty("dbengine.ci", "false").equalsIgnoreCase("true");
+	}
+
 	public static <U> Flux<U> tempDb(TemporaryDbGenerator temporaryDbGenerator,
 			TestAllocator alloc,
 			Function<LLKeyValueDatabase, Publisher<U>> action) {

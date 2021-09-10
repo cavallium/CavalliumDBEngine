@@ -13,6 +13,7 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <revision>0-SNAPSHOT</revision>
+    <dbengine.ci>false</dbengine.ci>
   </properties>
   <repositories>
     <repository>
@@ -511,6 +512,12 @@
         </dependencies>
         <configuration>
           <argLine>--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED</argLine>
+          <systemProperties>
+            <property>
+              <name>ci</name>
+              <value>${dbengine.ci}</value>
+            </property>
+          </systemProperties>
         </configuration>
       </plugin>
     </plugins>

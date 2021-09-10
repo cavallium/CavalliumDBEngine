@@ -502,6 +502,15 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
+				.map(val -> {
+					// Sometimes this two properties return a negative value, I don't know why.
+					if (Objects.equals(propertyName, "rocksdb.cur-size-all-mem-tables")
+							|| Objects.equals(propertyName, "rocksdb.size-all-mem-tables")) {
+						return Math.abs(val);
+					} else {
+						return val;
+					}
+				})
 				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
 				.subscribeOn(dbScheduler);
 	}

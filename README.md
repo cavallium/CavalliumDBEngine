@@ -15,7 +15,7 @@ Four implementations exists out-of-the-box, two for the key-value store, two for
 
 ## Search engine implementations
 
-1. Persistent [Lucene Core](https://github.com/apache/lucene) with custom sharding: One of the featureful and fastest text search engine libraries in the world
+1. Persistent [Lucene Core](https://github.com/apache/lucene) with custom sharding: Featureful and fast text search engine library
 2. In-memory temporary [Lucene Core](https://github.com/apache/lucene) instance: Useful for building and analyzing temporary indices
 
 ## Extra features

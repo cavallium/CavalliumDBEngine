@@ -13,7 +13,6 @@
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <revision>0-SNAPSHOT</revision>
-    <jvm.options>--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED</jvm.options>
   </properties>
   <repositories>
     <repository>
@@ -473,7 +472,13 @@
             <annotationProcessor>io.soabase.recordbuilder.processor.RecordBuilderProcessor</annotationProcessor>
           </annotationProcessors>
           <useIncrementalCompilation>false</useIncrementalCompilation>
-          <compilerArgs>${jvm.options}</compilerArgs>
+          <compilerArgs>
+            <arg>--enable-preview</arg>
+            <arg>--add-modules</arg>
+            <arg>jdk.incubator.foreign</arg>
+            <arg>-Dforeign.restricted=permit</arg>
+            <arg>--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
@@ -506,7 +511,7 @@
           </dependency>
         </dependencies>
         <configuration>
-          <argLine>${jvm.options}</argLine>
+          <argLine>--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED</argLine>
         </configuration>
       </plugin>
     </plugins>

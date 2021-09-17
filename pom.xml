@@ -14,6 +14,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <revision>0-SNAPSHOT</revision>
     <dbengine.ci>false</dbengine.ci>
+    <micrometer.version>1.7.4</micrometer.version>
   </properties>
   <repositories>
     <repository>
@@ -232,6 +233,16 @@
       <groupId>it.cavallium</groupId>
       <artifactId>data-generator-runtime</artifactId>
     </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-core</artifactId>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>io.micrometer</groupId>
+      <artifactId>micrometer-registry-jmx</artifactId>
+      <optional>true</optional>
+    </dependency>
   </dependencies>
   <dependencyManagement>
     <dependencies>
@@ -411,6 +422,18 @@
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator-runtime</artifactId>
         <version>1.0.1</version>
+      </dependency>
+      <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-core</artifactId>
+        <version>${micrometer.version}</version>
+        <optional>true</optional>
+      </dependency>
+      <dependency>
+        <groupId>io.micrometer</groupId>
+        <artifactId>micrometer-registry-jmx</artifactId>
+        <version>${micrometer.version}</version>
+        <optional>true</optional>
       </dependency>
     </dependencies>
   </dependencyManagement>

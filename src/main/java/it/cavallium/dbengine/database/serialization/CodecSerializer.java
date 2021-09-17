@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Send;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Send;
 import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;

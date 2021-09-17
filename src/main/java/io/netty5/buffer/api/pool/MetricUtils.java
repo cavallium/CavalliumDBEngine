@@ -1,4 +1,4 @@
-package io.netty5.buffer.api.pool;
+package io.net5.buffer.api.pool;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
@@ -19,7 +19,7 @@ public class MetricUtils {
 		MethodHandle handle = null;
 		try {
 			// Find the class
-			var pooledBufferClass = Class.forName("io.netty5.buffer.api.pool.PooledBufferAllocatorMetric");
+			var pooledBufferClass = Class.forName("io.net5.buffer.api.pool.PooledBufferAllocatorMetric");
 			// Find the handle of the method
 			handle = lookup.findVirtual(pooledBufferClass, "arenaMetrics", MethodType.methodType(List.class));
 		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException ignored) {

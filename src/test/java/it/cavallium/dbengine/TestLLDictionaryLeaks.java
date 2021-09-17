@@ -6,8 +6,8 @@ import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Send;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLDictionary;

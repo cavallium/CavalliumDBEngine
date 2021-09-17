@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;

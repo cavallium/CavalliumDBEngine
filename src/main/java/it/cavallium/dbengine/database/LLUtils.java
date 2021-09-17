@@ -2,12 +2,12 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.CompositeBuffer;
-import io.netty5.buffer.api.Send;
-import io.netty5.util.IllegalReferenceCountException;
-import io.netty5.util.internal.PlatformDependent;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.CompositeBuffer;
+import io.net5.buffer.api.Send;
+import io.net5.util.IllegalReferenceCountException;
+import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.collections.DatabaseStage;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
@@ -23,6 +23,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -349,7 +350,7 @@ public class LLUtils {
 	@NotNull
 	public static DirectBuffer convertToDirect(BufferAllocator allocator, Send<Buffer> content) {
 		try (var buf = content.receive()) {
-			if (buf.nativeAddress() != 0) {
+			if (buf.countComponents() != 0) {
 				var direct = obtainDirect(buf);
 				return new DirectBuffer(buf.send(), direct);
 			} else {
@@ -374,8 +375,14 @@ public class LLUtils {
 					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
 		}
 		assert buffer.isAccessible();
-		long nativeAddress;
-		if ((nativeAddress = buffer.nativeAddress()) == 0) {
+		AtomicLong nativeAddress = new AtomicLong(0);
+		if (buffer.countComponents() == 1 && buffer.countReadableComponents() == 1) {
+			buffer.forEachReadable(0, (i, c) -> {
+				nativeAddress.setPlain(c.readableNativeAddress());
+				return false;
+			});
+		}
+		if (nativeAddress.getPlain() == 0) {
 			if (buffer.capacity() == 0) {
 				return EMPTY_BYTE_BUFFER;
 			}
@@ -384,7 +391,7 @@ public class LLUtils {
 			}
 			throw new IllegalStateException("Buffer is not direct");
 		}
-		return MemorySegmentUtils.directBuffer(nativeAddress, buffer.capacity());
+		return MemorySegmentUtils.directBuffer(nativeAddress.getPlain(), buffer.capacity());
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {

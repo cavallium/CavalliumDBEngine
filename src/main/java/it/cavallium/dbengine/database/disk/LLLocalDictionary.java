@@ -1,16 +1,16 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.netty5.buffer.Unpooled.wrappedBuffer;
+import static io.net5.buffer.Unpooled.wrappedBuffer;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
 import static java.util.Objects.requireNonNull;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Resource;
-import io.netty5.buffer.api.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
-import io.netty5.util.internal.PlatformDependent;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Resource;
+import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
+import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.Column;

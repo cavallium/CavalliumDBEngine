@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty5.util.internal.PlatformDependent;
+import io.net5.util.internal.PlatformDependent;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.memory;
 
-import io.netty5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;

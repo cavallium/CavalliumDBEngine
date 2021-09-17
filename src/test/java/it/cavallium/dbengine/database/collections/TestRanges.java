@@ -1,14 +1,14 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Unpooled;
-import io.netty5.buffer.api.BufferAllocator;
+import io.net5.buffer.Unpooled;
+import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.Arrays;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import static io.netty5.buffer.Unpooled.*;
+import static io.net5.buffer.Unpooled.*;
 
 public class TestRanges {
 

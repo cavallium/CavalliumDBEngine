@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Resource;
-import io.netty5.buffer.api.Send;
-import io.netty5.util.IllegalReferenceCountException;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Resource;
+import io.net5.buffer.api.Send;
+import io.net5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;

@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.netty;
 
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.DefaultGlobalBufferAllocator;
-import io.netty5.buffer.api.pool.MetricUtils;
-import io.netty5.buffer.api.pool.PoolArenaMetric;
-import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.DefaultGlobalBufferAllocator;
+import io.net5.buffer.api.pool.MetricUtils;
+import io.net5.buffer.api.pool.PoolArenaMetric;
+import io.net5.buffer.api.pool.PooledBufferAllocator;
 import java.lang.management.ManagementFactory;
 import java.util.Map;
 import java.util.Map.Entry;

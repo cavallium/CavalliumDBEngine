@@ -2,10 +2,10 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Send;
-import io.netty5.util.IllegalReferenceCountException;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Send;
+import io.net5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.concurrent.atomic.AtomicBoolean;

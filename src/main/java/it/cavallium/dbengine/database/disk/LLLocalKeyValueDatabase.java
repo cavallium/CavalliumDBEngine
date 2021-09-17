@@ -2,8 +2,8 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.util.internal.PlatformDependent;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;

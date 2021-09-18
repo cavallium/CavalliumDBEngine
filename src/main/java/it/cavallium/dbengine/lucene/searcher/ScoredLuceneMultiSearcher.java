@@ -8,13 +8,12 @@ import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
-import org.apache.lucene.search.TopFieldDocs;
 import reactor.core.publisher.Mono;
 
 public class ScoredLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
+	public Mono<LuceneMultiSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
 					Sort luceneSort = queryParams.sort();

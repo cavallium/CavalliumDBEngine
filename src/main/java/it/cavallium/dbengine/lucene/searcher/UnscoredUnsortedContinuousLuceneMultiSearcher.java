@@ -2,10 +2,8 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -18,14 +16,12 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SimpleCollector;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.publisher.Sinks.Many;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.concurrent.Queues;
 
 public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMultiSearcher {
 
@@ -34,7 +30,7 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 			.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "UnscoredUnsortedExecutor");
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
+	public Mono<LuceneMultiSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
 					AtomicBoolean alreadySubscribed = new AtomicBoolean(false);
@@ -92,7 +88,7 @@ public class UnscoredUnsortedContinuousLuceneMultiSearcher implements LuceneMult
 						}
 					};
 
-					return new LuceneShardSearcher() {
+					return new LuceneMultiSearcher() {
 						private final Object lock = new Object();
 						private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
 						private final List<Mono<Void>> indexSearcherReleasersArray = new ArrayList<>();

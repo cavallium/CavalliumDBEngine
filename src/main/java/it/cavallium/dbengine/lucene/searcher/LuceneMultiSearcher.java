@@ -1,28 +1,32 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.lucene.LuceneUtils;
-import java.util.ArrayList;
-import java.util.List;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.Sort;
-import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
+import io.net5.buffer.api.Resource;
+import io.net5.buffer.api.Send;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 
-public interface LuceneMultiSearcher {
+public interface LuceneMultiSearcher extends LuceneLocalSearcher {
 
 	/**
-	 * Do a lucene query, receiving the single results using a consumer
 	 * @param queryParams the query parameters
+	 * @param keyFieldName the name of the key field
 	 */
-	Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams);
+	Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexSearcher>> indexSearchersFlux,
+			LocalQueryParams queryParams,
+			String keyFieldName);
 
+	/**
+	 * @param indexSearcherMono Lucene index searcher
+	 * @param queryParams   the query parameters
+	 * @param keyFieldName  the name of the key field
+	 */
+	@Override
+	default Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+			LocalQueryParams queryParams,
+			String keyFieldName) {
+		return this.collect(indexSearcherMono.flux(), queryParams, keyFieldName);
+	}
 }

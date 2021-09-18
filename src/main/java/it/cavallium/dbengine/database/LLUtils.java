@@ -48,6 +48,7 @@ import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
 
@@ -334,6 +335,12 @@ public class LLUtils {
 				directBuffer = null;
 			}
 			buffer.close();
+		}
+	}
+
+	public static void ensureBlocking() {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called collect in a nonblocking thread");
 		}
 	}
 

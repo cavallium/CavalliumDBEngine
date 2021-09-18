@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import io.net5.buffer.api.Send;
+import it.cavallium.dbengine.database.LLUtils;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
@@ -13,15 +15,17 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 	private static final LuceneMultiSearcher countLuceneMultiSearcher = new CountLuceneMultiSearcher();
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
+	public Mono<Send<LuceneMultiSearcher>> createShardSearcher(LocalQueryParams queryParams) {
+		Mono<Send<LuceneMultiSearcher>> shardSearcherCreationMono;
 		if (queryParams.limit() <= 0) {
-			return countLuceneMultiSearcher.createShardSearcher(queryParams);
+			shardSearcherCreationMono = countLuceneMultiSearcher.createShardSearcher(queryParams);
 		} else if (queryParams.isScored()) {
-			return scoredLuceneMultiSearcher.createShardSearcher(queryParams);
+			shardSearcherCreationMono = scoredLuceneMultiSearcher.createShardSearcher(queryParams);
 		} else if (queryParams.offset() == 0 && queryParams.limit() >= 2147483630 && !queryParams.isSorted()) {
-			return unscoredIterableLuceneMultiSearcher.createShardSearcher(queryParams);
+			shardSearcherCreationMono = unscoredIterableLuceneMultiSearcher.createShardSearcher(queryParams);
 		} else {
-			return unscoredPagedLuceneMultiSearcher.createShardSearcher(queryParams);
+			shardSearcherCreationMono = unscoredPagedLuceneMultiSearcher.createShardSearcher(queryParams);
 		}
+		return Mono.fromRunnable(LLUtils::ensureBlocking).then(shardSearcherCreationMono);
 	}
 }

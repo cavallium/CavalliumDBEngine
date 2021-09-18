@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene;
 
+import io.net5.buffer.api.Resource;
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -70,6 +72,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.concurrent.Queues;
 
 public class LuceneUtils {
 
@@ -363,23 +366,28 @@ public class LuceneUtils {
 		);
 	}
 
-	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hits,
+	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
 			IndexSearchers indexSearchers,
 			String keyFieldName,
-			Scheduler scheduler,
 			boolean preserveOrder) {
+		if (preserveOrder) {
+			return hitsFlux
+					.publishOn(Schedulers.boundedElastic())
+					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
+		} else {
+			// Compute parallelism
+			var availableProcessors = Runtime.getRuntime().availableProcessors();
+			var min = Queues.XS_BUFFER_SIZE;
+			var maxParallelGroups = Math.max(availableProcessors, min);
 
-		return hits.transform(hitsFlux -> {
-			if (preserveOrder) {
-				return hitsFlux
-						.publishOn(scheduler)
-						.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
-			} else {
-				return hitsFlux
-						.publishOn(scheduler)
-						.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
-			}
-		});
+			return hitsFlux
+					.groupBy(hit -> hit.shardIndex % maxParallelGroups) // Max n groups
+					.flatMap(shardHits -> shardHits
+									.publishOn(Schedulers.boundedElastic())
+									.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName)),
+							maxParallelGroups // Max n concurrency. Concurrency must be >= total groups count
+					);
+		}
 	}
 
 	@Nullable

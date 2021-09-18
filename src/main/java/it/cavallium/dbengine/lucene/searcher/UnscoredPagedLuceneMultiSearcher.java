@@ -9,7 +9,7 @@ import reactor.core.publisher.Mono;
 public class UnscoredPagedLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
-	public Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams) {
+	public Mono<LuceneMultiSearcher> createShardSearcher(LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
 					if (queryParams.isScored()) {

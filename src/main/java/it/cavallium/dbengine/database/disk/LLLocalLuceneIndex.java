@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -21,10 +22,9 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneShardSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -73,21 +73,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 * There is only a single thread globally to not overwhelm the disk with
 	 * concurrent commits or concurrent refreshes.
 	 */
-	private static final Scheduler luceneHeavyTasksScheduler = Schedulers.newBoundedElastic(1,
-			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			"lucene",
-			Integer.MAX_VALUE,
-			true
-	);
-	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
-	protected final Scheduler luceneSearcherScheduler = LuceneUtils.newLuceneSearcherScheduler(false);
-	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
-	private static final Scheduler luceneWriterScheduler = Schedulers.boundedElastic();
+	private static final Scheduler luceneHeavyTasksScheduler = Schedulers.single(Schedulers.boundedElastic());
 
 	private final String luceneIndexName;
 	private final IndexWriter indexWriter;
 	private final SnapshotsManager snapshotsManager;
-	private final CachedIndexSearcherManager searcherManager;
+	private final IndexSearcherManager searcherManager;
 	private final Similarity similarity;
 	private final Directory directory;
 	private final boolean lowMemory;
@@ -166,7 +157,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 			if (luceneOptions.nrtCachingOptions().isPresent()) {
 				NRTCachingOptions nrtCachingOptions = luceneOptions.nrtCachingOptions().get();
-				directory = new NRTCachingDirectory(directory, nrtCachingOptions.maxMergeSizeMB(), nrtCachingOptions.maxCachedMB());
+				directory = new NRTCachingDirectory(directory, nrtCachingOptions.maxMergeSizeMB(),
+						nrtCachingOptions.maxCachedMB());
 			}
 
 			this.directory = directory;
@@ -177,7 +169,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.lowMemory = lowMemory;
 		this.similarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 
-		IndexWriterConfig indexWriterConfig = new IndexWriterConfig(LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers));
+		var indexWriterConfig = new IndexWriterConfig(LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers));
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
@@ -241,13 +233,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
-				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.addDocument(LLUtils.toDocument(doc));
 				return null;
 			} finally {
 				activeTasks.arriveAndDeregister();
 			}
-		}).subscribeOn(luceneWriterScheduler);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
@@ -258,13 +249,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						.<Void>fromCallable(() -> {
 							activeTasks.register();
 							try {
-								//noinspection BlockingMethodInNonBlockingContext
 								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
 								return null;
 							} finally {
 								activeTasks.arriveAndDeregister();
 							}
-						}).subscribeOn(luceneWriterScheduler)
+						}).subscribeOn(Schedulers.boundedElastic())
 				);
 	}
 
@@ -274,13 +264,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
-				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.deleteDocuments(LLUtils.toTerm(id));
 				return null;
 			} finally {
 				activeTasks.arriveAndDeregister();
 			}
-		}).subscribeOn(luceneWriterScheduler);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
@@ -288,13 +277,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
-				//noinspection BlockingMethodInNonBlockingContext
 				indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
 			} finally {
 				activeTasks.arriveAndDeregister();
 			}
 			return null;
-		}).subscribeOn(luceneWriterScheduler);
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
@@ -310,7 +298,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
 							LLTerm key = entry.getKey();
 							LLDocument value = entry.getValue();
-							//noinspection BlockingMethodInNonBlockingContext
 							indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
 						}
 						return null;
@@ -318,7 +305,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						activeTasks.arriveAndDeregister();
 					}
 				})
-				.subscribeOn(luceneWriterScheduler);
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
@@ -340,35 +327,32 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<Send<LLSearchResultShard>> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
 		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
-				.flatMap(modifiedLocalQuery -> searcherManager.captureIndexSearcher(snapshot)
-						.flatMap(indexSearcher -> {
-							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
-							return localSearcher
-											.collect(indexSearcher.getIndexSearcher(), releaseMono, modifiedLocalQuery, keyFieldName, luceneSearcherScheduler)
-											.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
-											.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
-						})
-				);
+				.flatMap(modifiedLocalQuery -> searcherManager
+						.retrieveSearcher(snapshot)
+						.flatMap(indexSearcher -> localSearcher.collect(indexSearcher, modifiedLocalQuery, keyFieldName))
+				)
+				.map(resultToReceive -> {
+					var result = resultToReceive.receive();
+					return new LLSearchResultShard(result.results(), result.totalHitsCount(), d -> result.close()).send();
+				})
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	public Mono<Void> distributedMoreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
-			LuceneShardSearcher shardSearcher) {
+			LuceneMultiSearcher shardSearcher) {
 		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
-				.flatMap(modifiedLocalQuery -> searcherManager.captureIndexSearcher(snapshot)
-						.flatMap(indexSearcher -> {
-							Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
-							return shardSearcher
-									.searchOn(indexSearcher.getIndexSearcher(), releaseMono, modifiedLocalQuery, luceneSearcherScheduler)
-									.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
-						})
-				);
+				.flatMap(modifiedLocalQuery -> searcherManager
+						.retrieveSearcher(snapshot)
+						.flatMap(indexSearcher -> shardSearcher.searchOn(indexSearcher, modifiedLocalQuery))
+				)
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	public Mono<LocalQueryParams> getMoreLikeThisQuery(@Nullable LLSnapshot snapshot,
@@ -437,27 +421,27 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName) {
+	public Mono<Send<LLSearchResultShard>> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
+			String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
-		return searcherManager.captureIndexSearcher(snapshot).flatMap(indexSearcher -> {
-			Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
-			return localSearcher
-					.collect(indexSearcher.getIndexSearcher(), releaseMono, localQueryParams, keyFieldName, luceneSearcherScheduler)
-					.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()))
-					.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
-		});
+		return searcherManager
+				.retrieveSearcher(snapshot)
+				.flatMap(indexSearcher -> localSearcher.collect(indexSearcher, localQueryParams, keyFieldName))
+				.map(resultToReceive -> {
+					var result = resultToReceive.receive();
+					return new LLSearchResultShard(result.results(), result.totalHitsCount(), d -> result.close()).send();
+				})
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	public Mono<Void> distributedSearch(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
-			LuceneShardSearcher shardSearcher) {
+			LuceneMultiSearcher shardSearcher) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
-		return searcherManager.captureIndexSearcher(snapshot)
-				.flatMap(indexSearcher -> {
-					Mono<Void> releaseMono = searcherManager.releaseUsedIndexSearcher(indexSearcher);
-					return shardSearcher.searchOn(indexSearcher.getIndexSearcher(), releaseMono, localQueryParams, luceneSearcherScheduler)
-							.onErrorResume(ex -> releaseMono.then(Mono.error(ex)));
-				});
+		return searcherManager
+				.retrieveSearcher(snapshot)
+				.flatMap(indexSearcher -> shardSearcher.searchOn(indexSearcher, localQueryParams))
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	@Override

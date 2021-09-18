@@ -1,44 +1,39 @@
 package it.cavallium.dbengine.database;
 
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import java.util.Objects;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-public final class LLSearchResultShard {
+public final class LLSearchResultShard extends ResourceSupport<LLSearchResultShard, LLSearchResultShard> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLSearchResultShard.class);
 
-	private volatile boolean releaseCalled;
+	private Flux<LLKeyScore> results;
+	private TotalHitsCount totalHitsCount;
 
-	private final Flux<LLKeyScore> results;
-	private final TotalHitsCount totalHitsCount;
-	private final Mono<Void> release;
-
-	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Mono<Void> release) {
+	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Drop<LLSearchResultShard> drop) {
+		super(new LLSearchResultShard.CloseOnDrop(drop));
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
-		this.release = Mono.fromRunnable(() -> {
-			if (releaseCalled) {
-				logger.warn(this.getClass().getName() + "::release has been called twice!");
-			}
-			releaseCalled = true;
-		}).then(release);
 	}
 
 	public Flux<LLKeyScore> results() {
+		if (!isOwned()) {
+			throw attachTrace(new IllegalStateException("LLSearchResultShard must be owned to be used"));
+		}
 		return results;
 	}
 
 	public TotalHitsCount totalHitsCount() {
+		if (!isOwned()) {
+			throw attachTrace(new IllegalStateException("LLSearchResultShard must be owned to be used"));
+		}
 		return totalHitsCount;
-	}
-
-	public Mono<Void> release() {
-		return release;
 	}
 
 	@Override
@@ -48,28 +43,48 @@ public final class LLSearchResultShard {
 		if (obj == null || obj.getClass() != this.getClass())
 			return false;
 		var that = (LLSearchResultShard) obj;
-		return Objects.equals(this.results, that.results) && Objects.equals(this.totalHitsCount, that.totalHitsCount)
-				&& Objects.equals(this.release, that.release);
+		return Objects.equals(this.results, that.results) && Objects.equals(this.totalHitsCount, that.totalHitsCount);
 	}
 
 	@Override
 	public int hashCode() {
-		return Objects.hash(results, totalHitsCount, release);
+		return Objects.hash(results, totalHitsCount);
 	}
 
 	@Override
 	public String toString() {
-		return "LLSearchResultShard[" + "results=" + results + ", " + "totalHitsCount=" + totalHitsCount + ", " + "release="
-				+ release + ']';
+		return "LLSearchResultShard[" + "results=" + results + ", " + "totalHitsCount=" + totalHitsCount + ']';
 	}
 
-	@SuppressWarnings("deprecation")
 	@Override
-	protected void finalize() throws Throwable {
-		if (!releaseCalled) {
-			logger.warn(this.getClass().getName() + "::release has not been called before class finalization!");
-		}
-		super.finalize();
+	protected RuntimeException createResourceClosedException() {
+		return new IllegalStateException("Closed");
 	}
 
+	@Override
+	protected Owned<LLSearchResultShard> prepareSend() {
+		var results = this.results;
+		var totalHitsCount = this.totalHitsCount;
+		makeInaccessible();
+		return drop -> new LLSearchResultShard(results, totalHitsCount, drop);
+	}
+
+	private void makeInaccessible() {
+		this.results = null;
+		this.totalHitsCount = null;
+	}
+
+	private static class CloseOnDrop implements Drop<LLSearchResultShard> {
+
+		private final Drop<LLSearchResultShard> delegate;
+
+		public CloseOnDrop(Drop<LLSearchResultShard> drop) {
+			this.delegate = drop;
+		}
+
+		@Override
+		public void drop(LLSearchResultShard obj) {
+			delegate.drop(obj);
+		}
+	}
 }

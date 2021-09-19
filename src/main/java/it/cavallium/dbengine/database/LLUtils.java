@@ -10,19 +10,25 @@ import io.net5.buffer.api.Send;
 import io.net5.util.IllegalReferenceCountException;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.collections.DatabaseStage;
+import it.cavallium.dbengine.database.disk.LLIndexContext;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
@@ -37,10 +43,19 @@ import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.queries.mlt.MoreLikeThis;
+import org.apache.lucene.search.BooleanClause.Occur;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.MatchNoDocsQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSortField;
+import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
@@ -379,6 +394,74 @@ public class LLUtils {
 		}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
 				.doOnDiscard(Resource.class, Resource::close)
 				.doOnDiscard(Send.class, Send::close);
+	}
+
+	public static Mono<LocalQueryParams> getMoreLikeThisQuery(
+			LLIndexSearcher indexSearcher,
+			@Nullable LLSnapshot snapshot,
+			LocalQueryParams localQueryParams,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
+		Query luceneAdditionalQuery;
+		try {
+			luceneAdditionalQuery = localQueryParams.query();
+		} catch (Exception e) {
+			return Mono.error(e);
+		}
+		return mltDocumentFieldsFlux
+				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
+				.flatMap(mltDocumentFields -> {
+					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+					if (mltDocumentFields.isEmpty()) {
+						return Mono.just(new LocalQueryParams(new MatchNoDocsQuery(),
+								localQueryParams.offset(),
+								localQueryParams.limit(),
+								localQueryParams.minCompetitiveScore(),
+								localQueryParams.sort(),
+								localQueryParams.scoreMode()
+						));
+					}
+					new IndexSearcher
+					return indexSearcher.getIndexSearcher().search(snapshot, indexSearcher -> Mono.fromCallable(() -> {
+						var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
+						mlt.setAnalyzer(llLocalLuceneIndex.indexWriter.getAnalyzer());
+						mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+						mlt.setMinTermFreq(1);
+						mlt.setMinDocFreq(3);
+						mlt.setMaxDocFreqPct(20);
+						mlt.setBoost(localQueryParams.scoreMode().needsScores());
+						mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
+						var similarity = llLocalLuceneIndex.getSimilarity();
+						if (similarity instanceof TFIDFSimilarity) {
+							mlt.setSimilarity((TFIDFSimilarity) similarity);
+						} else {
+							LLLocalLuceneIndex.logger.trace(MARKER_ROCKSDB, "Using an unsupported similarity algorithm for MoreLikeThis:"
+									+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
+						}
+
+						// Get the reference docId and apply it to MoreLikeThis, to generate the query
+						@SuppressWarnings({"unchecked", "rawtypes"})
+						var mltQuery = mlt.like((Map) mltDocumentFields);
+						Query luceneQuery;
+						if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
+							luceneQuery = new BooleanQuery.Builder()
+									.add(mltQuery, Occur.MUST)
+									.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
+									.build();
+						} else {
+							luceneQuery = mltQuery;
+						}
+
+						return luceneQuery;
+					})
+					.subscribeOn(Schedulers.boundedElastic())
+					.map(luceneQuery -> new LocalQueryParams(luceneQuery,
+							localQueryParams.offset(),
+							localQueryParams.limit(),
+							localQueryParams.minCompetitiveScore(),
+							localQueryParams.sort(),
+							localQueryParams.scoreMode()
+					)));
+				});
 	}
 
 	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}

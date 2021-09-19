@@ -1,31 +1,32 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.LLIndexContext;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 
-	private static final LuceneMultiSearcher scoredLuceneMultiSearcher = new ScoredLuceneMultiSearcher();
+	private static final LuceneMultiSearcher countLuceneMultiSearcher
+			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new CountLuceneLocalSearcher());
 
-	private static final LuceneMultiSearcher unscoredPagedLuceneMultiSearcher = new UnscoredPagedLuceneMultiSearcher();
+	private static final LuceneMultiSearcher scoredSimpleLuceneShardSearcher
+			= new ScoredSimpleLuceneShardSearcher();
 
-	private static final LuceneMultiSearcher unscoredIterableLuceneMultiSearcher = new UnscoredUnsortedContinuousLuceneMultiSearcher();
-
-	private static final LuceneMultiSearcher countLuceneMultiSearcher = new CountLuceneMultiSearcher();
+	private static final LuceneMultiSearcher unscoredPagedLuceneMultiSearcher
+			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new SimpleLuceneLocalSearcher());
 
 	@Override
-	public Mono<Send<LuceneMultiSearcher>> createShardSearcher(LocalQueryParams queryParams) {
-		Mono<Send<LuceneMultiSearcher>> shardSearcherCreationMono;
-		if (queryParams.limit() <= 0) {
-			shardSearcherCreationMono = countLuceneMultiSearcher.createShardSearcher(queryParams);
-		} else if (queryParams.isScored()) {
-			shardSearcherCreationMono = scoredLuceneMultiSearcher.createShardSearcher(queryParams);
-		} else if (queryParams.offset() == 0 && queryParams.limit() >= 2147483630 && !queryParams.isSorted()) {
-			shardSearcherCreationMono = unscoredIterableLuceneMultiSearcher.createShardSearcher(queryParams);
+	public Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexContext>> indexSearchersFlux,
+			LocalQueryParams queryParams,
+			String keyFieldName) {
+		if (queryParams.limit() == 0) {
+			return countLuceneMultiSearcher.collect(indexSearchersFlux, queryParams, keyFieldName);
+		} else if (queryParams.isSorted() || queryParams.isScored()) {
+			return scoredSimpleLuceneShardSearcher.collect(indexSearchersFlux, queryParams, keyFieldName);
 		} else {
-			shardSearcherCreationMono = unscoredPagedLuceneMultiSearcher.createShardSearcher(queryParams);
+			return unscoredPagedLuceneMultiSearcher.collect(indexSearchersFlux, queryParams, keyFieldName);
 		}
-		return Mono.fromRunnable(LLUtils::ensureBlocking).then(shardSearcherCreationMono);
 	}
 }

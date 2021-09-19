@@ -5,12 +5,12 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.FIRST_PAGE_LI
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexContext;
+import it.cavallium.dbengine.database.disk.LLIndexContexts;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.searcher.IndexSearchers.UnshardedIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLIndexContexts.UnshardedIndexSearchers;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Objects;
@@ -25,14 +25,14 @@ import reactor.core.scheduler.Schedulers;
 public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexContext>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName) {
 
 		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		var indexSearchersMono = indexSearcherMono.map(IndexSearchers::unsharded);
+		var indexSearchersMono = indexSearcherMono.map(LLIndexContexts::unsharded);
 
 		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> this
 				// Search first page results
@@ -73,31 +73,10 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	}
 
 	/**
-	 * Search effectively the merged raw results of the next pages
-	 */
-	private Flux<LLKeyScore> searchOtherPages(UnshardedIndexSearchers indexSearchers,
-			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
-		return Flux
-				.<PageData, CurrentPageInfo>generate(
-						() -> secondPageInfo,
-						(s, sink) -> searchPageSync(queryParams, indexSearchers, true, 0, s, sink),
-						s -> {}
-				)
-				.subscribeOn(Schedulers.boundedElastic())
-				.map(PageData::topDocs)
-				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
-				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
-						keyFieldName, true));
-	}
-
-	private static record FirstPageResults(TotalHitsCount totalHitsCount, Flux<LLKeyScore> firstPageHitsFlux,
-																				 CurrentPageInfo nextPageInfo) {}
-
-	/**
 	 * Compute the results of the first page, extracting useful data
 	 */
 	private Mono<FirstPageResults> computeFirstPageResults(Mono<PageData> firstPageDataMono,
-			IndexSearchers indexSearchers,
+			LLIndexContexts indexSearchers,
 			String keyFieldName,
 			LocalQueryParams queryParams) {
 		return firstPageDataMono.map(firstPageData -> {
@@ -129,7 +108,23 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		});
 	}
 
-	private static record PageData(TopDocs topDocs, CurrentPageInfo nextPageInfo) {}
+	/**
+	 * Search effectively the merged raw results of the next pages
+	 */
+	private Flux<LLKeyScore> searchOtherPages(UnshardedIndexSearchers indexSearchers,
+			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
+		return Flux
+				.<PageData, CurrentPageInfo>generate(
+						() -> secondPageInfo,
+						(s, sink) -> searchPageSync(queryParams, indexSearchers, true, 0, s, sink),
+						s -> {}
+				)
+				.subscribeOn(Schedulers.boundedElastic())
+				.map(PageData::topDocs)
+				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
+				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
+						keyFieldName, true));
+	}
 
 	/**
 	 *

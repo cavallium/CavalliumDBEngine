@@ -6,6 +6,7 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.LLIndexContext;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -22,7 +23,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexSearcher>> indexSearchersFlux,
+	public Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexContext>> indexSearchersFlux,
 			LocalQueryParams queryParams,
 			String keyFieldName) {
 		return Mono
@@ -38,7 +39,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 					}
 				})
 				.thenMany(indexSearchersFlux)
-				.flatMap(resSend -> localSearcher.collect(Mono.just(resSend), queryParams, keyFieldName))
+				.flatMap(resSend -> localSearcher.collect(Mono.just(resSend).share(), queryParams, keyFieldName))
 				.collectList()
 				.map(results -> {
 					List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());

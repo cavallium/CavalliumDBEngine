@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
-import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.DirectIOOptions;
@@ -10,7 +9,6 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
@@ -23,11 +21,12 @@ import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -39,15 +38,7 @@ import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
-import org.apache.lucene.queries.mlt.MoreLikeThis;
-import org.apache.lucene.search.BooleanClause.Occur;
-import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.ConstantScoreQuery;
-import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.MatchNoDocsQuery;
-import org.apache.lucene.search.Query;
 import org.apache.lucene.search.similarities.Similarity;
-import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
@@ -331,10 +322,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
-		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
+		return LLUtils
+				.getMoreLikeThisQuery(this, snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
 				.flatMap(modifiedLocalQuery -> searcherManager
 						.retrieveSearcher(snapshot)
-						.flatMap(indexSearcher -> localSearcher.collect(indexSearcher, modifiedLocalQuery, keyFieldName))
+						.transform(indexSearcher -> localSearcher.collect(indexSearcher, modifiedLocalQuery, keyFieldName))
 				)
 				.map(resultToReceive -> {
 					var result = resultToReceive.receive();
@@ -343,81 +335,17 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.doOnDiscard(Send.class, Send::close);
 	}
 
-	public Mono<Void> distributedMoreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchTransformer> getMoreLikeThisTransformer(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			LuceneMultiSearcher shardSearcher) {
-		return getMoreLikeThisQuery(snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
+		return LLUtils
+				.getMoreLikeThisQuery(this, snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
 				.flatMap(modifiedLocalQuery -> searcherManager
 						.retrieveSearcher(snapshot)
 						.flatMap(indexSearcher -> shardSearcher.searchOn(indexSearcher, modifiedLocalQuery))
 				)
 				.doOnDiscard(Send.class, Send::close);
-	}
-
-	public Mono<LocalQueryParams> getMoreLikeThisQuery(@Nullable LLSnapshot snapshot,
-			LocalQueryParams localQueryParams,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
-		Query luceneAdditionalQuery;
-		try {
-			luceneAdditionalQuery = localQueryParams.query();
-		} catch (Exception e) {
-			return Mono.error(e);
-		}
-		return mltDocumentFieldsFlux
-				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
-				.flatMap(mltDocumentFields -> {
-					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
-					if (mltDocumentFields.isEmpty()) {
-						return Mono.just(new LocalQueryParams(new MatchNoDocsQuery(),
-								localQueryParams.offset(),
-								localQueryParams.limit(),
-								localQueryParams.minCompetitiveScore(),
-								localQueryParams.sort(),
-								localQueryParams.scoreMode()
-						));
-					}
-					return this.searcherManager.search(snapshot, indexSearcher -> Mono.fromCallable(() -> {
-						var mlt = new MoreLikeThis(indexSearcher.getIndexReader());
-						mlt.setAnalyzer(indexWriter.getAnalyzer());
-						mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-						mlt.setMinTermFreq(1);
-						mlt.setMinDocFreq(3);
-						mlt.setMaxDocFreqPct(20);
-						mlt.setBoost(localQueryParams.scoreMode().needsScores());
-						mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
-						var similarity = getSimilarity();
-						if (similarity instanceof TFIDFSimilarity) {
-							mlt.setSimilarity((TFIDFSimilarity) similarity);
-						} else {
-							logger.trace(MARKER_ROCKSDB, "Using an unsupported similarity algorithm for MoreLikeThis:"
-									+ " {}. You must use a similarity instance based on TFIDFSimilarity!", similarity);
-						}
-
-						// Get the reference docId and apply it to MoreLikeThis, to generate the query
-						@SuppressWarnings({"unchecked", "rawtypes"})
-						var mltQuery = mlt.like((Map) mltDocumentFields);
-						Query luceneQuery;
-						if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
-							luceneQuery = new BooleanQuery.Builder()
-									.add(mltQuery, Occur.MUST)
-									.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
-									.build();
-						} else {
-							luceneQuery = mltQuery;
-						}
-
-						return luceneQuery;
-					})
-					.subscribeOn(Schedulers.boundedElastic())
-					.map(luceneQuery -> new LocalQueryParams(luceneQuery,
-							localQueryParams.offset(),
-							localQueryParams.limit(),
-							localQueryParams.minCompetitiveScore(),
-							localQueryParams.sort(),
-							localQueryParams.scoreMode()
-					)));
-				});
 	}
 
 	@Override
@@ -426,7 +354,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
 		return searcherManager
 				.retrieveSearcher(snapshot)
-				.flatMap(indexSearcher -> localSearcher.collect(indexSearcher, localQueryParams, keyFieldName))
+				.transform(indexSearcher -> localSearcher.collect(indexSearcher, localQueryParams,
+						LLSearchTransformer.NO_TRANSFORMATION, keyFieldName))
 				.map(resultToReceive -> {
 					var result = resultToReceive.receive();
 					return new LLSearchResultShard(result.results(), result.totalHitsCount(), d -> result.close()).send();
@@ -434,13 +363,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.doOnDiscard(Send.class, Send::close);
 	}
 
-	public Mono<Void> distributedSearch(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
-			LuceneMultiSearcher shardSearcher) {
-		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
+	public Mono<Send<LLIndexContext>> retrieveContext(@Nullable LLSnapshot snapshot,
+			@Nullable LLSearchTransformer indexQueryTransformer) {
 		return searcherManager
 				.retrieveSearcher(snapshot)
-				.flatMap(indexSearcher -> shardSearcher.searchOn(indexSearcher, localQueryParams))
+				.map(indexSearcherToReceive -> new LLIndexContext(indexSearcherToReceive,
+						Objects.requireNonNullElse(indexQueryTransformer, LLSearchTransformer.NO_TRANSFORMATION),
+						d -> {}).send())
 				.doOnDiscard(Send.class, Send::close);
 	}
 

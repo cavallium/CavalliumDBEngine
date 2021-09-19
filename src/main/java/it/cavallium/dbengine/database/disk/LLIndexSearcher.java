@@ -85,10 +85,12 @@ public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSea
 						obj.associatedSearcherManager.release(obj.indexSearcher);
 					}
 				}
+				delegate.drop(obj);
 			} catch (IOException e) {
 				logger.error("Failed to drop CachedIndexSearcher", e);
+			} finally {
+				obj.makeInaccessible();
 			}
-			delegate.drop(obj);
 		}
 	}
 }

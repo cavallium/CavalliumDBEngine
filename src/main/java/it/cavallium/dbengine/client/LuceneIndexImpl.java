@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -84,58 +85,73 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex.deleteAll();
 	}
 
-	private Mono<SearchResultKeys<T>> transformLuceneResultWithTransformer(LLSearchResultShard llSearchResult) {
-		return Mono.just(new SearchResultKeys<>(llSearchResult.results()
-				.map(signal -> new SearchResultKey<>(Mono.fromCallable(signal::key).map(indicizer::getKey), signal.score())),
-				llSearchResult.totalHitsCount(),
-				llSearchResult.release()
-		));
+	private Mono<Send<SearchResultKeys<T>>> transformLuceneResultWithTransformer(
+			Mono<Send<LLSearchResultShard>> llSearchResultMono) {
+		return llSearchResultMono.map(llSearchResultToReceive -> {
+			var llSearchResult = llSearchResultToReceive.receive();
+			return new SearchResultKeys<>(llSearchResult.results()
+					.map(signal -> new SearchResultKey<>(Mono
+							.fromCallable(signal::key)
+							.map(indicizer::getKey), signal.score())),
+					llSearchResult.totalHitsCount(),
+					d -> llSearchResult.close()
+			).send();
+		});
 	}
 
-	private Mono<SearchResult<T, U>> transformLuceneResultWithValues(LLSearchResultShard llSearchResult,
+	private Mono<Send<SearchResult<T, U>>> transformLuceneResultWithValues(
+			Mono<Send<LLSearchResultShard>> llSearchResultMono,
 			ValueGetter<T, U> valueGetter) {
-		return Mono.fromCallable(() -> new SearchResult<>(llSearchResult.results().map(signal -> {
-			var key = Mono.fromCallable(signal::key).map(indicizer::getKey);
-			return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
-		}), llSearchResult.totalHitsCount(), llSearchResult.release()));
+		return llSearchResultMono.map(llSearchResultToReceive -> {
+			var llSearchResult = llSearchResultToReceive.receive();
+			return new SearchResult<>(llSearchResult.results().map(signal -> {
+				var key = Mono.fromCallable(signal::key).map(indicizer::getKey);
+				return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
+			}), llSearchResult.totalHitsCount(), d -> llSearchResult.close()).send();
+		});
 	}
 
-	private Mono<SearchResult<T, U>> transformLuceneResultWithTransformer(LLSearchResultShard llSearchResult,
+	private Mono<Send<SearchResult<T, U>>> transformLuceneResultWithTransformer(
+			Mono<Send<LLSearchResultShard>> llSearchResultMono,
 			ValueTransformer<T, U> valueTransformer) {
-		var scoresWithKeysFlux = llSearchResult
-				.results()
-				.flatMapSequential(signal -> Mono
-						.fromCallable(signal::key)
-						.map(indicizer::getKey)
-						.map(key -> Tuples.of(signal.score(), key))
-				);
-		var resultItemsFlux = valueTransformer
-				.transform(scoresWithKeysFlux)
-				.filter(tuple3 -> tuple3.getT3().isPresent())
-				.map(tuple3 -> new SearchResultItem<>(Mono.just(tuple3.getT2()),
-						Mono.just(tuple3.getT3().orElseThrow()),
-						tuple3.getT1()
-				));
-		return Mono.fromCallable(() -> new SearchResult<>(resultItemsFlux,
-				llSearchResult.totalHitsCount(),
-				llSearchResult.release()
-		));
+		return llSearchResultMono
+				.map(llSearchResultToReceive -> {
+					var llSearchResult = llSearchResultToReceive.receive();
+					var scoresWithKeysFlux = llSearchResult
+							.results()
+							.flatMapSequential(signal -> Mono
+									.fromCallable(signal::key)
+									.map(indicizer::getKey)
+									.map(key -> Tuples.of(signal.score(), key))
+							);
+					var resultItemsFlux = valueTransformer
+							.transform(scoresWithKeysFlux)
+							.filter(tuple3 -> tuple3.getT3().isPresent())
+							.map(tuple3 -> new SearchResultItem<>(Mono.just(tuple3.getT2()),
+									Mono.just(tuple3.getT3().orElseThrow()),
+									tuple3.getT1()
+							));
+					return new SearchResult<>(resultItemsFlux,
+							llSearchResult.totalHitsCount(),
+							d -> llSearchResult.close()
+					).send();
+				});
 	}
 
 	@Override
-	public Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams,
+	public Mono<Send<SearchResultKeys<T>>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams,
 			T key,
 			U mltDocumentValue) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 		return luceneIndex
 				.moreLikeThis(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName(), mltDocumentFields)
-				.flatMap(this::transformLuceneResultWithTransformer);
+				.transform(this::transformLuceneResultWithTransformer);
 
 	}
 
 	@Override
-	public Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public Mono<Send<SearchResult<T, U>>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueGetter<T, U> valueGetter) {
@@ -147,13 +163,12 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
 				)
-				.flatMap(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
-						valueGetter
-				));
+				.transform(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
+						valueGetter));
 	}
 
 	@Override
-	public Mono<SearchResult<T, U>> moreLikeThisWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public Mono<Send<SearchResult<T, U>>> moreLikeThisWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueTransformer<T, U> valueTransformer) {
@@ -165,40 +180,51 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
 				)
-				.flatMap(llSearchResult -> this.transformLuceneResultWithTransformer(llSearchResult, valueTransformer));
+				.transform(llSearchResult -> this.transformLuceneResultWithTransformer(llSearchResult,
+						valueTransformer));
 	}
 
 	@Override
-	public Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams) {
+	public Mono<Send<SearchResultKeys<T>>> search(ClientQueryParams<SearchResultKey<T>> queryParams) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()
 				)
-				.flatMap(this::transformLuceneResultWithTransformer);
+				.transform(this::transformLuceneResultWithTransformer);
 	}
 
 	@Override
-	public Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public Mono<Send<SearchResult<T, U>>> searchWithValues(
+			ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueGetter<T, U> valueGetter) {
 		return luceneIndex
-				.search(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
-				.flatMap(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult, valueGetter));
+				.search(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(),
+						indicizer.getKeyFieldName())
+				.transform(llSearchResult -> this.transformLuceneResultWithValues(llSearchResult,
+						valueGetter));
 	}
 
 	@Override
-	public Mono<SearchResult<T, U>> searchWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	public Mono<Send<SearchResult<T, U>>> searchWithTransformer(
+			ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueTransformer<T, U> valueTransformer) {
 		return luceneIndex
-				.search(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(), indicizer.getKeyFieldName())
-				.flatMap(llSearchResult -> this.transformLuceneResultWithTransformer(llSearchResult, valueTransformer));
+				.search(resolveSnapshot(queryParams.snapshot()), queryParams.toQueryParams(),
+						indicizer.getKeyFieldName())
+				.transform(llSearchResult -> this.transformLuceneResultWithTransformer(llSearchResult,
+						valueTransformer));
 	}
 
 	@Override
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this
 				.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
-				.flatMap(tSearchResultKeys -> tSearchResultKeys.release().thenReturn(tSearchResultKeys.totalHitsCount()));
+				.map(searchResultKeysSend -> {
+					try (var searchResultKeys = searchResultKeysSend.receive()) {
+						return searchResultKeys.totalHitsCount();
+					}
+				});
 	}
 
 	@Override

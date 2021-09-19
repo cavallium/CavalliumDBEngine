@@ -1,41 +1,32 @@
 package it.cavallium.dbengine.lucene;
 
-import io.net5.buffer.api.Resource;
-import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
+import it.cavallium.dbengine.database.disk.LLIndexContexts;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
-import it.cavallium.dbengine.lucene.searcher.IndexSearchers;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
-import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
@@ -65,11 +56,9 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
-import org.reactivestreams.Publisher;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
@@ -367,7 +356,7 @@ public class LuceneUtils {
 	}
 
 	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
-			IndexSearchers indexSearchers,
+			LLIndexContexts indexSearchers,
 			String keyFieldName,
 			boolean preserveOrder) {
 		if (preserveOrder) {
@@ -392,7 +381,7 @@ public class LuceneUtils {
 
 	@Nullable
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
-			IndexSearchers indexSearchers,
+			LLIndexContexts indexSearchers,
 			String keyFieldName) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called mapHitBlocking in a nonblocking thread");

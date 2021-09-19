@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -52,9 +53,9 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> deleteAll();
 
-	Mono<SearchResultKeys<T>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams, T key, U mltDocumentValue);
+	Mono<Send<SearchResultKeys<T>>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams, T key, U mltDocumentValue);
 
-	default Mono<SearchResult<T, U>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	default Mono<Send<SearchResult<T, U>>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueGetter<T, U> valueGetter) {
@@ -64,21 +65,19 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 				getValueGetterTransformer(valueGetter));
 	}
 
-	Mono<SearchResult<T, U>> moreLikeThisWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	Mono<Send<SearchResult<T, U>>> moreLikeThisWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			T key,
 			U mltDocumentValue,
 			ValueTransformer<T, U> valueTransformer);
 
-	Mono<SearchResultKeys<T>> search(ClientQueryParams<SearchResultKey<T>> queryParams);
+	Mono<Send<SearchResultKeys<T>>> search(ClientQueryParams<SearchResultKey<T>> queryParams);
 
-	default Mono<SearchResult<T, U>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	default Mono<Send<SearchResult<T, U>>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueGetter<T, U> valueGetter) {
-		return this.searchWithTransformer(queryParams,
-				getValueGetterTransformer(valueGetter)
-		);
+		return this.searchWithTransformer(queryParams, getValueGetterTransformer(valueGetter));
 	}
 
-	Mono<SearchResult<T, U>> searchWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
+	Mono<Send<SearchResult<T, U>>> searchWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
 			ValueTransformer<T, U> valueTransformer);
 
 	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);

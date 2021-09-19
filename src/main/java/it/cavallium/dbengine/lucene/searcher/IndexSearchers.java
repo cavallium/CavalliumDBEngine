@@ -19,7 +19,7 @@ public interface IndexSearchers extends Resource<IndexSearchers> {
 		return new ShardedIndexSearchers(indexSearchers, d -> {});
 	}
 
-	static IndexSearchers unsharded(LLIndexSearcher indexSearcher) {
+	static UnshardedIndexSearchers unsharded(Send<LLIndexSearcher> indexSearcher) {
 		return new UnshardedIndexSearchers(indexSearcher, d -> {});
 	}
 
@@ -30,9 +30,9 @@ public interface IndexSearchers extends Resource<IndexSearchers> {
 
 		private LLIndexSearcher indexSearcher;
 
-		public UnshardedIndexSearchers(LLIndexSearcher indexSearcher, Drop<UnshardedIndexSearchers> drop) {
+		public UnshardedIndexSearchers(Send<LLIndexSearcher> indexSearcher, Drop<UnshardedIndexSearchers> drop) {
 			super(new CloseOnDrop(drop));
-			this.indexSearcher = indexSearcher;
+			this.indexSearcher = indexSearcher.receive();
 		}
 
 		@Override
@@ -46,6 +46,10 @@ public interface IndexSearchers extends Resource<IndexSearchers> {
 			return indexSearcher;
 		}
 
+		public LLIndexSearcher shard() {
+			return this.shard(0);
+		}
+
 		@Override
 		protected RuntimeException createResourceClosedException() {
 			return new IllegalStateException("Closed");
@@ -53,7 +57,7 @@ public interface IndexSearchers extends Resource<IndexSearchers> {
 
 		@Override
 		protected Owned<UnshardedIndexSearchers> prepareSend() {
-			LLIndexSearcher indexSearcher = this.indexSearcher;
+			Send<LLIndexSearcher> indexSearcher = this.indexSearcher.send();
 			this.makeInaccessible();
 			return drop -> new UnshardedIndexSearchers(indexSearcher, drop);
 		}

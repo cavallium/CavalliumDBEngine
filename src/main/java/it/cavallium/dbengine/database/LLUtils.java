@@ -5,6 +5,7 @@ import com.google.common.primitives.Longs;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.CompositeBuffer;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.util.IllegalReferenceCountException;
 import io.net5.util.internal.PlatformDependent;
@@ -24,6 +25,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -342,6 +344,47 @@ public class LLUtils {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called collect in a nonblocking thread");
 		}
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>> Mono<U> usingSend(Mono<Send<T>> resourceSupplier,
+			Function<Send<T>, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Mono.usingWhen(resourceSupplier, resourceClosure,
+				r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(r::close);
+					} else {
+						return Mono.empty();
+					}
+				},
+				(r, ex) -> Mono.fromRunnable(r::close),
+				r -> Mono.fromRunnable(r::close))
+				.doOnDiscard(Send.class, Send::close);
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
+			Function<V, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Mono.usingWhen(resourceSupplier, resourceClosure,
+				r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(r::close);
+					} else {
+						return Mono.empty();
+					}
+				},
+				(r, ex) -> Mono.fromRunnable(r::close),
+				r -> Mono.fromRunnable(r::close))
+				.doOnDiscard(Resource.class, Resource::close)
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}

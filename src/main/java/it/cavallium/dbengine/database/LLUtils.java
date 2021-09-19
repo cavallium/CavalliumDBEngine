@@ -353,16 +353,13 @@ public class LLUtils {
 	public static <U, T extends Resource<T>> Mono<U> usingSend(Mono<Send<T>> resourceSupplier,
 			Function<Send<T>, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
-		return Mono.usingWhen(resourceSupplier, resourceClosure,
-				r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(r::close);
-					} else {
-						return Mono.empty();
-					}
-				},
-				(r, ex) -> Mono.fromRunnable(r::close),
-				r -> Mono.fromRunnable(r::close))
+		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
+			if (cleanupOnSuccess) {
+				return Mono.fromRunnable(r::close);
+			} else {
+				return Mono.empty();
+			}
+		}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
 				.doOnDiscard(Send.class, Send::close);
 	}
 
@@ -373,16 +370,13 @@ public class LLUtils {
 	public static <U, T extends Resource<T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
 			Function<V, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
-		return Mono.usingWhen(resourceSupplier, resourceClosure,
-				r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(r::close);
-					} else {
-						return Mono.empty();
-					}
-				},
-				(r, ex) -> Mono.fromRunnable(r::close),
-				r -> Mono.fromRunnable(r::close))
+		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
+			if (cleanupOnSuccess) {
+				return Mono.fromRunnable(r::close);
+			} else {
+				return Mono.empty();
+			}
+		}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
 				.doOnDiscard(Resource.class, Resource::close)
 				.doOnDiscard(Send.class, Send::close);
 	}

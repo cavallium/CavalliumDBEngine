@@ -28,10 +28,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
 import reactor.util.function.Tuple2;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
@@ -39,8 +40,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final ConcurrentHashMap<Long, LLSnapshot[]> registeredSnapshots = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 	private final LLLocalLuceneIndex[] luceneIndices;
-	private final IndicizerAnalyzers indicizerAnalyzers;
-	private final IndicizerSimilarities indicizerSimilarities;
+	private final PerFieldAnalyzerWrapper luceneAnalyzer;
+	private final PerFieldSimilarityWrapper luceneSimilarity;
 
 	private final LuceneMultiSearcher multiSearcher = new AdaptiveLuceneMultiSearcher();
 
@@ -71,8 +72,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			);
 		}
 		this.luceneIndices = luceneIndices;
-		this.indicizerAnalyzers = indicizerAnalyzers;
-		this.indicizerSimilarities = indicizerSimilarities;
+		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
+		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 	}
 
 	private LLLocalLuceneIndex getLuceneIndex(LLTerm id) {
@@ -199,7 +200,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
 		var searchers = this.getIndexSearchers(snapshot);
-		var transformer = new MoreLikeThisTransformer(mltDocumentFields);
+		var transformer = new MultiMoreLikeThisTransformer(mltDocumentFields);
 
 		// Collect all the shards results into a single global result
 		return multiSearcher
@@ -209,7 +210,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					var result = resultToReceive.receive();
 					return new LLSearchResultShard(result.results(), result.totalHitsCount(),
 							d -> result.close()).send();
-				});
+				})
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	@Override
@@ -227,7 +229,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					var result = resultToReceive.receive();
 					return new LLSearchResultShard(result.results(), result.totalHitsCount(),
 							d -> result.close()).send();
-				});
+				})
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	@Override
@@ -288,24 +291,18 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return luceneIndices[0].isLowMemoryMode();
 	}
 
-	private class MoreLikeThisTransformer implements LLSearchTransformer {
+	private class MultiMoreLikeThisTransformer implements LLSearchTransformer {
 
 		private final Flux<Tuple2<String, Set<String>>> mltDocumentFields;
 
-		public MoreLikeThisTransformer(Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
+		public MultiMoreLikeThisTransformer(Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
 			this.mltDocumentFields = mltDocumentFields;
 		}
 
 		@Override
 		public Mono<LocalQueryParams> transform(Mono<TransformerInput> inputMono) {
-			return inputMono.flatMap(input -> {
-				var defaultAnalyzer = LLLocalMultiLuceneIndex.this.indicizerAnalyzers.defaultAnalyzer();
-				var defaultSimilarity = LLLocalMultiLuceneIndex.this.indicizerSimilarities.defaultSimilarity();
-				var luceneAnalyzer = LuceneUtils.getAnalyzer(defaultAnalyzer);
-				var luceneSimilarity = LuceneUtils.getSimilarity(defaultSimilarity);
-				return LuceneUtils.getMoreLikeThisQuery(input.indexSearchers(), input.queryParams(),
-						luceneAnalyzer, luceneSimilarity, mltDocumentFields);
-			});
+			return inputMono.flatMap(input -> LuceneUtils.getMoreLikeThisQuery(input.indexSearchers(), input.queryParams(),
+					luceneAnalyzer, luceneSimilarity, mltDocumentFields));
 		}
 	}
 }

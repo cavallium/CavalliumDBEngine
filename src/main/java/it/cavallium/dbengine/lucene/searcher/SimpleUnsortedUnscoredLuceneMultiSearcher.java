@@ -6,8 +6,8 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexContext;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -23,10 +23,11 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexContext>> indexSearchersFlux,
+	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
-		return Mono
+			String keyFieldName,
+			LLSearchTransformer transformer) {
+		var indexSearchersResource = Mono
 				.fromRunnable(() -> {
 					LLUtils.ensureBlocking();
 					if (!queryParams.isSorted()) {
@@ -38,31 +39,36 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 								+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 					}
 				})
-				.thenMany(indexSearchersFlux)
-				.flatMap(resSend -> localSearcher.collect(Mono.just(resSend).share(), queryParams, keyFieldName))
-				.collectList()
-				.map(results -> {
-					List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
-					List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
-					boolean exactTotalHitsCount = true;
-					long totalHitsCountValue = 0;
-					for (Send<LuceneSearchResult> resultToReceive : results) {
-						LuceneSearchResult result = resultToReceive.receive();
-						resultsToDrop.add(result);
-						resultsFluxes.add(result.results());
-						exactTotalHitsCount &= result.totalHitsCount().exact();
-						totalHitsCountValue += result.totalHitsCount().value();
-					}
+				.then(indexSearchersMono.map(Send::receive));
 
-					var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
-					Flux<LLKeyScore> mergedFluxes = Flux.merge(resultsFluxes);
+		return LLUtils.usingResource(indexSearchersResource,
+				indexSearchers -> Flux.fromIterable(indexSearchers.shards())
+						.flatMap(searcher -> localSearcher
+								.collect(Mono.just(searcher.send()), queryParams, keyFieldName, transformer))
+						.collectList()
+						.map(results -> {
+							List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
+							List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
+							boolean exactTotalHitsCount = true;
+							long totalHitsCountValue = 0;
+							for (Send<LuceneSearchResult> resultToReceive : results) {
+								LuceneSearchResult result = resultToReceive.receive();
+								resultsToDrop.add(result);
+								resultsFluxes.add(result.results());
+								exactTotalHitsCount &= result.totalHitsCount().exact();
+								totalHitsCountValue += result.totalHitsCount().value();
+							}
 
-					return new LuceneSearchResult(totalHitsCount, mergedFluxes, d -> {
-						for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
-							luceneSearchResult.close();
-						}
-					}).send();
-				})
-				.doOnDiscard(Send.class, Send::close);
+							var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
+							Flux<LLKeyScore> mergedFluxes = Flux.merge(resultsFluxes);
+
+							return new LuceneSearchResult(totalHitsCount, mergedFluxes, d -> {
+								for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
+									luceneSearchResult.close();
+								}
+							}).send();
+						}),
+				true
+		);
 	}
 }

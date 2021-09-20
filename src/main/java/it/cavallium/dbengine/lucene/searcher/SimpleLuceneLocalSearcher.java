@@ -7,10 +7,10 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SE
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexContext;
-import it.cavallium.dbengine.database.disk.LLIndexContexts;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.database.disk.LLIndexContexts.UnshardedIndexSearchers;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Objects;
@@ -25,14 +25,15 @@ import reactor.core.scheduler.Schedulers;
 public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexContext>> indexSearcherMono,
+	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			LLSearchTransformer transformer) {
 
 		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		var indexSearchersMono = indexSearcherMono.map(LLIndexContexts::unsharded);
+		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded);
 
 		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> this
 				// Search first page results
@@ -61,7 +62,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	/**
 	 * Search effectively the raw results of the first page
 	 */
-	private Mono<PageData> searchFirstPage(UnshardedIndexSearchers indexSearchers,
+	private Mono<PageData> searchFirstPage(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
 		var limit = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit());
@@ -76,7 +77,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	 * Compute the results of the first page, extracting useful data
 	 */
 	private Mono<FirstPageResults> computeFirstPageResults(Mono<PageData> firstPageDataMono,
-			LLIndexContexts indexSearchers,
+			LLIndexSearchers indexSearchers,
 			String keyFieldName,
 			LocalQueryParams queryParams) {
 		return firstPageDataMono.map(firstPageData -> {
@@ -132,7 +133,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	 *                       skip the first n results in the first page
 	 */
 	private CurrentPageInfo searchPageSync(LocalQueryParams queryParams,
-			UnshardedIndexSearchers indexSearchers,
+			LLIndexSearchers indexSearchers,
 			boolean allowPagination,
 			int resultsOffset,
 			CurrentPageInfo s,
@@ -141,13 +142,19 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		if (resultsOffset < 0) {
 			throw new IndexOutOfBoundsException(resultsOffset);
 		}
+		UnshardedIndexSearchers unshardedIndexSearchers;
+		if (indexSearchers instanceof UnshardedIndexSearchers unshardedIndexSearchers1) {
+			unshardedIndexSearchers = unshardedIndexSearchers1;
+		} else {
+			throw new IllegalArgumentException();
+		}
 		if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
 			TopDocs pageTopDocs;
 			try {
 				TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
 						s.currentPageLimit(), s.last(), LuceneUtils.totalHitsThreshold(), allowPagination,
 						queryParams.isScored());
-				indexSearchers.shard().getIndexSearcher().search(queryParams.query(), collector);
+				unshardedIndexSearchers.shard().getIndexSearcher().search(queryParams.query(), collector);
 				if (resultsOffset > 0) {
 					pageTopDocs = collector.topDocs(resultsOffset, s.currentPageLimit());
 				} else {

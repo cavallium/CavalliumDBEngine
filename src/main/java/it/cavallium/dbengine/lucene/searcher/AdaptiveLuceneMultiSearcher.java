@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.database.disk.LLIndexContext;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -18,15 +18,16 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new SimpleLuceneLocalSearcher());
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexContext>> indexSearchersFlux,
+	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			LLSearchTransformer transformer) {
 		if (queryParams.limit() == 0) {
-			return countLuceneMultiSearcher.collect(indexSearchersFlux, queryParams, keyFieldName);
+			return countLuceneMultiSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 		} else if (queryParams.isSorted() || queryParams.isScored()) {
-			return scoredSimpleLuceneShardSearcher.collect(indexSearchersFlux, queryParams, keyFieldName);
+			return scoredSimpleLuceneShardSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 		} else {
-			return unscoredPagedLuceneMultiSearcher.collect(indexSearchersFlux, queryParams, keyFieldName);
+			return unscoredPagedLuceneMultiSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 		}
 	}
 }

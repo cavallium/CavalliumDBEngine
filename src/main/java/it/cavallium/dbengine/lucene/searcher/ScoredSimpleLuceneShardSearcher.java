@@ -6,8 +6,8 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SE
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexContext;
-import it.cavallium.dbengine.database.disk.LLIndexContexts;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Arrays;
 import java.util.Objects;
@@ -23,15 +23,14 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexContext>> indexSearchersFlux,
+	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			LLSearchTransformer transformer) {
 		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		var indexSearchersMono = indexSearchersFlux.collectList().map(LLIndexContexts::of);
-
-		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> this
+		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
 						// Search first page results
 						.searchFirstPage(indexSearchers, queryParams, paginationInfo)
 						// Compute the results of the first page
@@ -66,7 +65,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	/**
 	 * Search effectively the raw results of the first page
 	 */
-	private Mono<PageData> searchFirstPage(LLIndexContexts indexSearchers,
+	private Mono<PageData> searchFirstPage(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
 		var limit = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit());
@@ -81,7 +80,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	 * Compute the results of the first page, extracting useful data
 	 */
 	private Mono<FirstPageResults> computeFirstPageResults(Mono<PageData> firstPageDataMono,
-			LLIndexContexts indexSearchers,
+			LLIndexSearchers indexSearchers,
 			String keyFieldName,
 			LocalQueryParams queryParams) {
 		return firstPageDataMono.map(firstPageData -> {
@@ -98,7 +97,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	}
 
 	private Mono<Send<LuceneSearchResult>> computeOtherResults(Mono<FirstPageResults> firstResultMono,
-			LLIndexContexts indexSearchers,
+			LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName) {
 		return firstResultMono.map(firstResult -> {
@@ -116,7 +115,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	/**
 	 * Search effectively the merged raw results of the next pages
 	 */
-	private Flux<LLKeyScore> searchOtherPages(LLIndexContexts indexSearchers,
+	private Flux<LLKeyScore> searchOtherPages(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
 		return Flux
 				.defer(() -> {
@@ -139,7 +138,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	 *                       skip the first n results in the first page
 	 */
 	private Mono<PageData> searchPage(LocalQueryParams queryParams,
-			LLIndexContexts indexSearchers,
+			LLIndexSearchers indexSearchers,
 			boolean allowPagination,
 			int resultsOffset,
 			CurrentPageInfo s) {

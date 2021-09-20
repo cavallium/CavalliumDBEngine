@@ -12,8 +12,8 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
-import it.cavallium.dbengine.database.disk.LLIndexContexts;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -371,7 +371,7 @@ public class LuceneUtils {
 	}
 
 	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
-			LLIndexContexts indexSearchers,
+			LLIndexSearchers indexSearchers,
 			String keyFieldName,
 			boolean preserveOrder) {
 		if (preserveOrder) {
@@ -396,7 +396,7 @@ public class LuceneUtils {
 
 	@Nullable
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
-			LLIndexContexts indexSearchers,
+			LLIndexSearchers indexSearchers,
 			String keyFieldName) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called mapHitBlocking in a nonblocking thread");

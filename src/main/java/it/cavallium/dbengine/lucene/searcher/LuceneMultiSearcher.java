@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.database.disk.LLIndexContext;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import reactor.core.publisher.Flux;

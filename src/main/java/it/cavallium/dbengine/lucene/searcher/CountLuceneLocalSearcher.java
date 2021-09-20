@@ -3,7 +3,6 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexContext;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -12,9 +11,10 @@ import reactor.core.scheduler.Schedulers;
 public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexContext>> indexSearcherMono,
+	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			LLSearchTransformer transformer) {
 		return Mono
 				.usingWhen(
 						indexSearcherMono,

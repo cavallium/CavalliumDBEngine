@@ -417,6 +417,24 @@ public class LLUtils {
 				.doOnDiscard(Send.class, Send::close);
 	}
 
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>> Flux<U> usingSendResources(Mono<Send<T>> resourceSupplier,
+			Function<T, Flux<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Flux.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(r::close);
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
+				.doOnDiscard(Resource.class, Resource::close)
+				.doOnDiscard(Send.class, Send::close);
+	}
+
 	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}
 
 	@NotNull

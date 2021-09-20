@@ -3,28 +3,35 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexContext;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface LuceneMultiSearcher extends LuceneLocalSearcher {
 
 	/**
-	 * @param queryParams the query parameters
-	 * @param keyFieldName the name of the key field
+	 * @param indexSearchersMono Lucene index searcher
+	 * @param queryParams        the query parameters
+	 * @param keyFieldName       the name of the key field
+	 * @param transformer        the search query transformer
 	 */
-	Mono<Send<LuceneSearchResult>> collect(Flux<Send<LLIndexContext>> indexSearchersFlux,
+	Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName);
+			String keyFieldName,
+			LLSearchTransformer transformer);
 
 	/**
 	 * @param indexSearcherMono Lucene index searcher
-	 * @param queryParams   the query parameters
-	 * @param keyFieldName  the name of the key field
+	 * @param queryParams       the query parameters
+	 * @param keyFieldName      the name of the key field
+	 * @param transformer       the search query transformer
 	 */
 	@Override
-	default Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexContext>> indexSearcherMono,
+	default Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
-		return this.collect(indexSearcherMono.flux(), queryParams, keyFieldName);
+			String keyFieldName,
+			LLSearchTransformer transformer) {
+		var searchers = indexSearcherMono.map(a -> LLIndexSearchers.unsharded(a).send());
+		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);
 	}
 }

@@ -6,16 +6,20 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.disk.LLIndexContexts;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
+import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
@@ -24,9 +28,11 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
@@ -39,7 +45,13 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.search.BooleanClause.Occur;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.FieldDoc;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.MatchNoDocsQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
@@ -49,6 +61,7 @@ import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.apache.lucene.search.similarities.Similarity;
+import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.novasearch.lucene.search.similarities.BM25Similarity;
@@ -59,9 +72,11 @@ import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
+import reactor.util.function.Tuple2;
 
 public class LuceneUtils {
 
@@ -504,5 +519,76 @@ public class LuceneUtils {
 				60,
 				true
 		);
+	}
+
+	public static Mono<LocalQueryParams> getMoreLikeThisQuery(
+			List<LLIndexSearcher> indexSearchers,
+			LocalQueryParams localQueryParams,
+			Analyzer analyzer,
+			Similarity similarity,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
+		Query luceneAdditionalQuery;
+		try {
+			luceneAdditionalQuery = localQueryParams.query();
+		} catch (Exception e) {
+			return Mono.error(e);
+		}
+		return mltDocumentFieldsFlux
+				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
+				.flatMap(mltDocumentFields -> Mono.fromCallable(() -> {
+					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+					if (mltDocumentFields.isEmpty()) {
+						return new LocalQueryParams(new MatchNoDocsQuery(),
+								localQueryParams.offset(),
+								localQueryParams.limit(),
+								localQueryParams.minCompetitiveScore(),
+								localQueryParams.sort(),
+								localQueryParams.scoreMode()
+						);
+					}
+					MultiMoreLikeThis mlt;
+					if (indexSearchers.size() == 1) {
+						mlt = new MultiMoreLikeThis(indexSearchers.get(0).getIndexReader(), null);
+					} else {
+						IndexReader[] indexReaders = new IndexReader[indexSearchers.size()];
+						for (int i = 0, size = indexSearchers.size(); i < size; i++) {
+							indexReaders[i] = indexSearchers.get(i).getIndexReader();
+						}
+						mlt = new MultiMoreLikeThis(indexReaders, null);
+					}
+					mlt.setAnalyzer(analyzer);
+					mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+					mlt.setMinTermFreq(1);
+					mlt.setMinDocFreq(3);
+					mlt.setMaxDocFreqPct(20);
+					mlt.setBoost(localQueryParams.scoreMode().needsScores());
+					mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
+					if (similarity instanceof TFIDFSimilarity tfidfSimilarity) {
+						mlt.setSimilarity(tfidfSimilarity);
+					} else {
+						mlt.setSimilarity(new ClassicSimilarity());
+					}
+
+					// Get the reference docId and apply it to MoreLikeThis, to generate the query
+					@SuppressWarnings({"unchecked", "rawtypes"})
+					var mltQuery = mlt.like((Map) mltDocumentFields);
+					Query luceneQuery;
+					if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
+						luceneQuery = new BooleanQuery.Builder()
+								.add(mltQuery, Occur.MUST)
+								.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
+								.build();
+					} else {
+						luceneQuery = mltQuery;
+					}
+
+					return new LocalQueryParams(luceneQuery,
+							localQueryParams.offset(),
+							localQueryParams.limit(),
+							localQueryParams.minCompetitiveScore(),
+							localQueryParams.sort(),
+							localQueryParams.scoreMode()
+					);
+				}).subscribeOn(Schedulers.boundedElastic()));
 	}
 }

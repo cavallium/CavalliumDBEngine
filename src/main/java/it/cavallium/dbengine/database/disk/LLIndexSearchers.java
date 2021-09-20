@@ -20,39 +20,39 @@ import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Term;
 
-public interface LLIndexContexts extends Resource<LLIndexContexts> {
+public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
-	static LLIndexContexts of(List<Send<LLIndexContext>> indexSearchers) {
+	static LLIndexSearchers of(List<Send<LLIndexSearcher>> indexSearchers) {
 		return new ShardedIndexSearchers(indexSearchers, d -> {});
 	}
 
-	static UnshardedIndexSearchers unsharded(Send<LLIndexContext> indexSearcher) {
+	static UnshardedIndexSearchers unsharded(Send<LLIndexSearcher> indexSearcher) {
 		return new UnshardedIndexSearchers(indexSearcher, d -> {});
 	}
 
-	Iterable<LLIndexContext> shards();
+	Iterable<LLIndexSearcher> shards();
 
-	LLIndexContext shard(int shardIndex);
+	LLIndexSearcher shard(int shardIndex);
 
 	IndexReader allShards();
 
-	class UnshardedIndexSearchers extends ResourceSupport<LLIndexContexts, UnshardedIndexSearchers>
-			implements LLIndexContexts {
+	class UnshardedIndexSearchers extends ResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
+			implements LLIndexSearchers {
 
-		private LLIndexContext indexSearcher;
+		private LLIndexSearcher indexSearcher;
 
-		public UnshardedIndexSearchers(Send<LLIndexContext> indexSearcher, Drop<UnshardedIndexSearchers> drop) {
+		public UnshardedIndexSearchers(Send<LLIndexSearcher> indexSearcher, Drop<UnshardedIndexSearchers> drop) {
 			super(new CloseOnDrop(drop));
 			this.indexSearcher = indexSearcher.receive();
 		}
 
 		@Override
-		public Iterable<LLIndexContext> shards() {
+		public Iterable<LLIndexSearcher> shards() {
 			return Collections.singleton(indexSearcher);
 		}
 
 		@Override
-		public LLIndexContext shard(int shardIndex) {
+		public LLIndexSearcher shard(int shardIndex) {
 			if (!isOwned()) {
 				throw attachTrace(new IllegalStateException("UnshardedIndexSearchers must be owned to be used"));
 			}
@@ -67,7 +67,7 @@ public interface LLIndexContexts extends Resource<LLIndexContexts> {
 			return indexSearcher.getIndexReader();
 		}
 
-		public LLIndexContext shard() {
+		public LLIndexSearcher shard() {
 			return this.shard(0);
 		}
 
@@ -78,7 +78,7 @@ public interface LLIndexContexts extends Resource<LLIndexContexts> {
 
 		@Override
 		protected Owned<UnshardedIndexSearchers> prepareSend() {
-			Send<LLIndexContext> indexSearcher = this.indexSearcher.send();
+			Send<LLIndexSearcher> indexSearcher = this.indexSearcher.send();
 			this.makeInaccessible();
 			return drop -> new UnshardedIndexSearchers(indexSearcher, drop);
 		}
@@ -107,26 +107,26 @@ public interface LLIndexContexts extends Resource<LLIndexContexts> {
 		}
 	}
 
-	class ShardedIndexSearchers extends ResourceSupport<LLIndexContexts, ShardedIndexSearchers>
-			implements LLIndexContexts {
+	class ShardedIndexSearchers extends ResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
+			implements LLIndexSearchers {
 
-		private List<LLIndexContext> indexSearchers;
+		private List<LLIndexSearcher> indexSearchers;
 
-		public ShardedIndexSearchers(List<Send<LLIndexContext>> indexSearchers, Drop<ShardedIndexSearchers> drop) {
+		public ShardedIndexSearchers(List<Send<LLIndexSearcher>> indexSearchers, Drop<ShardedIndexSearchers> drop) {
 			super(new CloseOnDrop(drop));
 			this.indexSearchers = new ArrayList<>(indexSearchers.size());
-			for (Send<LLIndexContext> indexSearcher : indexSearchers) {
+			for (Send<LLIndexSearcher> indexSearcher : indexSearchers) {
 				this.indexSearchers.add(indexSearcher.receive());
 			}
 		}
 
 		@Override
-		public Iterable<LLIndexContext> shards() {
+		public Iterable<LLIndexSearcher> shards() {
 			return Collections.unmodifiableList(indexSearchers);
 		}
 
 		@Override
-		public LLIndexContext shard(int shardIndex) {
+		public LLIndexSearcher shard(int shardIndex) {
 			if (!isOwned()) {
 				throw attachTrace(new IllegalStateException("ShardedIndexSearchers must be owned to be used"));
 			}
@@ -161,8 +161,8 @@ public interface LLIndexContexts extends Resource<LLIndexContexts> {
 
 		@Override
 		protected Owned<ShardedIndexSearchers> prepareSend() {
-			List<Send<LLIndexContext>> indexSearchers = new ArrayList<>(this.indexSearchers.size());
-			for (LLIndexContext indexSearcher : this.indexSearchers) {
+			List<Send<LLIndexSearcher>> indexSearchers = new ArrayList<>(this.indexSearchers.size());
+			for (LLIndexSearcher indexSearcher : this.indexSearchers) {
 				indexSearchers.add(indexSearcher.send());
 			}
 			this.makeInaccessible();
@@ -185,7 +185,7 @@ public interface LLIndexContexts extends Resource<LLIndexContexts> {
 			public void drop(ShardedIndexSearchers obj) {
 				try {
 					if (obj.indexSearchers != null) {
-						for (LLIndexContext indexSearcher : obj.indexSearchers) {
+						for (LLIndexSearcher indexSearcher : obj.indexSearchers) {
 							indexSearcher.close();
 						}
 					}

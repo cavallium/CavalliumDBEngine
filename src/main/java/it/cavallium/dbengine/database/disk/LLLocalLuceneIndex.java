@@ -26,7 +26,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -322,7 +321,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
-		return LLUtils
+		return LuceneUtils
 				.getMoreLikeThisQuery(this, snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
 				.flatMap(modifiedLocalQuery -> searcherManager
 						.retrieveSearcher(snapshot)
@@ -339,7 +338,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux,
 			LuceneMultiSearcher shardSearcher) {
-		return LLUtils
+		return LuceneUtils
 				.getMoreLikeThisQuery(this, snapshot, LuceneUtils.toLocalQueryParams(queryParams), mltDocumentFieldsFlux)
 				.flatMap(modifiedLocalQuery -> searcherManager
 						.retrieveSearcher(snapshot)
@@ -363,13 +362,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.doOnDiscard(Send.class, Send::close);
 	}
 
-	public Mono<Send<LLIndexContext>> retrieveContext(@Nullable LLSnapshot snapshot,
-			@Nullable LLSearchTransformer indexQueryTransformer) {
+	public Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		return searcherManager
 				.retrieveSearcher(snapshot)
-				.map(indexSearcherToReceive -> new LLIndexContext(indexSearcherToReceive,
-						Objects.requireNonNullElse(indexQueryTransformer, LLSearchTransformer.NO_TRANSFORMATION),
-						d -> {}).send())
 				.doOnDiscard(Send.class, Send::close);
 	}
 

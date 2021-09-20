@@ -56,9 +56,9 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	 */
 	private PaginationInfo getPaginationInfo(LocalQueryParams queryParams) {
 		if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.limit(), true);
+			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), true);
 		} else {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
+			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), false);
 		}
 	}
 
@@ -68,12 +68,13 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	private Mono<PageData> searchFirstPage(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
-		var limit = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit());
+		var limit = paginationInfo.totalLimit();
+		var pageLimits = paginationInfo.pageLimits();
 		var pagination = !paginationInfo.forceSinglePage();
 		var resultsOffset = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset());
 		return Mono
 				.fromSupplier(() -> new CurrentPageInfo(null, limit, 0))
-				.flatMap(s -> this.searchPage(queryParams, indexSearchers, pagination, resultsOffset, s));
+				.flatMap(s -> this.searchPage(queryParams, indexSearchers, pagination, pageLimits, resultsOffset, s));
 	}
 
 	/**
@@ -120,8 +121,9 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 		return Flux
 				.defer(() -> {
 					AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
-					return Flux
-							.defer(() -> searchPage(queryParams, indexSearchers, true, 0, currentPageInfoRef.get()))
+					return this
+							.searchPage(queryParams, indexSearchers, true, queryParams.pageLimits(),
+									0, currentPageInfoRef.get())
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})
@@ -140,6 +142,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	private Mono<PageData> searchPage(LocalQueryParams queryParams,
 			LLIndexSearchers indexSearchers,
 			boolean allowPagination,
+			PageLimits pageLimits,
 			int resultsOffset,
 			CurrentPageInfo s) {
 		return Mono
@@ -150,10 +153,10 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 					}
 					if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
 						var sort = getSort(queryParams);
-						var limit = s.currentPageLimit();
+						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
 						var totalHitsThreshold = LuceneUtils.totalHitsThreshold();
-						return new ScoringShardsCollectorManager(sort, limit, null,
-								totalHitsThreshold, resultsOffset, s.currentPageLimit());
+						return new ScoringShardsCollectorManager(sort, pageLimit, null,
+								totalHitsThreshold, resultsOffset, pageLimit);
 					} else {
 						return null;
 					}
@@ -171,7 +174,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 							var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 							long nextRemainingLimit;
 							if (allowPagination) {
-								nextRemainingLimit = s.remainingLimit() - s.currentPageLimit();
+								nextRemainingLimit = s.remainingLimit() - pageLimits.getPageLimit(s.pageIndex());
 							} else {
 								nextRemainingLimit = 0L;
 							}

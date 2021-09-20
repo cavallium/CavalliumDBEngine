@@ -20,7 +20,9 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
 import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
+import it.cavallium.dbengine.lucene.searcher.ExponentialPageLimits;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
+import it.cavallium.dbengine.lucene.searcher.PageLimits;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
 import java.io.IOException;
@@ -113,6 +115,8 @@ public class LuceneUtils {
 	private static final Similarity luceneLDPNoLengthSimilarityInstance = new LdpSimilarity(0, 0.5f);
 	private static final Similarity luceneBooleanSimilarityInstance = new BooleanSimilarity();
 	private static final Similarity luceneRobertsonSimilarityInstance = new RobertsonSimilarity();
+	// TODO: remove this default page limits and make the limits configurable into QueryParams
+	private static final PageLimits DEFAULT_PAGE_LIMITS = new ExponentialPageLimits();
 
 	@SuppressWarnings("DuplicatedCode")
 	public static Analyzer getAnalyzer(TextFieldsAnalyzer analyzer) {
@@ -364,6 +368,7 @@ public class LuceneUtils {
 		return new LocalQueryParams(QueryParser.toQuery(queryParams.query()),
 				safeLongToInt(queryParams.offset()),
 				safeLongToInt(queryParams.limit()),
+				DEFAULT_PAGE_LIMITS,
 				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
 				QueryParser.toScoreMode(queryParams.scoreMode())
@@ -541,6 +546,7 @@ public class LuceneUtils {
 						return new LocalQueryParams(new MatchNoDocsQuery(),
 								localQueryParams.offset(),
 								localQueryParams.limit(),
+								DEFAULT_PAGE_LIMITS,
 								localQueryParams.minCompetitiveScore(),
 								localQueryParams.sort(),
 								localQueryParams.scoreMode()
@@ -585,6 +591,7 @@ public class LuceneUtils {
 					return new LocalQueryParams(luceneQuery,
 							localQueryParams.offset(),
 							localQueryParams.limit(),
+							DEFAULT_PAGE_LIMITS,
 							localQueryParams.minCompetitiveScore(),
 							localQueryParams.sort(),
 							localQueryParams.scoreMode()

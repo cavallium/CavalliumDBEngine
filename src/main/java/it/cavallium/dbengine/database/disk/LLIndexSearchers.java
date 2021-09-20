@@ -68,7 +68,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		}
 
 		public LLIndexSearcher shard() {
-			return this.shard(0);
+			return this.shard(-1);
 		}
 
 		@Override

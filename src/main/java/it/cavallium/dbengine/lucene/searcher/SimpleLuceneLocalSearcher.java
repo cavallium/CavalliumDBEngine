@@ -53,9 +53,9 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	 */
 	private PaginationInfo getPaginationInfo(LocalQueryParams queryParams) {
 		if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.limit(), true);
+			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), true);
 		} else {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), FIRST_PAGE_LIMIT, false);
+			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), false);
 		}
 	}
 
@@ -65,7 +65,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	private Mono<PageData> searchFirstPage(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
-		var limit = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset() + paginationInfo.firstPageLimit());
+		var limit = paginationInfo.totalLimit();
 		var pagination = !paginationInfo.forceSinglePage();
 		var resultsOffset = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset());
 		return Mono
@@ -148,15 +148,16 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		} else {
 			throw new IllegalArgumentException();
 		}
+		var currentPageLimit = queryParams.pageLimits().getPageLimit(s.pageIndex());
 		if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
 			TopDocs pageTopDocs;
 			try {
 				TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
-						s.currentPageLimit(), s.last(), LuceneUtils.totalHitsThreshold(), allowPagination,
-						queryParams.isScored());
+						currentPageLimit, s.last(), LuceneUtils.totalHitsThreshold(),
+						allowPagination, queryParams.isScored());
 				unshardedIndexSearchers.shard().getIndexSearcher().search(queryParams.query(), collector);
 				if (resultsOffset > 0) {
-					pageTopDocs = collector.topDocs(resultsOffset, s.currentPageLimit());
+					pageTopDocs = collector.topDocs(resultsOffset, currentPageLimit);
 				} else {
 					pageTopDocs = collector.topDocs();
 				}
@@ -167,7 +168,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 			long nextRemainingLimit;
 			if (allowPagination) {
-				nextRemainingLimit = s.remainingLimit() - s.currentPageLimit();
+				nextRemainingLimit = s.remainingLimit() - currentPageLimit;
 			} else {
 				nextRemainingLimit = 0L;
 			}

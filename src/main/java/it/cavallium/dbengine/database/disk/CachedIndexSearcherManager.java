@@ -136,15 +136,22 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					activeSearchers.register();
 					IndexSearcher indexSearcher;
 					SearcherManager associatedSearcherManager;
+					boolean ownsIndexSearcher;
 					if (snapshot == null) {
 						indexSearcher = searcherManager.acquire();
 						indexSearcher.setSimilarity(similarity);
 						associatedSearcherManager = searcherManager;
+						ownsIndexSearcher = true;
 					} else {
 						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
 						associatedSearcherManager = null;
+						ownsIndexSearcher = false;
 					}
-					return new LLIndexSearcher(indexSearcher, associatedSearcherManager, this::dropCachedIndexSearcher);
+					return new LLIndexSearcher(indexSearcher,
+							associatedSearcherManager,
+							ownsIndexSearcher,
+							this::dropCachedIndexSearcher
+					);
 				})
 				.cacheInvalidateWhen(indexSearcher -> onInvalidateCache, ResourceSupport::close)
 				.map(searcher -> searcher.copy(this::dropCachedIndexSearcher).send())

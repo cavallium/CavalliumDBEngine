@@ -14,16 +14,19 @@ import org.slf4j.LoggerFactory;
 public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSearcher> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLIndexSearcher.class);
+	private final boolean ownsIndexSearcher;
 
 	private IndexSearcher indexSearcher;
 	private SearcherManager associatedSearcherManager;
 
 	public LLIndexSearcher(IndexSearcher indexSearcher,
 			@Nullable SearcherManager associatedSearcherManager,
+			boolean ownsIndexSearcher,
 			Drop<LLIndexSearcher> drop) {
 		super(new LLIndexSearcher.CloseOnDrop(drop));
 		this.indexSearcher = indexSearcher;
 		this.associatedSearcherManager = associatedSearcherManager;
+		this.ownsIndexSearcher = ownsIndexSearcher;
 	}
 
 	public IndexReader getIndexReader() {
@@ -45,10 +48,14 @@ public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSea
 			throw attachTrace(new IllegalStateException("CachedIndexSearcher must be owned to be used"));
 		}
 		var copyIndexSearcher = this.indexSearcher;
-		if (associatedSearcherManager != null) {
+		boolean ownsIndexSearcher;
+		if (this.ownsIndexSearcher && associatedSearcherManager != null) {
 			copyIndexSearcher.getIndexReader().incRef();
+			ownsIndexSearcher = true;
+		} else {
+			ownsIndexSearcher = false;
 		}
-		return new LLIndexSearcher(copyIndexSearcher, associatedSearcherManager, new CloseOnDrop(drop));
+		return new LLIndexSearcher(copyIndexSearcher, associatedSearcherManager, ownsIndexSearcher, drop);
 	}
 
 	@Override
@@ -61,7 +68,7 @@ public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSea
 		var indexSearcher = this.indexSearcher;
 		var associatedSearcherManager = this.associatedSearcherManager;
 		makeInaccessible();
-		return drop -> new LLIndexSearcher(indexSearcher, associatedSearcherManager, drop);
+		return drop -> new LLIndexSearcher(indexSearcher, associatedSearcherManager, ownsIndexSearcher, drop);
 	}
 
 	private void makeInaccessible() {
@@ -80,7 +87,7 @@ public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSea
 		@Override
 		public void drop(LLIndexSearcher obj) {
 			try {
-				if (obj.associatedSearcherManager != null) {
+				if (obj.associatedSearcherManager != null && obj.ownsIndexSearcher) {
 					if (obj.indexSearcher.getIndexReader().getRefCount() > 0) {
 						obj.associatedSearcherManager.release(obj.indexSearcher);
 					}

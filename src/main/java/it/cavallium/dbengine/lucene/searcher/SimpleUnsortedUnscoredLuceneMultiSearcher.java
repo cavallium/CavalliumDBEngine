@@ -30,11 +30,11 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 		var indexSearchersResource = Mono
 				.fromRunnable(() -> {
 					LLUtils.ensureBlocking();
-					if (!queryParams.isSorted()) {
+					if (queryParams.isSorted()) {
 						throw new UnsupportedOperationException("Sorted queries are not supported"
 								+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 					}
-					if (!queryParams.isScored()) {
+					if (queryParams.isScored()) {
 						throw new UnsupportedOperationException("Scored queries are not supported"
 								+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 					}

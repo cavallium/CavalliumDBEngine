@@ -18,7 +18,7 @@ public final class SearchResult<T, U> extends ResourceSupport<SearchResult<T, U>
 
 	public SearchResult(Flux<SearchResultItem<T, U>> results, TotalHitsCount totalHitsCount,
 			Drop<SearchResult<T, U>> drop) {
-		super(new SearchResult.CloseOnDrop<>(drop));
+		super(new CloseOnDrop<>(drop));
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 	}
@@ -68,7 +68,11 @@ public final class SearchResult<T, U> extends ResourceSupport<SearchResult<T, U>
 
 		@Override
 		public void drop(SearchResult<V, W> obj) {
-			delegate.drop(obj);
+			try {
+				delegate.drop(obj);
+			} finally {
+				obj.makeInaccessible();
+			}
 		}
 	}
 }

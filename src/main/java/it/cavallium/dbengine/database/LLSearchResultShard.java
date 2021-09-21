@@ -84,7 +84,11 @@ public final class LLSearchResultShard extends ResourceSupport<LLSearchResultSha
 
 		@Override
 		public void drop(LLSearchResultShard obj) {
-			delegate.drop(obj);
+			try {
+				delegate.drop(obj);
+			} finally {
+				obj.makeInaccessible();
+			}
 		}
 	}
 }

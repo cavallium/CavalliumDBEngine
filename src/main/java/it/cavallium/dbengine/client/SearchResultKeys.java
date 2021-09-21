@@ -80,7 +80,11 @@ public final class SearchResultKeys<T> extends ResourceSupport<SearchResultKeys<
 
 		@Override
 		public void drop(SearchResultKeys<U> obj) {
-			delegate.drop(obj);
+			try {
+				delegate.drop(obj);
+			} finally {
+				obj.makeInaccessible();
+			}
 		}
 	}
 

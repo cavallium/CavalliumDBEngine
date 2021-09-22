@@ -5,7 +5,9 @@ import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 @SuppressWarnings("unused")
 public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
@@ -15,7 +17,11 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<Send<Buffer>> noop(int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
+			public @NotNull DeserializationResult<Send<Buffer>> deserialize(@Nullable Send<Buffer> serialized) {
+				if (length == 0 && serialized == null) {
+					return new DeserializationResult<>(null, 0);
+				}
+				Objects.requireNonNull(serialized);
 				try (var buf = serialized.receive()) {
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
 						throw new IllegalArgumentException(
@@ -49,8 +55,12 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<String> utf8(BufferAllocator allocator, int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<String> deserialize(@NotNull Send<Buffer> serializedToReceive)
+			public @NotNull DeserializationResult<String> deserialize(@Nullable Send<Buffer> serializedToReceive)
 					throws SerializationException {
+				if (length == 0 && serializedToReceive == null) {
+					return new DeserializationResult<>(null, 0);
+				}
+				Objects.requireNonNull(serializedToReceive);
 				try (var serialized = serializedToReceive.receive()) {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {
 						throw new SerializationException(
@@ -89,7 +99,11 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<Integer> intSerializer(BufferAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Integer> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+			public @NotNull DeserializationResult<Integer> deserialize(@Nullable Send<Buffer> serializedToReceive) {
+				if (getSerializedBinaryLength() == 0 && serializedToReceive == null) {
+					return new DeserializationResult<>(null, 0);
+				}
+				Objects.requireNonNull(serializedToReceive);
 				try (var serialized = serializedToReceive.receive()) {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {
 						throw new IllegalArgumentException(
@@ -117,7 +131,11 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<Long> longSerializer(BufferAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Long> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+			public @NotNull DeserializationResult<Long> deserialize(@Nullable Send<Buffer> serializedToReceive) {
+				if (getSerializedBinaryLength() == 0 && serializedToReceive == null) {
+					return new DeserializationResult<>(null, 0);
+				}
+				Objects.requireNonNull(serializedToReceive);
 				try (var serialized = serializedToReceive.receive()) {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {
 						throw new IllegalArgumentException(

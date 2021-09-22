@@ -36,7 +36,7 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
-				dictionary.getAllocator().allocate(0).send(),
+				null,
 				keySerializer,
 				keyHashFunction,
 				keyHashSerializer

@@ -23,9 +23,7 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer) {
-		try (var buf = dictionary.getAllocator().allocate(0)) {
-			return new DatabaseSetDictionary<>(dictionary, buf.send(), keySerializer);
-		}
+		return new DatabaseSetDictionary<>(dictionary, null, keySerializer);
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,

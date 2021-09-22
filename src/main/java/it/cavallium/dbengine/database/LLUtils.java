@@ -313,7 +313,7 @@ public class LLUtils {
 	 */
 	@SuppressWarnings("ConstantConditions")
 	@Nullable
-	public static Send<Buffer> readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
+	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
 		ByteBuffer directBuffer;
 		Buffer buffer;
 		{
@@ -330,7 +330,7 @@ public class LLUtils {
 				if (size != RocksDB.NOT_FOUND) {
 					if (size == directBuffer.limit()) {
 						buffer.readerOffset(0).writerOffset(size);
-						return buffer.send();
+						return buffer;
 					} else {
 						assert size > directBuffer.limit();
 						assert directBuffer.limit() > 0;
@@ -522,85 +522,32 @@ public class LLUtils {
 	}
 
 	@NotNull
-	public static Send<Buffer> readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		var nullableSend = readNullableDirectNioBuffer(alloc, reader);
-		try (var buffer = nullableSend != null ? nullableSend.receive() : null) {
-			if (buffer == null) {
-				throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
-			}
-			return buffer.send();
+	public static Buffer readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
+		var nullable = readNullableDirectNioBuffer(alloc, reader);
+		if (nullable == null) {
+			throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
 		}
+		return nullable;
 	}
 
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
-		try (var composite = buffer.receive()) {
-			return composite.send();
-		}
+	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
+		return buffer.receive();
 	}
 
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2) {
-		try (var buf1 = buffer1.receive()) {
-			try (var buf2 = buffer2.receive()) {
-				try (var composite = CompositeBuffer.compose(alloc, buf1.split().send(), buf2.split().send())) {
-					return composite.send();
-				}
-			}
-		}
+	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2) {
+		return CompositeBuffer.compose(alloc, buffer1, buffer2);
 	}
 
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc,
+	public static Buffer compositeBuffer(BufferAllocator alloc,
 			Send<Buffer> buffer1,
 			Send<Buffer> buffer2,
 			Send<Buffer> buffer3) {
-		try (var buf1 = buffer1.receive()) {
-			try (var buf2 = buffer2.receive()) {
-				try (var buf3 = buffer3.receive()) {
-					try (var composite = CompositeBuffer.compose(alloc,
-							buf1.split().send(),
-							buf2.split().send(),
-							buf3.split().send()
-					)) {
-						return composite.send();
-					}
-				}
-			}
-		}
+		return CompositeBuffer.compose(alloc, buffer1, buffer2, buffer3);
 	}
 
 	@SafeVarargs
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer>... buffers) {
-		try {
-			return switch (buffers.length) {
-				case 0 -> alloc.allocate(0).send();
-				case 1 -> compositeBuffer(alloc, buffers[0]);
-				case 2 -> compositeBuffer(alloc, buffers[0], buffers[1]);
-				case 3 -> compositeBuffer(alloc, buffers[0], buffers[1], buffers[2]);
-				default -> {
-					Buffer[] bufs = new Buffer[buffers.length];
-					for (int i = 0; i < buffers.length; i++) {
-						bufs[i] = buffers[i].receive();
-					}
-					try {
-						//noinspection unchecked
-						Send<Buffer>[] sentBufs = new Send[buffers.length];
-						for (int i = 0; i < buffers.length; i++) {
-							sentBufs[i] = bufs[i].split().send();
-						}
-						try (var composite = CompositeBuffer.compose(alloc, sentBufs)) {
-							yield composite.send();
-						}
-					} finally {
-						for (Buffer buf : bufs) {
-							buf.close();
-						}
-					}
-				}
-			};
-		} finally {
-			for (Send<Buffer> buffer : buffers) {
-				buffer.close();
-			}
-		}
+	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer>... buffers) {
+		return CompositeBuffer.compose(alloc, buffers);
 	}
 
 	public static <T> Mono<T> resolveDelta(Mono<Delta<T>> prev, UpdateReturnMode updateReturnMode) {

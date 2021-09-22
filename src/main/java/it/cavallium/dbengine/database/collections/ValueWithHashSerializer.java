@@ -8,7 +8,9 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 
@@ -25,8 +27,9 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 	}
 
 	@Override
-	public @NotNull DeserializationResult<Entry<X, Y>> deserialize(@NotNull Send<Buffer> serializedToReceive)
+	public @NotNull DeserializationResult<Entry<X, Y>> deserialize(@Nullable Send<Buffer> serializedToReceive)
 			throws SerializationException {
+		Objects.requireNonNull(serializedToReceive);
 		try (var serialized = serializedToReceive.receive()) {
 			DeserializationResult<X> deserializedKey = keySuffixSerializer.deserialize(serialized.copy().send());
 			DeserializationResult<Y> deserializedValue = valueSerializer.deserialize(serialized
@@ -40,11 +43,17 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 	}
 
 	@Override
-	public @NotNull Send<Buffer> serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
-		try (Buffer keySuffix = keySuffixSerializer.serialize(deserialized.getKey()).receive()) {
-			try (Buffer value = valueSerializer.serialize(deserialized.getValue()).receive()) {
-				return LLUtils.compositeBuffer(allocator, keySuffix.send(), value.send());
-			}
+	public @Nullable Send<Buffer> serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
+		var keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
+		var value = valueSerializer.serialize(deserialized.getValue());
+		if (value == null && keySuffix == null) {
+			return null;
+		} else if (value == null) {
+			return keySuffix;
+		} else if (keySuffix == null) {
+			return value;
+		} else {
+			return LLUtils.compositeBuffer(allocator, keySuffix, value).send();
 		}
 	}
 }

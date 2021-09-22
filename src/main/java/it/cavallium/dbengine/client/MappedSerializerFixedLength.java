@@ -5,6 +5,7 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryLength<B> {
 
@@ -18,7 +19,7 @@ public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryL
 	}
 
 	@Override
-	public @NotNull DeserializationResult<B> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException {
+	public @NotNull DeserializationResult<B> deserialize(@Nullable Send<Buffer> serialized) throws SerializationException {
 		try (serialized) {
 			var deserialized = fixedLengthSerializer.deserialize(serialized);
 			return new DeserializationResult<>(keyMapper.map(deserialized.deserializedData()), deserialized.bytesRead());
@@ -26,7 +27,7 @@ public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryL
 	}
 
 	@Override
-	public @NotNull Send<Buffer> serialize(@NotNull B deserialized) throws SerializationException {
+	public @Nullable Send<Buffer> serialize(@NotNull B deserialized) throws SerializationException {
 		return fixedLengthSerializer.serialize(keyMapper.unmap(deserialized));
 	}
 

@@ -7,6 +7,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -60,26 +61,28 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						try {
 							rocksIterator.status();
 							while (rocksIterator.isValid()) {
-								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
+								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.copy();
 									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(),
 											key, key.readerOffset(), prefixLength)) {
 										break;
 									}
-									Buffer value;
+									@Nullable Buffer value;
 									if (readValues) {
-										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
+										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 									} else {
-										value = alloc.allocate(0);
+										value = null;
 									}
 									try {
 										rocksIterator.next();
 										rocksIterator.status();
-										T entry = getEntry(key.send(), value.send());
+										T entry = getEntry(key.send(), value == null ? null : value.send());
 										values.add(entry);
 									} finally {
-										value.close();
+										if (value != null) {
+											value.close();
+										}
 									}
 								}
 							}
@@ -106,7 +109,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				});
 	}
 
-	public abstract T getEntry(Send<Buffer> key, Send<Buffer> value);
+	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
 
 	public void release() {
 		range.close();

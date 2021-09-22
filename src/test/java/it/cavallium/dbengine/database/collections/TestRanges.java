@@ -51,7 +51,7 @@ public class TestRanges {
 		byte[] firstRangeKey;
 		try (var firstRangeKeyBuf = DatabaseMapDictionaryDeep.firstRangeKey(alloc,
 				alloc.allocate(prefixKey.length).writeBytes(prefixKey).send(),
-				prefixKey.length, 7, 3).receive()) {
+				prefixKey.length, 7, 3)) {
 			firstRangeKey = LLUtils.toArray(firstRangeKeyBuf);
 		}
 		byte[] nextRangeKey;
@@ -60,7 +60,7 @@ public class TestRanges {
 				prefixKey.length,
 				7,
 				3
-		).receive()) {
+		)) {
 			nextRangeKey = LLUtils.toArray(nextRangeKeyBuf);
 		}
 
@@ -114,7 +114,7 @@ public class TestRanges {
 				prefixKey.length,
 				3,
 				7
-		).receive()) {
+		)) {
 			firstRangeKey = LLUtils.toArray(firstRangeKeyBuf);
 		}
 		try (var nextRangeKeyBuf = DatabaseMapDictionaryDeep.nextRangeKey(alloc,
@@ -123,7 +123,7 @@ public class TestRanges {
 				prefixKey.length,
 				3,
 				7
-		).receive()) {
+		)) {
 			byte[] nextRangeKey = LLUtils.toArray(nextRangeKeyBuf);
 
 			if (Arrays.equals(prefixKey, new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF}) && Arrays.equals(suffixKey, new byte[] {(byte) 0xFF, (byte) 0xFF, (byte) 0xFF})) {

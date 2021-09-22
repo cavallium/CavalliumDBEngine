@@ -190,7 +190,6 @@ public class LuceneUtils {
 	 *
 	 * @return false if the result is not relevant
 	 */
-	@Nullable
 	public static boolean filterTopDoc(float score, Float minCompetitiveScore) {
 		return minCompetitiveScore == null || score >= minCompetitiveScore;
 	}
@@ -327,7 +326,7 @@ public class LuceneUtils {
 
 			assert i > 0 : "FileChannel.read with non zero-length bb.remaining() must always read at least one byte (FileChannel is in blocking mode, see spec of ReadableByteChannel)";
 
-			pos += (long)i;
+			pos += i;
 		}
 
 		assert readLength == 0;

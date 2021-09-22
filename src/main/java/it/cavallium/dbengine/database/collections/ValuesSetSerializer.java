@@ -7,7 +7,9 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.ArrayList;
+import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 
@@ -20,7 +22,8 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 	}
 
 	@Override
-	public @NotNull DeserializationResult<ObjectArraySet<X>> deserialize(@NotNull Send<Buffer> serializedToReceive) throws SerializationException {
+	public @NotNull DeserializationResult<ObjectArraySet<X>> deserialize(@Nullable Send<Buffer> serializedToReceive) throws SerializationException {
+		Objects.requireNonNull(serializedToReceive);
 		try (var serialized = serializedToReceive.receive()) {
 			int initialReaderOffset = serialized.readerOffset();
 			int entriesLength = serialized.readInt();
@@ -41,9 +44,12 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 		try (Buffer output = allocator.allocate(64)) {
 			output.writeInt(deserialized.size());
 			for (X entry : deserialized) {
-				try (Buffer serialized = entrySerializer.serialize(entry).receive()) {
-					output.ensureWritable(serialized.readableBytes());
-					output.writeBytes(serialized);
+				var serializedToReceive = entrySerializer.serialize(entry);
+				if (serializedToReceive != null) {
+					try (Buffer serialized = serializedToReceive.receive()) {
+						output.ensureWritable(serialized.readableBytes());
+						output.writeBytes(serialized);
+					}
 				}
 			}
 			return output.send();

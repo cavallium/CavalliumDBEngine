@@ -9,6 +9,7 @@ import io.net5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -25,7 +26,6 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	private final boolean allowNettyDirect;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
-	private final String debugName;
 
 	public LLLocalReactiveRocksIterator(RocksDB db,
 			BufferAllocator alloc,
@@ -33,8 +33,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
-			boolean readValues,
-			String debugName) {
+			boolean readValues) {
 		this.db = db;
 		this.alloc = alloc;
 		this.cfh = cfh;
@@ -42,7 +41,6 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
-		this.debugName = debugName;
 	}
 
 	public Flux<T> flux() {
@@ -61,7 +59,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						if (rocksIterator.isValid()) {
 							Buffer key;
 							if (allowNettyDirect) {
-								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive();
+								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 							} else {
 								key = LLUtils.fromByteArray(alloc, rocksIterator.key());
 							}
@@ -69,19 +67,21 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								Buffer value;
 								if (readValues) {
 									if (allowNettyDirect) {
-										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
+										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 									} else {
 										value = LLUtils.fromByteArray(alloc, rocksIterator.value());
 									}
 								} else {
-									value = alloc.allocate(0);
+									value = null;
 								}
 								try {
 									rocksIterator.next();
 									rocksIterator.status();
-									sink.next(getEntry(key.send(), value.send()));
+									sink.next(getEntry(key.send(), value == null ? null : value.send()));
 								} finally {
-									value.close();
+									if (value != null) {
+										value.close();
+									}
 								}
 							}
 						} else {
@@ -100,7 +100,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 				});
 	}
 
-	public abstract T getEntry(Send<Buffer> key, Send<Buffer> value);
+	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
 
 	public void release() {
 		if (released.compareAndSet(false, true)) {

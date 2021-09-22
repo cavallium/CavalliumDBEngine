@@ -58,7 +58,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			SerializerFixedBinaryLength<UH> keyHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
-				dictionary.getAllocator().allocate(0).send(),
+				null,
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,

@@ -7,6 +7,7 @@ import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.Serializer.DeserializationResult;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class DatabaseEmpty {
 
@@ -17,15 +18,15 @@ public class DatabaseEmpty {
 	public static Serializer<Nothing> nothingSerializer(BufferAllocator bufferAllocator) {
 		return new Serializer<>() {
 			@Override
-			public @NotNull DeserializationResult<Nothing> deserialize(@NotNull Send<Buffer> serialized) {
+			public @NotNull DeserializationResult<Nothing> deserialize(@Nullable Send<Buffer> serialized) {
 				try (serialized) {
 					return NOTHING_RESULT;
 				}
 			}
 
 			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull Nothing deserialized) {
-				return bufferAllocator.allocate(0).send();
+			public @Nullable Send<Buffer> serialize(@NotNull Nothing deserialized) {
+				return null;
 			}
 		};
 	}

@@ -25,8 +25,10 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -158,7 +160,8 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull DeserializationResult<Short> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+						public @NotNull DeserializationResult<Short> deserialize(@Nullable Send<Buffer> serializedToReceive) {
+							Objects.requireNonNull(serializedToReceive);
 							try (var serialized = serializedToReceive.receive()) {
 								var val = serialized.readShort();
 								return new DeserializationResult<>(val, Short.BYTES);

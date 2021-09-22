@@ -1565,7 +1565,8 @@ public class LLLocalDictionary implements LLDictionary {
 		return Flux.usingWhen(rangeMono,
 				rangeSend -> Flux.using(
 						() -> new LLLocalKeyReactiveRocksIterator(db, alloc, cfh, rangeSend,
-								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeKeysMultiDebugName),
+								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot)
+						),
 						llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalReactiveRocksIterator::release
 				).transform(LLUtils::handleDiscard),
@@ -1799,7 +1800,7 @@ public class LLLocalDictionary implements LLDictionary {
 					try {
 						rocksIterator.status();
 						while (rocksIterator.isValid()) {
-							writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
+							writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).send());
 							rocksIterator.next();
 							rocksIterator.status();
 						}
@@ -2123,8 +2124,8 @@ public class LLLocalDictionary implements LLDictionary {
 									try {
 										rocksIterator.status();
 										if (rocksIterator.isValid()) {
-											try (var key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
-												try (var value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive()) {
+											try (var key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+												try (var value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value)) {
 													return LLEntry.of(key.send(), value.send()).send();
 												}
 											}
@@ -2184,7 +2185,7 @@ public class LLLocalDictionary implements LLDictionary {
 									try {
 										rocksIterator.status();
 										if (rocksIterator.isValid()) {
-											return LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+											return LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).send();
 										} else {
 											return null;
 										}
@@ -2354,8 +2355,8 @@ public class LLLocalDictionary implements LLDictionary {
 										if (!rocksIterator.isValid()) {
 											return null;
 										}
-										try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive()) {
-											try (Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive()) {
+										try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+											try (Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value)) {
 												dbDelete(cfh, null, key.copy().send());
 												return LLEntry.of(key.send(), value.send()).send();
 											}

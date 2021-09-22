@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.CompositeBuffer;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.util.IllegalReferenceCountException;
@@ -36,53 +37,39 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected final Mono<Send<LLRange>> rangeMono;
 	private volatile boolean released;
 
-	private static Send<Buffer> incrementPrefix(BufferAllocator alloc, Send<Buffer> originalKeySend, int prefixLength) {
-		try (var originalKey = originalKeySend.receive()) {
-			assert originalKey.readableBytes() >= prefixLength;
-			var originalKeyLength = originalKey.readableBytes();
-			try (Buffer copiedBuf = alloc.allocate(originalKey.readableBytes())) {
-				boolean overflowed = true;
-				final int ff = 0xFF;
-				int writtenBytes = 0;
-				copiedBuf.writerOffset(prefixLength);
-				for (int i = prefixLength - 1; i >= 0; i--) {
-					int iByte = originalKey.getUnsignedByte(i);
-					if (iByte != ff) {
-						copiedBuf.setUnsignedByte(i, iByte + 1);
-						writtenBytes++;
-						overflowed = false;
-						break;
-					} else {
-						copiedBuf.setUnsignedByte(i, 0x00);
-						writtenBytes++;
-						overflowed = true;
-					}
-				}
-				assert prefixLength - writtenBytes >= 0;
-				if (prefixLength - writtenBytes > 0) {
-					originalKey.copyInto(0, copiedBuf, 0, (prefixLength - writtenBytes));
-				}
-
-				copiedBuf.writerOffset(originalKeyLength);
-
-				if (originalKeyLength - prefixLength > 0) {
-					originalKey.copyInto(prefixLength, copiedBuf, prefixLength, originalKeyLength - prefixLength);
-				}
-
-				if (overflowed) {
-					copiedBuf.ensureWritable(originalKeyLength + 1);
-					copiedBuf.writerOffset(originalKeyLength + 1);
-					for (int i = 0; i < originalKeyLength; i++) {
-						copiedBuf.setUnsignedByte(i, 0xFF);
-					}
-					copiedBuf.setUnsignedByte(originalKeyLength, (byte) 0x00);
-				}
-				return copiedBuf.send();
+	private static void incrementPrefix(Buffer prefix, int prefixLength) {
+		assert prefix.readableBytes() >= prefixLength;
+		assert prefix.readerOffset() == 0;
+		final var originalKeyLength = prefix.readableBytes();
+		boolean overflowed = true;
+		final int ff = 0xFF;
+		int writtenBytes = 0;
+		for (int i = prefixLength - 1; i >= 0; i--) {
+			int iByte = prefix.getUnsignedByte(i);
+			if (iByte != ff) {
+				prefix.setUnsignedByte(i, iByte + 1);
+				writtenBytes++;
+				overflowed = false;
+				break;
+			} else {
+				prefix.setUnsignedByte(i, 0x00);
+				writtenBytes++;
 			}
+		}
+		assert prefixLength - writtenBytes >= 0;
+
+		if (overflowed) {
+			assert prefix.writerOffset() == originalKeyLength;
+			prefix.ensureWritable(1, 1, true);
+			prefix.writerOffset(originalKeyLength + 1);
+			for (int i = 0; i < originalKeyLength; i++) {
+				prefix.setUnsignedByte(i, 0xFF);
+			}
+			prefix.setUnsignedByte(originalKeyLength, (byte) 0x00);
 		}
 	}
 
-	static Send<Buffer> firstRangeKey(BufferAllocator alloc,
+	static Buffer firstRangeKey(BufferAllocator alloc,
 			Send<Buffer> prefixKey,
 			int prefixLength,
 			int suffixLength,
@@ -90,40 +77,44 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return zeroFillKeySuffixAndExt(alloc, prefixKey, prefixLength, suffixLength, extLength);
 	}
 
-	static Send<Buffer> nextRangeKey(BufferAllocator alloc,
+	static Buffer nextRangeKey(BufferAllocator alloc,
 			Send<Buffer> prefixKey,
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
 		try (prefixKey) {
-			try (Send<Buffer> nonIncremented = zeroFillKeySuffixAndExt(alloc, prefixKey, prefixLength, suffixLength,
-					extLength)) {
-				return incrementPrefix(alloc, nonIncremented, prefixLength);
-			}
+			Buffer nonIncremented = zeroFillKeySuffixAndExt(alloc, prefixKey, prefixLength, suffixLength, extLength);
+			incrementPrefix(nonIncremented, prefixLength);
+			return nonIncremented;
 		}
 	}
 
-	protected static Send<Buffer> zeroFillKeySuffixAndExt(BufferAllocator alloc,
-			Send<Buffer> prefixKeySend,
+	protected static Buffer zeroFillKeySuffixAndExt(BufferAllocator alloc,
+			@Nullable Send<Buffer> prefixKeySend,
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
-		try (var prefixKey = prefixKeySend.receive()) {
-			assert prefixKey.readableBytes() == prefixLength;
-			assert suffixLength > 0;
-			assert extLength >= 0;
-			try (Buffer zeroSuffixAndExt = alloc.allocate(suffixLength + extLength)) {
+		try (var result = prefixKeySend == null ? null : prefixKeySend.receive()) {
+			if (result == null) {
+				assert prefixLength == 0;
+				var buf = alloc.allocate(prefixLength + suffixLength + extLength);
+				buf.writerOffset(prefixLength + suffixLength + extLength);
+				buf.fill((byte) 0);
+				return buf;
+			} else {
+				assert result.readableBytes() == prefixLength;
+				assert suffixLength > 0;
+				assert extLength >= 0;
+				result.ensureWritable(suffixLength + extLength, suffixLength + extLength, true);
 				for (int i = 0; i < suffixLength + extLength; i++) {
-					zeroSuffixAndExt.writeByte((byte) 0x0);
+					result.writeByte((byte) 0x0);
 				}
-				try (Buffer result = LLUtils.compositeBuffer(alloc, prefixKey.send(), zeroSuffixAndExt.send()).receive()) {
-					return result.send();
-				}
+				return result;
 			}
 		}
 	}
 
-	static Send<Buffer> firstRangeKey(
+	static Buffer firstRangeKey(
 			BufferAllocator alloc,
 			Send<Buffer> prefixKey,
 			Send<Buffer> suffixKey,
@@ -133,25 +124,25 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return zeroFillKeyExt(alloc, prefixKey, suffixKey, prefixLength, suffixLength, extLength);
 	}
 
-	static Send<Buffer> nextRangeKey(
+	static Buffer nextRangeKey(
 			BufferAllocator alloc,
 			Send<Buffer> prefixKey,
 			Send<Buffer> suffixKey,
 			int prefixLength,
 			int suffixLength,
 			int extLength) {
-		try (Send<Buffer> nonIncremented = zeroFillKeyExt(alloc,
+		Buffer nonIncremented = zeroFillKeyExt(alloc,
 				prefixKey,
 				suffixKey,
 				prefixLength,
 				suffixLength,
 				extLength
-		)) {
-			return incrementPrefix(alloc, nonIncremented, prefixLength + suffixLength);
-		}
+		);
+		incrementPrefix(nonIncremented, prefixLength + suffixLength);
+		return nonIncremented;
 	}
 
-	protected static Send<Buffer> zeroFillKeyExt(
+	protected static Buffer zeroFillKeyExt(
 			BufferAllocator alloc,
 			Send<Buffer> prefixKeySend,
 			Send<Buffer> suffixKeySend,
@@ -165,17 +156,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				assert suffixLength > 0;
 				assert extLength >= 0;
 
-				try (var ext = alloc.allocate(extLength)) {
-					for (int i = 0; i < extLength; i++) {
-						ext.writeByte((byte) 0);
-					}
-
-					try (Buffer result = LLUtils.compositeBuffer(alloc, prefixKey.send(), suffixKey.send(), ext.send())
-							.receive()) {
-						assert result.readableBytes() == prefixLength + suffixLength + extLength;
-						return result.send();
-					}
+				Buffer result = LLUtils.compositeBuffer(alloc, prefixKey.send(), suffixKey.send());
+				result.ensureWritable(extLength, extLength, true);
+				for (int i = 0; i < extLength; i++) {
+					result.writeByte((byte) 0);
 				}
+
+				assert result.readableBytes() == prefixLength + suffixLength + extLength;
+				return result;
 			}
 		}
 	}
@@ -187,8 +175,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer,
 			SubStageGetterSingle<U> subStageGetter) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, dictionary.getAllocator().allocate(0).send(),
-				keySerializer, subStageGetter, 0);
+		return new DatabaseMapDictionaryDeep<>(dictionary, null, keySerializer, subStageGetter, 0);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(LLDictionary dictionary,
@@ -196,7 +183,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 			int keyExtLength,
 			SubStageGetter<U, US> subStageGetter) {
 		return new DatabaseMapDictionaryDeep<>(dictionary,
-				dictionary.getAllocator().allocate(0).send(),
+				null,
 				keySerializer,
 				subStageGetter,
 				keyExtLength
@@ -212,39 +199,34 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary,
-			Send<Buffer> prefixKeyToReceive,
+			@Nullable Send<Buffer> prefixKeyToReceive,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			SubStageGetter<U, US> subStageGetter,
 			int keyExtLength) {
-		try (var prefixKey = prefixKeyToReceive.receive()) {
+		try (var prefixKey = prefixKeyToReceive == null ? null : prefixKeyToReceive.receive()) {
 			this.dictionary = dictionary;
 			this.alloc = dictionary.getAllocator();
 			this.subStageGetter = subStageGetter;
 			this.keySuffixSerializer = keySuffixSerializer;
-			this.keyPrefix = prefixKey.copy();
-			assert keyPrefix.isAccessible();
-			this.keyPrefixLength = keyPrefix.readableBytes();
+			assert prefixKey == null || prefixKey.isAccessible();
+			this.keyPrefixLength = prefixKey == null ? 0 : prefixKey.readableBytes();
 			this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
 			this.keyExtLength = keyExtLength;
-			try (Buffer firstKey = firstRangeKey(alloc,
-					prefixKey.copy().send(),
-					keyPrefixLength,
-					keySuffixLength,
-					keyExtLength
-			).receive().compact()) {
-				try (Buffer nextRangeKey = nextRangeKey(alloc,
-						prefixKey.copy().send(),
-						keyPrefixLength,
-						keySuffixLength,
-						keyExtLength
-				).receive().compact()) {
-					assert keyPrefix.isAccessible();
+			Buffer firstKey = firstRangeKey(alloc, prefixKey == null ? null : prefixKey.copy().send(), keyPrefixLength,
+					keySuffixLength, keyExtLength);
+			try (firstKey) {
+				var nextRangeKey = nextRangeKey(alloc, prefixKey == null ? null : prefixKey.copy().send(),
+						keyPrefixLength, keySuffixLength, keyExtLength);
+				try (nextRangeKey) {
+					assert prefixKey == null || prefixKey.isAccessible();
 					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
 					this.range = keyPrefixLength == 0 ? LLRange.all() : LLRange.of(firstKey.send(), nextRangeKey.send());
 					this.rangeMono = LLUtils.lazyRetainRange(this.range);
 					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
 				}
 			}
+
+			this.keyPrefix = prefixKey == null ? null : prefixKey.send().receive();
 		}
 	}
 
@@ -278,7 +260,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected Send<Buffer> toKeyWithoutExt(Send<Buffer> suffixKeyToReceive) {
 		try (var suffixKey = suffixKeyToReceive.receive()) {
 			assert suffixKey.readableBytes() == keySuffixLength;
-			try (Buffer result = LLUtils.compositeBuffer(alloc, keyPrefix.copy().send(), suffixKey.send()).receive()) {
+			try (Buffer result = LLUtils.compositeBuffer(alloc, keyPrefix.copy().send(), suffixKey.send())) {
 				assert result.readableBytes() == keyPrefixLength + keySuffixLength;
 				return result.send();
 			}
@@ -306,7 +288,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return this.subStageGetter
-				.subStage(dictionary, snapshot, Mono.fromCallable(() -> toKeyWithoutExt(serializeSuffix(keySuffix))))
+				.subStage(dictionary, snapshot, Mono.fromCallable(() -> toKeyWithoutExt(serializeSuffix(keySuffix).send())))
 				.transform(LLUtils::handleDiscard)
 				.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
 	}
@@ -411,12 +393,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	protected Send<Buffer> serializeSuffix(T keySuffix) throws SerializationException {
-		try (Buffer suffixData = keySuffixSerializer.serialize(keySuffix).receive()) {
-			assert suffixKeyConsistency(suffixData.readableBytes());
-			assert keyPrefix.isAccessible();
-			return suffixData.send();
-		}
+	protected Buffer serializeSuffix(T keySuffix) throws SerializationException {
+		Buffer suffixData = keySuffixSerializer.serialize(keySuffix).receive();
+		assert suffixKeyConsistency(suffixData.readableBytes());
+		assert keyPrefix.isAccessible();
+		return suffixData;
 	}
 
 	@Override

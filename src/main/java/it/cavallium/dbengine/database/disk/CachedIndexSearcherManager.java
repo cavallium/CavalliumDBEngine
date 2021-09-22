@@ -7,10 +7,12 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.IndexSearcher;
@@ -27,6 +29,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Empty;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuples;
 
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
@@ -128,35 +131,30 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	}
 
 	private Mono<Send<LLIndexSearcher>> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
-		var onClose = this.closeRequested.asMono();
-		var onQueryRefresh = Mono.delay(queryRefreshDebounceTime).then();
-		var onInvalidateCache = Mono.firstWithSignal(onClose, onQueryRefresh);
+		// todo: check if defer is really needed
+		return Mono.defer(() -> {
+			var onClose = this.closeRequested.asMono();
+			var onQueryRefresh = Mono.delay(queryRefreshDebounceTime).then();
+			var onInvalidateCache = Mono.firstWithSignal(onClose, onQueryRefresh).doOnNext(s -> System.err.println("Invalidation triggered"));
 
-		return Mono.fromCallable(() -> {
-					activeSearchers.register();
-					IndexSearcher indexSearcher;
-					SearcherManager associatedSearcherManager;
-					boolean ownsIndexSearcher;
-					if (snapshot == null) {
-						indexSearcher = searcherManager.acquire();
+			return Mono.fromCallable(() -> {
+						activeSearchers.register();
+						IndexSearcher indexSearcher;
+						if (snapshot == null) {
+							indexSearcher = searcherManager.acquire();
+						} else {
+							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
+						}
 						indexSearcher.setSimilarity(similarity);
-						associatedSearcherManager = searcherManager;
-						ownsIndexSearcher = true;
-					} else {
-						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
-						associatedSearcherManager = null;
-						ownsIndexSearcher = false;
-					}
-					return new LLIndexSearcher(indexSearcher,
-							associatedSearcherManager,
-							ownsIndexSearcher,
-							this::dropCachedIndexSearcher
-					);
-				})
-				.cacheInvalidateWhen(indexSearcher -> onInvalidateCache, ResourceSupport::close)
-				.map(searcher -> searcher.copy(this::dropCachedIndexSearcher).send())
-				.takeUntilOther(onClose)
-				.doOnDiscard(ResourceSupport.class, ResourceSupport::close);
+						assert indexSearcher.getIndexReader().getRefCount() > 0;
+						return indexSearcher;
+					})
+					// todo: re-enable caching if needed
+					//.cacheInvalidateWhen(tuple -> onInvalidateCache)
+					.map(indexSearcher -> new LLIndexSearcher(indexSearcher, this::dropCachedIndexSearcher).send())
+					.takeUntilOther(onClose)
+					.doOnDiscard(Send.class, Send::close);
+		});
 	}
 
 	private void dropCachedIndexSearcher(LLIndexSearcher cachedIndexSearcher) {
@@ -186,24 +184,6 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 		} finally {
 			activeRefreshes.arriveAndDeregister();
 		}
-	}
-
-	@Override
-	public <T> Flux<T> searchMany(@Nullable LLSnapshot snapshot, Function<IndexSearcher, Flux<T>> searcherFunction) {
-		return Flux.usingWhen(
-				this.retrieveSearcher(snapshot).map(Send::receive),
-				indexSearcher -> searcherFunction.apply(indexSearcher.getIndexSearcher()),
-				cachedIndexSearcher -> Mono.fromRunnable(cachedIndexSearcher::close)
-		);
-	}
-
-	@Override
-	public <T> Mono<T> search(@Nullable LLSnapshot snapshot, Function<IndexSearcher, Mono<T>> searcherFunction) {
-		return Mono.usingWhen(
-				this.retrieveSearcher(snapshot).map(Send::receive),
-				indexSearcher -> searcherFunction.apply(indexSearcher.getIndexSearcher()),
-				cachedIndexSearcher -> Mono.fromRunnable(cachedIndexSearcher::close)
-		);
 	}
 
 	@Override

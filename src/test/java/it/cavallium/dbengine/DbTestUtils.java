@@ -98,7 +98,7 @@ public class DbTestUtils {
 		if (!MemorySegmentUtils.isSupported()) {
 			System.err.println("Warning! Foreign Memory Access API is not available!"
 					+ " Netty direct buffers will not be used in tests!"
-					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
+					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"");
 			if (MemorySegmentUtils.getUnsupportedCause() != null) {
 				System.err.println("\tCause: " + MemorySegmentUtils.getUnsupportedCause().getClass().getName()
 						+ ":" + MemorySegmentUtils.getUnsupportedCause().getLocalizedMessage());

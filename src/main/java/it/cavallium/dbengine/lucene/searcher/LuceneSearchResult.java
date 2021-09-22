@@ -89,7 +89,11 @@ public final class LuceneSearchResult extends ResourceSupport<LuceneSearchResult
 
 		@Override
 		public void drop(LuceneSearchResult obj) {
-			delegate.drop(obj);
+			try {
+				delegate.drop(obj);
+			} finally {
+				obj.makeInaccessible();
+			}
 		}
 	}
 

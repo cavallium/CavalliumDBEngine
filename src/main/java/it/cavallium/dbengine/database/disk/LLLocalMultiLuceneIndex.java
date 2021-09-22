@@ -96,9 +96,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				// Resolve the snapshot of each shard
 				.flatMap(tuple -> Mono
 						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
-						.flatMap(luceneSnapshot -> tuple.getT2().retrieveSearcher(
-								luceneSnapshot.orElse(null))
-						)
+						.flatMap(luceneSnapshot -> tuple.getT2().retrieveSearcher(luceneSnapshot.orElse(null)))
 				)
 				.collectList()
 				.map(searchers -> LLIndexSearchers.of(searchers).send());

@@ -19,6 +19,7 @@ import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.IndexSearcher;
 
 public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
@@ -30,9 +31,9 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		return new UnshardedIndexSearchers(indexSearcher, d -> {});
 	}
 
-	Iterable<LLIndexSearcher> shards();
+	List<IndexSearcher> shards();
 
-	LLIndexSearcher shard(int shardIndex);
+	IndexSearcher shard(int shardIndex);
 
 	IndexReader allShards();
 
@@ -47,19 +48,19 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		}
 
 		@Override
-		public Iterable<LLIndexSearcher> shards() {
-			return Collections.singleton(indexSearcher);
+		public List<IndexSearcher> shards() {
+			return List.of(indexSearcher.getIndexSearcher());
 		}
 
 		@Override
-		public LLIndexSearcher shard(int shardIndex) {
+		public IndexSearcher shard(int shardIndex) {
 			if (!isOwned()) {
 				throw attachTrace(new IllegalStateException("UnshardedIndexSearchers must be owned to be used"));
 			}
 			if (shardIndex != -1) {
 				throw new IndexOutOfBoundsException("Shard index " + shardIndex + " is invalid, this is a unsharded index");
 			}
-			return indexSearcher;
+			return indexSearcher.getIndexSearcher();
 		}
 
 		@Override
@@ -67,7 +68,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 			return indexSearcher.getIndexReader();
 		}
 
-		public LLIndexSearcher shard() {
+		public IndexSearcher shard() {
 			return this.shard(-1);
 		}
 
@@ -111,43 +112,53 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 			implements LLIndexSearchers {
 
 		private List<LLIndexSearcher> indexSearchers;
+		private List<IndexSearcher> indexSearchersVals;
 
 		public ShardedIndexSearchers(List<Send<LLIndexSearcher>> indexSearchers, Drop<ShardedIndexSearchers> drop) {
 			super(new CloseOnDrop(drop));
 			this.indexSearchers = new ArrayList<>(indexSearchers.size());
-			for (Send<LLIndexSearcher> indexSearcher : indexSearchers) {
-				this.indexSearchers.add(indexSearcher.receive());
+			this.indexSearchersVals = new ArrayList<>(indexSearchers.size());
+			for (Send<LLIndexSearcher> llIndexSearcher : indexSearchers) {
+				var indexSearcher = llIndexSearcher.receive();
+				this.indexSearchers.add(indexSearcher);
+				this.indexSearchersVals.add(indexSearcher.getIndexSearcher());
 			}
 		}
 
 		@Override
-		public Iterable<LLIndexSearcher> shards() {
-			return Collections.unmodifiableList(indexSearchers);
+		public List<IndexSearcher> shards() {
+			if (!isOwned()) {
+				throw attachTrace(new IllegalStateException("ShardedIndexSearchers must be owned to be used"));
+			}
+			return Collections.unmodifiableList(indexSearchersVals);
 		}
 
 		@Override
-		public LLIndexSearcher shard(int shardIndex) {
+		public IndexSearcher shard(int shardIndex) {
 			if (!isOwned()) {
 				throw attachTrace(new IllegalStateException("ShardedIndexSearchers must be owned to be used"));
 			}
 			if (shardIndex < 0) {
 				throw new IndexOutOfBoundsException("Shard index " + shardIndex + " is invalid");
 			}
-			return indexSearchers.get(shardIndex);
+			return indexSearchersVals.get(shardIndex);
 		}
 
 		@Override
 		public IndexReader allShards() {
-			var irs = new IndexReader[indexSearchers.size()];
-			for (int i = 0, s = indexSearchers.size(); i < s; i++) {
-				irs[i] = indexSearchers.get(i).getIndexReader();
+			if (!isOwned()) {
+				throw attachTrace(new IllegalStateException("ShardedIndexSearchers must be owned to be used"));
+			}
+			var irs = new IndexReader[indexSearchersVals.size()];
+			for (int i = 0, s = indexSearchersVals.size(); i < s; i++) {
+				irs[i] = indexSearchersVals.get(i).getIndexReader();
 			}
 			Object2IntOpenHashMap<IndexReader> indexes = new Object2IntOpenHashMap<>();
 			for (int i = 0; i < irs.length; i++) {
 				indexes.put(irs[i], i);
 			}
 			try {
-				return new MultiReader(irs, Comparator.comparingInt(indexes::getInt), true);
+				return new MultiReader(irs, Comparator.comparingInt(indexes::getInt), false);
 			} catch (IOException ex) {
 				// This shouldn't happen
 				throw new UncheckedIOException(ex);
@@ -171,10 +182,12 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 		private void makeInaccessible() {
 			this.indexSearchers = null;
+			this.indexSearchersVals = null;
 		}
 
 		private static class CloseOnDrop implements Drop<ShardedIndexSearchers> {
 
+			private volatile boolean dropped = false;
 			private final Drop<ShardedIndexSearchers> delegate;
 
 			public CloseOnDrop(Drop<ShardedIndexSearchers> drop) {
@@ -184,11 +197,15 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 			@Override
 			public void drop(ShardedIndexSearchers obj) {
 				try {
+					assert !dropped;
 					if (obj.indexSearchers != null) {
 						for (LLIndexSearcher indexSearcher : obj.indexSearchers) {
-							indexSearcher.close();
+							if (indexSearcher.isAccessible()) {
+								indexSearcher.close();
+							}
 						}
 					}
+					dropped = true;
 					delegate.drop(obj);
 				} finally {
 					obj.makeInaccessible();

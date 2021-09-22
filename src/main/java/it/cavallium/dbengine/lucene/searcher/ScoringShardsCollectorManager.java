@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.util.Collection;
@@ -37,6 +38,14 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 	public ScoringShardsCollectorManager(final Sort sort,
 			final int numHits,
 			final FieldDoc after,
+			final int totalHitsThreshold,
+			int startN) {
+		this(sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) 2147483630);
+	}
+
+	public ScoringShardsCollectorManager(final Sort sort,
+			final int numHits,
+			final FieldDoc after,
 			final int totalHitsThreshold) {
 		this(sort, numHits, after, totalHitsThreshold, null, null);
 	}
@@ -52,7 +61,13 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 		this.after = after;
 		this.totalHitsThreshold = totalHitsThreshold;
 		this.startN = startN;
-		this.topN = topN;
+		if (topN != null && startN != null && (long) topN + (long) startN > 2147483630) {
+			this.topN	= 2147483630 - startN;
+		} else if (topN != null && topN > 2147483630) {
+			this.topN = 2147483630;
+		} else {
+			this.topN = topN;
+		}
 		this.sharedCollectorManager = TopFieldCollector.createSharedManager(sort, numHits, after, totalHitsThreshold);
 	}
 

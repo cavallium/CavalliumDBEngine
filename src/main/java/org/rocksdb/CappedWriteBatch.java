@@ -105,13 +105,13 @@ public class CappedWriteBatch extends WriteBatch {
 		var value = valueToReceive.receive();
 		if (USE_FAST_DIRECT_BUFFERS && isDirect(key) && isDirect(value)) {
 			buffersToRelease.add(value);
-			var keyNioBuffer = LLUtils.convertToDirect(alloc, key.send());
+			var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
 			key = keyNioBuffer.buffer().receive();
 			buffersToRelease.add(key);
 			byteBuffersToRelease.add(keyNioBuffer.byteBuffer());
 			assert keyNioBuffer.byteBuffer().isDirect();
 
-			var valueNioBuffer = LLUtils.convertToDirect(alloc, value.send());
+			var valueNioBuffer = LLUtils.convertToReadableDirect(alloc, value.send());
 			value = valueNioBuffer.buffer().receive();
 			buffersToRelease.add(value);
 			byteBuffersToRelease.add(valueNioBuffer.byteBuffer());
@@ -172,7 +172,7 @@ public class CappedWriteBatch extends WriteBatch {
 	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
 		var key = keyToReceive.receive();
 		if (USE_FAST_DIRECT_BUFFERS) {
-			var keyNioBuffer = LLUtils.convertToDirect(alloc, key.send());
+			var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
 			key = keyNioBuffer.buffer().receive();
 			buffersToRelease.add(key);
 			byteBuffersToRelease.add(keyNioBuffer.byteBuffer());

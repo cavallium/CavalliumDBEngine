@@ -10,8 +10,11 @@ import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.lucene.search.FieldDoc;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Sort;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -32,12 +35,12 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
 						// Search first page results
-						.searchFirstPage(indexSearchers, queryParams, paginationInfo)
+						.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
 						// Compute the results of the first page
 						.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
 								keyFieldName, queryParams))
 						// Compute other results
-						.transform(firstResult -> this.computeOtherResults(firstResult, indexSearchers, queryParams, keyFieldName))
+						.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams, keyFieldName, indexSearchers::close))
 						// Ensure that one LuceneSearchResult is always returned
 						.single(),
 				false);
@@ -65,7 +68,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	/**
 	 * Search effectively the raw results of the first page
 	 */
-	private Mono<PageData> searchFirstPage(LLIndexSearchers indexSearchers,
+	private Mono<PageData> searchFirstPage(Iterable<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
 		var limit = paginationInfo.totalLimit();
@@ -86,9 +89,11 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 			LocalQueryParams queryParams) {
 		return firstPageDataMono.map(firstPageData -> {
 			var totalHitsCount = LuceneUtils.convertTotalHitsCount(firstPageData.topDocs().totalHits);
+			var scoreDocs = firstPageData.topDocs().scoreDocs;
+			assert LLUtils.isSet(scoreDocs);
 
-			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(firstPageData.topDocs().scoreDocs),
-							indexSearchers, keyFieldName, true)
+			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(scoreDocs),
+							indexSearchers.shards(), keyFieldName, true)
 					.take(queryParams.limit(), true);
 
 			CurrentPageInfo nextPageInfo = firstPageData.nextPageInfo();
@@ -97,33 +102,35 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 		});
 	}
 
-	private Mono<Send<LuceneSearchResult>> computeOtherResults(Mono<FirstPageResults> firstResultMono,
-			LLIndexSearchers indexSearchers,
+	private Send<LuceneSearchResult> computeOtherResults(FirstPageResults firstResult,
+			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
-		return firstResultMono.map(firstResult -> {
-			var totalHitsCount = firstResult.totalHitsCount();
-			var firstPageHitsFlux = firstResult.firstPageHitsFlux();
-			var secondPageInfo = firstResult.nextPageInfo();
+			String keyFieldName,
+			Runnable drop) {
+		var totalHitsCount = firstResult.totalHitsCount();
+		var firstPageHitsFlux = firstResult.firstPageHitsFlux();
+		var secondPageInfo = firstResult.nextPageInfo();
 
-			Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
+		Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
-			Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-			return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> indexSearchers.close()).send();
-		});
+		Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
+		return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> drop.run()).send();
 	}
 
 	/**
 	 * Search effectively the merged raw results of the next pages
 	 */
-	private Flux<LLKeyScore> searchOtherPages(LLIndexSearchers indexSearchers,
+	private Flux<LLKeyScore> searchOtherPages(List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
 		return Flux
 				.defer(() -> {
 					AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
-					return this
-							.searchPage(queryParams, indexSearchers, true, queryParams.pageLimits(),
-									0, currentPageInfoRef.get())
+					return Mono
+							.fromSupplier(currentPageInfoRef::get)
+							.doOnNext(s -> System.err.println("Current page info: " + s))
+							.flatMap(currentPageInfo -> this.searchPage(queryParams, indexSearchers, true,
+									queryParams.pageLimits(), 0, currentPageInfo))
+							.doOnNext(s -> System.err.println("Next page info: " + s.nextPageInfo()))
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})
@@ -140,7 +147,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	 *                       skip the first n results in the first page
 	 */
 	private Mono<PageData> searchPage(LocalQueryParams queryParams,
-			LLIndexSearchers indexSearchers,
+			Iterable<IndexSearcher> indexSearchers,
 			boolean allowPagination,
 			PageLimits pageLimits,
 			int resultsOffset,
@@ -154,18 +161,19 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 					if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
 						var sort = getSort(queryParams);
 						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
+						var after = (FieldDoc) s.last();
 						var totalHitsThreshold = LuceneUtils.totalHitsThreshold();
-						return new ScoringShardsCollectorManager(sort, pageLimit, null,
-								totalHitsThreshold, resultsOffset, pageLimit);
+						return new ScoringShardsCollectorManager(sort, pageLimit, after, totalHitsThreshold,
+								resultsOffset);
 					} else {
 						return null;
 					}
 				})
 				.flatMap(sharedManager -> Flux
-						.fromIterable(indexSearchers.shards())
+						.fromIterable(indexSearchers)
 						.flatMap(shard -> Mono.fromCallable(() -> {
 							var collector = sharedManager.newCollector();
-							shard.getIndexSearcher().search(queryParams.query(), collector);
+							shard.search(queryParams.query(), collector);
 							return collector;
 						}))
 						.collectList()

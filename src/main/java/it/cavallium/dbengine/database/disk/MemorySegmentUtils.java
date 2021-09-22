@@ -17,32 +17,29 @@ public class MemorySegmentUtils {
 	private static final Object NATIVE;
 
 	static {
-		Lookup lookup = MethodHandles.publicLookup();
+		Lookup lookup = MethodHandles.lookup();
 
 		Object nativeVal = null;
 
-		MethodHandle ofNativeRestricted;
-		try {
-			ofNativeRestricted = lookup.findStatic(Class.forName("jdk.incubator.foreign.MemorySegment"),
-					"ofNativeRestricted",
-					MethodType.methodType(Class.forName("jdk.incubator.foreign.MemorySegment"))
-			);
+		var ofNativeRestricted = getJava16NativeRestricted(lookup);
+		if (ofNativeRestricted == null) {
+			cause = null;
+			ofNativeRestricted = getJava17NativeRestricted(lookup);
+		}
+		if (ofNativeRestricted != null) {
 			try {
 				nativeVal = ofNativeRestricted.invoke();
 			} catch (Throwable e) {
 				cause = e;
 			}
-		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
-			ofNativeRestricted = null;
-			cause = e;
 		}
 		OF_NATIVE_RESTRICTED = ofNativeRestricted;
 
 		MethodHandle asSlice;
 		try {
-			asSlice = lookup.findVirtual(Class.forName("jdk.incubator.foreign.MemorySegment"),
+			asSlice = lookup.findVirtual(lookup.findClass("jdk.incubator.foreign.MemorySegment"),
 					"asSlice",
-					MethodType.methodType(Class.forName("jdk.incubator.foreign.MemorySegment"), long.class, long.class)
+					MethodType.methodType(lookup.findClass("jdk.incubator.foreign.MemorySegment"), long.class, long.class)
 			);
 		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
 			asSlice = null;
@@ -52,7 +49,7 @@ public class MemorySegmentUtils {
 
 		MethodHandle asByteBuffer;
 		try {
-			asByteBuffer = lookup.findVirtual(Class.forName("jdk.incubator.foreign.MemorySegment"),
+			asByteBuffer = lookup.findVirtual(lookup.findClass("jdk.incubator.foreign.MemorySegment"),
 					"asByteBuffer", MethodType.methodType(ByteBuffer.class));
 		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
 			asByteBuffer = null;
@@ -61,6 +58,36 @@ public class MemorySegmentUtils {
 		AS_BYTE_BUFFER = asByteBuffer;
 
 		NATIVE = nativeVal;
+	}
+
+	@SuppressWarnings("JavaLangInvokeHandleSignature")
+	private static MethodHandle getJava16NativeRestricted(Lookup lookup) {
+		MethodHandle ofNativeRestricted;
+		try {
+			ofNativeRestricted = lookup.findStatic(lookup.findClass("jdk.incubator.foreign.MemorySegment"),
+					"ofNativeRestricted",
+					MethodType.methodType(lookup.findClass("jdk.incubator.foreign.MemorySegment"))
+			);
+		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
+			ofNativeRestricted = null;
+			cause = e;
+		}
+		return ofNativeRestricted;
+	}
+
+	@SuppressWarnings("JavaLangInvokeHandleSignature")
+	private static MethodHandle getJava17NativeRestricted(Lookup lookup) {
+		MethodHandle ofNativeRestricted;
+		try {
+			ofNativeRestricted = lookup.findStatic(lookup.findClass("jdk.incubator.foreign.MemorySegment"),
+					"globalNativeSegment",
+					MethodType.methodType(lookup.findClass("jdk.incubator.foreign.MemorySegment"))
+			);
+		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException e) {
+			ofNativeRestricted = null;
+			cause = e;
+		}
+		return ofNativeRestricted;
 	}
 
 	public static ByteBuffer directBuffer(long address, long size) {
@@ -76,13 +103,15 @@ public class MemorySegmentUtils {
 					return PlatformDependent.directBuffer(address, (int) size);
 				}
 				throw new UnsupportedOperationException("Foreign Memory Access API is disabled!"
-						+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
+						+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"",
+						getUnsupportedCause()
+				);
 			}
 			var memorySegment = AS_SLICE.invoke(NATIVE, address, size);
 			return (ByteBuffer) AS_BYTE_BUFFER.invoke(memorySegment);
 		} catch (Throwable e) {
 			throw new UnsupportedOperationException("Foreign Memory Access API is disabled!"
-					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"", e);
+					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"", e);
 		}
 	}
 
@@ -92,5 +121,9 @@ public class MemorySegmentUtils {
 
 	public static Throwable getUnsupportedCause() {
 		return cause;
+	}
+
+	public static String getSuggestedArgs() {
+		return "--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --enable-native-access";
 	}
 }

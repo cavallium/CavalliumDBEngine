@@ -13,7 +13,9 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearch
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
@@ -37,12 +39,13 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> this
 				// Search first page results
-				.searchFirstPage(indexSearchers, queryParams, paginationInfo)
+				.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
 				// Compute the results of the first page
-				.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
+				.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers.shards(),
 						keyFieldName, queryParams))
 				// Compute other results
-				.transform(firstResult -> this.computeOtherResults(firstResult, indexSearchers, queryParams, keyFieldName))
+				.transform(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams,
+						keyFieldName, indexSearchers::close))
 				// Ensure that one LuceneSearchResult is always returned
 				.single(),
 				false);
@@ -62,7 +65,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	/**
 	 * Search effectively the raw results of the first page
 	 */
-	private Mono<PageData> searchFirstPage(LLIndexSearchers indexSearchers,
+	private Mono<PageData> searchFirstPage(List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
 		var limit = paginationInfo.totalLimit();
@@ -77,13 +80,15 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	 * Compute the results of the first page, extracting useful data
 	 */
 	private Mono<FirstPageResults> computeFirstPageResults(Mono<PageData> firstPageDataMono,
-			LLIndexSearchers indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			String keyFieldName,
 			LocalQueryParams queryParams) {
 		return firstPageDataMono.map(firstPageData -> {
 			var totalHitsCount = LuceneUtils.convertTotalHitsCount(firstPageData.topDocs().totalHits);
+			var scoreDocs = firstPageData.topDocs().scoreDocs;
+			assert LLUtils.isSet(scoreDocs);
 
-			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(firstPageData.topDocs().scoreDocs),
+			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(scoreDocs),
 							indexSearchers, keyFieldName, true)
 					.take(queryParams.limit(), true);
 
@@ -94,9 +99,10 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	}
 
 	private Mono<Send<LuceneSearchResult>> computeOtherResults(Mono<FirstPageResults> firstResultMono,
-			UnshardedIndexSearchers indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
-			String keyFieldName) {
+			String keyFieldName,
+			Runnable drop) {
 		return firstResultMono.map(firstResult -> {
 			var totalHitsCount = firstResult.totalHitsCount();
 			var firstPageHitsFlux = firstResult.firstPageHitsFlux();
@@ -105,14 +111,14 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 			Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-			return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> indexSearchers.close()).send();
+			return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> drop.run()).send();
 		});
 	}
 
 	/**
 	 * Search effectively the merged raw results of the next pages
 	 */
-	private Flux<LLKeyScore> searchOtherPages(UnshardedIndexSearchers indexSearchers,
+	private Flux<LLKeyScore> searchOtherPages(List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
 		return Flux
 				.<PageData, CurrentPageInfo>generate(
@@ -133,7 +139,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 	 *                       skip the first n results in the first page
 	 */
 	private CurrentPageInfo searchPageSync(LocalQueryParams queryParams,
-			LLIndexSearchers indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			boolean allowPagination,
 			int resultsOffset,
 			CurrentPageInfo s,
@@ -142,12 +148,6 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		if (resultsOffset < 0) {
 			throw new IndexOutOfBoundsException(resultsOffset);
 		}
-		UnshardedIndexSearchers unshardedIndexSearchers;
-		if (indexSearchers instanceof UnshardedIndexSearchers unshardedIndexSearchers1) {
-			unshardedIndexSearchers = unshardedIndexSearchers1;
-		} else {
-			throw new IllegalArgumentException();
-		}
 		var currentPageLimit = queryParams.pageLimits().getPageLimit(s.pageIndex());
 		if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
 			TopDocs pageTopDocs;
@@ -155,7 +155,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 				TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
 						currentPageLimit, s.last(), LuceneUtils.totalHitsThreshold(),
 						allowPagination, queryParams.isScored());
-				unshardedIndexSearchers.shard().getIndexSearcher().search(queryParams.query(), collector);
+				indexSearchers.get(0).search(queryParams.query(), collector);
 				if (resultsOffset > 0) {
 					pageTopDocs = collector.topDocs(resultsOffset, currentPageLimit);
 				} else {

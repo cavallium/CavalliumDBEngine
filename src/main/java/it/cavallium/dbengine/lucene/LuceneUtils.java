@@ -51,6 +51,7 @@ import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.FieldDoc;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
@@ -376,7 +377,7 @@ public class LuceneUtils {
 	}
 
 	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
-			LLIndexSearchers indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			String keyFieldName,
 			boolean preserveOrder) {
 		if (preserveOrder) {
@@ -401,7 +402,7 @@ public class LuceneUtils {
 
 	@Nullable
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
-			LLIndexSearchers indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			String keyFieldName) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called mapHitBlocking in a nonblocking thread");
@@ -409,7 +410,10 @@ public class LuceneUtils {
 		int shardDocId = hit.doc;
 		int shardIndex = hit.shardIndex;
 		float score = hit.score;
-		var indexSearcher = indexSearchers.shard(shardIndex);
+		if (shardIndex == -1 && indexSearchers.size() == 1) {
+			shardIndex = 0;
+		}
+		var indexSearcher = indexSearchers.get(shardIndex);
 		try {
 			String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
 			return new LLKeyScore(shardDocId, score, collectedDoc);

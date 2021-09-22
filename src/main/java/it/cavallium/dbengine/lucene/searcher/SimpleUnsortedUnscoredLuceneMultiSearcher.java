@@ -1,15 +1,12 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,11 +37,14 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 					}
 				})
 				.then(indexSearchersMono.map(Send::receive));
+		var localQueryParams = getLocalQueryParams(queryParams);
 
 		return LLUtils.usingResource(indexSearchersResource,
 				indexSearchers -> Flux.fromIterable(indexSearchers.shards())
-						.flatMap(searcher -> localSearcher
-								.collect(Mono.just(searcher.send()), queryParams, keyFieldName, transformer))
+						.flatMap(searcher -> {
+							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, d -> {}).send());
+							return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
+						})
 						.collectList()
 						.map(results -> {
 							List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
@@ -60,7 +60,10 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 							}
 
 							var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
-							Flux<LLKeyScore> mergedFluxes = Flux.merge(resultsFluxes);
+							Flux<LLKeyScore> mergedFluxes = Flux
+									.merge(resultsFluxes)
+									.skip(queryParams.offset())
+									.take(queryParams.limit(), true);
 
 							return new LuceneSearchResult(totalHitsCount, mergedFluxes, d -> {
 								for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
@@ -68,7 +71,18 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 								}
 							}).send();
 						}),
-				true
+				false
+		);
+	}
+
+	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
+		return new LocalQueryParams(queryParams.query(),
+				0,
+				queryParams.limit(),
+				queryParams.pageLimits(),
+				queryParams.minCompetitiveScore(),
+				queryParams.sort(),
+				queryParams.scoreMode()
 		);
 	}
 }

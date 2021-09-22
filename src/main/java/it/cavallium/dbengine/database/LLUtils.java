@@ -52,6 +52,7 @@ import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
@@ -339,7 +340,7 @@ public class LLUtils {
 							PlatformDependent.freeDirectBuffer(directBuffer);
 							directBuffer = null;
 						}
-						directBuffer = LLUtils.obtainDirect(buffer);
+						directBuffer = LLUtils.obtainDirect(buffer, true);
 						buffer.ensureWritable(size);
 					}
 				}
@@ -373,12 +374,12 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
 			if (cleanupOnSuccess) {
-				return Mono.fromRunnable(r::close);
+				return Mono.fromRunnable(() -> r.close());
 			} else {
 				return Mono.empty();
 			}
-		}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
-				.doOnDiscard(Send.class, Send::close);
+		}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Send.class, send -> send.close());
 	}
 
 	/**
@@ -390,13 +391,13 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(r::close);
+						return Mono.fromRunnable(() -> r.close());
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
-				.doOnDiscard(Resource.class, Resource::close)
-				.doOnDiscard(Send.class, Send::close);
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
 	}
 
 	/**
@@ -408,13 +409,13 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Mono.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(r::close);
+						return Mono.fromRunnable(() -> r.close());
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
-				.doOnDiscard(Resource.class, Resource::close)
-				.doOnDiscard(Send.class, Send::close);
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
 	}
 
 	/**
@@ -426,13 +427,22 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Flux.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(r::close);
+						return Mono.fromRunnable(() -> r.close());
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(r::close), r -> Mono.fromRunnable(r::close))
-				.doOnDiscard(Resource.class, Resource::close)
-				.doOnDiscard(Send.class, Send::close);
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	public static boolean isSet(ScoreDoc[] scoreDocs) {
+		for (ScoreDoc scoreDoc : scoreDocs) {
+			if (scoreDoc == null) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}
@@ -440,16 +450,16 @@ public class LLUtils {
 	@NotNull
 	public static DirectBuffer newDirect(BufferAllocator allocator, int size) {
 		try (var buf = allocator.allocate(size)) {
-			var direct = obtainDirect(buf);
+			var direct = obtainDirect(buf, true);
 			return new DirectBuffer(buf.send(), direct);
 		}
 	}
 
 	@NotNull
-	public static DirectBuffer convertToDirect(BufferAllocator allocator, Send<Buffer> content) {
+	public static DirectBuffer convertToReadableDirect(BufferAllocator allocator, Send<Buffer> content) {
 		try (var buf = content.receive()) {
-			if (buf.countComponents() != 0) {
-				var direct = obtainDirect(buf);
+			if (buf.countComponents() == 1) {
+				var direct = obtainDirect(buf, false);
 				return new DirectBuffer(buf.send(), direct);
 			} else {
 				var direct = newDirect(allocator, buf.readableBytes());
@@ -462,7 +472,7 @@ public class LLUtils {
 	}
 
 	@NotNull
-	public static ByteBuffer obtainDirect(Buffer buffer) {
+	public static ByteBuffer obtainDirect(Buffer buffer, boolean writable) {
 		if (!PlatformDependent.hasUnsafe()) {
 			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
 					PlatformDependent.getUnsafeUnavailabilityCause()
@@ -470,15 +480,28 @@ public class LLUtils {
 		}
 		if (!MemorySegmentUtils.isSupported()) {
 			throw new UnsupportedOperationException("Foreign Memory Access API support is disabled."
-					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
+					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"",
+					MemorySegmentUtils.getUnsupportedCause()
+			);
 		}
 		assert buffer.isAccessible();
 		AtomicLong nativeAddress = new AtomicLong(0);
-		if (buffer.countComponents() == 1 && buffer.countReadableComponents() == 1) {
-			buffer.forEachReadable(0, (i, c) -> {
-				nativeAddress.setPlain(c.readableNativeAddress());
-				return false;
-			});
+		if (buffer.countComponents() == 1) {
+			if (writable) {
+				if (buffer.countWritableComponents() == 1) {
+					buffer.forEachWritable(0, (i, c) -> {
+						nativeAddress.setPlain(c.writableNativeAddress());
+						return false;
+					});
+				}
+			} else {
+				if (buffer.countReadableComponents() == 1) {
+					buffer.forEachReadable(0, (i, c) -> {
+						nativeAddress.setPlain(c.readableNativeAddress());
+						return false;
+					});
+				}
+			}
 		}
 		if (nativeAddress.getPlain() == 0) {
 			if (buffer.capacity() == 0) {

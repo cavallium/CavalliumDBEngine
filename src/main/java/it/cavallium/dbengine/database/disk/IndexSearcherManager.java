@@ -15,10 +15,6 @@ public interface IndexSearcherManager {
 
 	void maybeRefresh() throws IOException;
 
-	<T> Flux<T> searchMany(@Nullable LLSnapshot snapshot, Function<IndexSearcher, Flux<T>> searcherFunction);
-
-	<T> Mono<T> search(@Nullable LLSnapshot snapshot, Function<IndexSearcher, Mono<T>> searcherFunction);
-
 	Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot);
 
 	Mono<Void> close();

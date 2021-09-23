@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLLocalGroupedReactiveRocksIterator;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Arrays;
 import java.util.List;
@@ -16,11 +17,15 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Sort;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
+
+	protected static final Logger logger = LoggerFactory.getLogger(ScoredSimpleLuceneShardSearcher.class);
 
 	public ScoredSimpleLuceneShardSearcher() {
 	}
@@ -127,10 +132,10 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 					AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
 					return Mono
 							.fromSupplier(currentPageInfoRef::get)
-							.doOnNext(s -> System.err.println("Current page info: " + s))
+							.doOnNext(s -> logger.debug("Current page info: {}", s))
 							.flatMap(currentPageInfo -> this.searchPage(queryParams, indexSearchers, true,
 									queryParams.pageLimits(), 0, currentPageInfo))
-							.doOnNext(s -> System.err.println("Next page info: " + s.nextPageInfo()))
+							.doOnNext(s -> logger.debug("Next page info: {}", s.nextPageInfo()))
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})

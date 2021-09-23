@@ -193,11 +193,10 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 		minSend = this.min != null ? this.min.send() : null;
 		maxSend = this.max != null ? this.max.send() : null;
 		singleSend = this.single != null ? this.single.send() : null;
-		this.makeInaccessible();
 		return drop -> new LLRange(minSend, maxSend, singleSend, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.min = null;
 		this.max = null;
 		this.single = null;
@@ -216,7 +215,6 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 			if (obj.min != null) obj.min.close();
 			if (obj.max != null) obj.max.close();
 			if (obj.single != null) obj.single.close();
-			obj.makeInaccessible();
 			delegate.drop(obj);
 		}
 	}

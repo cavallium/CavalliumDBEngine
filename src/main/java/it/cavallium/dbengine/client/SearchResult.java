@@ -18,7 +18,7 @@ public final class SearchResult<T, U> extends ResourceSupport<SearchResult<T, U>
 
 	public SearchResult(Flux<SearchResultItem<T, U>> results, TotalHitsCount totalHitsCount,
 			Drop<SearchResult<T, U>> drop) {
-		super(new CloseOnDrop<>(drop));
+		super(drop);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 	}
@@ -49,30 +49,11 @@ public final class SearchResult<T, U> extends ResourceSupport<SearchResult<T, U>
 	protected Owned<SearchResult<T, U>> prepareSend() {
 		var results = this.results;
 		var totalHitsCount = this.totalHitsCount;
-		makeInaccessible();
 		return drop -> new SearchResult<>(results, totalHitsCount, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.results = null;
 		this.totalHitsCount = null;
-	}
-
-	private static class CloseOnDrop<V, W> implements Drop<SearchResult<V, W>> {
-
-		private final Drop<SearchResult<V, W>> delegate;
-
-		public CloseOnDrop(Drop<SearchResult<V, W>> drop) {
-			this.delegate = drop;
-		}
-
-		@Override
-		public void drop(SearchResult<V, W> obj) {
-			try {
-				delegate.drop(obj);
-			} finally {
-				obj.makeInaccessible();
-			}
-		}
 	}
 }

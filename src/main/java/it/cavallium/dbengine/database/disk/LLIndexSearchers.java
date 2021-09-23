@@ -80,11 +80,10 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		@Override
 		protected Owned<UnshardedIndexSearchers> prepareSend() {
 			Send<LLIndexSearcher> indexSearcher = this.indexSearcher.send();
-			this.makeInaccessible();
 			return drop -> new UnshardedIndexSearchers(indexSearcher, drop);
 		}
 
-		private void makeInaccessible() {
+		protected void makeInaccessible() {
 			this.indexSearcher = null;
 		}
 
@@ -98,12 +97,8 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 			@Override
 			public void drop(UnshardedIndexSearchers obj) {
-				try {
-					if (obj.indexSearcher != null) obj.indexSearcher.close();
-					delegate.drop(obj);
-				} finally {
-					obj.makeInaccessible();
-				}
+				if (obj.indexSearcher != null) obj.indexSearcher.close();
+				delegate.drop(obj);
 			}
 		}
 	}
@@ -176,11 +171,10 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 			for (LLIndexSearcher indexSearcher : this.indexSearchers) {
 				indexSearchers.add(indexSearcher.send());
 			}
-			this.makeInaccessible();
 			return drop -> new ShardedIndexSearchers(indexSearchers, drop);
 		}
 
-		private void makeInaccessible() {
+		protected void makeInaccessible() {
 			this.indexSearchers = null;
 			this.indexSearchersVals = null;
 		}
@@ -196,20 +190,16 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 			@Override
 			public void drop(ShardedIndexSearchers obj) {
-				try {
-					assert !dropped;
-					if (obj.indexSearchers != null) {
-						for (LLIndexSearcher indexSearcher : obj.indexSearchers) {
-							if (indexSearcher.isAccessible()) {
-								indexSearcher.close();
-							}
+				assert !dropped;
+				if (obj.indexSearchers != null) {
+					for (LLIndexSearcher indexSearcher : obj.indexSearchers) {
+						if (indexSearcher.isAccessible()) {
+							indexSearcher.close();
 						}
 					}
-					dropped = true;
-					delegate.drop(obj);
-				} finally {
-					obj.makeInaccessible();
 				}
+				dropped = true;
+				delegate.drop(obj);
 			}
 		}
 	}

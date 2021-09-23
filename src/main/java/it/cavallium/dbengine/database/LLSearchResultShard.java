@@ -17,7 +17,7 @@ public final class LLSearchResultShard extends ResourceSupport<LLSearchResultSha
 	private TotalHitsCount totalHitsCount;
 
 	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Drop<LLSearchResultShard> drop) {
-		super(new LLSearchResultShard.CloseOnDrop(drop));
+		super(drop);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 	}
@@ -65,30 +65,11 @@ public final class LLSearchResultShard extends ResourceSupport<LLSearchResultSha
 	protected Owned<LLSearchResultShard> prepareSend() {
 		var results = this.results;
 		var totalHitsCount = this.totalHitsCount;
-		makeInaccessible();
 		return drop -> new LLSearchResultShard(results, totalHitsCount, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.results = null;
 		this.totalHitsCount = null;
-	}
-
-	private static class CloseOnDrop implements Drop<LLSearchResultShard> {
-
-		private final Drop<LLSearchResultShard> delegate;
-
-		public CloseOnDrop(Drop<LLSearchResultShard> drop) {
-			this.delegate = drop;
-		}
-
-		@Override
-		public void drop(LLSearchResultShard obj) {
-			try {
-				delegate.drop(obj);
-			} finally {
-				obj.makeInaccessible();
-			}
-		}
 	}
 }

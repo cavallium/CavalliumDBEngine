@@ -23,7 +23,7 @@ public final class SearchResultKeys<T> extends ResourceSupport<SearchResultKeys<
 
 	public SearchResultKeys(Flux<SearchResultKey<T>> results, TotalHitsCount totalHitsCount,
 			Drop<SearchResultKeys<T>> drop) {
-		super(new SearchResultKeys.CloseOnDrop<>(drop));
+		super(drop);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 	}
@@ -65,27 +65,9 @@ public final class SearchResultKeys<T> extends ResourceSupport<SearchResultKeys<
 		return drop -> new SearchResultKeys<>(results, totalHitsCount, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.results = null;
 		this.totalHitsCount = null;
-	}
-
-	private static class CloseOnDrop<U> implements Drop<SearchResultKeys<U>> {
-
-		private final Drop<SearchResultKeys<U>> delegate;
-
-		public CloseOnDrop(Drop<SearchResultKeys<U>> drop) {
-			this.delegate = drop;
-		}
-
-		@Override
-		public void drop(SearchResultKeys<U> obj) {
-			try {
-				delegate.drop(obj);
-			} finally {
-				obj.makeInaccessible();
-			}
-		}
 	}
 
 }

@@ -41,11 +41,10 @@ public class NullableBuffer extends ResourceSupport<NullableBuffer, NullableBuff
 	@Override
 	protected Owned<NullableBuffer> prepareSend() {
 		var buffer = this.buffer == null ? null : this.buffer.send();
-		makeInaccessible();
 		return drop -> new NullableBuffer(buffer, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.buffer = null;
 	}
 
@@ -59,16 +58,12 @@ public class NullableBuffer extends ResourceSupport<NullableBuffer, NullableBuff
 
 		@Override
 		public void drop(NullableBuffer obj) {
-			try {
-				if (obj.buffer != null) {
-					if (obj.buffer.isAccessible()) {
-						obj.buffer.close();
-					}
+			if (obj.buffer != null) {
+				if (obj.buffer.isAccessible()) {
+					obj.buffer.close();
 				}
-				delegate.drop(obj);
-			} finally {
-				obj.makeInaccessible();
 			}
+			delegate.drop(obj);
 		}
 	}
 }

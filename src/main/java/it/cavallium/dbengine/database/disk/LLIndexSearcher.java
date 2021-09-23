@@ -16,7 +16,7 @@ public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSea
 	private IndexSearcher indexSearcher;
 
 	public LLIndexSearcher(IndexSearcher indexSearcher, Drop<LLIndexSearcher> drop) {
-		super(new LLIndexSearcher.CloseOnDrop(drop));
+		super(drop);
 		this.indexSearcher = indexSearcher;
 	}
 
@@ -42,29 +42,10 @@ public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSea
 	@Override
 	protected Owned<LLIndexSearcher> prepareSend() {
 		var indexSearcher = this.indexSearcher;
-		makeInaccessible();
 		return drop -> new LLIndexSearcher(indexSearcher, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.indexSearcher = null;
-	}
-
-	private static class CloseOnDrop implements Drop<LLIndexSearcher> {
-
-		private final Drop<LLIndexSearcher> delegate;
-
-		public CloseOnDrop(Drop<LLIndexSearcher> drop) {
-			this.delegate = drop;
-		}
-
-		@Override
-		public void drop(LLIndexSearcher obj) {
-			try {
-				delegate.drop(obj);
-			} finally {
-				obj.makeInaccessible();
-			}
-		}
 	}
 }

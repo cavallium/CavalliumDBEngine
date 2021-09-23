@@ -22,7 +22,7 @@ public final class LuceneSearchResult extends ResourceSupport<LuceneSearchResult
 	private Flux<LLKeyScore> results;
 
 	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results, Drop<LuceneSearchResult> drop) {
-		super(new LuceneSearchResult.CloseOnDrop(drop));
+		super(drop);
 		this.totalHitsCount = totalHitsCount;
 		this.results = results;
 	}
@@ -70,31 +70,12 @@ public final class LuceneSearchResult extends ResourceSupport<LuceneSearchResult
 	protected Owned<LuceneSearchResult> prepareSend() {
 		var totalHitsCount = this.totalHitsCount;
 		var results = this.results;
-		makeInaccessible();
 		return drop -> new LuceneSearchResult(totalHitsCount, results, drop);
 	}
 
-	private void makeInaccessible() {
+	protected void makeInaccessible() {
 		this.totalHitsCount = null;
 		this.results = null;
-	}
-
-	private static class CloseOnDrop implements Drop<LuceneSearchResult> {
-
-		private final Drop<LuceneSearchResult> delegate;
-
-		public CloseOnDrop(Drop<LuceneSearchResult> drop) {
-			this.delegate = drop;
-		}
-
-		@Override
-		public void drop(LuceneSearchResult obj) {
-			try {
-				delegate.drop(obj);
-			} finally {
-				obj.makeInaccessible();
-			}
-		}
 	}
 
 }

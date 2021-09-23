@@ -9,7 +9,7 @@ import java.util.StringJoiner;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
+public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
 	@NotNull
 	private final Buffer key;
 	@NotNull

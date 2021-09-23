@@ -4,6 +4,7 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Map;
@@ -25,11 +26,9 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 	public Mono<DatabaseMapDictionary<T, U>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKeyMono) {
-		return Mono.usingWhen(prefixKeyMono,
+		return LLUtils.usingSend(prefixKeyMono,
 				prefixKey -> Mono.fromSupplier(() -> DatabaseMapDictionary
-						.tail(dictionary, prefixKey, keySerializer, valueSerializer)),
-				prefixKey -> Mono.fromRunnable(prefixKey::close)
-		);
+						.tail(dictionary, prefixKey, keySerializer, valueSerializer, d -> {})), true);
 	}
 
 	public int getKeyBinaryLength() {

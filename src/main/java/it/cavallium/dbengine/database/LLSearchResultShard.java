@@ -9,7 +9,7 @@ import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
-public final class LLSearchResultShard extends ResourceSupport<LLSearchResultShard, LLSearchResultShard> {
+public final class LLSearchResultShard extends LiveResourceSupport<LLSearchResultShard, LLSearchResultShard> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLSearchResultShard.class);
 

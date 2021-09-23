@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.net5.buffer.api.Resource;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
@@ -12,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
+public interface DatabaseStage<T> extends DatabaseStageWithEntry<T>, Resource<DatabaseStage<T>> {
 
 	default Mono<T> get(@Nullable CompositeSnapshot snapshot) {
 		return get(snapshot, false);
@@ -72,12 +73,6 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 
 	default Mono<Boolean> clearAndGetStatus() {
 		return clearAndGetPrevious().map(Objects::nonNull).defaultIfEmpty(false);
-	}
-
-	void release();
-
-	default Mono<Void> close() {
-		return Mono.empty();
 	}
 
 	/**

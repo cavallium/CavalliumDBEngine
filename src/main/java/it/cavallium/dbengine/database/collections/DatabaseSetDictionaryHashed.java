@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -23,25 +24,29 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			@NotNull Send<Buffer> prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH> keySuffixHashSerializer) {
+			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
+			Drop<DatabaseMapDictionaryHashed<T, Nothing, TH>> drop) {
 		super(dictionary,
 				prefixKey,
 				keySuffixSerializer,
 				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
 				keySuffixHashFunction,
-				keySuffixHashSerializer
+				keySuffixHashSerializer,
+				drop
 		);
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
 			Serializer<T> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer,
+			Drop<DatabaseMapDictionaryHashed<T, Nothing, TH>> drop) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				LLUtils.empty(dictionary.getAllocator()),
 				keySerializer,
 				keyHashFunction,
-				keyHashSerializer
+				keyHashSerializer,
+				drop
 		);
 	}
 
@@ -49,12 +54,13 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			Send<Buffer> prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH> keyHashSerializer) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer, Drop<DatabaseMapDictionaryHashed<T, Nothing, TH>> drop) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,
 				keyHashFunction,
-				keyHashSerializer
+				keyHashSerializer,
+				drop
 		);
 	}
 

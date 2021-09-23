@@ -5,6 +5,7 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -37,7 +38,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 	IndexReader allShards();
 
-	class UnshardedIndexSearchers extends ResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
+	class UnshardedIndexSearchers extends LiveResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
 			implements LLIndexSearchers {
 
 		private LLIndexSearcher indexSearcher;
@@ -103,7 +104,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		}
 	}
 
-	class ShardedIndexSearchers extends ResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
+	class ShardedIndexSearchers extends LiveResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
 			implements LLIndexSearchers {
 
 		private List<LLIndexSearcher> indexSearchers;

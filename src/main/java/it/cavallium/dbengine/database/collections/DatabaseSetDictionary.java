@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -18,19 +19,22 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			SerializerFixedBinaryLength<T> keySuffixSerializer) {
-		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()));
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
+			Drop<DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>>> drop) {
+		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()), drop);
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySerializer) {
-		return new DatabaseSetDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer);
+			SerializerFixedBinaryLength<T> keySerializer,
+			Drop<DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>>> drop) {
+		return new DatabaseSetDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer, drop);
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
-			SerializerFixedBinaryLength<T> keySuffixSerializer) {
-		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer);
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
+			Drop<DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>>> drop) {
+		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer, drop);
 	}
 
 	public Mono<Set<T>> getKeySet(@Nullable CompositeSnapshot snapshot) {

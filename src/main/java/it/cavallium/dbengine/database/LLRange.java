@@ -12,7 +12,7 @@ import java.util.StringJoiner;
 /**
  * Range of data, from min (inclusive),to max (exclusive)
  */
-public class LLRange extends ResourceSupport<LLRange, LLRange> {
+public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 
 	private static final LLRange RANGE_ALL = new LLRange(null, null, null, d -> {});
 	private Buffer min;
@@ -212,9 +212,9 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 
 		@Override
 		public void drop(LLRange obj) {
-			if (obj.min != null) obj.min.close();
-			if (obj.max != null) obj.max.close();
-			if (obj.single != null) obj.single.close();
+			if (obj.min != null && obj.min.isAccessible()) obj.min.close();
+			if (obj.max != null && obj.max.isAccessible()) obj.max.close();
+			if (obj.single != null && obj.single.isAccessible()) obj.single.close();
 			delegate.drop(obj);
 		}
 	}

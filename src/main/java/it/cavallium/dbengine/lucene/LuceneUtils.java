@@ -9,6 +9,7 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
@@ -231,9 +232,8 @@ public class LuceneUtils {
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
 			CompositeSnapshot snapshot,
 			DatabaseMapDictionaryDeep<T, Map<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
-		return entry -> dictionaryDeep
-				.at(snapshot, entry.getKey())
-				.flatMap(sub -> sub.getValue(snapshot, entry.getValue()).doAfterTerminate(sub::release));
+		return entry -> LLUtils.usingResource(dictionaryDeep
+				.at(snapshot, entry.getKey()), sub -> sub.getValue(snapshot, entry.getValue()), true);
 	}
 
 	public static PerFieldAnalyzerWrapper toPerFieldAnalyzerWrapper(IndicizerAnalyzers indicizerAnalyzers) {

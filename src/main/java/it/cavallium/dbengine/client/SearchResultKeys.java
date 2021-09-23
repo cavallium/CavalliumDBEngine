@@ -5,6 +5,7 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLSearchResultShard;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import java.util.Objects;
 import org.reactivestreams.Publisher;
@@ -14,7 +15,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public final class SearchResultKeys<T> extends ResourceSupport<SearchResultKeys<T>, SearchResultKeys<T>> {
+public final class SearchResultKeys<T> extends LiveResourceSupport<SearchResultKeys<T>, SearchResultKeys<T>> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SearchResultKeys.class);
 

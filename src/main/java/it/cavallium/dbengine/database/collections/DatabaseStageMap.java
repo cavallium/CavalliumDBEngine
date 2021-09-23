@@ -34,11 +34,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
-		return Mono.usingWhen(
-				this.at(snapshot, key),
-				stage -> stage.get(snapshot, existsAlmostCertainly),
-				stage -> Mono.fromRunnable(stage::release)
-		);
+		return LLUtils.usingResource(this.at(snapshot, key),
+				stage -> stage.get(snapshot, existsAlmostCertainly), true);
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
@@ -50,11 +47,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return Mono.usingWhen(
-				at(null, key).single(),
-				stage -> stage.set(value),
-				stage -> Mono.fromRunnable(stage::release)
-		);
+		return LLUtils.usingResource(at(null, key).single(),
+				stage -> stage.set(value), true);
 	}
 
 	Mono<UpdateMode> getUpdateMode();
@@ -63,11 +57,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return Mono.usingWhen(
-				this.at(null, key).single(),
-				stage -> stage.update(updater, updateReturnMode, existsAlmostCertainly),
-				stage -> Mono.fromRunnable(stage::release)
-		);
+		return LLUtils.usingResource(this.at(null, key).single(),
+				stage -> stage.update(updater, updateReturnMode, existsAlmostCertainly), true);
 	}
 
 	default <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries,
@@ -94,11 +85,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<Delta<U>> updateValueAndGetDelta(T key,
 			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return Mono.usingWhen(
-				this.at(null, key).single(),
-				stage -> stage.updateAndGetDelta(updater, existsAlmostCertainly),
-				stage -> Mono.fromRunnable(stage::release)
-		);
+		return LLUtils.usingResource(this.at(null, key).single(),
+				stage -> stage.updateAndGetDelta(updater, existsAlmostCertainly), true);
 	}
 
 	default Mono<Delta<U>> updateValueAndGetDelta(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
@@ -106,22 +94,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return Mono.usingWhen(
-				at(null, key).single(),
-				stage -> stage.setAndGetPrevious(value),
-				stage -> Mono.fromRunnable(stage::release)
-		);
+		return LLUtils.usingResource(at(null, key).single(), stage -> stage.setAndGetPrevious(value), true);
 	}
 
 	/**
 	 * @return true if the key was associated with any value, false if the key didn't exist.
 	 */
 	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
-		return Mono.usingWhen(
-				at(null, key).single(),
-				stage -> stage.setAndGetChanged(value),
-				stage -> Mono.fromRunnable(stage::release)
-		).single();
+		return LLUtils.usingResource(at(null, key).single(), stage -> stage.setAndGetChanged(value), true).single();
 	}
 
 	default Mono<Void> remove(T key) {
@@ -129,11 +109,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return Mono.usingWhen(
-				at(null, key),
-				DatabaseStage::clearAndGetPrevious,
-				stage -> Mono.fromRunnable(stage::release)
-		);
+		return LLUtils.usingResource(at(null, key), DatabaseStage::clearAndGetPrevious, true);
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {
@@ -175,11 +151,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
 		return this
 				.getAllStages(snapshot)
-				.flatMapSequential(entry -> entry
+				.flatMapSequential(stage -> stage
 						.getValue()
 						.get(snapshot, true)
-						.map(value -> Map.entry(entry.getKey(), value))
-						.doAfterTerminate(() -> entry.getValue().release())
+						.map(value -> Map.entry(stage.getKey(), value))
+						.doFinally(s -> stage.getValue().close())
 				);
 	}
 
@@ -193,7 +169,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		return setAllValues(Flux.empty());
 	}
 
-	default Mono<Void> replaceAllValues(boolean canKeysChange, Function<Entry<T, U>, Mono<Entry<T, U>>> entriesReplacer) {
+	default Mono<Void> replaceAllValues(boolean canKeysChange, Function<Entry<T, U>,
+			Mono<Entry<T, U>>> entriesReplacer) {
 		if (canKeysChange) {
 			return this.setAllValues(this.getAllValues(null).flatMap(entriesReplacer)).then();
 		} else {
@@ -202,7 +179,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 					.flatMap(entriesReplacer)
 					.flatMap(replacedEntry -> this
 							.at(null, replacedEntry.getKey())
-							.flatMap(v -> v.set(replacedEntry.getValue()).doAfterTerminate(v::release)))
+							.flatMap(stage -> stage
+									.set(replacedEntry.getValue())
+									.doFinally(s -> stage.close())
+							)
+					)
 					.then();
 		}
 	}
@@ -210,9 +191,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<Void> replaceAll(Function<Entry<T, US>, Mono<Void>> entriesReplacer) {
 		return this
 				.getAllStages(null)
-				.flatMap(stage -> Mono
-						.defer(() -> entriesReplacer.apply(stage))
-						.doAfterTerminate(() -> stage.getValue().release())
+				.flatMap(stage -> entriesReplacer.apply(stage)
+						.doFinally(s -> stage.getValue().close())
 				)
 				.then();
 	}
@@ -221,14 +201,15 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
 		return this
 				.setAllValuesAndGetPrevious(Flux.fromIterable(Map.copyOf(value).entrySet()))
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
+				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.filter(map -> !map.isEmpty());
 	}
 
 	@Override
 	default Mono<Boolean> setAndGetChanged(Map<T, U> value) {
 		return this
 				.setAndGetPrevious(value)
-				.map(oldValue -> !Objects.equals(oldValue, value))
+				.map(oldValue -> !Objects.equals(oldValue, value.isEmpty() ? null : value))
 				.switchIfEmpty(Mono.fromSupplier(() -> !value.isEmpty()));
 	}
 
@@ -286,18 +267,17 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	@Override
 	default Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return getAllValues(snapshot)
+		return this
+				.getAllValues(snapshot)
 				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
 				.filter(map -> !map.isEmpty());
 	}
 
 	@Override
 	default Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return getAllStages(snapshot)
-				.flatMap(stage -> Mono
-						.fromRunnable(() -> stage.getValue().release())
-						.thenReturn(true)
-				)
+		return this
+				.getAllStages(snapshot)
+				.doOnNext(stage -> stage.getValue().close())
 				.count();
 	}
 

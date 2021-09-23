@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
@@ -20,14 +22,18 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 
-public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
+public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseSingle<U>> implements
+		DatabaseStageEntry<U> {
 
 	private final LLDictionary dictionary;
-	private final Buffer key;
 	private final Mono<Send<Buffer>> keyMono;
 	private final Serializer<U> serializer;
 
-	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U> serializer) {
+	private Buffer key;
+
+	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U> serializer,
+			Drop<DatabaseSingle<U>> drop) {
+		super(new CloseOnDrop<>(drop));
 		try (key) {
 			this.dictionary = dictionary;
 			this.key = key.receive();
@@ -125,12 +131,40 @@ public class DatabaseSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public void release() {
-		key.close();
+	public Flux<BadBlock> badBlocks() {
+		return dictionary.badBlocks(keyMono.map(LLRange::single).map(ResourceSupport::send));
 	}
 
 	@Override
-	public Flux<BadBlock> badBlocks() {
-		return dictionary.badBlocks(keyMono.map(LLRange::single).map(ResourceSupport::send));
+	protected RuntimeException createResourceClosedException() {
+		throw new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<DatabaseSingle<U>> prepareSend() {
+		var key = this.key.send();
+		return drop -> new DatabaseSingle<>(dictionary, key, serializer, drop);
+	}
+
+	@Override
+	protected void makeInaccessible() {
+		this.key = null;
+	}
+
+	private static class CloseOnDrop<U> implements Drop<DatabaseSingle<U>> {
+
+		private final Drop<DatabaseSingle<U>> delegate;
+
+		public CloseOnDrop(Drop<DatabaseSingle<U>> drop) {
+			this.delegate = drop;
+		}
+
+		@Override
+		public void drop(DatabaseSingle<U> obj) {
+			if (obj.key != null) {
+				obj.key.close();
+			}
+			delegate.drop(obj);
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -42,23 +43,27 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	protected DatabaseMapDictionary(LLDictionary dictionary,
 			@NotNull Send<Buffer> prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Serializer<U> valueSerializer) {
+			Serializer<U> valueSerializer,
+			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
 		// Do not retain or release or use the prefixKey here
-		super(dictionary, prefixKey, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0);
+		super(dictionary, prefixKey, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0, drop);
 		this.valueSerializer = valueSerializer;
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer,
-			Serializer<U> valueSerializer) {
-		return new DatabaseMapDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer, valueSerializer);
+			Serializer<U> valueSerializer,
+			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
+		return new DatabaseMapDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer,
+				valueSerializer, drop);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Serializer<U> valueSerializer) {
-		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer);
+			Serializer<U> valueSerializer,
+			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
+		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer, drop);
 	}
 
 	private Send<Buffer> toKey(Send<Buffer> suffixKeyToSend) {
@@ -147,7 +152,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono.fromCallable(() ->
-				new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), valueSerializer));
+				new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), valueSerializer, d -> {}));
 	}
 
 	@Override
@@ -396,10 +401,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						removePrefix(keyBuf);
 						suffixKeyConsistency(keyBuf.readableBytes());
 						sink.next(Map.entry(deserializeSuffix(keyBuf.copy().send()),
-								new DatabaseSingle<>(dictionary,
-										toKey(keyBuf.send()),
-										valueSerializer
-								)
+								new DatabaseSingle<>(dictionary, toKey(keyBuf.send()), valueSerializer, d -> {})
 						));
 					} catch (SerializationException ex) {
 						sink.error(ex);

@@ -437,6 +437,25 @@ public class LLUtils {
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
 	 */
+	public static <U, T extends Resource<T>, V extends T> Flux<U> usingEachResource(Flux<V> resourceSupplier,
+			Function<V, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return resourceSupplier
+				.concatMap(resource -> Mono.usingWhen(Mono.just(resource), resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(() -> r.close());
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close())))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
 	public static <U, T extends Resource<T>> Mono<U> usingSendResource(Mono<Send<T>> resourceSupplier,
 			Function<T, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
@@ -936,7 +955,9 @@ public class LLUtils {
 	}
 
 	private static void discardStage(DatabaseStage<?> stage) {
-		stage.release();
+		if (stage != null && stage.isAccessible()) {
+			stage.close();
+		}
 	}
 
 	public static boolean isDirect(Buffer key) {

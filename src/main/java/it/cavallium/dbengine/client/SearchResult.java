@@ -5,13 +5,14 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLSearchResultShard;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import java.util.Objects;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public final class SearchResult<T, U> extends ResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
+public final class SearchResult<T, U> extends LiveResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
 
 	private Flux<SearchResultItem<T, U>> results;
 	private TotalHitsCount totalHitsCount;

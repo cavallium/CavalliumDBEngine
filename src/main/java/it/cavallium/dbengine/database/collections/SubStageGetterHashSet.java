@@ -34,13 +34,8 @@ public class SubStageGetterHashSet<T, TH> implements
 			Mono<Send<Buffer>> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
-						.fromSupplier(() -> DatabaseSetDictionaryHashed
-								.tail(dictionary,
-										prefixKey,
-										keySerializer,
-										keyHashFunction,
-										keyHashSerializer
-								)
+						.fromSupplier(() -> DatabaseSetDictionaryHashed.tail(dictionary, prefixKey, keySerializer,
+								keyHashFunction, keyHashSerializer, d -> {})
 						),
 				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);

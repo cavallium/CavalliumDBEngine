@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.CompositeBuffer;
+import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
@@ -36,8 +36,10 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Send<Buffer> key) {
-		return new DatabaseSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()));
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary,
+			Send<Buffer> key,
+			Drop<DatabaseSingle<Nothing>> drop) {
+		return new DatabaseSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()), drop);
 	}
 
 	public static final class Nothing {

@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import java.io.IOException;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.IndexSearcher;
@@ -11,7 +12,7 @@ import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSearcher> {
+public class LLIndexSearcher extends LiveResourceSupport<LLIndexSearcher, LLIndexSearcher> {
 
 	private IndexSearcher indexSearcher;
 

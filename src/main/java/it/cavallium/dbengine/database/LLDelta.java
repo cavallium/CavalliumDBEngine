@@ -8,7 +8,7 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.Nullable;
 
-public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
+public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 	@Nullable
 	private final Buffer previous;
 	@Nullable

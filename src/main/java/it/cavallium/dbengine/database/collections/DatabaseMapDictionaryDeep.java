@@ -2,8 +2,11 @@ package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import io.net5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -12,6 +15,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -24,20 +28,21 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods (which?)
-public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
+public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends
+		LiveResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryDeep<T, U, US>>
+		implements DatabaseStageMap<T, U, US> {
 
 	protected final LLDictionary dictionary;
 	private final BufferAllocator alloc;
 	protected final SubStageGetter<U, US> subStageGetter;
 	protected final SerializerFixedBinaryLength<T> keySuffixSerializer;
-	@NotNull
-	protected final Buffer keyPrefix;
 	protected final int keyPrefixLength;
 	protected final int keySuffixLength;
 	protected final int keyExtLength;
-	protected final LLRange range;
 	protected final Mono<Send<LLRange>> rangeMono;
-	private volatile boolean released;
+
+	protected LLRange range;
+	protected Buffer keyPrefix;
 
 	private static void incrementPrefix(Buffer prefix, int prefixLength) {
 		assert prefix.readableBytes() >= prefixLength;
@@ -71,18 +76,12 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	static Buffer firstRangeKey(BufferAllocator alloc,
-			Send<Buffer> prefixKey,
-			int prefixLength,
-			int suffixLength,
+	static Buffer firstRangeKey(BufferAllocator alloc, Send<Buffer> prefixKey, int prefixLength, int suffixLength,
 			int extLength) {
 		return zeroFillKeySuffixAndExt(alloc, prefixKey, prefixLength, suffixLength, extLength);
 	}
 
-	static Buffer nextRangeKey(BufferAllocator alloc,
-			Send<Buffer> prefixKey,
-			int prefixLength,
-			int suffixLength,
+	static Buffer nextRangeKey(BufferAllocator alloc, Send<Buffer> prefixKey, int prefixLength, int suffixLength,
 			int extLength) {
 		try (prefixKey) {
 			Buffer nonIncremented = zeroFillKeySuffixAndExt(alloc, prefixKey, prefixLength, suffixLength, extLength);
@@ -91,11 +90,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	protected static Buffer zeroFillKeySuffixAndExt(BufferAllocator alloc,
-			@NotNull Send<Buffer> prefixKeySend,
-			int prefixLength,
-			int suffixLength,
-			int extLength) {
+	protected static Buffer zeroFillKeySuffixAndExt(BufferAllocator alloc, @NotNull Send<Buffer> prefixKeySend,
+			int prefixLength, int suffixLength, int extLength) {
 		var result = prefixKeySend.receive();
 		if (result == null) {
 			assert prefixLength == 0;
@@ -115,41 +111,20 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	static Buffer firstRangeKey(
-			BufferAllocator alloc,
-			Send<Buffer> prefixKey,
-			Send<Buffer> suffixKey,
-			int prefixLength,
-			int suffixLength,
-			int extLength) {
+	static Buffer firstRangeKey(BufferAllocator alloc, Send<Buffer> prefixKey, Send<Buffer> suffixKey, int prefixLength,
+			int suffixLength, int extLength) {
 		return zeroFillKeyExt(alloc, prefixKey, suffixKey, prefixLength, suffixLength, extLength);
 	}
 
-	static Buffer nextRangeKey(
-			BufferAllocator alloc,
-			Send<Buffer> prefixKey,
-			Send<Buffer> suffixKey,
-			int prefixLength,
-			int suffixLength,
-			int extLength) {
-		Buffer nonIncremented = zeroFillKeyExt(alloc,
-				prefixKey,
-				suffixKey,
-				prefixLength,
-				suffixLength,
-				extLength
-		);
+	static Buffer nextRangeKey(BufferAllocator alloc, Send<Buffer> prefixKey, Send<Buffer> suffixKey, int prefixLength,
+			int suffixLength, int extLength) {
+		Buffer nonIncremented = zeroFillKeyExt(alloc, prefixKey, suffixKey, prefixLength, suffixLength, extLength);
 		incrementPrefix(nonIncremented, prefixLength + suffixLength);
 		return nonIncremented;
 	}
 
-	protected static Buffer zeroFillKeyExt(
-			BufferAllocator alloc,
-			Send<Buffer> prefixKeySend,
-			Send<Buffer> suffixKeySend,
-			int prefixLength,
-			int suffixLength,
-			int extLength) {
+	protected static Buffer zeroFillKeyExt(BufferAllocator alloc, Send<Buffer> prefixKeySend, Send<Buffer> suffixKeySend,
+			int prefixLength, int suffixLength, int extLength) {
 		try (var prefixKey = prefixKeySend.receive()) {
 			try (var suffixKey = suffixKeySend.receive()) {
 				assert prefixKey.readableBytes() == prefixLength;
@@ -174,36 +149,30 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	 */
 	@Deprecated
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySerializer,
-			SubStageGetterSingle<U> subStageGetter) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer, subStageGetter, 0);
+			SerializerFixedBinaryLength<T> keySerializer, SubStageGetterSingle<U> subStageGetter,
+			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
+		return new DatabaseMapDictionaryDeep<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer,
+				subStageGetter, 0, drop);
 	}
 
-	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySerializer,
-			int keyExtLength,
-			SubStageGetter<U, US> subStageGetter) {
-		return new DatabaseMapDictionaryDeep<>(dictionary,
-				LLUtils.empty(dictionary.getAllocator()),
-				keySerializer,
-				subStageGetter,
-				keyExtLength
-		);
+	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(
+			LLDictionary dictionary, SerializerFixedBinaryLength<T> keySerializer, int keyExtLength,
+			SubStageGetter<U, US> subStageGetter, Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+		return new DatabaseMapDictionaryDeep<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer,
+				subStageGetter, keyExtLength, drop);
 	}
 
-	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
-			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			SubStageGetter<U, US> subStageGetter,
-			int keyExtLength) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter, keyExtLength);
+	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(
+			LLDictionary dictionary, Send<Buffer> prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer,
+			SubStageGetter<U, US> subStageGetter, int keyExtLength, Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter,
+				keyExtLength, drop);
 	}
 
-	protected DatabaseMapDictionaryDeep(LLDictionary dictionary,
-			@NotNull Send<Buffer> prefixKeyToReceive,
-			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			SubStageGetter<U, US> subStageGetter,
-			int keyExtLength) {
+	protected DatabaseMapDictionaryDeep(LLDictionary dictionary, @NotNull Send<Buffer> prefixKeyToReceive,
+			SerializerFixedBinaryLength<T> keySuffixSerializer, SubStageGetter<U, US> subStageGetter, int keyExtLength,
+			Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+		super(new CloseOnDrop<>(drop));
 		try (var prefixKey = prefixKeyToReceive.receive()) {
 			this.dictionary = dictionary;
 			this.alloc = dictionary.getAllocator();
@@ -229,6 +198,31 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 			this.keyPrefix = prefixKey.send().receive();
 		}
+	}
+
+	private DatabaseMapDictionaryDeep(LLDictionary dictionary,
+			BufferAllocator alloc,
+			SubStageGetter<U, US> subStageGetter,
+			SerializerFixedBinaryLength<T> keySuffixSerializer,
+			int keyPrefixLength,
+			int keySuffixLength,
+			int keyExtLength,
+			Mono<Send<LLRange>> rangeMono,
+			Send<LLRange> range,
+			Send<Buffer> keyPrefix,
+			Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+		super(new CloseOnDrop<>(drop));
+		this.dictionary = dictionary;
+		this.alloc = alloc;
+		this.subStageGetter = subStageGetter;
+		this.keySuffixSerializer = keySuffixSerializer;
+		this.keyPrefixLength = keyPrefixLength;
+		this.keySuffixLength = keySuffixLength;
+		this.keyExtLength = keyExtLength;
+		this.rangeMono = rangeMono;
+
+		this.range = range.receive();
+		this.keyPrefix = keyPrefix.receive();
 	}
 
 	@SuppressWarnings("unused")
@@ -301,7 +295,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		return this.subStageGetter
 				.subStage(dictionary, snapshot, suffixKeyWithoutExt)
 				.transform(LLUtils::handleDiscard)
-				.doOnDiscard(DatabaseStage.class, DatabaseStage::release);
+				.doOnDiscard(DatabaseStage.class, DatabaseStage::close);
 	}
 
 	@Override
@@ -415,13 +409,42 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	@Override
-	public void release() {
-		if (!released) {
-			released = true;
-			this.range.close();
-			this.keyPrefix.close();
-		} else {
-			throw new IllegalReferenceCountException(0, -1);
+	protected RuntimeException createResourceClosedException() {
+		throw new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<DatabaseMapDictionaryDeep<T, U, US>> prepareSend() {
+		var keyPrefix = this.keyPrefix.send();
+		var range = this.range.send();
+		return drop -> new DatabaseMapDictionaryDeep<>(dictionary, alloc, subStageGetter, keySuffixSerializer,
+				keyPrefixLength, keySuffixLength, keyExtLength, rangeMono, range, keyPrefix, drop);
+	}
+
+	@Override
+	protected void makeInaccessible() {
+		this.keyPrefix = null;
+		this.range = null;
+	}
+
+	private static class CloseOnDrop<T, U, US extends DatabaseStage<U>> implements
+			Drop<DatabaseMapDictionaryDeep<T, U, US>> {
+
+		private final Drop<DatabaseMapDictionaryDeep<T,U,US>> delegate;
+
+		public CloseOnDrop(Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+			this.delegate = drop;
+		}
+
+		@Override
+		public void drop(DatabaseMapDictionaryDeep<T, U, US> obj) {
+			if (obj.range != null) {
+				obj.range.close();
+			}
+			if (obj.keyPrefix != null) {
+				obj.keyPrefix.close();
+			}
+			delegate.drop(obj);
 		}
 	}
 }

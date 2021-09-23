@@ -1,10 +1,14 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
@@ -23,14 +27,26 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
+public class DatabaseSingleBucket<K, V, TH>
+		extends LiveResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
+		implements DatabaseStageEntry<V> {
 
-	private final DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage;
 	private final K key;
 
-	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key) {
-		this.bucketStage = bucketStage;
+	private DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage;
+
+	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key,
+			Drop<DatabaseSingleBucket<K, V, TH>> drop) {
+		super(new CloseOnDrop<>(drop));
 		this.key = key;
+		this.bucketStage = bucketStage;
+	}
+
+	private DatabaseSingleBucket(Send<DatabaseStage<ObjectArraySet<Entry<K, V>>>> bucketStage, K key,
+			Drop<DatabaseSingleBucket<K, V, TH>> drop) {
+		super(new CloseOnDrop<>(drop));
+		this.key = key;
+		this.bucketStage = (DatabaseStageEntry<ObjectArraySet<Entry<K, V>>>) bucketStage.receive();
 	}
 
 	@Override
@@ -77,7 +93,8 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@Override
-	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater, boolean existsAlmostCertainly) {
+	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater,
+			boolean existsAlmostCertainly) {
 		return bucketStage
 				.updateAndGetDelta(oldBucket -> {
 					V oldValue = extractValue(oldBucket);
@@ -107,11 +124,6 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		return bucketStage.close();
-	}
-
-	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return this.get(snapshot).map(prev -> 1L).defaultIfEmpty(0L);
 	}
@@ -129,11 +141,6 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	@Override
 	public Flux<BadBlock> badBlocks() {
 		return bucketStage.badBlocks();
-	}
-
-	@Override
-	public void release() {
-		bucketStage.release();
 	}
 
 	private Mono<V> extractValueTransformation(Set<Entry<K, V>> entries) {
@@ -191,6 +198,40 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 			}
 		} else {
 			return null;
+		}
+	}
+
+	@Override
+	protected RuntimeException createResourceClosedException() {
+		throw new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<DatabaseSingleBucket<K, V, TH>> prepareSend() {
+		var bucketStage = this.bucketStage.send();
+		return drop -> new DatabaseSingleBucket<>(bucketStage, key, drop);
+	}
+
+	@Override
+	protected void makeInaccessible() {
+		this.bucketStage = null;
+	}
+
+	private static class CloseOnDrop<K, V, TH> implements
+			Drop<DatabaseSingleBucket<K, V, TH>> {
+
+		private final Drop<DatabaseSingleBucket<K, V, TH>> delegate;
+
+		public CloseOnDrop(Drop<DatabaseSingleBucket<K, V, TH>> drop) {
+			this.delegate = drop;
+		}
+
+		@Override
+		public void drop(DatabaseSingleBucket<K, V, TH> obj) {
+			if (obj.bucketStage != null) {
+				obj.bucketStage.close();
+			}
+			delegate.drop(obj);
 		}
 	}
 }

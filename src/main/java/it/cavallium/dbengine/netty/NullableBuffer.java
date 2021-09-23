@@ -6,9 +6,10 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.SearchResult;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import org.jetbrains.annotations.Nullable;
 
-public class NullableBuffer extends ResourceSupport<NullableBuffer, NullableBuffer> {
+public class NullableBuffer extends LiveResourceSupport<NullableBuffer, NullableBuffer> {
 
 	@Nullable
 	private Buffer buffer;

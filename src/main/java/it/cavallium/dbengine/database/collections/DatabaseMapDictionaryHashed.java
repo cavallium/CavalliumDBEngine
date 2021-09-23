@@ -6,6 +6,7 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -58,7 +59,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 			SerializerFixedBinaryLength<UH> keyHashSerializer) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
-				null,
+				LLUtils.empty(dictionary.getAllocator()),
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,

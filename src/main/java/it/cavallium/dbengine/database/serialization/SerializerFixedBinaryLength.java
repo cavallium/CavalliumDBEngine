@@ -17,10 +17,7 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<Send<Buffer>> noop(int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Send<Buffer>> deserialize(@Nullable Send<Buffer> serialized) {
-				if (length == 0 && serialized == null) {
-					return new DeserializationResult<>(null, 0);
-				}
+			public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
 				Objects.requireNonNull(serialized);
 				try (var buf = serialized.receive()) {
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
@@ -55,12 +52,8 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<String> utf8(BufferAllocator allocator, int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<String> deserialize(@Nullable Send<Buffer> serializedToReceive)
+			public @NotNull DeserializationResult<String> deserialize(@NotNull Send<Buffer> serializedToReceive)
 					throws SerializationException {
-				if (length == 0 && serializedToReceive == null) {
-					return new DeserializationResult<>(null, 0);
-				}
-				Objects.requireNonNull(serializedToReceive);
 				try (var serialized = serializedToReceive.receive()) {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {
 						throw new SerializationException(
@@ -78,7 +71,9 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
 				try (Buffer buf = allocator.allocate(LLUtils.utf8MaxBytes(deserialized))) {
 					assert buf.isAccessible();
-					buf.writeBytes(deserialized.getBytes(StandardCharsets.UTF_8));
+					var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
+					buf.ensureWritable(bytes.length);
+					buf.writeBytes(bytes);
 					if (buf.readableBytes() != getSerializedBinaryLength()) {
 						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
 								+ " bytes has tried to serialize an element with "
@@ -99,10 +94,7 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<Integer> intSerializer(BufferAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Integer> deserialize(@Nullable Send<Buffer> serializedToReceive) {
-				if (getSerializedBinaryLength() == 0 && serializedToReceive == null) {
-					return new DeserializationResult<>(null, 0);
-				}
+			public @NotNull DeserializationResult<Integer> deserialize(@NotNull Send<Buffer> serializedToReceive) {
 				Objects.requireNonNull(serializedToReceive);
 				try (var serialized = serializedToReceive.receive()) {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {
@@ -131,10 +123,7 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 	static SerializerFixedBinaryLength<Long> longSerializer(BufferAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Long> deserialize(@Nullable Send<Buffer> serializedToReceive) {
-				if (getSerializedBinaryLength() == 0 && serializedToReceive == null) {
-					return new DeserializationResult<>(null, 0);
-				}
+			public @NotNull DeserializationResult<Long> deserialize(@NotNull Send<Buffer> serializedToReceive) {
 				Objects.requireNonNull(serializedToReceive);
 				try (var serialized = serializedToReceive.receive()) {
 					if (serialized.readableBytes() != getSerializedBinaryLength()) {

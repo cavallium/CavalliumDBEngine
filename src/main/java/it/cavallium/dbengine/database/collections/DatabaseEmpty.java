@@ -2,8 +2,10 @@ package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.CompositeBuffer;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.Serializer.DeserializationResult;
 import org.jetbrains.annotations.NotNull;
@@ -25,8 +27,8 @@ public class DatabaseEmpty {
 			}
 
 			@Override
-			public @Nullable Send<Buffer> serialize(@NotNull Nothing deserialized) {
-				return null;
+			public @NotNull Send<Buffer> serialize(@NotNull Nothing deserialized) {
+				return LLUtils.empty(bufferAllocator);
 			}
 		};
 	}

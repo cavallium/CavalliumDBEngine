@@ -26,9 +26,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public abstract class TestLLDictionaryLeaks {
 
@@ -90,41 +88,10 @@ public abstract class TestLLDictionaryLeaks {
 	private Send<Buffer> fromString(String s) {
 		var sb = s.getBytes(StandardCharsets.UTF_8);
 		try (var b = db.getAllocator().allocate(sb.length)) {
-			b.writeBytes(b);
+			b.writeBytes(sb);
+			assert b.readableBytes() == sb.length;
 			return b.send();
 		}
-	}
-
-	private void run(Flux<?> publisher) {
-		publisher.subscribeOn(Schedulers.immediate()).blockLast();
-	}
-
-	private void runVoid(Mono<Void> publisher) {
-		publisher.then().subscribeOn(Schedulers.immediate()).block();
-	}
-
-	private <T> T run(Mono<T> publisher) {
-		return publisher.subscribeOn(Schedulers.immediate()).block();
-	}
-
-	private <T> T run(boolean shouldFail, Mono<T> publisher) {
-		return publisher.subscribeOn(Schedulers.immediate()).transform(mono -> {
-			if (shouldFail) {
-				return mono.onErrorResume(ex -> Mono.empty());
-			} else {
-				return mono;
-			}
-		}).block();
-	}
-
-	private void runVoid(boolean shouldFail, Mono<Void> publisher) {
-		publisher.then().subscribeOn(Schedulers.immediate()).transform(mono -> {
-			if (shouldFail) {
-				return mono.onErrorResume(ex -> Mono.empty());
-			} else {
-				return mono;
-			}
-		}).block();
 	}
 
 	@Test
@@ -164,9 +131,9 @@ public abstract class TestLLDictionaryLeaks {
 	public void testGet(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test"));
-		runVoid(dict.get(null, key).then().transform(LLUtils::handleDiscard));
-		runVoid(dict.get(null, key, true).then().transform(LLUtils::handleDiscard));
-		runVoid(dict.get(null, key, false).then().transform(LLUtils::handleDiscard));
+		DbTestUtils.runVoid(dict.get(null, key).then().transform(LLUtils::handleDiscard));
+		DbTestUtils.runVoid(dict.get(null, key, true).then().transform(LLUtils::handleDiscard));
+		DbTestUtils.runVoid(dict.get(null, key, false).then().transform(LLUtils::handleDiscard));
 	}
 
 	@ParameterizedTest
@@ -175,14 +142,14 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		var value = Mono.fromCallable(() -> fromString("test-value"));
-		runVoid(dict.put(key, value, resultType).then().doOnDiscard(Send.class, Send::close));
+		DbTestUtils.runVoid(dict.put(key, value, resultType).then().doOnDiscard(Send.class, Send::close));
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testGetUpdateMode(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		assertEquals(updateMode, run(dict.getUpdateMode()));
+		assertEquals(updateMode, DbTestUtils.run(dict.getUpdateMode()));
 	}
 
 	@ParameterizedTest
@@ -190,13 +157,13 @@ public abstract class TestLLDictionaryLeaks {
 	public void testUpdate(UpdateMode updateMode, UpdateReturnMode updateReturnMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		runVoid(updateMode == UpdateMode.DISALLOW,
+		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, old -> old, updateReturnMode, true).then().transform(LLUtils::handleDiscard)
 		);
-		runVoid(updateMode == UpdateMode.DISALLOW,
+		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, old -> old, updateReturnMode, false).then().transform(LLUtils::handleDiscard)
 		);
-		runVoid(updateMode == UpdateMode.DISALLOW,
+		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, old -> old, updateReturnMode).then().transform(LLUtils::handleDiscard)
 		);
 	}
@@ -206,13 +173,13 @@ public abstract class TestLLDictionaryLeaks {
 	public void testUpdateAndGetDelta(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		runVoid(updateMode == UpdateMode.DISALLOW,
+		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, old -> old, true).then().transform(LLUtils::handleDiscard)
 		);
-		runVoid(updateMode == UpdateMode.DISALLOW,
+		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, old -> old, false).then().transform(LLUtils::handleDiscard)
 		);
-		runVoid(updateMode == UpdateMode.DISALLOW,
+		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, old -> old).then().transform(LLUtils::handleDiscard)
 		);
 	}
@@ -221,7 +188,7 @@ public abstract class TestLLDictionaryLeaks {
 	@MethodSource("provideArguments")
 	public void testClear(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		runVoid(dict.clear());
+		DbTestUtils.runVoid(dict.clear());
 	}
 
 	@ParameterizedTest
@@ -229,6 +196,6 @@ public abstract class TestLLDictionaryLeaks {
 	public void testRemove(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		runVoid(dict.remove(key, resultType).then().doOnDiscard(Send.class, Send::close));
+		DbTestUtils.runVoid(dict.remove(key, resultType).then().doOnDiscard(Send.class, Send::close));
 	}
 }

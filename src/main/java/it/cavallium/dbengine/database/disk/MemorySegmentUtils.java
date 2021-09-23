@@ -124,6 +124,6 @@ public class MemorySegmentUtils {
 	}
 
 	public static String getSuggestedArgs() {
-		return "--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --enable-native-access";
+		return "--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --enable-native-access=ALL-UNNAMED";
 	}
 }

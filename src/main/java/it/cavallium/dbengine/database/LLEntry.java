@@ -7,6 +7,7 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 	@NotNull
@@ -14,7 +15,7 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 	@NotNull
 	private final Buffer value;
 
-	private LLEntry(Send<Buffer> key, Send<Buffer> value, Drop<LLEntry> drop) {
+	private LLEntry(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value, Drop<LLEntry> drop) {
 		super(new LLEntry.CloseOnDrop(drop));
 		this.key = key.receive().makeReadOnly();
 		this.value = value.receive().makeReadOnly();
@@ -29,7 +30,7 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 		return true;
 	}
 
-	public static LLEntry of(Send<Buffer> key, Send<Buffer> value) {
+	public static LLEntry of(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value) {
 		return new LLEntry(key, value, d -> {});
 	}
 

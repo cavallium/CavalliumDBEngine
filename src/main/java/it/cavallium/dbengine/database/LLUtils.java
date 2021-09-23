@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database;
 
+import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
+
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.net5.buffer.api.Buffer;
@@ -10,30 +12,25 @@ import io.net5.buffer.api.Send;
 import io.net5.util.IllegalReferenceCountException;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.collections.DatabaseStage;
-import it.cavallium.dbengine.database.disk.LLIndexSearcher;
-import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
-import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
-import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
-import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FloatPoint;
@@ -42,24 +39,13 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
-import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
-import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
-import org.apache.lucene.search.BooleanClause.Occur;
-import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.ConstantScoreQuery;
-import org.apache.lucene.search.MatchAllDocsQuery;
-import org.apache.lucene.search.MatchNoDocsQuery;
-import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSortField;
-import org.apache.lucene.search.similarities.ClassicSimilarity;
-import org.apache.lucene.search.similarities.Similarity;
-import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
@@ -195,9 +181,9 @@ public class LLUtils {
 		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.score(), hit.key());
 	}
 
-	public static String toStringSafe(Buffer key) {
+	public static String toStringSafe(@Nullable Buffer key) {
 		try {
-			if (key.isAccessible()) {
+			if (key == null || key.isAccessible()) {
 				return toString(key);
 			} else {
 				return "(released)";
@@ -207,7 +193,7 @@ public class LLUtils {
 		}
 	}
 
-	public static String toString(Buffer key) {
+	public static String toString(@Nullable Buffer key) {
 		if (key == null) {
 			return "null";
 		} else {
@@ -217,20 +203,35 @@ public class LLUtils {
 			if (iMax <= -1) {
 				return "[]";
 			} else {
-				StringBuilder b = new StringBuilder();
-				b.append('[');
+				StringBuilder arraySB = new StringBuilder();
+				StringBuilder asciiSB = new StringBuilder();
+				boolean isAscii = true;
+				arraySB.append('[');
 				int i = 0;
 
 				while (true) {
-					b.append(key.getByte(startIndex + i));
+					var byteVal = key.getUnsignedByte(startIndex + i);
+					arraySB.append(byteVal);
+					if (isAscii) {
+						if (byteVal >= 32 && byteVal < 127) {
+							asciiSB.append((char) byteVal);
+						} else {
+							isAscii = false;
+							asciiSB = null;
+						}
+					}
 					if (i == iLimit) {
-						b.append("…");
+						arraySB.append("…");
 					}
 					if (i == iMax || i == iLimit) {
-						return b.append(']').toString();
+						if (isAscii) {
+							return asciiSB.insert(0, "\"").append("\"").toString();
+						} else {
+							return arraySB.append(']').toString();
+						}
 					}
 
-					b.append(", ");
+					arraySB.append(", ");
 					++i;
 				}
 			}
@@ -279,7 +280,10 @@ public class LLUtils {
 		return true;
 	}
 
-	public static byte[] toArray(Buffer key) {
+	public static byte[] toArray(@Nullable Buffer key) {
+		if (key == null) {
+			return EMPTY_BYTE_ARRAY;
+		}
 		byte[] array = new byte[key.readableBytes()];
 		key.copyInto(key.readerOffset(), array, 0, key.readableBytes());
 		return array;
@@ -355,7 +359,6 @@ public class LLUtils {
 				PlatformDependent.freeDirectBuffer(directBuffer);
 				directBuffer = null;
 			}
-			buffer.close();
 		}
 	}
 
@@ -445,6 +448,22 @@ public class LLUtils {
 		return true;
 	}
 
+	public static Send<Buffer> empty(BufferAllocator allocator) {
+		try (var empty = CompositeBuffer.compose(allocator)) {
+			assert empty.readableBytes() == 0;
+			assert empty.capacity() == 0;
+			return empty.send();
+		}
+	}
+
+	public static Send<Buffer> copy(BufferAllocator allocator, Buffer buf) {
+		if (CompositeBuffer.isComposite(buf) && buf.capacity() == 0) {
+			return empty(allocator);
+		} else {
+			return buf.copy().send();
+		}
+	}
+
 	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}
 
 	@NotNull
@@ -485,18 +504,23 @@ public class LLUtils {
 			);
 		}
 		assert buffer.isAccessible();
+		buffer.compact();
+		assert buffer.readerOffset() == 0;
 		AtomicLong nativeAddress = new AtomicLong(0);
 		if (buffer.countComponents() == 1) {
 			if (writable) {
 				if (buffer.countWritableComponents() == 1) {
 					buffer.forEachWritable(0, (i, c) -> {
+						assert c.writableNativeAddress() != 0;
 						nativeAddress.setPlain(c.writableNativeAddress());
 						return false;
 					});
 				}
 			} else {
-				if (buffer.countReadableComponents() == 1) {
+				var readableComponents = buffer.countReadableComponents();
+				if (readableComponents == 1) {
 					buffer.forEachReadable(0, (i, c) -> {
+						assert c.readableNativeAddress() != 0;
 						nativeAddress.setPlain(c.readableNativeAddress());
 						return false;
 					});
@@ -512,7 +536,7 @@ public class LLUtils {
 			}
 			throw new IllegalStateException("Buffer is not direct");
 		}
-		return MemorySegmentUtils.directBuffer(nativeAddress.getPlain(), buffer.capacity());
+		return MemorySegmentUtils.directBuffer(nativeAddress.getPlain(), writable ? buffer.capacity() : buffer.writerOffset());
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {
@@ -534,20 +558,19 @@ public class LLUtils {
 		return buffer.receive();
 	}
 
-	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2) {
+	@NotNull
+	public static Buffer compositeBuffer(BufferAllocator alloc,
+			@NotNull Send<Buffer> buffer1,
+			@NotNull Send<Buffer> buffer2) {
 		return CompositeBuffer.compose(alloc, buffer1, buffer2);
 	}
 
+	@NotNull
 	public static Buffer compositeBuffer(BufferAllocator alloc,
-			Send<Buffer> buffer1,
-			Send<Buffer> buffer2,
-			Send<Buffer> buffer3) {
+			@NotNull Send<Buffer> buffer1,
+			@NotNull Send<Buffer> buffer2,
+			@NotNull Send<Buffer> buffer3) {
 		return CompositeBuffer.compose(alloc, buffer1, buffer2, buffer3);
-	}
-
-	@SafeVarargs
-	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer>... buffers) {
-		return CompositeBuffer.compose(alloc, buffers);
 	}
 
 	public static <T> Mono<T> resolveDelta(Mono<Delta<T>> prev, UpdateReturnMode updateReturnMode) {

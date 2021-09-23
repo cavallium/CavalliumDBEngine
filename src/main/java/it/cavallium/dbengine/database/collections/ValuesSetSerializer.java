@@ -45,8 +45,8 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 			output.writeInt(deserialized.size());
 			for (X entry : deserialized) {
 				var serializedToReceive = entrySerializer.serialize(entry);
-				if (serializedToReceive != null) {
-					try (Buffer serialized = serializedToReceive.receive()) {
+				try (Buffer serialized = serializedToReceive.receive()) {
+					if (serialized.readableBytes() > 0) {
 						output.ensureWritable(serialized.readableBytes());
 						output.writeBytes(serialized);
 					}

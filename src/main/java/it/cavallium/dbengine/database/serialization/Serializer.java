@@ -4,6 +4,7 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.netty.NullableBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
@@ -13,16 +14,16 @@ public interface Serializer<A> {
 
 	record DeserializationResult<T>(T deserializedData, int bytesRead) {}
 
-	@NotNull DeserializationResult<A> deserialize(@Nullable Send<Buffer> serialized) throws SerializationException;
+	@NotNull DeserializationResult<A> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException;
 
-	@Nullable Send<Buffer> serialize(@NotNull A deserialized) throws SerializationException;
+	@NotNull Send<Buffer> serialize(@NotNull A deserialized) throws SerializationException;
 
 	Serializer<Send<Buffer>> NOOP_SERIALIZER = new Serializer<>() {
 		@Override
-		public @NotNull DeserializationResult<Send<Buffer>> deserialize(@Nullable Send<Buffer> serialized) {
-			try (var serializedBuf = serialized == null ? null : serialized.receive()) {
-				var readableBytes = serializedBuf == null ? 0 : serializedBuf.readableBytes();
-				return new DeserializationResult<>(serializedBuf == null ? null : serializedBuf.send(), readableBytes);
+		public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
+			try (var serializedBuf =  serialized.receive()) {
+				var readableBytes = serializedBuf.readableBytes();
+				return new DeserializationResult<>(serializedBuf.send(), readableBytes);
 			}
 		}
 

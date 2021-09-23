@@ -267,10 +267,23 @@ public class LLLocalDictionary implements LLDictionary {
 								stamp = 0;
 							}
 							try {
+								Buffer logKey;
 								if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
-									logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toStringSafe(key));
+									logKey = key.copy();
+								} else {
+									logKey = null;
 								}
-								return dbGet(cfh, resolveSnapshot(snapshot), key.send(), existsAlmostCertainly);
+								try (logKey) {
+									var result = dbGet(cfh, resolveSnapshot(snapshot), key.send(), existsAlmostCertainly);
+									if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
+										try (var result2 = result == null ? null : result.receive()) {
+											logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(logKey), LLUtils.toString(result2));
+											return result2 == null ? null : result2.send();
+										}
+									} else {
+										return result;
+									}
+								}
 							} finally {
 								if (updateMode == UpdateMode.ALLOW) {
 									lock.unlockRead(stamp);
@@ -414,6 +427,8 @@ public class LLLocalDictionary implements LLDictionary {
 					if (Schedulers.isInNonBlockingThread()) {
 						throw new UnsupportedOperationException("Called dbPut in a nonblocking thread");
 					}
+					assert key.isAccessible();
+					assert value.isAccessible();
 					if (databaseOptions.allowNettyDirect()) {
 						var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
 						try (var ignored1 = keyNioBuffer.buffer().receive()) {
@@ -592,6 +607,8 @@ public class LLLocalDictionary implements LLDictionary {
 								valueSend -> this.<Send<Buffer>>runOnDb(() -> {
 									try (var key = keySend.receive()) {
 										try (var value = valueSend.receive()) {
+											assert key.isAccessible();
+											assert value.isAccessible();
 											StampedLock lock;
 											long stamp;
 											if (updateMode == UpdateMode.ALLOW) {
@@ -656,9 +673,6 @@ public class LLLocalDictionary implements LLDictionary {
 							stamp = 0;
 						}
 						try {
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toStringSafe(key));
-							}
 							while (true) {
 								@Nullable Buffer prevData;
 								var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
@@ -682,19 +696,37 @@ public class LLLocalDictionary implements LLDictionary {
 								} else {
 									prevData = null;
 								}
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB,
+											"Reading {}: {} (before update)",
+											LLUtils.toStringSafe(key),
+											LLUtils.toStringSafe(prevData)
+									);
+								}
 								try {
 									@Nullable Buffer newData;
 									try (Buffer prevDataToSendToUpdater = prevData == null ? null : prevData.copy()) {
-										try (var newDataToReceive = updater.apply(
-												prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send())) {
-											if (newDataToReceive != null) {
-												newData = newDataToReceive.receive();
-											} else {
-												newData = null;
+										try (var sentData = prevDataToSendToUpdater == null ? null
+												: prevDataToSendToUpdater.send()) {
+											try (var newDataToReceive = updater.apply(sentData)) {
+												if (newDataToReceive != null) {
+													newData = newDataToReceive.receive();
+												} else {
+													newData = null;
+												}
 											}
 										}
 									}
+									assert newData == null || newData.isAccessible();
 									try {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB,
+													"Updating {}. previous data: {}, updated data: {}",
+													LLUtils.toStringSafe(key),
+													LLUtils.toStringSafe(prevData),
+													LLUtils.toStringSafe(newData)
+											);
+										}
 										if (prevData != null && newData == null) {
 											//noinspection DuplicatedCode
 											if (updateMode == UpdateMode.ALLOW) {
@@ -709,7 +741,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
+												logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.send());
 										} else if (newData != null
@@ -727,7 +759,11 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Writing {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
+												logger.trace(MARKER_ROCKSDB,
+														"Writing {}: {} (after update)",
+														LLUtils.toStringSafe(key),
+														LLUtils.toStringSafe(newData)
+												);
 											}
 											Buffer dataToPut;
 											if (updateReturnMode == UpdateReturnMode.GET_NEW_VALUE) {
@@ -779,7 +815,7 @@ public class LLLocalDictionary implements LLDictionary {
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
-				keySend -> this.runOnDb(() -> {
+				keySend -> runOnDb(() -> {
 					try (var key = keySend.receive()) {
 						if (Schedulers.isInNonBlockingThread()) {
 							throw new UnsupportedOperationException("Called update in a nonblocking thread");
@@ -799,7 +835,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try {
 							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toStringSafe(key));
+								logger.trace(MARKER_ROCKSDB, "Reading {} (before update)", LLUtils.toStringSafe(key));
 							}
 							while (true) {
 								@Nullable Buffer prevData;
@@ -824,19 +860,37 @@ public class LLLocalDictionary implements LLDictionary {
 								} else {
 									prevData = null;
 								}
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB,
+											"Read {}: {} (before update)",
+											LLUtils.toStringSafe(key),
+											LLUtils.toStringSafe(prevData)
+									);
+								}
 								try {
 									@Nullable Buffer newData;
 									try (Buffer prevDataToSendToUpdater = prevData == null ? null : prevData.copy()) {
-										try (var newDataToReceive = updater.apply(
-												prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send())) {
-											if (newDataToReceive != null) {
-												newData = newDataToReceive.receive();
-											} else {
-												newData = null;
+										try (var sentData = prevDataToSendToUpdater == null ? null
+												: prevDataToSendToUpdater.send()) {
+											try (var newDataToReceive = updater.apply(sentData)) {
+												if (newDataToReceive != null) {
+													newData = newDataToReceive.receive();
+												} else {
+													newData = null;
+												}
 											}
 										}
 									}
+									assert newData == null || newData.isAccessible();
 									try {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB,
+													"Updating {}. previous data: {}, updated data: {}",
+													LLUtils.toStringSafe(key),
+													LLUtils.toStringSafe(prevData),
+													LLUtils.toStringSafe(newData)
+											);
+										}
 										if (prevData != null && newData == null) {
 											//noinspection DuplicatedCode
 											if (updateMode == UpdateMode.ALLOW) {
@@ -851,7 +905,7 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
+												logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
 											}
 											dbDelete(cfh, null, key.send());
 										} else if (newData != null
@@ -869,8 +923,11 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
-														LLUtils.toStringSafe(key), LLUtils.toStringSafe(newData));
+												logger.trace(MARKER_ROCKSDB,
+														"Writing {}: {} (after update)",
+														LLUtils.toStringSafe(key),
+														LLUtils.toStringSafe(newData)
+												);
 											}
 											assert key.isAccessible();
 											assert newData.isAccessible();
@@ -986,18 +1043,24 @@ public class LLLocalDictionary implements LLDictionary {
 										stamp = 0;
 									}
 									try {
-										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB, "Reading {}", LLUtils.toArray(key));
-										}
 										var data = new Holder<byte[]>();
+										Buffer bufferResult;
 										if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
 											if (data.getValue() != null) {
-												return LLUtils.fromByteArray(alloc, data.getValue()).send();
+												bufferResult = LLUtils.fromByteArray(alloc, data.getValue());
 											} else {
-												return dbGet(cfh, null, key.send(), true);
+												try (var bufferResultToReceive = dbGet(cfh, null, key.send(), true)) {
+													bufferResult = bufferResultToReceive == null ? null : bufferResultToReceive.receive();
+												}
 											}
 										} else {
-											return null;
+											bufferResult = null;
+										}
+										try (bufferResult) {
+											if (logger.isTraceEnabled()) {
+												logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(bufferResult));
+											}
+											return bufferResult == null ? null : bufferResult.send();
 										}
 									} finally {
 										if (updateMode == UpdateMode.ALLOW) {

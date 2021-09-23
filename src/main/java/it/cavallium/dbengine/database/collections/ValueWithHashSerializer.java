@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.CompositeBuffer;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
@@ -43,17 +44,9 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 	}
 
 	@Override
-	public @Nullable Send<Buffer> serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
+	public @NotNull Send<Buffer> serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
 		var keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
 		var value = valueSerializer.serialize(deserialized.getValue());
-		if (value == null && keySuffix == null) {
-			return null;
-		} else if (value == null) {
-			return keySuffix;
-		} else if (keySuffix == null) {
-			return value;
-		} else {
-			return LLUtils.compositeBuffer(allocator, keySuffix, value).send();
-		}
+		return LLUtils.compositeBuffer(allocator, keySuffix, value).send();
 	}
 }

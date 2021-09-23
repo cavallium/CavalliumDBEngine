@@ -173,6 +173,11 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>com.lmax</groupId>
+      <artifactId>disruptor</artifactId>
+      <version>3.3.4</version>
+    </dependency>
+    <dependency>
       <groupId>org.rocksdb</groupId>
       <artifactId>rocksdbjni</artifactId>
     </dependency>
@@ -351,6 +356,11 @@
         <groupId>org.apache.logging.log4j</groupId>
         <artifactId>log4j-slf4j-impl</artifactId>
         <version>2.14.1</version>
+      </dependency>
+      <dependency>
+        <groupId>com.lmax</groupId>
+        <artifactId>disruptor</artifactId>
+        <scope>test</scope>
       </dependency>
       <dependency>
         <groupId>org.rocksdb</groupId>
@@ -542,7 +552,7 @@
           </dependency>
         </dependencies>
         <configuration>
-          <argLine>--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --enable-native-access</argLine>
+          <argLine>--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --enable-native-access=ALL-UNNAMED</argLine>
           <systemProperties>
             <property>
               <name>ci</name>

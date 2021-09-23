@@ -6,6 +6,7 @@ import io.net5.buffer.api.Send;
 import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.error.IndexOutOfBoundsException;
 
 public class CodecSerializer<A> implements Serializer<A> {
@@ -37,7 +38,7 @@ public class CodecSerializer<A> implements Serializer<A> {
 	}
 
 	@Override
-	public @NotNull DeserializationResult<A> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+	public @NotNull DeserializationResult<A> deserialize(@Nullable Send<Buffer> serializedToReceive) {
 		try (var is = new BufferDataInput(serializedToReceive)) {
 			int codecId;
 			if (microCodecs) {

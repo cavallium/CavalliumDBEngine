@@ -1,28 +1,36 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.lucene.LuceneUtils;
-import java.util.ArrayList;
-import java.util.List;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.Sort;
-import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
+import io.net5.buffer.api.Send;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
 
-public interface LuceneMultiSearcher {
+public interface LuceneMultiSearcher extends LuceneLocalSearcher {
 
 	/**
-	 * Do a lucene query, receiving the single results using a consumer
-	 * @param queryParams the query parameters
+	 * @param indexSearchersMono Lucene index searcher
+	 * @param queryParams        the query parameters
+	 * @param keyFieldName       the name of the key field
+	 * @param transformer        the search query transformer
 	 */
-	Mono<LuceneShardSearcher> createShardSearcher(LocalQueryParams queryParams);
+	Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+			LocalQueryParams queryParams,
+			String keyFieldName,
+			LLSearchTransformer transformer);
 
+	/**
+	 * @param indexSearcherMono Lucene index searcher
+	 * @param queryParams       the query parameters
+	 * @param keyFieldName      the name of the key field
+	 * @param transformer       the search query transformer
+	 */
+	@Override
+	default Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+			LocalQueryParams queryParams,
+			String keyFieldName,
+			LLSearchTransformer transformer) {
+		var searchers = indexSearcherMono.map(a -> LLIndexSearchers.unsharded(a).send());
+		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);
+	}
 }

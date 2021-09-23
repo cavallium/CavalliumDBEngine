@@ -1,5 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.Mapper;
@@ -14,14 +18,26 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 
 @SuppressWarnings("unused")
-public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
+public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>, DatabaseSingleMapped<A, B>>
+		implements DatabaseStageEntry<A> {
 
-	private final DatabaseStageEntry<B> serializedSingle;
 	private final Mapper<A, B> mapper;
 
-	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Mapper<A, B> mapper) {
+	private DatabaseStageEntry<B> serializedSingle;
+
+	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Mapper<A, B> mapper,
+			Drop<DatabaseSingleMapped<A, B>> drop) {
+		super(new CloseOnDrop<>(drop));
 		this.serializedSingle = serializedSingle;
 		this.mapper = mapper;
+	}
+
+	private DatabaseSingleMapped(Send<DatabaseStage<B>> serializedSingle, Mapper<A, B> mapper,
+			Drop<DatabaseSingleMapped<A, B>> drop) {
+		super(new CloseOnDrop<>(drop));
+		this.mapper = mapper;
+
+		this.serializedSingle = (DatabaseStageEntry<B>) serializedSingle.receive();
 	}
 
 	private void deserializeSink(B value, SynchronousSink<A> sink) {
@@ -108,11 +124,6 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		return serializedSingle.close();
-	}
-
-	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return serializedSingle.leavesCount(snapshot, fast);
 	}
@@ -132,11 +143,6 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 		return this.serializedSingle.badBlocks();
 	}
 
-	@Override
-	public void release() {
-		serializedSingle.release();
-	}
-
 	//todo: temporary wrapper. convert the whole class to buffers
 	private A unMap(B bytes) throws SerializationException {
 		return mapper.unmap(bytes);
@@ -145,5 +151,38 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	//todo: temporary wrapper. convert the whole class to buffers
 	private B map(A bytes) throws SerializationException {
 		return mapper.map(bytes);
+	}
+
+	@Override
+	protected RuntimeException createResourceClosedException() {
+		throw new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<DatabaseSingleMapped<A, B>> prepareSend() {
+		var serializedSingle = this.serializedSingle.send();
+		return drop -> new DatabaseSingleMapped<>(serializedSingle, mapper, drop);
+	}
+
+	@Override
+	protected void makeInaccessible() {
+		this.serializedSingle = null;
+	}
+
+	private static class CloseOnDrop<A, B> implements Drop<DatabaseSingleMapped<A, B>> {
+
+		private final Drop<DatabaseSingleMapped<A, B>> delegate;
+
+		public CloseOnDrop(Drop<DatabaseSingleMapped<A, B>> drop) {
+			this.delegate = drop;
+		}
+
+		@Override
+		public void drop(DatabaseSingleMapped<A, B> obj) {
+			if (obj.serializedSingle != null) {
+				obj.serializedSingle.close();
+			}
+			delegate.drop(obj);
+		}
 	}
 }

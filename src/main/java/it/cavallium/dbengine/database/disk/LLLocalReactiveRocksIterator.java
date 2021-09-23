@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
 
 import io.net5.buffer.api.Buffer;
@@ -9,14 +10,18 @@ import io.net5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 public abstract class LLLocalReactiveRocksIterator<T> {
 
+	protected static final Logger logger = LoggerFactory.getLogger(LLLocalReactiveRocksIterator.class);
 	private final AtomicBoolean released = new AtomicBoolean(false);
 	private final RocksDB db;
 	private final BufferAllocator alloc;
@@ -25,7 +30,6 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	private final boolean allowNettyDirect;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
-	private final String debugName;
 
 	public LLLocalReactiveRocksIterator(RocksDB db,
 			BufferAllocator alloc,
@@ -33,8 +37,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
-			boolean readValues,
-			String debugName) {
+			boolean readValues) {
 		this.db = db;
 		this.alloc = alloc;
 		this.cfh = cfh;
@@ -42,7 +45,6 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
 		this.readValues = readValues;
-		this.debugName = debugName;
 	}
 
 	public Flux<T> flux() {
@@ -53,6 +55,9 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(false);
 					}
+					if (logger.isTraceEnabled()) {
+						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+					}
 					return getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
 					try {
@@ -61,7 +66,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						if (rocksIterator.isValid()) {
 							Buffer key;
 							if (allowNettyDirect) {
-								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive();
+								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 							} else {
 								key = LLUtils.fromByteArray(alloc, rocksIterator.key());
 							}
@@ -69,25 +74,43 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								Buffer value;
 								if (readValues) {
 									if (allowNettyDirect) {
-										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value).receive();
+										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
 									} else {
 										value = LLUtils.fromByteArray(alloc, rocksIterator.value());
 									}
 								} else {
-									value = alloc.allocate(0);
+									value = null;
 								}
+
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB,
+											"Range {} is reading {}: {}",
+											LLUtils.toStringSafe(range),
+											LLUtils.toStringSafe(key),
+											LLUtils.toStringSafe(value)
+									);
+								}
+
 								try {
 									rocksIterator.next();
 									rocksIterator.status();
-									sink.next(getEntry(key.send(), value.send()));
+									sink.next(getEntry(key.send(), value == null ? null : value.send()));
 								} finally {
-									value.close();
+									if (value != null) {
+										value.close();
+									}
 								}
 							}
 						} else {
+							if (logger.isTraceEnabled()) {
+								logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+							}
 							sink.complete();
 						}
 					} catch (RocksDBException ex) {
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+						}
 						sink.error(ex);
 					}
 					return tuple;
@@ -100,7 +123,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 				});
 	}
 
-	public abstract T getEntry(Send<Buffer> key, Send<Buffer> value);
+	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
 
 	public void release() {
 		if (released.compareAndSet(false, true)) {

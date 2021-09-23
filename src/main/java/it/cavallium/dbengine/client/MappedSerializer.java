@@ -5,6 +5,7 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class MappedSerializer<A, B> implements Serializer<B> {
 

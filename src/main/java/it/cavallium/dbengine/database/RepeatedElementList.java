@@ -46,7 +46,7 @@ public class RepeatedElementList<T> implements List<T> {
 
 	@NotNull
 	@Override
-	public Object[] toArray() {
+	public Object @NotNull [] toArray() {
 		var arr = new Object[size];
 		Arrays.fill(arr, element);
 		return arr;
@@ -54,7 +54,7 @@ public class RepeatedElementList<T> implements List<T> {
 
 	@NotNull
 	@Override
-	public <T1> T1[] toArray(@NotNull T1[] a) {
+	public <T1> T1 @NotNull [] toArray(@NotNull T1 @NotNull [] a) {
 		var arr = Arrays.copyOf(a, size);
 		Arrays.fill(arr, element);
 		return arr;
@@ -152,8 +152,9 @@ public class RepeatedElementList<T> implements List<T> {
 	@NotNull
 	@Override
 	public ListIterator<T> listIterator(int index) {
-		return new ListIterator<T>() {
+		return new ListIterator<>() {
 			int position = index - 1;
+
 			@Override
 			public boolean hasNext() {
 				return position + 1 < size;

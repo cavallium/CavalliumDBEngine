@@ -15,9 +15,8 @@ public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterato
 			ColumnFamilyHandle cfh,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
-			String debugName) {
-		super(db, alloc, cfh, range, allowNettyDirect, readOptions, false, debugName);
+			ReadOptions readOptions) {
+		super(db, alloc, cfh, range, allowNettyDirect, readOptions, false);
 	}
 
 	@Override

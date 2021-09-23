@@ -25,11 +25,14 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
@@ -38,6 +41,38 @@ public class DbTestUtils {
 
 	private static String generateBigString() {
 		return "0123456789".repeat(1024);
+	}
+
+	public static void run(Flux<?> publisher) {
+		publisher.subscribeOn(Schedulers.immediate()).blockLast();
+	}
+
+	public static void runVoid(Mono<Void> publisher) {
+		publisher.then().subscribeOn(Schedulers.immediate()).block();
+	}
+
+	public static <T> T run(Mono<T> publisher) {
+		return publisher.subscribeOn(Schedulers.immediate()).block();
+	}
+
+	public static <T> T run(boolean shouldFail, Mono<T> publisher) {
+		return publisher.subscribeOn(Schedulers.immediate()).transform(mono -> {
+			if (shouldFail) {
+				return mono.onErrorResume(ex -> Mono.empty());
+			} else {
+				return mono;
+			}
+		}).block();
+	}
+
+	public static void runVoid(boolean shouldFail, Mono<Void> publisher) {
+		publisher.then().subscribeOn(Schedulers.immediate()).transform(mono -> {
+			if (shouldFail) {
+				return mono.onErrorResume(ex -> Mono.empty());
+			} else {
+				return mono;
+			}
+		}).block();
 	}
 
 	public static record TestAllocator(PooledBufferAllocator allocator) {}
@@ -98,7 +133,7 @@ public class DbTestUtils {
 		if (!MemorySegmentUtils.isSupported()) {
 			System.err.println("Warning! Foreign Memory Access API is not available!"
 					+ " Netty direct buffers will not be used in tests!"
-					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
+					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"");
 			if (MemorySegmentUtils.getUnsupportedCause() != null) {
 				System.err.println("\tCause: " + MemorySegmentUtils.getUnsupportedCause().getClass().getName()
 						+ ":" + MemorySegmentUtils.getUnsupportedCause().getLocalizedMessage());
@@ -144,7 +179,8 @@ public class DbTestUtils {
 		if (mapType == MapType.MAP) {
 			return DatabaseMapDictionary.simple(dictionary,
 					SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), keyBytes),
-					Serializer.utf8(dictionary.getAllocator())
+					Serializer.utf8(dictionary.getAllocator()),
+					d -> {}
 			);
 		} else {
 			return DatabaseMapDictionaryHashed.simple(dictionary,
@@ -158,7 +194,8 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull DeserializationResult<Short> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+						public @NotNull DeserializationResult<Short> deserialize(@Nullable Send<Buffer> serializedToReceive) {
+							Objects.requireNonNull(serializedToReceive);
 							try (var serialized = serializedToReceive.receive()) {
 								var val = serialized.readShort();
 								return new DeserializationResult<>(val, Short.BYTES);
@@ -173,7 +210,8 @@ public class DbTestUtils {
 								return out.send();
 							}
 						}
-					}
+					},
+					d -> {}
 			);
 		}
 	}
@@ -188,7 +226,8 @@ public class DbTestUtils {
 				key2Bytes,
 				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), key2Bytes),
 						Serializer.utf8(dictionary.getAllocator())
-				)
+				),
+				d -> {}
 		);
 	}
 
@@ -203,7 +242,8 @@ public class DbTestUtils {
 						Serializer.utf8(dictionary.getAllocator()),
 						String::hashCode,
 						SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator())
-				)
+				),
+				d -> {}
 		);
 	}
 
@@ -213,7 +253,8 @@ public class DbTestUtils {
 				Serializer.utf8(dictionary.getAllocator()),
 				Serializer.utf8(dictionary.getAllocator()),
 				String::hashCode,
-				SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator())
+				SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator()),
+				d -> {}
 		);
 	}
 }

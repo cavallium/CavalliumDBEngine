@@ -1,7 +1,11 @@
 package it.cavallium.dbengine.client;
 
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLSearchResultShard;
+import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import java.util.Objects;
 import org.reactivestreams.Publisher;
@@ -11,42 +15,29 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public final class SearchResultKeys<T> {
+public final class SearchResultKeys<T> extends LiveResourceSupport<SearchResultKeys<T>, SearchResultKeys<T>> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SearchResultKeys.class);
 
-	private volatile boolean releaseCalled;
+	private Flux<SearchResultKey<T>> results;
+	private TotalHitsCount totalHitsCount;
 
-	private final Flux<SearchResultKey<T>> results;
-	private final TotalHitsCount totalHitsCount;
-	private final Mono<Void> release;
-
-	public SearchResultKeys(Flux<SearchResultKey<T>> results, TotalHitsCount totalHitsCount, Mono<Void> release) {
+	public SearchResultKeys(Flux<SearchResultKey<T>> results, TotalHitsCount totalHitsCount,
+			Drop<SearchResultKeys<T>> drop) {
+		super(drop);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
-		this.release = Mono.fromRunnable(() -> {
-			if (releaseCalled) {
-				logger.warn(this.getClass().getName() + "::release has been called twice!");
-			}
-			releaseCalled = true;
-		}).then(release);
 	}
 
 	public static <T> SearchResultKeys<T> empty() {
-		var sr = new SearchResultKeys<T>(Flux.empty(), TotalHitsCount.of(0, true), Mono.empty());
-		sr.releaseCalled = true;
-		return sr;
+		return new SearchResultKeys<T>(Flux.empty(), TotalHitsCount.of(0, true), d -> {});
 	}
 
 	public <U> SearchResult<T, U> withValues(ValueGetter<T, U> valuesGetter) {
 		return new SearchResult<>(results.map(item -> new SearchResultItem<>(item.key(),
 				item.key().flatMap(valuesGetter::get),
 				item.score()
-		)), totalHitsCount, release);
-	}
-
-	public Flux<SearchResultKey<T>> resultsThenRelease() {
-		return Flux.usingWhen(Mono.just(true), _unused -> results, _unused -> release);
+		)), totalHitsCount, d -> this.close());
 	}
 
 	public Flux<SearchResultKey<T>> results() {
@@ -57,39 +48,27 @@ public final class SearchResultKeys<T> {
 		return totalHitsCount;
 	}
 
-	public Mono<Void> release() {
-		return release;
-	}
-
-	@Override
-	public boolean equals(Object obj) {
-		if (obj == this)
-			return true;
-		if (obj == null || obj.getClass() != this.getClass())
-			return false;
-		var that = (SearchResultKeys) obj;
-		return Objects.equals(this.results, that.results) && Objects.equals(this.totalHitsCount, that.totalHitsCount)
-				&& Objects.equals(this.release, that.release);
-	}
-
-	@Override
-	public int hashCode() {
-		return Objects.hash(results, totalHitsCount, release);
-	}
-
 	@Override
 	public String toString() {
-		return "SearchResultKeys[" + "results=" + results + ", " + "totalHitsCount=" + totalHitsCount + ", " + "release="
-				+ release + ']';
+		return "SearchResultKeys[" + "results=" + results + ", " + "totalHitsCount=" + totalHitsCount + ']';
 	}
 
-	@SuppressWarnings("deprecation")
 	@Override
-	protected void finalize() throws Throwable {
-		if (!releaseCalled) {
-			logger.warn(this.getClass().getName() + "::release has not been called before class finalization!");
-		}
-		super.finalize();
+	protected RuntimeException createResourceClosedException() {
+		return new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<SearchResultKeys<T>> prepareSend() {
+		var results = this.results;
+		var totalHitsCount = this.totalHitsCount;
+		makeInaccessible();
+		return drop -> new SearchResultKeys<>(results, totalHitsCount, drop);
+	}
+
+	protected void makeInaccessible() {
+		this.results = null;
+		this.totalHitsCount = null;
 	}
 
 }

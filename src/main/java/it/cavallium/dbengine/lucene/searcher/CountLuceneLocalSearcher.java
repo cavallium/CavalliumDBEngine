@@ -1,28 +1,32 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.client.query.QueryParser;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import org.apache.lucene.search.IndexSearcher;
+import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
-	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher, Mono<Void> releaseIndexSearcher,
-			LocalQueryParams queryParams, String keyFieldName, Scheduler scheduler) {
-		return Mono.fromCallable(() -> {
-			if (Schedulers.isInNonBlockingThread()) {
-				throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-			}
-			//noinspection BlockingMethodInNonBlockingContext
-			return new LuceneSearchResult(TotalHitsCount.of(indexSearcher.count(queryParams.query()), true),
-					Flux.empty(),
-					releaseIndexSearcher
-			);
-		}).subscribeOn(scheduler);
+	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+			LocalQueryParams queryParams,
+			String keyFieldName,
+			LLSearchTransformer transformer) {
+		return Mono
+				.usingWhen(
+						indexSearcherMono,
+						indexSearcher -> Mono.fromCallable(() -> {
+							try (var is = indexSearcher.receive()) {
+								LLUtils.ensureBlocking();
+								return is.getIndexSearcher().count(queryParams.query());
+							}
+						}).subscribeOn(Schedulers.boundedElastic()),
+						is -> Mono.empty()
+				)
+				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), drop -> {}).send())
+				.doOnDiscard(Send.class, Send::close);
 	}
 }

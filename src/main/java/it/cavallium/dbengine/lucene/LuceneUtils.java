@@ -3,37 +3,39 @@ package it.cavallium.dbengine.lucene;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
-import it.cavallium.dbengine.lucene.searcher.IndexSearchers;
+import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
+import it.cavallium.dbengine.lucene.searcher.ExponentialPageLimits;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
-import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.PageLimits;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Arrays;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
-import java.util.Objects;
 import java.util.Set;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
@@ -46,7 +48,14 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.search.BooleanClause.Occur;
+import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.FieldDoc;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.MatchNoDocsQuery;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
@@ -56,6 +65,7 @@ import org.apache.lucene.search.similarities.BooleanSimilarity;
 import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.apache.lucene.search.similarities.Similarity;
+import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.novasearch.lucene.search.similarities.BM25Similarity;
@@ -63,13 +73,14 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
-import org.reactivestreams.Publisher;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.concurrent.Queues;
+import reactor.util.function.Tuple2;
 
 public class LuceneUtils {
 
@@ -106,6 +117,8 @@ public class LuceneUtils {
 	private static final Similarity luceneLDPNoLengthSimilarityInstance = new LdpSimilarity(0, 0.5f);
 	private static final Similarity luceneBooleanSimilarityInstance = new BooleanSimilarity();
 	private static final Similarity luceneRobertsonSimilarityInstance = new RobertsonSimilarity();
+	// TODO: remove this default page limits and make the limits configurable into QueryParams
+	private static final PageLimits DEFAULT_PAGE_LIMITS = new ExponentialPageLimits();
 
 	@SuppressWarnings("DuplicatedCode")
 	public static Analyzer getAnalyzer(TextFieldsAnalyzer analyzer) {
@@ -178,7 +191,6 @@ public class LuceneUtils {
 	 *
 	 * @return false if the result is not relevant
 	 */
-	@Nullable
 	public static boolean filterTopDoc(float score, Float minCompetitiveScore) {
 		return minCompetitiveScore == null || score >= minCompetitiveScore;
 	}
@@ -220,9 +232,8 @@ public class LuceneUtils {
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
 			CompositeSnapshot snapshot,
 			DatabaseMapDictionaryDeep<T, Map<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
-		return entry -> dictionaryDeep
-				.at(snapshot, entry.getKey())
-				.flatMap(sub -> sub.getValue(snapshot, entry.getValue()).doAfterTerminate(sub::release));
+		return entry -> LLUtils.usingResource(dictionaryDeep
+				.at(snapshot, entry.getKey()), sub -> sub.getValue(snapshot, entry.getValue()), true);
 	}
 
 	public static PerFieldAnalyzerWrapper toPerFieldAnalyzerWrapper(IndicizerAnalyzers indicizerAnalyzers) {
@@ -315,7 +326,7 @@ public class LuceneUtils {
 
 			assert i > 0 : "FileChannel.read with non zero-length bb.remaining() must always read at least one byte (FileChannel is in blocking mode, see spec of ReadableByteChannel)";
 
-			pos += (long)i;
+			pos += i;
 		}
 
 		assert readLength == 0;
@@ -357,34 +368,40 @@ public class LuceneUtils {
 		return new LocalQueryParams(QueryParser.toQuery(queryParams.query()),
 				safeLongToInt(queryParams.offset()),
 				safeLongToInt(queryParams.limit()),
+				DEFAULT_PAGE_LIMITS,
 				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
 				QueryParser.toScoreMode(queryParams.scoreMode())
 		);
 	}
 
-	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hits,
-			IndexSearchers indexSearchers,
+	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
+			List<IndexSearcher> indexSearchers,
 			String keyFieldName,
-			Scheduler scheduler,
 			boolean preserveOrder) {
+		if (preserveOrder) {
+			return hitsFlux
+					.publishOn(Schedulers.boundedElastic())
+					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
+		} else {
+			// Compute parallelism
+			var availableProcessors = Runtime.getRuntime().availableProcessors();
+			var min = Queues.XS_BUFFER_SIZE;
+			var maxParallelGroups = Math.max(availableProcessors, min);
 
-		return hits.transform(hitsFlux -> {
-			if (preserveOrder) {
-				return hitsFlux
-						.publishOn(scheduler)
-						.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
-			} else {
-				return hitsFlux
-						.publishOn(scheduler)
-						.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
-			}
-		});
+			return hitsFlux
+					.groupBy(hit -> hit.shardIndex % maxParallelGroups) // Max n groups
+					.flatMap(shardHits -> shardHits
+									.publishOn(Schedulers.boundedElastic())
+									.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName)),
+							maxParallelGroups // Max n concurrency. Concurrency must be >= total groups count
+					);
+		}
 	}
 
 	@Nullable
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
-			IndexSearchers indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			String keyFieldName) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called mapHitBlocking in a nonblocking thread");
@@ -392,7 +409,10 @@ public class LuceneUtils {
 		int shardDocId = hit.doc;
 		int shardIndex = hit.shardIndex;
 		float score = hit.score;
-		var indexSearcher = indexSearchers.shard(shardIndex);
+		if (shardIndex == -1 && indexSearchers.size() == 1) {
+			shardIndex = 0;
+		}
+		var indexSearcher = indexSearchers.get(shardIndex);
 		try {
 			String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
 			return new LLKeyScore(shardDocId, score, collectedDoc);
@@ -507,5 +527,78 @@ public class LuceneUtils {
 				60,
 				true
 		);
+	}
+
+	public static Mono<LocalQueryParams> getMoreLikeThisQuery(
+			List<LLIndexSearcher> indexSearchers,
+			LocalQueryParams localQueryParams,
+			Analyzer analyzer,
+			Similarity similarity,
+			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
+		Query luceneAdditionalQuery;
+		try {
+			luceneAdditionalQuery = localQueryParams.query();
+		} catch (Exception e) {
+			return Mono.error(e);
+		}
+		return mltDocumentFieldsFlux
+				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
+				.flatMap(mltDocumentFields -> Mono.fromCallable(() -> {
+					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+					if (mltDocumentFields.isEmpty()) {
+						return new LocalQueryParams(new MatchNoDocsQuery(),
+								localQueryParams.offset(),
+								localQueryParams.limit(),
+								DEFAULT_PAGE_LIMITS,
+								localQueryParams.minCompetitiveScore(),
+								localQueryParams.sort(),
+								localQueryParams.scoreMode()
+						);
+					}
+					MultiMoreLikeThis mlt;
+					if (indexSearchers.size() == 1) {
+						mlt = new MultiMoreLikeThis(indexSearchers.get(0).getIndexReader(), null);
+					} else {
+						IndexReader[] indexReaders = new IndexReader[indexSearchers.size()];
+						for (int i = 0, size = indexSearchers.size(); i < size; i++) {
+							indexReaders[i] = indexSearchers.get(i).getIndexReader();
+						}
+						mlt = new MultiMoreLikeThis(indexReaders, null);
+					}
+					mlt.setAnalyzer(analyzer);
+					mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+					mlt.setMinTermFreq(1);
+					mlt.setMinDocFreq(3);
+					mlt.setMaxDocFreqPct(20);
+					mlt.setBoost(localQueryParams.scoreMode().needsScores());
+					mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
+					if (similarity instanceof TFIDFSimilarity tfidfSimilarity) {
+						mlt.setSimilarity(tfidfSimilarity);
+					} else {
+						mlt.setSimilarity(new ClassicSimilarity());
+					}
+
+					// Get the reference docId and apply it to MoreLikeThis, to generate the query
+					@SuppressWarnings({"unchecked", "rawtypes"})
+					var mltQuery = mlt.like((Map) mltDocumentFields);
+					Query luceneQuery;
+					if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
+						luceneQuery = new BooleanQuery.Builder()
+								.add(mltQuery, Occur.MUST)
+								.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
+								.build();
+					} else {
+						luceneQuery = mltQuery;
+					}
+
+					return new LocalQueryParams(luceneQuery,
+							localQueryParams.offset(),
+							localQueryParams.limit(),
+							DEFAULT_PAGE_LIMITS,
+							localQueryParams.minCompetitiveScore(),
+							localQueryParams.sort(),
+							localQueryParams.scoreMode()
+					);
+				}).subscribeOn(Schedulers.boundedElastic()));
 	}
 }

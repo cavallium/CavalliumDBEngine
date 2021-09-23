@@ -121,14 +121,14 @@ public abstract class TestDictionaryMapDeepHashMap {
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMapHashMap(dict, 5))
 						.flatMapMany(map -> map
-								.at(null, key1).flatMap(v -> v.putValue(key2, value).doAfterTerminate(v::release))
+								.at(null, key1).flatMap(v -> v.putValue(key2, value).doFinally(s -> v.close()))
 								.thenMany(map
 										.getAllValues(null)
 										.map(Entry::getValue)
 										.flatMap(maps -> Flux.fromIterable(maps.entrySet()))
 										.map(Entry::getValue)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {

@@ -1,168 +1,200 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
-import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
+import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.FIRST_PAGE_LIMIT;
+import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLLocalGroupedReactiveRocksIterator;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
-import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.stream.Collectors;
-import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.TopFieldCollector;
-import org.apache.lucene.search.TopFieldDocs;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.Empty;
-import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-class ScoredSimpleLuceneShardSearcher implements LuceneShardSearcher {
+public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 
-	private final Object lock = new Object();
-	private final List<IndexSearcher> indexSearchersArray = new ArrayList<>();
-	private final List<Mono<Void>> indexSearcherReleasersArray = new ArrayList<>();
-	private final List<TopFieldCollector> collectors = new ArrayList<>();
-	private final CollectorManager<TopFieldCollector, TopDocs> firstPageSharedManager;
-	private final Query luceneQuery;
-	private final PaginationInfo paginationInfo;
+	protected static final Logger logger = LoggerFactory.getLogger(ScoredSimpleLuceneShardSearcher.class);
 
-	public ScoredSimpleLuceneShardSearcher(CollectorManager<TopFieldCollector, TopDocs> firstPageSharedManager,
-			Query luceneQuery, PaginationInfo paginationInfo) {
-		this.firstPageSharedManager = firstPageSharedManager;
-		this.luceneQuery = luceneQuery;
-		this.paginationInfo = paginationInfo;
+	public ScoredSimpleLuceneShardSearcher() {
 	}
 
 	@Override
-	public Mono<Void> searchOn(IndexSearcher indexSearcher,
-			Mono<Void> releaseIndexSearcher,
+	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			Scheduler scheduler) {
-		return Mono.<Void>fromCallable(() -> {
-			if (Schedulers.isInNonBlockingThread()) {
-				throw new UnsupportedOperationException("Called searchOn in a nonblocking thread");
-			}
-			TopFieldCollector collector;
-			synchronized (lock) {
-				//noinspection BlockingMethodInNonBlockingContext
-				collector = firstPageSharedManager.newCollector();
-				indexSearchersArray.add(indexSearcher);
-				indexSearcherReleasersArray.add(releaseIndexSearcher);
-				collectors.add(collector);
-			}
-			//noinspection BlockingMethodInNonBlockingContext
-			indexSearcher.search(luceneQuery, collector);
-			return null;
-		}).subscribeOn(scheduler);
+			String keyFieldName,
+			LLSearchTransformer transformer) {
+		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
+		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
+
+		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
+						// Search first page results
+						.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
+						// Compute the results of the first page
+						.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
+								keyFieldName, queryParams))
+						// Compute other results
+						.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams, keyFieldName, indexSearchers::close))
+						// Ensure that one LuceneSearchResult is always returned
+						.single(),
+				false);
 	}
 
-	@Override
-	public Mono<LuceneSearchResult> collect(LocalQueryParams queryParams, String keyFieldName, Scheduler collectorScheduler) {
-		if (Schedulers.isInNonBlockingThread()) {
-			return Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread"));
+	private Sort getSort(LocalQueryParams queryParams) {
+		Sort luceneSort = queryParams.sort();
+		if (luceneSort == null) {
+			luceneSort = Sort.RELEVANCE;
 		}
-		if (!queryParams.isScored()) {
-			return Mono.error(() -> new UnsupportedOperationException("Can't execute an unscored query"
-					+ " with a scored lucene shard searcher"));
+		return luceneSort;
+	}
+
+	/**
+	 * Get the pagination info
+	 */
+	private PaginationInfo getPaginationInfo(LocalQueryParams queryParams) {
+		if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
+			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), true);
+		} else {
+			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), false);
 		}
+	}
+
+	/**
+	 * Search effectively the raw results of the first page
+	 */
+	private Mono<PageData> searchFirstPage(Iterable<IndexSearcher> indexSearchers,
+			LocalQueryParams queryParams,
+			PaginationInfo paginationInfo) {
+		var limit = paginationInfo.totalLimit();
+		var pageLimits = paginationInfo.pageLimits();
+		var pagination = !paginationInfo.forceSinglePage();
+		var resultsOffset = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset());
+		return Mono
+				.fromSupplier(() -> new CurrentPageInfo(null, limit, 0))
+				.flatMap(s -> this.searchPage(queryParams, indexSearchers, pagination, pageLimits, resultsOffset, s));
+	}
+
+	/**
+	 * Compute the results of the first page, extracting useful data
+	 */
+	private Mono<FirstPageResults> computeFirstPageResults(Mono<PageData> firstPageDataMono,
+			LLIndexSearchers indexSearchers,
+			String keyFieldName,
+			LocalQueryParams queryParams) {
+		return firstPageDataMono.map(firstPageData -> {
+			var totalHitsCount = LuceneUtils.convertTotalHitsCount(firstPageData.topDocs().totalHits);
+			var scoreDocs = firstPageData.topDocs().scoreDocs;
+			assert LLUtils.isSet(scoreDocs);
+
+			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(scoreDocs),
+							indexSearchers.shards(), keyFieldName, true)
+					.take(queryParams.limit(), true);
+
+			CurrentPageInfo nextPageInfo = firstPageData.nextPageInfo();
+
+			return new FirstPageResults(totalHitsCount, firstPageHitsFlux, nextPageInfo);
+		});
+	}
+
+	private Send<LuceneSearchResult> computeOtherResults(FirstPageResults firstResult,
+			List<IndexSearcher> indexSearchers,
+			LocalQueryParams queryParams,
+			String keyFieldName,
+			Runnable drop) {
+		var totalHitsCount = firstResult.totalHitsCount();
+		var firstPageHitsFlux = firstResult.firstPageHitsFlux();
+		var secondPageInfo = firstResult.nextPageInfo();
+
+		Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
+
+		Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
+		return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> drop.run()).send();
+	}
+
+	/**
+	 * Search effectively the merged raw results of the next pages
+	 */
+	private Flux<LLKeyScore> searchOtherPages(List<IndexSearcher> indexSearchers,
+			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
+		return Flux
+				.defer(() -> {
+					AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
+					return Mono
+							.fromSupplier(currentPageInfoRef::get)
+							.doOnNext(s -> logger.debug("Current page info: {}", s))
+							.flatMap(currentPageInfo -> this.searchPage(queryParams, indexSearchers, true,
+									queryParams.pageLimits(), 0, currentPageInfo))
+							.doOnNext(s -> logger.debug("Next page info: {}", s.nextPageInfo()))
+							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
+							.repeatWhen(s -> s.takeWhile(n -> n > 0));
+				})
+				.subscribeOn(Schedulers.boundedElastic())
+				.map(PageData::topDocs)
+				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
+				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
+						keyFieldName, true));
+	}
+
+	/**
+	 *
+	 * @param resultsOffset offset of the resulting topDocs. Useful if you want to
+	 *                       skip the first n results in the first page
+	 */
+	private Mono<PageData> searchPage(LocalQueryParams queryParams,
+			Iterable<IndexSearcher> indexSearchers,
+			boolean allowPagination,
+			PageLimits pageLimits,
+			int resultsOffset,
+			CurrentPageInfo s) {
 		return Mono
 				.fromCallable(() -> {
-					TopDocs result;
-					Mono<Void> release;
-					synchronized (lock) {
-						//noinspection BlockingMethodInNonBlockingContext
-						result = firstPageSharedManager.reduce(collectors);
-						release = Mono.when(indexSearcherReleasersArray);
+					LLUtils.ensureBlocking();
+					if (resultsOffset < 0) {
+						throw new IndexOutOfBoundsException(resultsOffset);
 					}
-					IndexSearchers indexSearchers;
-					synchronized (lock) {
-						indexSearchers = IndexSearchers.of(indexSearchersArray);
+					if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
+						var sort = getSort(queryParams);
+						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
+						var after = (FieldDoc) s.last();
+						var totalHitsThreshold = LuceneUtils.totalHitsThreshold();
+						return new ScoringShardsCollectorManager(sort, pageLimit, after, totalHitsThreshold,
+								resultsOffset);
+					} else {
+						return null;
 					}
-					Flux<LLKeyScore> firstPageHits = LuceneUtils
-							.convertHits(Flux.fromArray(result.scoreDocs), indexSearchers, keyFieldName, collectorScheduler, true);
-
-					Flux<LLKeyScore> nextHits;
-					nextHits = Flux
-							.<TopDocs, CurrentPageInfo>generate(
-									() -> new CurrentPageInfo(LuceneUtils.getLastFieldDoc(result.scoreDocs),
-											paginationInfo.totalLimit() - paginationInfo.firstPageLimit(), 1),
-									(s, emitter) -> {
-										if (Schedulers.isInNonBlockingThread()) {
-											throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-										}
-
-										if (s.last() != null && s.remainingLimit() > 0) {
-											Sort luceneSort = queryParams.sort();
-											if (luceneSort == null) {
-												luceneSort = Sort.RELEVANCE;
-											}
-											CollectorManager<TopFieldCollector, TopDocs> sharedManager
-													= new ScoringShardsCollectorManager(luceneSort, s.currentPageLimit(),
-													(FieldDoc) s.last(), LuceneUtils.totalHitsThreshold(), 0, s.currentPageLimit());
-
-											try {
-												var collectors = new ObjectArrayList<TopFieldCollector>(indexSearchersArray.size());
-												for (IndexSearcher indexSearcher : indexSearchersArray) {
-													//noinspection BlockingMethodInNonBlockingContext
-													TopFieldCollector collector = sharedManager.newCollector();
-													//noinspection BlockingMethodInNonBlockingContext
-													indexSearcher.search(luceneQuery, collector);
-
-													collectors.add(collector);
-												}
-
-												//noinspection BlockingMethodInNonBlockingContext
-												var pageTopDocs = sharedManager.reduce(collectors);
-												var pageLastDoc = LuceneUtils.getLastFieldDoc(pageTopDocs.scoreDocs);
-												emitter.next(pageTopDocs);
-
-												s = new CurrentPageInfo(pageLastDoc, s.remainingLimit() - s.currentPageLimit(),
-														s.pageIndex() + 1);
-											} catch (IOException ex) {
-												emitter.error(ex);
-												s = EMPTY_STATUS;
-											}
-										} else {
-											emitter.complete();
-											s = EMPTY_STATUS;
-										}
-										return s;
-							})
-							.subscribeOn(collectorScheduler)
-							.transform(flux -> {
-								if (paginationInfo.forceSinglePage()
-										|| paginationInfo.totalLimit() - paginationInfo.firstPageLimit() <= 0) {
-									return Flux.empty();
-								} else {
-									return flux;
-								}
-							})
-							.flatMapIterable(topFieldDoc -> Arrays.asList(topFieldDoc.scoreDocs))
-							.transform(scoreDocs -> LuceneUtils.convertHits(scoreDocs,
-									indexSearchers, keyFieldName, collectorScheduler, true));
-
-					return new LuceneSearchResult(LuceneUtils.convertTotalHitsCount(result.totalHits),
-							firstPageHits
-									.concatWith(nextHits),
-									//.transform(flux -> LuceneUtils.filterTopDoc(flux, queryParams)),
-							release
-					);
 				})
-				.subscribeOn(collectorScheduler);
+				.flatMap(sharedManager -> Flux
+						.fromIterable(indexSearchers)
+						.flatMap(shard -> Mono.fromCallable(() -> {
+							var collector = sharedManager.newCollector();
+							shard.search(queryParams.query(), collector);
+							return collector;
+						}))
+						.collectList()
+						.flatMap(collectors -> Mono.fromCallable(() -> {
+							var pageTopDocs = sharedManager.reduce(collectors);
+							var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
+							long nextRemainingLimit;
+							if (allowPagination) {
+								nextRemainingLimit = s.remainingLimit() - pageLimits.getPageLimit(s.pageIndex());
+							} else {
+								nextRemainingLimit = 0L;
+							}
+							var nextPageIndex = s.pageIndex() + 1;
+							var nextPageInfo = new CurrentPageInfo(pageLastDoc, nextRemainingLimit, nextPageIndex);
+							return new PageData(pageTopDocs, nextPageInfo);
+						}))
+				);
 	}
-
 }

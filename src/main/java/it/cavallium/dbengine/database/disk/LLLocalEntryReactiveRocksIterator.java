@@ -18,7 +18,7 @@ public class LLLocalEntryReactiveRocksIterator extends LLLocalReactiveRocksItera
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, alloc, cfh, range, allowNettyDirect, readOptions, true, debugName);
+		super(db, alloc, cfh, range, allowNettyDirect, readOptions, true);
 	}
 
 	@Override

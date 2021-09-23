@@ -5,6 +5,7 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryLength<B> {
 

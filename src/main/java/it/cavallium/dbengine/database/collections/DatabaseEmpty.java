@@ -2,11 +2,14 @@ package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.Serializer.DeserializationResult;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public class DatabaseEmpty {
 
@@ -17,7 +20,7 @@ public class DatabaseEmpty {
 	public static Serializer<Nothing> nothingSerializer(BufferAllocator bufferAllocator) {
 		return new Serializer<>() {
 			@Override
-			public @NotNull DeserializationResult<Nothing> deserialize(@NotNull Send<Buffer> serialized) {
+			public @NotNull DeserializationResult<Nothing> deserialize(@Nullable Send<Buffer> serialized) {
 				try (serialized) {
 					return NOTHING_RESULT;
 				}
@@ -25,7 +28,7 @@ public class DatabaseEmpty {
 
 			@Override
 			public @NotNull Send<Buffer> serialize(@NotNull Nothing deserialized) {
-				return bufferAllocator.allocate(0).send();
+				return LLUtils.empty(bufferAllocator);
 			}
 		};
 	}
@@ -33,8 +36,10 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Send<Buffer> key) {
-		return new DatabaseSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()));
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary,
+			Send<Buffer> key,
+			Drop<DatabaseSingle<Nothing>> drop) {
+		return new DatabaseSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()), drop);
 	}
 
 	public static final class Nothing {

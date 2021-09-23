@@ -1,10 +1,13 @@
 package it.cavallium.dbengine.database;
 
+import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
+
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.CompositeBuffer;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.util.IllegalReferenceCountException;
 import io.net5.util.internal.PlatformDependent;
@@ -15,6 +18,8 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.CharsetEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -24,6 +29,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -35,6 +41,7 @@ import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
@@ -48,6 +55,7 @@ import org.slf4j.Marker;
 import org.slf4j.MarkerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
 
@@ -173,9 +181,9 @@ public class LLUtils {
 		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.score(), hit.key());
 	}
 
-	public static String toStringSafe(Buffer key) {
+	public static String toStringSafe(@Nullable Buffer key) {
 		try {
-			if (key.isAccessible()) {
+			if (key == null || key.isAccessible()) {
 				return toString(key);
 			} else {
 				return "(released)";
@@ -185,7 +193,35 @@ public class LLUtils {
 		}
 	}
 
-	public static String toString(Buffer key) {
+	public static String toStringSafe(@Nullable LLRange range) {
+		try {
+			if (range == null || range.isAccessible()) {
+				return toString(range);
+			} else {
+				return "(released)";
+			}
+		} catch (IllegalReferenceCountException ex) {
+			return "(released)";
+		}
+	}
+
+	public static String toString(@Nullable LLRange range) {
+		if (range == null) {
+			return "null";
+		} else if (range.isAll()) {
+			return "ξ";
+		} else if (range.hasMin() && range.hasMax()) {
+			return "[" + toStringSafe(range.getMinUnsafe()) + "," + toStringSafe(range.getMaxUnsafe()) + ")";
+		} else if (range.hasMin()) {
+			return "[" + toStringSafe(range.getMinUnsafe()) + ",*)";
+		} else if (range.hasMax()) {
+			return "[*," + toStringSafe(range.getMaxUnsafe()) + ")";
+		} else {
+			return "∅";
+		}
+	}
+
+	public static String toString(@Nullable Buffer key) {
 		if (key == null) {
 			return "null";
 		} else {
@@ -195,20 +231,37 @@ public class LLUtils {
 			if (iMax <= -1) {
 				return "[]";
 			} else {
-				StringBuilder b = new StringBuilder();
-				b.append('[');
+				StringBuilder arraySB = new StringBuilder();
+				StringBuilder asciiSB = new StringBuilder();
+				boolean isAscii = true;
+				arraySB.append('[');
 				int i = 0;
 
 				while (true) {
-					b.append(key.getByte(startIndex + i));
+					var byteVal = key.getUnsignedByte(startIndex + i);
+					arraySB.append(byteVal);
+					if (isAscii) {
+						if (byteVal >= 32 && byteVal < 127) {
+							asciiSB.append((char) byteVal);
+						} else if (byteVal == 0) {
+							asciiSB.append('␀');
+						} else {
+							isAscii = false;
+							asciiSB = null;
+						}
+					}
 					if (i == iLimit) {
-						b.append("…");
+						arraySB.append("…");
 					}
 					if (i == iMax || i == iLimit) {
-						return b.append(']').toString();
+						if (isAscii) {
+							return asciiSB.insert(0, "\"").append("\"").toString();
+						} else {
+							return arraySB.append(']').toString();
+						}
 					}
 
-					b.append(", ");
+					arraySB.append(", ");
 					++i;
 				}
 			}
@@ -257,7 +310,10 @@ public class LLUtils {
 		return true;
 	}
 
-	public static byte[] toArray(Buffer key) {
+	public static byte[] toArray(@Nullable Buffer key) {
+		if (key == null) {
+			return EMPTY_BYTE_ARRAY;
+		}
 		byte[] array = new byte[key.readableBytes()];
 		key.copyInto(key.readerOffset(), array, 0, key.readableBytes());
 		return array;
@@ -291,7 +347,7 @@ public class LLUtils {
 	 */
 	@SuppressWarnings("ConstantConditions")
 	@Nullable
-	public static Send<Buffer> readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
+	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
 		ByteBuffer directBuffer;
 		Buffer buffer;
 		{
@@ -308,7 +364,7 @@ public class LLUtils {
 				if (size != RocksDB.NOT_FOUND) {
 					if (size == directBuffer.limit()) {
 						buffer.readerOffset(0).writerOffset(size);
-						return buffer.send();
+						return buffer;
 					} else {
 						assert size > directBuffer.limit();
 						assert directBuffer.limit() > 0;
@@ -318,7 +374,7 @@ public class LLUtils {
 							PlatformDependent.freeDirectBuffer(directBuffer);
 							directBuffer = null;
 						}
-						directBuffer = LLUtils.obtainDirect(buffer);
+						directBuffer = LLUtils.obtainDirect(buffer, true);
 						buffer.ensureWritable(size);
 					}
 				}
@@ -333,7 +389,131 @@ public class LLUtils {
 				PlatformDependent.freeDirectBuffer(directBuffer);
 				directBuffer = null;
 			}
-			buffer.close();
+		}
+	}
+
+	public static void ensureBlocking() {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+		}
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>> Mono<U> usingSend(Mono<Send<T>> resourceSupplier,
+			Function<Send<T>, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
+			if (cleanupOnSuccess) {
+				return Mono.fromRunnable(() -> r.close());
+			} else {
+				return Mono.empty();
+			}
+		}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
+			Function<V, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(() -> r.close());
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>, V extends T> Flux<U> usingEachResource(Flux<V> resourceSupplier,
+			Function<V, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return resourceSupplier
+				.concatMap(resource -> Mono.usingWhen(Mono.just(resource), resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(() -> r.close());
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close())))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>> Mono<U> usingSendResource(Mono<Send<T>> resourceSupplier,
+			Function<T, Mono<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Mono.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(() -> r.close());
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
+	public static <U, T extends Resource<T>> Flux<U> usingSendResources(Mono<Send<T>> resourceSupplier,
+			Function<T, Flux<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Flux.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(() -> r.close());
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	public static boolean isSet(ScoreDoc[] scoreDocs) {
+		for (ScoreDoc scoreDoc : scoreDocs) {
+			if (scoreDoc == null) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	public static Send<Buffer> empty(BufferAllocator allocator) {
+		try {
+			return allocator.allocate(0).send();
+		} catch (Exception ex) {
+			try (var empty = CompositeBuffer.compose(allocator)) {
+				assert empty.readableBytes() == 0;
+				assert empty.capacity() == 0;
+				return empty.send();
+			}
+		}
+	}
+
+	public static Send<Buffer> copy(BufferAllocator allocator, Buffer buf) {
+		if (CompositeBuffer.isComposite(buf) && buf.capacity() == 0) {
+			return empty(allocator);
+		} else {
+			return buf.copy().send();
 		}
 	}
 
@@ -342,29 +522,33 @@ public class LLUtils {
 	@NotNull
 	public static DirectBuffer newDirect(BufferAllocator allocator, int size) {
 		try (var buf = allocator.allocate(size)) {
-			var direct = obtainDirect(buf);
+			var direct = obtainDirect(buf, true);
 			return new DirectBuffer(buf.send(), direct);
 		}
 	}
 
 	@NotNull
-	public static DirectBuffer convertToDirect(BufferAllocator allocator, Send<Buffer> content) {
+	public static DirectBuffer convertToReadableDirect(BufferAllocator allocator, Send<Buffer> content) {
 		try (var buf = content.receive()) {
-			if (buf.countComponents() != 0) {
-				var direct = obtainDirect(buf);
-				return new DirectBuffer(buf.send(), direct);
+			DirectBuffer result;
+			if (buf.countComponents() == 1) {
+				var direct = obtainDirect(buf, false);
+				result = new DirectBuffer(buf.send(), direct);
 			} else {
 				var direct = newDirect(allocator, buf.readableBytes());
 				try (var buf2 = direct.buffer().receive()) {
 					buf.copyInto(buf.readerOffset(), buf2, buf2.writerOffset(), buf.readableBytes());
-					return new DirectBuffer(buf2.send(), direct.byteBuffer());
+					buf2.writerOffset(buf2.writerOffset() + buf.readableBytes());
+					assert buf2.readableBytes() == buf.readableBytes();
+					result = new DirectBuffer(buf2.send(), direct.byteBuffer());
 				}
 			}
+			return result;
 		}
 	}
 
 	@NotNull
-	public static ByteBuffer obtainDirect(Buffer buffer) {
+	public static ByteBuffer obtainDirect(Buffer buffer, boolean writable) {
 		if (!PlatformDependent.hasUnsafe()) {
 			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
 					PlatformDependent.getUnsafeUnavailabilityCause()
@@ -372,15 +556,33 @@ public class LLUtils {
 		}
 		if (!MemorySegmentUtils.isSupported()) {
 			throw new UnsupportedOperationException("Foreign Memory Access API support is disabled."
-					+ " Please set \"--enable-preview --add-modules jdk.incubator.foreign -Dforeign.restricted=permit\"");
+					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"",
+					MemorySegmentUtils.getUnsupportedCause()
+			);
 		}
 		assert buffer.isAccessible();
+		buffer.compact();
+		assert buffer.readerOffset() == 0;
 		AtomicLong nativeAddress = new AtomicLong(0);
-		if (buffer.countComponents() == 1 && buffer.countReadableComponents() == 1) {
-			buffer.forEachReadable(0, (i, c) -> {
-				nativeAddress.setPlain(c.readableNativeAddress());
-				return false;
-			});
+		if (buffer.countComponents() == 1) {
+			if (writable) {
+				if (buffer.countWritableComponents() == 1) {
+					buffer.forEachWritable(0, (i, c) -> {
+						assert c.writableNativeAddress() != 0;
+						nativeAddress.setPlain(c.writableNativeAddress());
+						return false;
+					});
+				}
+			} else {
+				var readableComponents = buffer.countReadableComponents();
+				if (readableComponents == 1) {
+					buffer.forEachReadable(0, (i, c) -> {
+						assert c.readableNativeAddress() != 0;
+						nativeAddress.setPlain(c.readableNativeAddress());
+						return false;
+					});
+				}
+			}
 		}
 		if (nativeAddress.getPlain() == 0) {
 			if (buffer.capacity() == 0) {
@@ -391,7 +593,7 @@ public class LLUtils {
 			}
 			throw new IllegalStateException("Buffer is not direct");
 		}
-		return MemorySegmentUtils.directBuffer(nativeAddress.getPlain(), buffer.capacity());
+		return MemorySegmentUtils.directBuffer(nativeAddress.getPlain(), writable ? buffer.capacity() : buffer.writerOffset());
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {
@@ -401,83 +603,57 @@ public class LLUtils {
 	}
 
 	@NotNull
-	public static Send<Buffer> readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		var nullableSend = readNullableDirectNioBuffer(alloc, reader);
-		try (var buffer = nullableSend != null ? nullableSend.receive() : null) {
-			if (buffer == null) {
-				throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
-			}
-			return buffer.send();
+	public static Buffer readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
+		var nullable = readNullableDirectNioBuffer(alloc, reader);
+		if (nullable == null) {
+			throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
 		}
+		return nullable;
 	}
 
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
-		try (var composite = buffer.receive()) {
-			return composite.send();
-		}
+	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
+		return buffer.receive();
 	}
 
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer1, Send<Buffer> buffer2) {
-		try (var buf1 = buffer1.receive()) {
-			try (var buf2 = buffer2.receive()) {
-				try (var composite = CompositeBuffer.compose(alloc, buf1.split().send(), buf2.split().send())) {
-					return composite.send();
-				}
-			}
-		}
-	}
-
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc,
-			Send<Buffer> buffer1,
-			Send<Buffer> buffer2,
-			Send<Buffer> buffer3) {
-		try (var buf1 = buffer1.receive()) {
-			try (var buf2 = buffer2.receive()) {
-				try (var buf3 = buffer3.receive()) {
-					try (var composite = CompositeBuffer.compose(alloc,
-							buf1.split().send(),
-							buf2.split().send(),
-							buf3.split().send()
-					)) {
-						return composite.send();
-					}
-				}
+	@NotNull
+	public static Buffer compositeBuffer(BufferAllocator alloc,
+			@NotNull Send<Buffer> buffer1,
+			@NotNull Send<Buffer> buffer2) {
+		var b1 = buffer1.receive();
+		try (var b2 = buffer2.receive()) {
+			if (b1.writerOffset() < b1.capacity() || b2.writerOffset() < b2.capacity()) {
+				b1.ensureWritable(b2.readableBytes(), b2.readableBytes(), true);
+				b2.copyInto(b2.readerOffset(), b1, b1.writerOffset(), b2.readableBytes());
+				b1.writerOffset(b1.writerOffset() + b2.readableBytes());
+				return b1;
+			} else {
+				return CompositeBuffer.compose(alloc, b1.send(), b2.send());
 			}
 		}
 	}
 
-	@SafeVarargs
-	public static Send<Buffer> compositeBuffer(BufferAllocator alloc, Send<Buffer>... buffers) {
-		try {
-			return switch (buffers.length) {
-				case 0 -> alloc.allocate(0).send();
-				case 1 -> compositeBuffer(alloc, buffers[0]);
-				case 2 -> compositeBuffer(alloc, buffers[0], buffers[1]);
-				case 3 -> compositeBuffer(alloc, buffers[0], buffers[1], buffers[2]);
-				default -> {
-					Buffer[] bufs = new Buffer[buffers.length];
-					for (int i = 0; i < buffers.length; i++) {
-						bufs[i] = buffers[i].receive();
-					}
-					try {
-						//noinspection unchecked
-						Send<Buffer>[] sentBufs = new Send[buffers.length];
-						for (int i = 0; i < buffers.length; i++) {
-							sentBufs[i] = bufs[i].split().send();
-						}
-						try (var composite = CompositeBuffer.compose(alloc, sentBufs)) {
-							yield composite.send();
-						}
-					} finally {
-						for (Buffer buf : bufs) {
-							buf.close();
-						}
-					}
+	@NotNull
+	public static Buffer compositeBuffer(BufferAllocator alloc,
+			@NotNull Send<Buffer> buffer1,
+			@NotNull Send<Buffer> buffer2,
+			@NotNull Send<Buffer> buffer3) {
+		var b1 = buffer1.receive();
+		try (var b2 = buffer2.receive()) {
+			try (var b3 = buffer3.receive()) {
+				if (b1.writerOffset() < b1.capacity()
+						|| b2.writerOffset() < b2.capacity()
+						|| b3.writerOffset() < b3.capacity()) {
+					b1.ensureWritable(b2.readableBytes(), b2.readableBytes(), true);
+					b2.copyInto(b2.readerOffset(), b1, b1.writerOffset(), b2.readableBytes());
+					b1.writerOffset(b1.writerOffset() + b2.readableBytes());
+
+					b1.ensureWritable(b3.readableBytes(), b3.readableBytes(), true);
+					b3.copyInto(b3.readerOffset(), b1, b1.writerOffset(), b3.readableBytes());
+					b1.writerOffset(b1.writerOffset() + b3.readableBytes());
+					return b1;
+				} else {
+					return CompositeBuffer.compose(alloc, b1.send(), b2.send(), b3.send());
 				}
-			};
-		} finally {
-			for (Send<Buffer> buffer : buffers) {
-				buffer.close();
 			}
 		}
 	}
@@ -807,7 +983,9 @@ public class LLUtils {
 	}
 
 	private static void discardStage(DatabaseStage<?> stage) {
-		stage.release();
+		if (stage != null && stage.isAccessible()) {
+			stage.close();
+		}
 	}
 
 	public static boolean isDirect(Buffer key) {

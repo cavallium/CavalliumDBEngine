@@ -4,8 +4,11 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.netty.NullableBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 public interface Serializer<A> {
 
@@ -18,7 +21,7 @@ public interface Serializer<A> {
 	Serializer<Send<Buffer>> NOOP_SERIALIZER = new Serializer<>() {
 		@Override
 		public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
-			try (var serializedBuf = serialized.receive()) {
+			try (var serializedBuf =  serialized.receive()) {
 				var readableBytes = serializedBuf.readableBytes();
 				return new DeserializationResult<>(serializedBuf.send(), readableBytes);
 			}
@@ -37,7 +40,8 @@ public interface Serializer<A> {
 	static Serializer<String> utf8(BufferAllocator allocator) {
 		return new Serializer<>() {
 			@Override
-			public @NotNull DeserializationResult<String> deserialize(@NotNull Send<Buffer> serializedToReceive) {
+			public @NotNull DeserializationResult<String> deserialize(@Nullable Send<Buffer> serializedToReceive) {
+				Objects.requireNonNull(serializedToReceive);
 				try (Buffer serialized = serializedToReceive.receive()) {
 					assert serialized.isAccessible();
 					int length = serialized.readInt();

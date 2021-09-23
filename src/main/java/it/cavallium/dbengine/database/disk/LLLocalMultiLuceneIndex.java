@@ -1,29 +1,20 @@
 package it.cavallium.dbengine.database.disk;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader.InvalidCacheLoadException;
+import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDocument;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneShardSearcher;
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectArrayMap;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -33,38 +24,24 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.lucene.search.CollectionStatistics;
-import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.batch.ParallelUtils;
-import org.warp.commonutils.functional.IOBiConsumer;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
-
-	// Scheduler used to get callback values of LuceneStreamSearcher without creating deadlocks
-	protected final Scheduler luceneSearcherScheduler = LuceneUtils.newLuceneSearcherScheduler(true);
 
 	private final ConcurrentHashMap<Long, LLSnapshot[]> registeredSnapshots = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 	private final LLLocalLuceneIndex[] luceneIndices;
-
+	private final PerFieldAnalyzerWrapper luceneAnalyzer;
+	private final PerFieldSimilarityWrapper luceneSimilarity;
 
 	private final LuceneMultiSearcher multiSearcher = new AdaptiveLuceneMultiSearcher();
 
@@ -95,6 +72,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			);
 		}
 		this.luceneIndices = luceneIndices;
+		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
+		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 	}
 
 	private LLLocalLuceneIndex getLuceneIndex(LLTerm id) {
@@ -108,6 +87,19 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public String getLuceneIndexName() {
 		return luceneIndices[0].getLuceneIndexName();
+	}
+
+	private Mono<Send<LLIndexSearchers>> getIndexSearchers(LLSnapshot snapshot) {
+		return Flux
+				.fromArray(luceneIndices)
+				.index()
+				// Resolve the snapshot of each shard
+				.flatMap(tuple -> Mono
+						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
+						.flatMap(luceneSnapshot -> tuple.getT2().retrieveSearcher(luceneSnapshot.orElse(null)))
+				)
+				.collectList()
+				.map(searchers -> LLIndexSearchers.of(searchers).send());
 	}
 
 	@Override
@@ -200,60 +192,43 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<Send<LLSearchResultShard>> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
-		record LuceneIndexWithSnapshot(LLLocalLuceneIndex luceneIndex, Optional<LLSnapshot> snapshot) {}
+		var searchers = this.getIndexSearchers(snapshot);
+		var transformer = new MultiMoreLikeThisTransformer(mltDocumentFields);
 
+		// Collect all the shards results into a single global result
 		return multiSearcher
-				// Create shard searcher
-				.createShardSearcher(localQueryParams)
-				.flatMap(shardSearcher -> Flux
-						// Iterate the indexed shards
-						.fromArray(luceneIndices).index()
-						// Resolve the snapshot of each shard
-						.flatMap(tuple -> Mono
-								.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
-								.map(luceneSnapshot -> new LuceneIndexWithSnapshot(tuple.getT2(), luceneSnapshot))
-						)
-						// Execute the query and collect it using the shard searcher
-						.flatMap(luceneIndexWithSnapshot -> luceneIndexWithSnapshot.luceneIndex()
-								.distributedMoreLikeThis(luceneIndexWithSnapshot.snapshot.orElse(null), queryParams, mltDocumentFields, shardSearcher))
-						// Collect all the shards results into a single global result
-						.then(shardSearcher.collect(localQueryParams, keyFieldName, luceneSearcherScheduler))
-				)
-				// Fix the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));
+				.collectMulti(searchers, localQueryParams, keyFieldName, transformer)
+				// Transform the result type
+				.map(resultToReceive -> {
+					var result = resultToReceive.receive();
+					return new LLSearchResultShard(result.results(), result.totalHitsCount(),
+							d -> result.close()).send();
+				})
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	@Override
-	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
+	public Mono<Send<LLSearchResultShard>> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
-		record LuceneIndexWithSnapshot(LLLocalLuceneIndex luceneIndex, Optional<LLSnapshot> snapshot) {}
+		var searchers = getIndexSearchers(snapshot);
 
+		// Collect all the shards results into a single global result
 		return multiSearcher
-				// Create shard searcher
-				.createShardSearcher(localQueryParams)
-				.flatMap(shardSearcher -> Flux
-						// Iterate the indexed shards
-						.fromArray(luceneIndices).index()
-						// Resolve the snapshot of each shard
-						.flatMap(tuple -> Mono
-								.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
-								.map(luceneSnapshot -> new LuceneIndexWithSnapshot(tuple.getT2(), luceneSnapshot))
-						)
-						// Execute the query and collect it using the shard searcher
-						.flatMap(luceneIndexWithSnapshot -> luceneIndexWithSnapshot.luceneIndex()
-								.distributedSearch(luceneIndexWithSnapshot.snapshot.orElse(null), queryParams, shardSearcher))
-						// Collect all the shards results into a single global result
-						.then(shardSearcher.collect(localQueryParams, keyFieldName, luceneSearcherScheduler))
-				)
-				// Fix the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result.release()));
+				.collectMulti(searchers, localQueryParams, keyFieldName, LLSearchTransformer.NO_TRANSFORMATION)
+				// Transform the result type
+				.map(resultToReceive -> {
+					var result = resultToReceive.receive();
+					return new LLSearchResultShard(result.results(), result.totalHitsCount(),
+							d -> result.close()).send();
+				})
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	@Override
@@ -312,5 +287,20 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public boolean isLowMemoryMode() {
 		return luceneIndices[0].isLowMemoryMode();
+	}
+
+	private class MultiMoreLikeThisTransformer implements LLSearchTransformer {
+
+		private final Flux<Tuple2<String, Set<String>>> mltDocumentFields;
+
+		public MultiMoreLikeThisTransformer(Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
+			this.mltDocumentFields = mltDocumentFields;
+		}
+
+		@Override
+		public Mono<LocalQueryParams> transform(Mono<TransformerInput> inputMono) {
+			return inputMono.flatMap(input -> LuceneUtils.getMoreLikeThisQuery(input.indexSearchers(), input.queryParams(),
+					luceneAnalyzer, luceneSimilarity, mltDocumentFields));
+		}
 	}
 }

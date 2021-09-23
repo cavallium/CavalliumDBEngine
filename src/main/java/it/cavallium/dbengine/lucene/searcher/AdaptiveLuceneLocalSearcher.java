@@ -1,40 +1,25 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import org.apache.lucene.search.IndexSearcher;
+import io.net5.buffer.api.Send;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	private static final LuceneLocalSearcher localSearcher = new SimpleLuceneLocalSearcher();
 
-	private static final LuceneLocalSearcher unscoredPagedLuceneLocalSearcher = new LocalLuceneWrapper(new UnscoredUnsortedContinuousLuceneMultiSearcher());
-
 	private static final LuceneLocalSearcher countSearcher = new CountLuceneLocalSearcher();
 
 	@Override
-	public Mono<LuceneSearchResult> collect(IndexSearcher indexSearcher,
-			Mono<Void> releaseIndexSearcher,
+	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			Scheduler scheduler) {
-		if (Schedulers.isInNonBlockingThread()) {
-			return releaseIndexSearcher
-					.then(Mono.error(() -> new UnsupportedOperationException("Called collect in a nonblocking thread")));
-		}
+			LLSearchTransformer transformer) {
 		if (queryParams.limit() == 0) {
-			return countSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName, scheduler);
-		} else if (!queryParams.isScored() && queryParams.offset() == 0 && queryParams.limit() >= 2147483630
-				&& !queryParams.isSorted()) {
-			return unscoredPagedLuceneLocalSearcher.collect(indexSearcher,
-					releaseIndexSearcher,
-					queryParams,
-					keyFieldName,
-					scheduler
-			);
+			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
 		} else {
-			return localSearcher.collect(indexSearcher, releaseIndexSearcher, queryParams, keyFieldName, scheduler);
+			return localSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
 		}
 	}
 }

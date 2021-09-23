@@ -19,15 +19,20 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
+import reactor.test.util.TestLogger;
+import reactor.util.Loggers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 public abstract class TestDictionaryMap {
 
+	private static final Logger log = LoggerFactory.getLogger(TestDictionaryMap.class);
 	private TestAllocator allocator;
 	private boolean checkLeaks = true;
 
@@ -97,21 +102,24 @@ public abstract class TestDictionaryMap {
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testPut(MapType mapType, UpdateMode updateMode, String key, String value, boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMap(map -> map
-								.putValue(key, value)
-								.then(map.getValue(null, key))
-								.doAfterTerminate(map::release)
-						)
-				));
-		if (shouldFail) {
-			this.checkLeaks = false;
-			stpVer.verifyError();
-		} else {
-			stpVer.expectNext(value).verifyComplete();
-		}
+		var gen = getTempDbGenerator();
+		var db = run(gen.openTempDb(allocator));
+		var dict = run(tempDictionary(db.db(), updateMode));
+		var map = tempDatabaseMapDictionaryMap(dict, mapType, 5);
+
+		runVoid(shouldFail,  map.putValue(key, value));
+
+		var resultingMapSize = run(map.leavesCount(null, false));
+		Assertions.assertEquals(shouldFail ? 0 : 1, resultingMapSize);
+
+		var resultingMap = run(map.get(null));
+		Assertions.assertEquals(shouldFail ? null : Map.of(key, value), resultingMap);
+
+		map.close();
+
+		//if (shouldFail) this.checkLeaks = false;
+
+		gen.closeTempDb(db);
 	}
 
 	@ParameterizedTest
@@ -120,10 +128,10 @@ public abstract class TestDictionaryMap {
 		var stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMap(map -> map
-								.at(null, key).flatMap(v -> v.set(value).doAfterTerminate(v::release))
-								.then(map.at(null, key).flatMap(v -> v.get(null).doAfterTerminate(v::release)))
-								.doAfterTerminate(map::release)
+						.flatMap(map -> LLUtils
+								.usingResource(map.at(null, key), v -> v.set(value), true)
+								.then(LLUtils.usingResource(map.at(null, key), v -> v.get(null), true))
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -146,7 +154,7 @@ public abstract class TestDictionaryMap {
 										map.putValueAndGetPrevious(key, value),
 										map.putValueAndGetPrevious(key, value)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -169,7 +177,7 @@ public abstract class TestDictionaryMap {
 										map.putValue(key, value).then(map.removeAndGetPrevious(key)),
 										map.removeAndGetPrevious(key)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -192,7 +200,7 @@ public abstract class TestDictionaryMap {
 										map.putValue(key, value).then(map.removeAndGetStatus(key)),
 										map.removeAndGetStatus(key)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -235,7 +243,7 @@ public abstract class TestDictionaryMap {
 											return value;
 										})
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.transform(LLUtils::handleDiscard)
 				));
@@ -257,28 +265,52 @@ public abstract class TestDictionaryMap {
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
 						.flatMapMany(map -> Flux
 								.concat(
-										map.updateValue(key, old -> {
-											assert old == null;
-											return "error?";
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, false, old -> {
-											assert Objects.equals(old, "error?");
-											return "error?";
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, "error?");
-											return "error?";
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, "error?");
-											return value;
-										}).then(map.getValue(null, key)),
-										map.updateValue(key, true, old -> {
-											assert Objects.equals(old, value);
-											return value;
-										}).then(map.getValue(null, key))
+										Mono
+												.fromRunnable(() -> log.debug("1. Updating value: {}", key))
+												.then(map.updateValue(key, old -> {
+													assert old == null;
+													return "error?";
+												}))
+												.doOnSuccess(s -> log.debug("1. Getting value: {}", key))
+												.then(map.getValue(null, key)),
+
+										Mono
+												.fromRunnable(() -> log.debug("2. Updating value: {}", key))
+												.then(map.updateValue(key, false, old -> {
+													assert Objects.equals(old, "error?");
+													return "error?";
+												}))
+												.doOnSuccess(s -> log.debug("2. Getting value: {}", key))
+												.then(map.getValue(null, key)),
+
+										Mono
+												.fromRunnable(() -> log.debug("3. Updating value: {}", key))
+												.then(map.updateValue(key, true, old -> {
+													assert Objects.equals(old, "error?");
+													return "error?";
+												}))
+												.doOnSuccess(s -> log.debug("3. Getting value: {}", key))
+												.then(map.getValue(null, key)),
+
+										Mono
+												.fromRunnable(() -> log.debug("4. Updating value: {}", key))
+												.then(map.updateValue(key, true, old -> {
+													assert Objects.equals(old, "error?");
+													return value;
+												}))
+												.doOnSuccess(s -> log.debug("4. Getting value: {}", key))
+												.then(map.getValue(null, key)),
+
+										Mono
+												.fromRunnable(() -> log.debug("5. Updating value: {}", key))
+												.then(map.updateValue(key, true, old -> {
+													assert Objects.equals(old, value);
+													return value;
+												}))
+												.doOnSuccess(s -> log.debug("5. Getting value: {}", key))
+												.then(map.getValue(null, key))
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.transform(LLUtils::handleDiscard)
 				));
@@ -303,7 +335,7 @@ public abstract class TestDictionaryMap {
 										map.remove(key),
 										map.putValueAndGetChanged(key, "error?").single()
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -362,7 +394,7 @@ public abstract class TestDictionaryMap {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.getMulti(null, Flux.fromIterable(entries.keySet()))
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
@@ -390,7 +422,7 @@ public abstract class TestDictionaryMap {
 						.flatMapMany(map -> map
 								.setAllValues(Flux.fromIterable(entries.entrySet()))
 								.thenMany(map.getMulti(null, Flux.fromIterable(entries.keySet())))
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
@@ -420,7 +452,7 @@ public abstract class TestDictionaryMap {
 										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet())),
 										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet()))
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.transform(LLUtils::handleDiscard)
 				));
@@ -448,7 +480,7 @@ public abstract class TestDictionaryMap {
 										map.set(entries).then(Mono.empty()),
 										map.getMulti(null, Flux.fromIterable(entries.keySet()))
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
@@ -489,7 +521,7 @@ public abstract class TestDictionaryMap {
 											removalMono.then(Mono.empty()),
 											map.setAndGetChanged(entries).single()
 									)
-									.doAfterTerminate(map::release);
+									.doFinally(s -> map.close());
 						})
 				));
 		if (shouldFail) {
@@ -511,7 +543,7 @@ public abstract class TestDictionaryMap {
 								.concat(map.setAndGetPrevious(entries), map.setAndGetPrevious(entries))
 								.map(Map::entrySet)
 								.concatMapIterable(list -> list)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -537,7 +569,7 @@ public abstract class TestDictionaryMap {
 								.concat(map.set(entries).then(Mono.empty()), map.clearAndGetPrevious(), map.get(null))
 								.map(Map::entrySet)
 								.concatMapIterable(list -> list)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 				));
 		if (shouldFail) {
@@ -564,7 +596,7 @@ public abstract class TestDictionaryMap {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.getAllValues(null)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.transform(LLUtils::handleDiscard)
 				));
@@ -594,7 +626,7 @@ public abstract class TestDictionaryMap {
 										.map(Map::entrySet)
 										.flatMapIterable(list -> list)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.transform(LLUtils::handleDiscard)
 				));
@@ -626,10 +658,10 @@ public abstract class TestDictionaryMap {
 														.getValue()
 														.get(null)
 														.map(val -> Map.entry(stage.getKey(), val))
-														.doAfterTerminate(() -> stage.getValue().release())
+														.doFinally(s -> stage.getValue().close())
 												)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.transform(LLUtils::handleDiscard)
 				));
@@ -658,7 +690,7 @@ public abstract class TestDictionaryMap {
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.isEmpty(null)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
 						.transform(LLUtils::handleDiscard)
@@ -685,7 +717,7 @@ public abstract class TestDictionaryMap {
 										map.clear().then(Mono.empty()),
 										map.isEmpty(null)
 								)
-								.doAfterTerminate(map::release)
+								.doFinally(s -> map.close())
 						)
 						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
 						.transform(LLUtils::handleDiscard)

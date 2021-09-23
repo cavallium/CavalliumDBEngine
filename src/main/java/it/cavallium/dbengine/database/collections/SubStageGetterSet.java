@@ -24,7 +24,7 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 			Mono<Send<Buffer>> prefixKeyMono) {
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
-						.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer)),
+						.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer, d -> {})),
 				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);
 	}

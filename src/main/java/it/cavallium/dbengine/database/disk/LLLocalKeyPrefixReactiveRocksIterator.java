@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
@@ -9,10 +11,13 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 public class LLLocalKeyPrefixReactiveRocksIterator {
 
+	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyPrefixReactiveRocksIterator.class);
 	private final RocksDB db;
 	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
@@ -54,6 +59,9 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 								readOptions.setReadaheadSize(32 * 1024); // 32KiB
 								readOptions.setFillCache(canFillCache);
 							}
+							if (logger.isTraceEnabled()) {
+								logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+							}
 							return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, rangeSend, db, cfh);
 						}, (tuple, sink) -> {
 							try {
@@ -64,7 +72,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 									while (rocksIterator.isValid()) {
 										Buffer key;
 										if (allowNettyDirect) {
-											key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).receive();
+											key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 										} else {
 											key = LLUtils.fromByteArray(alloc, rocksIterator.key());
 										}
@@ -79,11 +87,24 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 											rocksIterator.status();
 										}
 									}
+
 									if (firstGroupKey != null) {
 										var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
 										assert groupKeyPrefix.isAccessible();
+
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB,
+													"Range {} is reading prefix {}",
+													LLUtils.toStringSafe(range),
+													LLUtils.toStringSafe(groupKeyPrefix)
+											);
+										}
+
 										sink.next(groupKeyPrefix.send());
 									} else {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+										}
 										sink.complete();
 									}
 								} finally {
@@ -92,6 +113,9 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 									}
 								}
 							} catch (RocksDBException ex) {
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+								}
 								sink.error(ex);
 							}
 							return tuple;

@@ -6,7 +6,7 @@ import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public record LocalQueryParams(@NotNull Query query, int offset, int limit,
+public record LocalQueryParams(@NotNull Query query, int offset, int limit, @NotNull PageLimits pageLimits,
 															 @Nullable Float minCompetitiveScore, @Nullable Sort sort,
 															 @NotNull ScoreMode scoreMode) {
 

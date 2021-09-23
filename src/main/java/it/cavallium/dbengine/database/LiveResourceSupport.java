@@ -19,13 +19,12 @@ public abstract class LiveResourceSupport<I extends Resource<I>, T extends LiveR
 	@Override
 	protected void finalize() throws Throwable {
 		if (this.isAccessible()) {
+			var ise = new IllegalStateException("Resource not released");
+			ise.setStackTrace(new StackTraceElement[0]);
+			logger.error("Resource not released: {}", this, attachTrace(ise));
 			try {
 				this.close();
 			} catch (Throwable ignored) {
-			} finally {
-				var ise = new IllegalStateException("Resource not released");
-				ise.setStackTrace(new StackTraceElement[0]);
-				logger.error("Resource not released: {}", this, attachTrace(ise));
 			}
 		}
 		super.finalize();

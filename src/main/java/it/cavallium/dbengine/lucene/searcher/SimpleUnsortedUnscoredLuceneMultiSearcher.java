@@ -24,7 +24,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
-		var indexSearchersResource = Mono
+		var indexSearchersSendResource = Mono
 				.fromRunnable(() -> {
 					LLUtils.ensureBlocking();
 					if (queryParams.isSorted() && queryParams.limit() > 0) {
@@ -36,11 +36,12 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 								+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 					}
 				})
-				.then(indexSearchersMono.map(Send::receive));
+				.then(indexSearchersMono);
 		var localQueryParams = getLocalQueryParams(queryParams);
 
-		return LLUtils.usingResource(indexSearchersResource,
-				indexSearchers -> Flux.fromIterable(indexSearchers.shards())
+		return LLUtils.usingSendResource(indexSearchersSendResource,
+				indexSearchers -> Flux
+						.fromIterable(indexSearchers.shards())
 						.flatMap(searcher -> {
 							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, d -> {}).send());
 							return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
@@ -69,6 +70,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 								for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
 									luceneSearchResult.close();
 								}
+								indexSearchers.close();
 							}).send();
 						}),
 				false

@@ -252,7 +252,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected void removePrefix(Buffer key) {
 		assert key.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength
 				|| key.readableBytes() == keyPrefixLength + keySuffixLength;
-		key.readerOffset(key.readerOffset() + this.keyPrefixLength).compact();
+		key.readerOffset(key.readerOffset() + this.keyPrefixLength);
 		assert key.readableBytes() == keySuffixLength + keyExtLength
 				|| key.readableBytes() == keySuffixLength;
 	}
@@ -262,7 +262,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	 */
 	protected void removeExt(Buffer key) {
 		assert key.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
-		key.writerOffset(keyPrefixLength + keySuffixLength).compact();
+		key.writerOffset(keyPrefixLength + keySuffixLength);
 		assert key.readableBytes() == keyPrefixLength + keySuffixLength;
 	}
 

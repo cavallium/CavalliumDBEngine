@@ -193,6 +193,34 @@ public class LLUtils {
 		}
 	}
 
+	public static String toStringSafe(@Nullable LLRange range) {
+		try {
+			if (range == null || range.isAccessible()) {
+				return toString(range);
+			} else {
+				return "(released)";
+			}
+		} catch (IllegalReferenceCountException ex) {
+			return "(released)";
+		}
+	}
+
+	public static String toString(@Nullable LLRange range) {
+		if (range == null) {
+			return "null";
+		} else if (range.isAll()) {
+			return "ξ";
+		} else if (range.hasMin() && range.hasMax()) {
+			return "[" + toStringSafe(range.getMinUnsafe()) + "," + toStringSafe(range.getMaxUnsafe()) + ")";
+		} else if (range.hasMin()) {
+			return "[" + toStringSafe(range.getMinUnsafe()) + ",*)";
+		} else if (range.hasMax()) {
+			return "[*," + toStringSafe(range.getMaxUnsafe()) + ")";
+		} else {
+			return "∅";
+		}
+	}
+
 	public static String toString(@Nullable Buffer key) {
 		if (key == null) {
 			return "null";
@@ -215,6 +243,8 @@ public class LLUtils {
 					if (isAscii) {
 						if (byteVal >= 32 && byteVal < 127) {
 							asciiSB.append((char) byteVal);
+						} else if (byteVal == 0) {
+							asciiSB.append('␀');
 						} else {
 							isAscii = false;
 							asciiSB = null;
@@ -477,16 +507,20 @@ public class LLUtils {
 	@NotNull
 	public static DirectBuffer convertToReadableDirect(BufferAllocator allocator, Send<Buffer> content) {
 		try (var buf = content.receive()) {
+			DirectBuffer result;
 			if (buf.countComponents() == 1) {
 				var direct = obtainDirect(buf, false);
-				return new DirectBuffer(buf.send(), direct);
+				result = new DirectBuffer(buf.send(), direct);
 			} else {
 				var direct = newDirect(allocator, buf.readableBytes());
 				try (var buf2 = direct.buffer().receive()) {
 					buf.copyInto(buf.readerOffset(), buf2, buf2.writerOffset(), buf.readableBytes());
-					return new DirectBuffer(buf2.send(), direct.byteBuffer());
+					buf2.writerOffset(buf2.writerOffset() + buf.readableBytes());
+					assert buf2.readableBytes() == buf.readableBytes();
+					result = new DirectBuffer(buf2.send(), direct.byteBuffer());
 				}
 			}
+			return result;
 		}
 	}
 

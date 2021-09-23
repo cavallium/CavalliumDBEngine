@@ -834,9 +834,6 @@ public class LLLocalDictionary implements LLDictionary {
 							stamp = 0;
 						}
 						try {
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Reading {} (before update)", LLUtils.toStringSafe(key));
-							}
 							while (true) {
 								@Nullable Buffer prevData;
 								var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
@@ -862,7 +859,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB,
-											"Read {}: {} (before update)",
+											"Reading {}: {} (before update)",
 											LLUtils.toStringSafe(key),
 											LLUtils.toStringSafe(prevData)
 									);

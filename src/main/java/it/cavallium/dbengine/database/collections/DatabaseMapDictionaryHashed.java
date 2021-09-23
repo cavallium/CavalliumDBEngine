@@ -31,7 +31,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	private final Function<T, TH> keySuffixHashFunction;
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
+			@NotNull Send<Buffer> prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,

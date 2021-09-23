@@ -5,7 +5,10 @@ import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.isCIMode;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
+import static it.cavallium.dbengine.DbTestUtils.run;
+import static it.cavallium.dbengine.DbTestUtils.runVoid;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
+import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 
@@ -23,12 +26,15 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -42,6 +48,7 @@ import reactor.util.function.Tuples;
 @TestMethodOrder(MethodOrderer.MethodName.class)
 public abstract class TestDictionaryMapDeep {
 
+	private final Logger log = LoggerFactory.getLogger(this.getClass());
 	private TestAllocator allocator;
 	private boolean checkLeaks = true;
 
@@ -174,22 +181,51 @@ public abstract class TestDictionaryMapDeep {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSet")
-	public void testSetValueGetValue(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMap(map -> map
-								.putValue(key, value)
-								.then(map.getValue(null, key))
-								.doAfterTerminate(map::release)
-						)
-				));
-		if (shouldFail) {
-			this.checkLeaks = false;
-			stpVer.verifyError();
-		} else {
-			stpVer.expectNext(value).verifyComplete();
-		}
+	public void testPutValue(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
+		var gen = getTempDbGenerator();
+		var db = run(gen.openTempDb(allocator));
+		var dict = run(tempDictionary(db.db(), updateMode));
+		var map = tempDatabaseMapDictionaryDeepMap(dict, 5, 6);
+
+		log.debug("Put \"{}\" = \"{}\"", key, value);
+		runVoid(shouldFail, map.putValue(key, value));
+
+		var resultingMapSize = run(map.leavesCount(null, false));
+		Assertions.assertEquals(shouldFail ? 0 : value.size(), resultingMapSize);
+
+		var resultingMap = run(map.get(null));
+		Assertions.assertEquals(shouldFail ? null : Map.of(key, value), resultingMap);
+
+		runVoid(map.close());
+		map.release();
+
+		//if (shouldFail) this.checkLeaks = false;
+
+		gen.closeTempDb(db);
+	}
+
+	@ParameterizedTest
+	@MethodSource("provideArgumentsSet")
+	public void testGetValue(UpdateMode updateMode, String key, Map<String, String> value, boolean shouldFail) {
+		var gen = getTempDbGenerator();
+		var db = run(gen.openTempDb(allocator));
+		var dict = run(tempDictionary(db.db(), updateMode));
+		var map = tempDatabaseMapDictionaryDeepMap(dict, 5, 6);
+
+		log.debug("Put \"{}\" = \"{}\"", key, value);
+		runVoid(shouldFail, map.putValue(key, value));
+
+		log.debug("Get \"{}\"", key);
+		var returnedValue = run(shouldFail, map.getValue(null, key));
+
+		Assertions.assertEquals(shouldFail ? null : value, returnedValue);
+
+		runVoid(map.close());
+		map.release();
+
+		//if (shouldFail) this.checkLeaks = false;
+
+		gen.closeTempDb(db);
 	}
 
 	@ParameterizedTest

@@ -287,7 +287,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	@Override
 	default Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return getAllValues(snapshot)
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new);
+				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.filter(map -> !map.isEmpty());
 	}
 
 	@Override

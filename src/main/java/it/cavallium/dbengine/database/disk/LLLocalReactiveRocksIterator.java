@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
 
 import io.net5.buffer.api.Buffer;
@@ -14,10 +15,13 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 public abstract class LLLocalReactiveRocksIterator<T> {
 
+	protected static final Logger logger = LoggerFactory.getLogger(LLLocalReactiveRocksIterator.class);
 	private final AtomicBoolean released = new AtomicBoolean(false);
 	private final RocksDB db;
 	private final BufferAllocator alloc;
@@ -51,6 +55,9 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						readOptions.setReadaheadSize(32 * 1024); // 32KiB
 						readOptions.setFillCache(false);
 					}
+					if (logger.isTraceEnabled()) {
+						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+					}
 					return getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
 				}, (tuple, sink) -> {
 					try {
@@ -74,6 +81,16 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								} else {
 									value = null;
 								}
+
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB,
+											"Range {} is reading {}: {}",
+											LLUtils.toStringSafe(range),
+											LLUtils.toStringSafe(key),
+											LLUtils.toStringSafe(value)
+									);
+								}
+
 								try {
 									rocksIterator.next();
 									rocksIterator.status();
@@ -85,9 +102,15 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								}
 							}
 						} else {
+							if (logger.isTraceEnabled()) {
+								logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+							}
 							sink.complete();
 						}
 					} catch (RocksDBException ex) {
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+						}
 						sink.error(ex);
 					}
 					return tuple;

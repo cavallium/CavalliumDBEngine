@@ -250,9 +250,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	 * Removes the prefix from the key
 	 */
 	protected void removePrefix(Buffer key) {
-		assert key.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
+		assert key.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength
+				|| key.readableBytes() == keyPrefixLength + keySuffixLength;
 		key.readerOffset(key.readerOffset() + this.keyPrefixLength).compact();
-		assert key.readableBytes() == keySuffixLength + keyExtLength;
+		assert key.readableBytes() == keySuffixLength + keyExtLength
+				|| key.readableBytes() == keySuffixLength;
 	}
 
 	/**

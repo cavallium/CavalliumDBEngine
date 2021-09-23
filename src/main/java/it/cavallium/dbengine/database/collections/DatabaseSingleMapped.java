@@ -8,6 +8,7 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.Mapper;
 import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
@@ -174,14 +175,16 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 		private final Drop<DatabaseSingleMapped<A, B>> delegate;
 
 		public CloseOnDrop(Drop<DatabaseSingleMapped<A, B>> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop<A, B> closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(DatabaseSingleMapped<A, B> obj) {
-			if (obj.serializedSingle != null) {
-				obj.serializedSingle.close();
-			}
+			obj.serializedSingle.close();
 			delegate.drop(obj);
 		}
 	}

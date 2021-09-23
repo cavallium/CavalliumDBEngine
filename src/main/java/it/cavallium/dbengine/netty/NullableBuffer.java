@@ -7,6 +7,7 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.SearchResult;
 import it.cavallium.dbengine.database.LiveResourceSupport;
+import it.cavallium.dbengine.database.collections.DatabaseSingle;
 import org.jetbrains.annotations.Nullable;
 
 public class NullableBuffer extends LiveResourceSupport<NullableBuffer, NullableBuffer> {
@@ -54,16 +55,16 @@ public class NullableBuffer extends LiveResourceSupport<NullableBuffer, Nullable
 		private final Drop<NullableBuffer> delegate;
 
 		public CloseOnDrop(Drop<NullableBuffer> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(NullableBuffer obj) {
-			if (obj.buffer != null) {
-				if (obj.buffer.isAccessible()) {
-					obj.buffer.close();
-				}
-			}
+			if (obj.buffer != null) obj.buffer.close();
 			delegate.drop(obj);
 		}
 	}

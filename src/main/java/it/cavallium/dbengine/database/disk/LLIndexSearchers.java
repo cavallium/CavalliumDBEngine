@@ -5,6 +5,7 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.IOException;
@@ -93,12 +94,16 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 			private final Drop<UnshardedIndexSearchers> delegate;
 
 			public CloseOnDrop(Drop<UnshardedIndexSearchers> drop) {
-				this.delegate = drop;
+				if (drop instanceof CloseOnDrop closeOnDrop) {
+					this.delegate = closeOnDrop.delegate;
+				} else {
+					this.delegate = drop;
+				}
 			}
 
 			@Override
 			public void drop(UnshardedIndexSearchers obj) {
-				if (obj.indexSearcher != null) obj.indexSearcher.close();
+				obj.indexSearcher.close();
 				delegate.drop(obj);
 			}
 		}
@@ -182,24 +187,21 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 		private static class CloseOnDrop implements Drop<ShardedIndexSearchers> {
 
-			private volatile boolean dropped = false;
 			private final Drop<ShardedIndexSearchers> delegate;
 
 			public CloseOnDrop(Drop<ShardedIndexSearchers> drop) {
-				this.delegate = drop;
+				if (drop instanceof CloseOnDrop closeOnDrop) {
+					this.delegate = closeOnDrop.delegate;
+				} else {
+					this.delegate = drop;
+				}
 			}
 
 			@Override
 			public void drop(ShardedIndexSearchers obj) {
-				assert !dropped;
-				if (obj.indexSearchers != null) {
-					for (LLIndexSearcher indexSearcher : obj.indexSearchers) {
-						if (indexSearcher.isAccessible()) {
-							indexSearcher.close();
-						}
-					}
+				for (LLIndexSearcher indexSearcher : obj.indexSearchers) {
+					indexSearcher.close();
 				}
-				dropped = true;
 				delegate.drop(obj);
 			}
 		}

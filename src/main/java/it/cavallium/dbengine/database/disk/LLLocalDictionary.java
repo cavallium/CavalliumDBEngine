@@ -930,6 +930,10 @@ public class LLLocalDictionary implements LLDictionary {
 											assert newData.isAccessible();
 											dbPut(cfh, null, key.send(), newData.copy().send());
 										}
+										if (newData == prevData && newData != null) {
+											newData = newData.copy();
+										}
+										assert (prevData == null && newData == null) || newData != prevData;
 										return LLDelta.of(
 												prevData != null ? prevData.send() : null,
 												newData != null ? newData.send() : null

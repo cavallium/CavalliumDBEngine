@@ -10,6 +10,7 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
@@ -156,14 +157,16 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 		private final Drop<DatabaseSingle<U>> delegate;
 
 		public CloseOnDrop(Drop<DatabaseSingle<U>> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop<U> closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(DatabaseSingle<U> obj) {
-			if (obj.key != null) {
-				obj.key.close();
-			}
+			obj.key.close();
 			delegate.drop(obj);
 		}
 	}

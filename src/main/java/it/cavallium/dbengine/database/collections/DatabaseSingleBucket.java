@@ -7,6 +7,7 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -223,14 +224,16 @@ public class DatabaseSingleBucket<K, V, TH>
 		private final Drop<DatabaseSingleBucket<K, V, TH>> delegate;
 
 		public CloseOnDrop(Drop<DatabaseSingleBucket<K, V, TH>> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop<K, V, TH> closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(DatabaseSingleBucket<K, V, TH> obj) {
-			if (obj.bucketStage != null) {
-				obj.bucketStage.close();
-			}
+			obj.bucketStage.close();
 			delegate.drop(obj);
 		}
 	}

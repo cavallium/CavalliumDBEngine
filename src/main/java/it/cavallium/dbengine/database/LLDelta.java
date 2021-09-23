@@ -30,6 +30,7 @@ public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 	}
 
 	public static LLDelta of(Send<Buffer> min, Send<Buffer> max) {
+		assert (min == null && max == null) || (min != max);
 		return new LLDelta(min, max, d -> {});
 	}
 
@@ -80,17 +81,16 @@ public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 	@Override
 	public String toString() {
 		return new StringJoiner(", ", LLDelta.class.getSimpleName() + "[", "]")
-				.add("min=" + LLUtils.toString(previous))
-				.add("max=" + LLUtils.toString(current))
+				.add("min=" + LLUtils.toStringSafe(previous))
+				.add("max=" + LLUtils.toStringSafe(current))
 				.toString();
 	}
 
 	public LLDelta copy() {
 		ensureOwned();
-		return new LLDelta(previous != null ? previous.copy().send() : null,
-				current != null ? current.copy().send() : null,
-				d -> {}
-		);
+		var prevCopy = previous != null ? previous.copy().send() : null;
+		Send<Buffer> curCopy = current != null ? current.copy().send() : null;
+		return new LLDelta(prevCopy, curCopy, d -> {});
 	}
 
 	@Override
@@ -100,10 +100,8 @@ public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 
 	@Override
 	protected Owned<LLDelta> prepareSend() {
-		Send<Buffer> minSend;
-		Send<Buffer> maxSend;
-		minSend = this.previous != null ? this.previous.send() : null;
-		maxSend = this.current != null ? this.current.send() : null;
+		Send<Buffer> minSend = this.previous != null ? this.previous.send() : null;
+		Send<Buffer> maxSend = this.current != null ? this.current.send() : null;
 		return drop -> new LLDelta(minSend, maxSend, drop);
 	}
 
@@ -112,17 +110,17 @@ public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 		private final Drop<LLDelta> delegate;
 
 		public CloseOnDrop(Drop<LLDelta> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(LLDelta obj) {
-			if (obj.previous != null && obj.previous.isAccessible()) {
-				obj.previous.close();
-			}
-			if (obj.current != null && obj.current.isAccessible()) {
-				obj.current.close();
-			}
+			if (obj.previous != null) obj.previous.close();
+			if (obj.current != null) obj.current.close();
 			delegate.drop(obj);
 		}
 	}

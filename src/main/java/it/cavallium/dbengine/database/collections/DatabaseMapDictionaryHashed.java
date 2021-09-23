@@ -8,6 +8,7 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.LiveResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
@@ -327,14 +328,16 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 		private final Drop<DatabaseMapDictionaryHashed<T,U,TH>> delegate;
 
 		public CloseOnDrop(Drop<DatabaseMapDictionaryHashed<T,U,TH>> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop<T, U, TH> closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(DatabaseMapDictionaryHashed<T, U, TH> obj) {
-			if (obj.subDictionary != null) {
-				obj.subDictionary.close();
-			}
+			obj.subDictionary.close();
 			delegate.drop(obj);
 		}
 	}

@@ -12,6 +12,7 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
@@ -427,23 +428,23 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		this.range = null;
 	}
 
-	private static class CloseOnDrop<T, U, US extends DatabaseStage<U>> implements
-			Drop<DatabaseMapDictionaryDeep<T, U, US>> {
+	private static class CloseOnDrop<T, U, US extends DatabaseStage<U>>
+			implements Drop<DatabaseMapDictionaryDeep<T, U, US>> {
 
 		private final Drop<DatabaseMapDictionaryDeep<T,U,US>> delegate;
 
 		public CloseOnDrop(Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop<T, U, US> closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(DatabaseMapDictionaryDeep<T, U, US> obj) {
-			if (obj.range != null) {
-				obj.range.close();
-			}
-			if (obj.keyPrefix != null) {
-				obj.keyPrefix.close();
-			}
+			obj.range.close();
+			obj.keyPrefix.close();
 			delegate.drop(obj);
 		}
 	}

@@ -115,17 +115,17 @@ public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
 		private final Drop<LLEntry> delegate;
 
 		public CloseOnDrop(Drop<LLEntry> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(LLEntry obj) {
-			if (obj.key.isAccessible()) {
-				obj.key.close();
-			}
-			if (obj.value.isAccessible()) {
-				obj.value.close();
-			}
+			obj.key.close();
+			obj.value.close();
 			delegate.drop(obj);
 		}
 	}

@@ -8,6 +8,7 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * Range of data, from min (inclusive),to max (exclusive)
@@ -15,8 +16,11 @@ import java.util.StringJoiner;
 public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 
 	private static final LLRange RANGE_ALL = new LLRange(null, null, null, d -> {});
+	@Nullable
 	private Buffer min;
+	@Nullable
 	private Buffer max;
+	@Nullable
 	private Buffer single;
 
 	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single, Drop<LLRange> drop) {
@@ -207,14 +211,18 @@ public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 		private final Drop<LLRange> delegate;
 
 		public CloseOnDrop(Drop<LLRange> drop) {
-			this.delegate = drop;
+			if (drop instanceof CloseOnDrop closeOnDrop) {
+				this.delegate = closeOnDrop.delegate;
+			} else {
+				this.delegate = drop;
+			}
 		}
 
 		@Override
 		public void drop(LLRange obj) {
-			if (obj.min != null && obj.min.isAccessible()) obj.min.close();
-			if (obj.max != null && obj.max.isAccessible()) obj.max.close();
-			if (obj.single != null && obj.single.isAccessible()) obj.single.close();
+			if (obj.min != null) obj.min.close();
+			if (obj.max != null) obj.max.close();
+			if (obj.single != null) obj.single.close();
 			delegate.drop(obj);
 		}
 	}

@@ -479,10 +479,14 @@ public class LLUtils {
 	}
 
 	public static Send<Buffer> empty(BufferAllocator allocator) {
-		try (var empty = CompositeBuffer.compose(allocator)) {
-			assert empty.readableBytes() == 0;
-			assert empty.capacity() == 0;
-			return empty.send();
+		try {
+			return allocator.allocate(0).send();
+		} catch (Exception ex) {
+			try (var empty = CompositeBuffer.compose(allocator)) {
+				assert empty.readableBytes() == 0;
+				assert empty.capacity() == 0;
+				return empty.send();
+			}
 		}
 	}
 

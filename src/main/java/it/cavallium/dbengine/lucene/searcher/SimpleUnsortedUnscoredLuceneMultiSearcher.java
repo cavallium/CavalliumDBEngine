@@ -43,7 +43,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 				indexSearchers -> Flux
 						.fromIterable(indexSearchers.shards())
 						.flatMap(searcher -> {
-							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, d -> {}).send());
+							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, d -> {}).send());
 							return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
 						})
 						.collectList()

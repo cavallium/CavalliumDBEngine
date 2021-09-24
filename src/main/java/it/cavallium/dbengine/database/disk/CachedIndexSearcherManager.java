@@ -140,18 +140,18 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 			return Mono.fromCallable(() -> {
 						activeSearchers.register();
 						IndexSearcher indexSearcher;
+						boolean decRef;
 						if (snapshot == null) {
 							indexSearcher = searcherManager.acquire();
+							decRef = true;
 						} else {
 							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
+							decRef = false;
 						}
 						indexSearcher.setSimilarity(similarity);
 						assert indexSearcher.getIndexReader().getRefCount() > 0;
-						return indexSearcher;
+						return new LLIndexSearcher(indexSearcher, decRef, this::dropCachedIndexSearcher).send();
 					})
-					// todo: re-enable caching if needed
-					//.cacheInvalidateWhen(tuple -> onInvalidateCache)
-					.map(indexSearcher -> new LLIndexSearcher(indexSearcher, this::dropCachedIndexSearcher).send())
 					.takeUntilOther(onClose)
 					.doOnDiscard(Send.class, Send::close);
 		});

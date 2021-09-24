@@ -4,6 +4,7 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -165,13 +166,15 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T key) {
 		return this
 				.atPrivate(snapshot, key, keySuffixHashFunction.apply(key))
-				.map(cast -> cast);
+				.map(cast -> (DatabaseStageEntry<U>) cast)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	private Mono<DatabaseSingleBucket<T, U, TH>> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
 		return subDictionary
 				.at(snapshot, hash)
-				.map(entry -> new DatabaseSingleBucket<>(entry, key, d -> {}));
+				.map(entry -> new DatabaseSingleBucket<T, U, TH>(entry, key, d -> {}))
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override

@@ -4,6 +4,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.IndexCommit;

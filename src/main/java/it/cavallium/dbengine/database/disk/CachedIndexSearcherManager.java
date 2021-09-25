@@ -4,16 +4,15 @@ import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.lucene.searcher.ExecutorSearcherFactory;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.SearcherFactory;
@@ -24,16 +23,16 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Empty;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuples;
 
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
+	private static final Executor SEARCH_EXECUTOR = ForkJoinPool.commonPool();
+	private static final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
 
 	private final SnapshotsManager snapshotsManager;
 	private final Similarity similarity;
@@ -59,11 +58,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 		this.similarity = similarity;
 		this.queryRefreshDebounceTime = queryRefreshDebounceTime;
 
-		this.searcherManager = new SearcherManager(indexWriter,
-				applyAllDeletes,
-				writeAllDeletes,
-				new SearcherFactory()
-		);
+		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
 
 		Mono
 				.fromRunnable(() -> {
@@ -145,7 +140,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 							indexSearcher = searcherManager.acquire();
 							decRef = true;
 						} else {
-							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher();
+							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
 							decRef = false;
 						}
 						indexSearcher.setSimilarity(similarity);
@@ -199,4 +194,5 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	public Mono<Void> close() {
 		return closeMono;
 	}
+
 }

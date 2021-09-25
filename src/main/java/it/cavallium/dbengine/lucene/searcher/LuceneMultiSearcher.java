@@ -3,7 +3,6 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface LuceneMultiSearcher extends LuceneLocalSearcher {
@@ -33,4 +32,5 @@ public interface LuceneMultiSearcher extends LuceneLocalSearcher {
 		var searchers = indexSearcherMono.map(a -> LLIndexSearchers.unsharded(a).send());
 		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);
 	}
+
 }

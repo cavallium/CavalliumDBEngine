@@ -1,31 +1,18 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import java.io.IOException;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.List;
+import it.cavallium.dbengine.lucene.collector.ReactiveCollectorManager;
 import java.util.Queue;
-import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
-import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.LeafCollector;
-import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.SimpleCollector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -69,63 +56,7 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 
 					Many<ScoreDoc> scoreDocsSink = Sinks.many().unicast().onBackpressureBuffer(QUEUE_SUPPLIER.get());
 
-					var cm = new CollectorManager<Collector, Void>() {
-
-						class IterableCollector implements Collector {
-
-							private int shardIndex;
-
-							@Override
-							public LeafCollector getLeafCollector(LeafReaderContext leafReaderContext) throws IOException {
-								return new LeafCollector() {
-									@Override
-									public void setScorer(Scorable scorable) throws IOException {
-
-									}
-
-									@Override
-									public void collect(int i) throws IOException {
-										if (Schedulers.isInNonBlockingThread()) {
-											throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-										}
-										var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
-										boolean shouldRetry;
-										do {
-											var currentError = scoreDocsSink.tryEmitNext(scoreDoc);
-											shouldRetry = currentError == EmitResult.FAIL_NON_SERIALIZED
-													|| currentError == EmitResult.FAIL_OVERFLOW
-													|| currentError == EmitResult.FAIL_ZERO_SUBSCRIBER;
-											if (shouldRetry) {
-												LockSupport.parkNanos(10);
-											}
-											if (!shouldRetry && currentError.isFailure()) {
-												currentError.orThrow();
-											}
-										} while (shouldRetry);
-									}
-								};
-							}
-
-							@Override
-							public ScoreMode scoreMode() {
-								return ScoreMode.COMPLETE_NO_SCORES;
-							}
-
-							public void setShardIndex(int shardIndex) {
-								this.shardIndex = shardIndex;
-							}
-						}
-
-						@Override
-						public IterableCollector newCollector() {
-							return new IterableCollector();
-						}
-
-						@Override
-						public Void reduce(Collection<Collector> collection) {
-							throw new UnsupportedOperationException();
-						}
-					};
+					var cm = new ReactiveCollectorManager(scoreDocsSink);
 
 					AtomicInteger runningTasks = new AtomicInteger(0);
 					var shards = indexSearchers.shards();

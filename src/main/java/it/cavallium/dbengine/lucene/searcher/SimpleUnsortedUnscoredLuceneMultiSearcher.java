@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.ArrayList;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -80,7 +81,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
 		return new LocalQueryParams(queryParams.query(),
 				0,
-				queryParams.limit(),
+				LuceneUtils.safeLongToInt((long) queryParams.offset() + (long) queryParams.limit()),
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),

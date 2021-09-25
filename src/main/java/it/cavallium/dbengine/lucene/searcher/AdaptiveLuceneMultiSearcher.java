@@ -1,9 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
@@ -14,8 +12,11 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 	private static final LuceneMultiSearcher scoredSimpleLuceneShardSearcher
 			= new ScoredSimpleLuceneShardSearcher();
 
-	private static final LuceneMultiSearcher unscoredPagedLuceneMultiSearcher
+	private static final LuceneMultiSearcher unsortedUnscoredPagedLuceneMultiSearcher
 			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new SimpleLuceneLocalSearcher());
+
+	private static final LuceneMultiSearcher unsortedUnscoredContinuousLuceneMultiSearcher
+			= new UnsortedUnscoredContinuousLuceneMultiSearcher();
 
 	@Override
 	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
@@ -27,7 +28,13 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 		} else if (queryParams.isSorted() || queryParams.isScored()) {
 			return scoredSimpleLuceneShardSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 		} else {
-			return unscoredPagedLuceneMultiSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+			if (queryParams.offset() + queryParams.limit() <= queryParams.pageLimits().getPageLimit(0)) {
+				// Run single-page searches using the paged multi searcher
+				return unsortedUnscoredPagedLuceneMultiSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+			} else {
+				// Run large/unbounded searches using the continuous multi searcher
+				return unsortedUnscoredContinuousLuceneMultiSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+			}
 		}
 	}
 }

@@ -21,6 +21,8 @@ import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
+import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SimpleCollector;
@@ -35,9 +37,11 @@ import reactor.util.concurrent.Queues;
 
 public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMultiSearcher {
 
-	private static final Scheduler UNSCORED_UNSORTED_EXECUTOR = Schedulers.newBoundedElastic(Runtime
-			.getRuntime()
-			.availableProcessors(), Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "UnscoredUnsortedExecutor");
+	private static final Scheduler UNSCORED_UNSORTED_EXECUTOR = Schedulers.newBoundedElastic(
+			Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE,
+			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+			"UnscoredUnsortedExecutor"
+	);
 	private static final Supplier<Queue<ScoreDoc>> QUEUE_SUPPLIER = Queues.get(1024);
 
 	@Override
@@ -67,35 +71,39 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 
 					var cm = new CollectorManager<Collector, Void>() {
 
-						class IterableCollector extends SimpleCollector {
+						class IterableCollector implements Collector {
 
 							private int shardIndex;
-							private LeafReaderContext context;
 
 							@Override
-							public void collect(int i) {
-								if (Schedulers.isInNonBlockingThread()) {
-									throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-								}
-								var scoreDoc = new ScoreDoc(context.docBase + i, 0, shardIndex);
-								boolean shouldRetry;
-								do {
-									var currentError = scoreDocsSink.tryEmitNext(scoreDoc);
-									shouldRetry = currentError == EmitResult.FAIL_NON_SERIALIZED
-											|| currentError == EmitResult.FAIL_OVERFLOW
-											|| currentError == EmitResult.FAIL_ZERO_SUBSCRIBER;
-									if (shouldRetry) {
-										LockSupport.parkNanos(10);
-									}
-									if (!shouldRetry && currentError.isFailure()) {
-										currentError.orThrow();
-									}
-								} while (shouldRetry);
-							}
+							public LeafCollector getLeafCollector(LeafReaderContext leafReaderContext) throws IOException {
+								return new LeafCollector() {
+									@Override
+									public void setScorer(Scorable scorable) throws IOException {
 
-							@Override
-							protected void doSetNextReader(LeafReaderContext context) {
-								this.context = context;
+									}
+
+									@Override
+									public void collect(int i) throws IOException {
+										if (Schedulers.isInNonBlockingThread()) {
+											throw new UnsupportedOperationException("Called collect in a nonblocking thread");
+										}
+										var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
+										boolean shouldRetry;
+										do {
+											var currentError = scoreDocsSink.tryEmitNext(scoreDoc);
+											shouldRetry = currentError == EmitResult.FAIL_NON_SERIALIZED
+													|| currentError == EmitResult.FAIL_OVERFLOW
+													|| currentError == EmitResult.FAIL_ZERO_SUBSCRIBER;
+											if (shouldRetry) {
+												LockSupport.parkNanos(10);
+											}
+											if (!shouldRetry && currentError.isFailure()) {
+												currentError.orThrow();
+											}
+										} while (shouldRetry);
+									}
+								};
 							}
 
 							@Override

@@ -35,8 +35,9 @@ public class ReactiveLeafCollector implements LeafCollector {
 					|| currentError == EmitResult.FAIL_ZERO_SUBSCRIBER;
 			if (shouldRetry) {
 				LockSupport.parkNanos(10);
+			} else {
+				currentError.orThrow();
 			}
-			currentError.orThrow();
 
 		} while (shouldRetry);
 	}

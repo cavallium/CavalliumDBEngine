@@ -190,14 +190,6 @@ public class LuceneUtils {
 	}
 
 	/**
-	 *
-	 * @return false if the result is not relevant
-	 */
-	public static boolean filterTopDoc(float score, Float minCompetitiveScore) {
-		return minCompetitiveScore == null || score >= minCompetitiveScore;
-	}
-
-	/**
 	 * @throws NoSuchElementException when the key is not found
 	 * @throws IOException when an error occurs when reading the document
 	 */
@@ -345,17 +337,6 @@ public class LuceneUtils {
 	}
 
 	@Nullable
-	public static FieldDoc getLastFieldDoc(ScoreDoc[] scoreDocs) {
-		if (scoreDocs == null) {
-			return null;
-		}
-		if (scoreDocs.length == 0) {
-			return null;
-		}
-		return (FieldDoc) scoreDocs[scoreDocs.length - 1];
-	}
-
-	@Nullable
 	public static ScoreDoc getLastScoreDoc(ScoreDoc[] scoreDocs) {
 		if (scoreDocs == null) {
 			return null;
@@ -424,21 +405,6 @@ public class LuceneUtils {
 		} catch (Exception ex) {
 			logger.error("Failed to read document {}", shardDocId, ex);
 			return new LLKeyScore(shardDocId, score, null);
-		}
-	}
-
-	/**
-	 * Transform a flux of results to take elements while the minimum competitive score is valid
-	 */
-	public static Flux<LLKeyScore> filterTopDoc(Flux<LLKeyScore> flux, LocalQueryParams queryParams) {
-		if (queryParams.scoreMode().needsScores() && queryParams.minCompetitiveScore() != null) {
-			if (queryParams.sort() != null && queryParams.sort().needsScores()) {
-				return flux.takeWhile(entry -> LuceneUtils.filterTopDoc(entry.score(), queryParams.minCompetitiveScore()));
-			} else {
-				return flux.filter(entry -> LuceneUtils.filterTopDoc(entry.score(), queryParams.minCompetitiveScore()));
-			}
-		} else {
-			return flux;
 		}
 	}
 
@@ -519,16 +485,6 @@ public class LuceneUtils {
 		} else {
 			return totalHitsCount.value() + "+";
 		}
-	}
-
-	public static Scheduler newLuceneSearcherScheduler(boolean multi) {
-		return Schedulers.newBoundedElastic(
-				4,
-				Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-				multi ? "lucene-searcher-multi" : "lucene-searcher-shard",
-				60,
-				true
-		);
 	}
 
 	public static Mono<LocalQueryParams> getMoreLikeThisQuery(

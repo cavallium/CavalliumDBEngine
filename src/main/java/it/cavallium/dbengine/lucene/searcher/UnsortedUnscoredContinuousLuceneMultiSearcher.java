@@ -53,6 +53,7 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 
 		return LLUtils.usingSendResource(indexSearchersSendResource,
 				indexSearchers -> Mono.fromCallable(() -> {
+					LLUtils.ensureBlocking();
 
 					Many<ScoreDoc> scoreDocsSink = Sinks.many().unicast().onBackpressureBuffer(QUEUE_SUPPLIER.get());
 

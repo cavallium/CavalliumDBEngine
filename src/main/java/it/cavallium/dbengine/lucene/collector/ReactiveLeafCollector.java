@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.collector;
 
+import it.cavallium.dbengine.database.LLUtils;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.LeafCollector;
@@ -27,6 +28,7 @@ public class ReactiveLeafCollector implements LeafCollector {
 
 	@Override
 	public void collect(int i) {
+		LLUtils.ensureBlocking();
 		var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
 		boolean shouldRetry;
 		do {

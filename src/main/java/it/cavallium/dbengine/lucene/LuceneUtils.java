@@ -20,6 +20,7 @@ import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
+import it.cavallium.dbengine.lucene.mlt.BigCompositeReader;
 import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
 import it.cavallium.dbengine.lucene.searcher.ExponentialPageLimits;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
@@ -50,6 +51,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
@@ -557,13 +559,13 @@ public class LuceneUtils {
 					}
 					MultiMoreLikeThis mlt;
 					if (indexSearchers.size() == 1) {
-						mlt = new MultiMoreLikeThis(indexSearchers.get(0).getIndexReader(), null);
+						mlt = new MultiMoreLikeThis(new BigCompositeReader<>(indexSearchers.get(0).getIndexReader(), IndexReader[]::new), null);
 					} else {
 						IndexReader[] indexReaders = new IndexReader[indexSearchers.size()];
 						for (int i = 0, size = indexSearchers.size(); i < size; i++) {
 							indexReaders[i] = indexSearchers.get(i).getIndexReader();
 						}
-						mlt = new MultiMoreLikeThis(indexReaders, null);
+						mlt = new MultiMoreLikeThis(new BigCompositeReader<>(indexReaders, new ArrayIndexComparator(indexReaders)), null);
 					}
 					mlt.setAnalyzer(analyzer);
 					mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
@@ -583,7 +585,7 @@ public class LuceneUtils {
 					var mltQuery = mlt.like((Map) mltDocumentFields);
 					Query luceneQuery;
 					if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
-						luceneQuery = new BooleanQuery.Builder()
+						luceneQuery = new Builder()
 								.add(mltQuery, Occur.MUST)
 								.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
 								.build();

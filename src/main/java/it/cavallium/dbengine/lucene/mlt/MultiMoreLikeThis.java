@@ -29,9 +29,7 @@ import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.analysis.tokenattributes.TermFrequencyAttribute;
 import org.apache.lucene.document.Document;
-import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.Fields;
-import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.Terms;
@@ -52,7 +50,7 @@ import org.apache.lucene.util.PriorityQueue;
  * Generate "more like this" similarity queries. Based on this mail:
  *
  * <pre><code>
- * Lucene does let you access the document frequency of terms, with IndexReader.docFreq().
+ * Lucene does let you access the document frequency of terms, with BigCompositeReader.docFreq().
  * Term frequencies can be computed by re-tokenizing the text, which, for a single document,
  * is usually fast enough.  But looking up the docFreq() of every term in the document is
  * probably too slow.
@@ -86,7 +84,7 @@ import org.apache.lucene.util.PriorityQueue;
  * usage is as follows. The bold fragment is specific to this class. <br>
  *
  * <pre class="prettyprint">
- * IndexReader ir = ...
+ * BigCompositeReader ir = ...
  * IndexSearcher is = ...
  *
  * MoreLikeThis mlt = new MoreLikeThis(ir);
@@ -137,7 +135,7 @@ import org.apache.lucene.util.PriorityQueue;
  * <pre>
  * Changes: Mark Harwood 29/02/04
  * Some bugfixing, some refactoring, some optimisation.
- * - bugfix: retrieveTerms(int docNum) was not working for indexes without a termvector -added missing code
+ * - bugfix: retrieveTerms(long docNum) was not working for indexes without a termvector -added missing code
  * - bugfix: No significant terms being created for fields with a termvector - because
  * was only counting one occurrence per term/field pair in calculations(ie not including frequency info from TermVector)
  * - refactor: moved common code into isNoiseWord()
@@ -153,7 +151,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @see #getMaxNumTokensParsed
 	 */
-	public static final int DEFAULT_MAX_NUM_TOKENS_PARSED = 5000;
+	public static final long DEFAULT_MAX_NUM_TOKENS_PARSED = 5000;
 
 	/**
 	 * Ignore terms with less than this frequency in the source doc.
@@ -161,7 +159,7 @@ public final class MultiMoreLikeThis {
 	 * @see #getMinTermFreq
 	 * @see #setMinTermFreq
 	 */
-	public static final int DEFAULT_MIN_TERM_FREQ = 2;
+	public static final long DEFAULT_MIN_TERM_FREQ = 2;
 
 	/**
 	 * Ignore words which do not occur in at least this many docs.
@@ -178,7 +176,7 @@ public final class MultiMoreLikeThis {
 	 * @see #setMaxDocFreq
 	 * @see #setMaxDocFreqPct
 	 */
-	public static final long DEFAULT_MAX_DOC_FREQ = Long.MAX_VALUE;
+	public static final long DEFAULT_MAX_DOC_FREQ = java.lang.Long.MAX_VALUE;
 
 	/**
 	 * Boost terms in query based on score.
@@ -200,7 +198,7 @@ public final class MultiMoreLikeThis {
 	 * @see #getMinWordLen
 	 * @see #setMinWordLen
 	 */
-	public static final int DEFAULT_MIN_WORD_LENGTH = 0;
+	public static final long DEFAULT_MIN_WORD_LENGTH = 0;
 
 	/**
 	 * Ignore words greater than this length or if 0 then this has no effect.
@@ -208,7 +206,7 @@ public final class MultiMoreLikeThis {
 	 * @see #getMaxWordLen
 	 * @see #setMaxWordLen
 	 */
-	public static final int DEFAULT_MAX_WORD_LENGTH = 0;
+	public static final long DEFAULT_MAX_WORD_LENGTH = 0;
 
 	/**
 	 * Default set of stopwords. If null means to allow stop words.
@@ -228,13 +226,13 @@ public final class MultiMoreLikeThis {
 	 * @see #getMaxQueryTerms
 	 * @see #setMaxQueryTerms
 	 */
-	public static final int DEFAULT_MAX_QUERY_TERMS = 25;
+	public static final long DEFAULT_MAX_QUERY_TERMS = 25;
 
 	/** Analyzer that will be used to parse the doc. */
 	private Analyzer analyzer = null;
 
 	/** Ignore words less frequent that this. */
-	private int minTermFreq = DEFAULT_MIN_TERM_FREQ;
+	private long minTermFreq = DEFAULT_MIN_TERM_FREQ;
 
 	/** Ignore words which do not occur in at least this many docs. */
 	private long minDocFreq = DEFAULT_MIN_DOC_FREQ;
@@ -252,27 +250,22 @@ public final class MultiMoreLikeThis {
 	 * The maximum number of tokens to parse in each example doc field that is not stored with
 	 * TermVector support
 	 */
-	private int maxNumTokensParsed = DEFAULT_MAX_NUM_TOKENS_PARSED;
+	private long maxNumTokensParsed = DEFAULT_MAX_NUM_TOKENS_PARSED;
 
 	/** Ignore words if less than this len. */
-	private int minWordLen = DEFAULT_MIN_WORD_LENGTH;
+	private long minWordLen = DEFAULT_MIN_WORD_LENGTH;
 
 	/** Ignore words if greater than this len. */
-	private int maxWordLen = DEFAULT_MAX_WORD_LENGTH;
+	private long maxWordLen = DEFAULT_MAX_WORD_LENGTH;
 
 	/** Don't return a query longer than this. */
-	private int maxQueryTerms = DEFAULT_MAX_QUERY_TERMS;
+	private long maxQueryTerms = DEFAULT_MAX_QUERY_TERMS;
 
 	/** For idf() calculations. */
 	private TFIDFSimilarity similarity; // = new DefaultSimilarity();
 
-	/** IndexReader to use */
-	private final IndexReader ir;
-
-	/**
-	 * IndexReader array to use when multi-searchers are used.
-	 */
-	private final IndexReader[] irArray;
+	/** BigCompositeReader to use */
+	private final BigCompositeReader<?> ir;
 
 	/** Boost factor to use when boosting the terms */
 	private float boostFactor = 1;
@@ -296,28 +289,12 @@ public final class MultiMoreLikeThis {
 		this.boostFactor = boostFactor;
 	}
 
-	/** Constructor requiring an IndexReader. */
-	public MultiMoreLikeThis(IndexReader ir) {
+	/** Constructor requiring a BigCompositeReader. */
+	public MultiMoreLikeThis(BigCompositeReader<?> ir) {
 		this(ir, new ClassicSimilarity());
 	}
 
-	public MultiMoreLikeThis(IndexReader ir, TFIDFSimilarity sim) {
-		this(ir, null, sim);
-	}
-
-	public MultiMoreLikeThis(IndexReader[] irArray) {
-		this(irArray, new ClassicSimilarity());
-	}
-
-	public MultiMoreLikeThis(IndexReader[] irArray, TFIDFSimilarity sim) {
-		this(null, irArray, sim);
-	}
-
-	private MultiMoreLikeThis(IndexReader ir, IndexReader[] irArray, TFIDFSimilarity sim) {
-		if ((ir == null) == (irArray == null)) {
-			throw new IllegalArgumentException();
-		}
-		this.irArray = irArray;
+	public MultiMoreLikeThis(BigCompositeReader<?> ir, TFIDFSimilarity sim) {
 		this.ir = ir;
 		this.similarity = sim;
 	}
@@ -342,7 +319,7 @@ public final class MultiMoreLikeThis {
 
 	/**
 	 * Sets the analyzer to use. An analyzer is not required for generating a query with the {@link
-	 * #like(int)} method, all other 'like' methods require an analyzer.
+	 * #like(long)} method, all other 'like' methods require an analyzer.
 	 *
 	 * @param analyzer the analyzer to use to tokenize text.
 	 */
@@ -356,7 +333,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @return the frequency below which terms will be ignored in the source doc.
 	 */
-	public int getMinTermFreq() {
+	public long getMinTermFreq() {
 		return minTermFreq;
 	}
 
@@ -365,7 +342,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @param minTermFreq the frequency below which terms will be ignored in the source doc.
 	 */
-	public void setMinTermFreq(int minTermFreq) {
+	public void setMinTermFreq(long minTermFreq) {
 		this.minTermFreq = minTermFreq;
 	}
 
@@ -423,17 +400,8 @@ public final class MultiMoreLikeThis {
 	 * @param maxPercentage the maximum percentage of documents (0-100) that a term may appear in to
 	 *     be still considered relevant.
 	 */
-	public void setMaxDocFreqPct(int maxPercentage) {
-		long maxDoc;
-		if (irArray == null) {
-			maxDoc = ir.maxDoc();
-		} else {
-			maxDoc = 0L;
-			for (IndexReader ir : irArray) {
-				maxDoc += ir.maxDoc();
-			}
-		}
-		setMaxDocFreq(Math.toIntExact((long) maxPercentage * maxDoc / 100L));
+	public void setMaxDocFreqPct(long maxPercentage) {
+		setMaxDocFreq((maxPercentage) * ir.maxDoc() / 100L);
 	}
 
 	/**
@@ -469,7 +437,7 @@ public final class MultiMoreLikeThis {
 
 	/**
 	 * Sets the field names that will be used when generating the 'More Like This' query. Set this to
-	 * null for the field names to be determined at runtime from the IndexReader provided in the
+	 * null for the field names to be determined at runtime from the BigCompositeReader provided in the
 	 * constructor.
 	 *
 	 * @param fieldNames the field names that will be used when generating the 'More Like This' query.
@@ -484,7 +452,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @return the minimum word length below which words will be ignored.
 	 */
-	public int getMinWordLen() {
+	public long getMinWordLen() {
 		return minWordLen;
 	}
 
@@ -493,7 +461,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @param minWordLen the minimum word length below which words will be ignored.
 	 */
-	public void setMinWordLen(int minWordLen) {
+	public void setMinWordLen(long minWordLen) {
 		this.minWordLen = minWordLen;
 	}
 
@@ -503,7 +471,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @return the maximum word length above which words will be ignored.
 	 */
-	public int getMaxWordLen() {
+	public long getMaxWordLen() {
 		return maxWordLen;
 	}
 
@@ -512,7 +480,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @param maxWordLen the maximum word length above which words will be ignored.
 	 */
-	public void setMaxWordLen(int maxWordLen) {
+	public void setMaxWordLen(long maxWordLen) {
 		this.maxWordLen = maxWordLen;
 	}
 
@@ -544,7 +512,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @return the maximum number of query terms that will be included in any generated query.
 	 */
-	public int getMaxQueryTerms() {
+	public long getMaxQueryTerms() {
 		return maxQueryTerms;
 	}
 
@@ -554,7 +522,7 @@ public final class MultiMoreLikeThis {
 	 * @param maxQueryTerms the maximum number of query terms that will be included in any generated
 	 *     query.
 	 */
-	public void setMaxQueryTerms(int maxQueryTerms) {
+	public void setMaxQueryTerms(long maxQueryTerms) {
 		this.maxQueryTerms = maxQueryTerms;
 	}
 
@@ -563,7 +531,7 @@ public final class MultiMoreLikeThis {
 	 *     TermVector support
 	 * @see #DEFAULT_MAX_NUM_TOKENS_PARSED
 	 */
-	public int getMaxNumTokensParsed() {
+	public long getMaxNumTokensParsed() {
 		return maxNumTokensParsed;
 	}
 
@@ -571,7 +539,7 @@ public final class MultiMoreLikeThis {
 	 * @param i The maximum number of tokens to parse in each example doc field that is not stored
 	 *     with TermVector support
 	 */
-	public void setMaxNumTokensParsed(int i) {
+	public void setMaxNumTokensParsed(long i) {
 		maxNumTokensParsed = i;
 	}
 
@@ -581,18 +549,11 @@ public final class MultiMoreLikeThis {
 	 * @param docNum the documentID of the lucene doc to generate the 'More Like This" query for.
 	 * @return a query that will return docs like the passed lucene document ID.
 	 */
-	public Query like(int docNum) throws IOException {
+	public Query like(long docNum) throws IOException {
 		if (fieldNames == null) {
 			// gather list of valid fields from lucene
 			Collection<String> fields;
-			if (irArray == null) {
-				fields = FieldInfos.getIndexedFields(ir);
-			} else {
-				fields = new ArrayList<>();
-				for (IndexReader ir : irArray) {
-					fields.addAll(FieldInfos.getIndexedFields(ir));
-				}
-			}
+			fields = BigCompositeReader.getIndexedFields(ir);
 			fieldNames = fields.toArray(String[]::new);
 		}
 
@@ -606,15 +567,7 @@ public final class MultiMoreLikeThis {
 	public Query like(Map<String, Collection<Object>> filteredDocument) throws IOException {
 		if (fieldNames == null) {
 			// gather list of valid fields from lucene
-			Collection<String> fields;
-			if (irArray == null) {
-				fields = FieldInfos.getIndexedFields(ir);
-			} else {
-				fields = new ArrayList<>();
-				for (IndexReader ir : irArray) {
-					fields.addAll(FieldInfos.getIndexedFields(ir));
-				}
-			}
+			Collection<String> fields = BigCompositeReader.getIndexedFields(ir);
 			fieldNames = fields.toArray(String[]::new);
 		}
 		return createQuery(retrieveTerms(filteredDocument));
@@ -627,7 +580,7 @@ public final class MultiMoreLikeThis {
 	 * @return a query that will return docs like the passed Readers.
 	 */
 	public Query like(String fieldName, Reader... readers) throws IOException {
-		Map<String, Map<String, Int>> perFieldTermFrequencies = new HashMap<>();
+		Map<String, Map<String, Long>> perFieldTermFrequencies = new HashMap<>();
 		for (Reader r : readers) {
 			addTermFrequencies(r, perFieldTermFrequencies, fieldName);
 		}
@@ -669,48 +622,28 @@ public final class MultiMoreLikeThis {
 	 *     objects as the values.
 	 */
 	private PriorityQueue<ScoreTerm> createQueue(
-			Map<String, Map<String, Int>> perFieldTermFrequencies) throws IOException {
+			Map<String, Map<String, Long>> perFieldTermFrequencies) throws IOException {
 		// have collected all words in doc and their freqs
-		final int limit = Math.min(maxQueryTerms, this.getTermsCount(perFieldTermFrequencies));
-		FreqQ queue = new FreqQ(limit); // will order words by score
-		for (Map.Entry<String, Map<String, Int>> entry : perFieldTermFrequencies.entrySet()) {
-			Map<String, Int> perWordTermFrequencies = entry.getValue();
+		final long limit = Math.min(maxQueryTerms, this.getTermsCount(perFieldTermFrequencies));
+		FreqQ queue = new FreqQ(Math.toIntExact(limit)); // will order words by score
+		for (Map.Entry<String, Map<String, Long>> entry : perFieldTermFrequencies.entrySet()) {
+			Map<String, Long> perWordTermFrequencies = entry.getValue();
 			String fieldName = entry.getKey();
 
-			long numDocs;
-			if (irArray == null) {
-				numDocs = ir.getDocCount(fieldName);
-				if (numDocs == -1) {
-					numDocs = ir.numDocs();
-				}
-			} else {
-				numDocs = 0L;
-				for (IndexReader ir : irArray) {
-					long localNumDocs = ir.getDocCount(fieldName);
-					if (localNumDocs == -1) {
-						localNumDocs = ir.numDocs();
-					}
-					numDocs += localNumDocs;
-				}
+			long numDocs = ir.getDocCount(fieldName);
+			if (numDocs == -1) {
+				numDocs = ir.numDocs();
 			}
 
-			for (Map.Entry<String, Int> tfEntry : perWordTermFrequencies.entrySet()) { // for every word
+			for (Map.Entry<String, Long> tfEntry : perWordTermFrequencies.entrySet()) { // for every word
 				String word = tfEntry.getKey();
-				int tf = tfEntry.getValue().x; // term freq in the source doc
+				long tf = tfEntry.getValue().x; // term freq in the source doc
 				if (minTermFreq > 0 && tf < minTermFreq) {
 					continue; // filter out words that don't occur enough times in the source
 				}
 
-				long docFreq;
 				var fieldTerm = new Term(fieldName, word);
-				if (irArray == null) {
-					docFreq = ir.docFreq(fieldTerm);
-				} else {
-					docFreq = 0;
-					for (IndexReader ir : irArray) {
-						docFreq += ir.docFreq(fieldTerm);
-					}
-				}
+				long docFreq = ir.docFreq(fieldTerm);
 
 				if (minDocFreq > 0L && docFreq < minDocFreq) {
 					continue; // filter out words that don't occur in enough docs
@@ -743,10 +676,10 @@ public final class MultiMoreLikeThis {
 		return queue;
 	}
 
-	private int getTermsCount(Map<String, Map<String, Int>> perFieldTermFrequencies) {
-		int totalTermsCount = 0;
-		Collection<Map<String, Int>> values = perFieldTermFrequencies.values();
-		for (Map<String, Int> perWordTermFrequencies : values) {
+	private long getTermsCount(Map<String, Map<String, Long>> perFieldTermFrequencies) {
+		long totalTermsCount = 0;
+		Collection<Map<String, Long>> values = perFieldTermFrequencies.values();
+		for (Map<String, Long> perWordTermFrequencies : values) {
 			totalTermsCount += perWordTermFrequencies.size();
 		}
 		return totalTermsCount;
@@ -776,20 +709,14 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @param docNum the id of the lucene document from which to find terms
 	 */
-	private PriorityQueue<ScoreTerm> retrieveTerms(int docNum) throws IOException {
-		Map<String, Map<String, Int>> field2termFreqMap = new HashMap<>();
-		if (irArray == null) {
-			retrieveTermsOfIndexReader(ir, docNum, field2termFreqMap);
-		} else {
-			for (IndexReader ir : irArray) {
-				retrieveTermsOfIndexReader(ir, docNum, field2termFreqMap);
-			}
-		}
+	private PriorityQueue<ScoreTerm> retrieveTerms(long docNum) throws IOException {
+		Map<String, Map<String, Long>> field2termFreqMap = new HashMap<>();
+		retrieveTermsOfIndexReader(ir, docNum, field2termFreqMap);
 
 		return createQueue(field2termFreqMap);
 	}
 
-	private void retrieveTermsOfIndexReader(IndexReader ir, int docNum, Map<String, Map<String, Int>> field2termFreqMap)
+	private void retrieveTermsOfIndexReader(BigCompositeReader<?> ir, long docNum, Map<String, Map<String, Long>> field2termFreqMap)
 			throws IOException {
 		for (String fieldName : fieldNames) {
 			final Fields vectors = ir.getTermVectors(docNum);
@@ -818,7 +745,7 @@ public final class MultiMoreLikeThis {
 
 	private PriorityQueue<ScoreTerm> retrieveTerms(Map<String, Collection<Object>> field2fieldValues)
 			throws IOException {
-		Map<String, Map<String, Int>> field2termFreqMap = new HashMap<>();
+		Map<String, Map<String, Long>> field2termFreqMap = new HashMap<>();
 		for (String fieldName : fieldNames) {
 			Collection<Object> fieldValues = field2fieldValues.get(fieldName);
 			if (fieldValues == null) {
@@ -840,9 +767,9 @@ public final class MultiMoreLikeThis {
 	 * @param vector List of terms and their frequencies for a doc/field
 	 */
 	private void addTermFrequencies(
-			Map<String, Map<String, Int>> field2termFreqMap, Terms vector, String fieldName)
+			Map<String, Map<String, Long>> field2termFreqMap, Terms vector, String fieldName)
 			throws IOException {
-		Map<String, Int> termFreqMap =
+		Map<String, Long> termFreqMap =
 				field2termFreqMap.computeIfAbsent(fieldName, k -> new HashMap<>());
 		final TermsEnum termsEnum = vector.iterator();
 		final CharsRefBuilder spare = new CharsRefBuilder();
@@ -853,12 +780,12 @@ public final class MultiMoreLikeThis {
 			if (isNoiseWord(term)) {
 				continue;
 			}
-			final int freq = (int) termsEnum.totalTermFreq();
+			final long freq = termsEnum.totalTermFreq();
 
 			// increment frequency
-			Int cnt = termFreqMap.get(term);
+			Long cnt = termFreqMap.get(term);
 			if (cnt == null) {
-				cnt = new Int();
+				cnt = new Long();
 				termFreqMap.put(term, cnt);
 				cnt.x = freq;
 			} else {
@@ -875,16 +802,16 @@ public final class MultiMoreLikeThis {
 	 * @param fieldName Used by analyzer for any special per-field analysis
 	 */
 	private void addTermFrequencies(
-			Reader r, Map<String, Map<String, Int>> perFieldTermFrequencies, String fieldName)
+			Reader r, Map<String, Map<String, Long>> perFieldTermFrequencies, String fieldName)
 			throws IOException {
 		if (analyzer == null) {
 			throw new UnsupportedOperationException(
 					"To use MoreLikeThis without " + "term vectors, you must provide an Analyzer");
 		}
-		Map<String, Int> termFreqMap =
+		Map<String, Long> termFreqMap =
 				perFieldTermFrequencies.computeIfAbsent(fieldName, k -> new HashMap<>());
 		try (TokenStream ts = analyzer.tokenStream(fieldName, r)) {
-			int tokenCount = 0;
+			long tokenCount = 0;
 			// for every token
 			CharTermAttribute termAtt = ts.addAttribute(CharTermAttribute.class);
 			TermFrequencyAttribute tfAtt = ts.addAttribute(TermFrequencyAttribute.class);
@@ -900,9 +827,9 @@ public final class MultiMoreLikeThis {
 				}
 
 				// increment frequency
-				Int cnt = termFreqMap.get(word);
+				Long cnt = termFreqMap.get(word);
 				if (cnt == null) {
-					termFreqMap.put(word, new Int(tfAtt.getTermFrequency()));
+					termFreqMap.put(word, new Long(tfAtt.getTermFrequency()));
 				} else {
 					cnt.x += tfAtt.getTermFrequency();
 				}
@@ -918,7 +845,7 @@ public final class MultiMoreLikeThis {
 	 * @return true if should be ignored, false if should be used in further analysis
 	 */
 	private boolean isNoiseWord(String term) {
-		int len = term.length();
+		long len = term.length();
 		if (minWordLen > 0 && len < minWordLen) {
 			return true;
 		}
@@ -953,19 +880,19 @@ public final class MultiMoreLikeThis {
 	 * @see #retrieveInterestingTerms
 	 */
 	private PriorityQueue<ScoreTerm> retrieveTerms(Reader r, String fieldName) throws IOException {
-		Map<String, Map<String, Int>> field2termFreqMap = new HashMap<>();
+		Map<String, Map<String, Long>> field2termFreqMap = new HashMap<>();
 		addTermFrequencies(r, field2termFreqMap, fieldName);
 		return createQueue(field2termFreqMap);
 	}
 
 	/** @see #retrieveInterestingTerms(java.io.Reader, String) */
-	public String[] retrieveInterestingTerms(int docNum) throws IOException {
-		ArrayList<String> al = new ArrayList<>(maxQueryTerms);
+	public String[] retrieveInterestingTerms(long docNum) throws IOException {
+		ArrayList<String> al = new ArrayList<>(Math.toIntExact(maxQueryTerms));
 		PriorityQueue<ScoreTerm> pq = retrieveTerms(docNum);
 		ScoreTerm scoreTerm;
 		// have to be careful, retrieveTerms returns all words but that's probably not useful to our
 		// caller...
-		int lim = maxQueryTerms;
+		long lim = maxQueryTerms;
 		// we just want to return the top words
 		while (((scoreTerm = pq.pop()) != null) && lim-- > 0) {
 			al.add(scoreTerm.word); // the 1st entry is the interesting word
@@ -985,12 +912,12 @@ public final class MultiMoreLikeThis {
 	 * @see #setMaxQueryTerms
 	 */
 	public String[] retrieveInterestingTerms(Reader r, String fieldName) throws IOException {
-		ArrayList<String> al = new ArrayList<>(maxQueryTerms);
+		ArrayList<String> al = new ArrayList<>(Math.toIntExact(maxQueryTerms));
 		PriorityQueue<ScoreTerm> pq = retrieveTerms(r, fieldName);
 		ScoreTerm scoreTerm;
 		// have to be careful, retrieveTerms returns all words but that's probably not useful to our
 		// caller...
-		int lim = maxQueryTerms;
+		long lim = maxQueryTerms;
 		// we just want to return the top words
 		while (((scoreTerm = pq.pop()) != null) && lim-- > 0) {
 			al.add(scoreTerm.word); // the 1st entry is the interesting word
@@ -1031,14 +958,14 @@ public final class MultiMoreLikeThis {
 	}
 
 	/** Use for frequencies and to avoid renewing Integers. */
-	private static class Int {
-		int x;
+	private static class Long {
+		long x;
 
-		Int() {
-			this(1);
+		Long() {
+			this(1L);
 		}
 
-		Int(int initialValue) {
+		Long(long initialValue) {
 			x = initialValue;
 		}
 	}

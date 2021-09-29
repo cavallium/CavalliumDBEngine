@@ -1081,7 +1081,7 @@ public class LLLocalDictionary implements LLDictionary {
 			Flux<Tuple2<K, Send<Buffer>>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
-				.transform(normal -> new BufferTimeOutPublisher<>(normal, MULTI_GET_WINDOW, MULTI_GET_WINDOW_TIMEOUT))
+				.buffer(MULTI_GET_WINDOW)
 				.doOnDiscard(Tuple2.class, discardedEntry -> {
 					//noinspection unchecked
 					var entry = (Tuple2<K, Buffer>) discardedEntry;

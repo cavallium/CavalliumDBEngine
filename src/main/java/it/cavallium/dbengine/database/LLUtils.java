@@ -983,9 +983,7 @@ public class LLUtils {
 	}
 
 	private static void discardStage(DatabaseStage<?> stage) {
-		if (stage != null && stage.isAccessible()) {
-			stage.close();
-		}
+		// do nothing for now, to avoid double-free problems
 	}
 
 	public static boolean isDirect(Buffer key) {

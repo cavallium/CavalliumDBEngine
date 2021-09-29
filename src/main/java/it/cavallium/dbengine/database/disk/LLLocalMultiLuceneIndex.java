@@ -111,7 +111,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
 		return documents
-				.transform(normal -> new BufferTimeOutPublisher<>(normal, 512, Duration.ofSeconds(2)))
+				.buffer(512)
 				.flatMap(inputEntries -> {
 					List<Entry<LLTerm, LLDocument>>[] sortedEntries = new List[luceneIndices.length];
 					Mono<Void>[] results = new Mono[luceneIndices.length];

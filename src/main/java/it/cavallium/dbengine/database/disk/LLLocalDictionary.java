@@ -1083,15 +1083,17 @@ public class LLLocalDictionary implements LLDictionary {
 		return keys
 				.buffer(MULTI_GET_WINDOW)
 				.doOnDiscard(Tuple2.class, discardedEntry -> {
-					//noinspection unchecked
-					var entry = (Tuple2<K, Buffer>) discardedEntry;
-					entry.getT2().close();
+					if (discardedEntry.getT2() instanceof Resource<?> resource) {
+						resource.close();
+					}
 				})
 				.doOnDiscard(Tuple3.class, discardedEntry -> {
-					//noinspection unchecked
-					var entry = (Tuple3<K, Buffer, Buffer>) discardedEntry;
-					entry.getT2().close();
-					entry.getT3().close();
+					if (discardedEntry.getT2() instanceof Resource<?> resource) {
+						resource.close();
+					}
+					if (discardedEntry.getT3() instanceof Resource<?> resource) {
+						resource.close();
+					}
 				})
 				.flatMapSequential(keysWindow -> {
 					List<Send<Buffer>> keyBufsWindowSend = new ArrayList<>(keysWindow.size());
@@ -1280,7 +1282,7 @@ public class LLLocalDictionary implements LLDictionary {
 			BiSerializationFunction<Send<Buffer>, X, Send<Buffer>> updateFunction) {
 		return entries
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.flatMapSequential(ew -> this.<Iterable<ExtraKeyOperationResult<Send<Buffer>, X>>>runOnDb(() -> {
+				.flatMapSequential(ew -> this.<List<ExtraKeyOperationResult<Send<Buffer>, X>>>runOnDb(() -> {
 					List<Tuple2<Buffer, X>> entriesWindow = new ArrayList<>(ew.size());
 					for (Tuple2<Send<Buffer>, X> tuple : ew) {
 						entriesWindow.add(tuple.mapT1(Send::receive));
@@ -1421,15 +1423,17 @@ public class LLLocalDictionary implements LLDictionary {
 						bb.close();
 					}
 				})
-				.doOnDiscard(Collection.class, obj -> {
-					//noinspection unchecked
-					var castedEntries = (Collection<ExtraKeyOperationResult<Object, Object>>) obj;
-					for (var entry : castedEntries) {
-						if (entry.key() instanceof Buffer bb) {
-							bb.close();
-						}
-						if (entry.extra() instanceof Buffer bb) {
-							bb.close();
+				.doOnDiscard(List.class, obj -> {
+					if (!obj.isEmpty() && obj.get(0) instanceof ExtraKeyOperationResult<?, ?>) {
+						//noinspection unchecked
+						var castedEntries = (List<ExtraKeyOperationResult<?, ?>>) obj;
+						for (ExtraKeyOperationResult<?, ?> entry : castedEntries) {
+							if (entry.key() instanceof Resource<?> bb) {
+								bb.close();
+							}
+							if (entry.extra() instanceof Resource<?> bb) {
+								bb.close();
+							}
 						}
 					}
 				});

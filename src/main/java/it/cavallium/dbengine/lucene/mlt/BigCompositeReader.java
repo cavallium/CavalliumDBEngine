@@ -31,15 +31,15 @@ public class BigCompositeReader<R extends IndexReader> {
 	protected final Comparator<R> subReadersSorter;
 	private final long[] starts;
 	private final long maxDoc;
-	private AtomicLong numDocs = new AtomicLong(-1);
+	private final AtomicLong numDocs = new AtomicLong(-1);
 	private final List<R> subReadersList;
 
-	public BigCompositeReader(R subReader, IntFunction<R[]> arrayInstantiator) {
-		this(toArray(subReader, arrayInstantiator), null);
+	public BigCompositeReader(R subReader, IntFunction<R[]> arrayInstantiation) {
+		this(toArray(subReader, arrayInstantiation), null);
 	}
 
-	private static <R extends IndexReader> R[] toArray(R subReader, IntFunction<R[]> arrayInstantiator) {
-		var arr = arrayInstantiator.apply(1);
+	private static <R extends IndexReader> R[] toArray(R subReader, IntFunction<R[]> arrayInstantiation) {
+		var arr = arrayInstantiation.apply(1);
 		arr[0] = subReader;
 		return arr;
 	}
@@ -51,7 +51,7 @@ public class BigCompositeReader<R extends IndexReader> {
 
 		this.subReaders = subReaders;
 		this.subReadersSorter = subReadersSorter;
-		this.subReadersList = Collections.unmodifiableList(Arrays.asList(subReaders));
+		this.subReadersList = List.of(subReaders);
 		this.starts = new long[subReaders.length + 1];
 		BigInteger maxDoc = BigInteger.ZERO;
 
@@ -82,10 +82,6 @@ public class BigCompositeReader<R extends IndexReader> {
 				.collect(Collectors.toSet());
 	}
 
-	protected final List<? extends R> getSequentialSubReaders() {
-		return this.subReadersList;
-	}
-
 	private void ensureOpen() {
 		for (R subReader : subReaders) {
 			if (subReader.getRefCount() <= 0) {
@@ -97,11 +93,8 @@ public class BigCompositeReader<R extends IndexReader> {
 	public long getDocCount(String field) throws IOException {
 		this.ensureOpen();
 		long total = 0;
-		R[] var3 = this.subReaders;
-		long var4 = var3.length;
 
-		for(int var5 = 0; var5 < var4; ++var5) {
-			R reader = var3[var5];
+		for (R reader : this.subReaders) {
 			int sub = reader.getDocCount(field);
 
 			assert sub >= 0;
@@ -118,12 +111,12 @@ public class BigCompositeReader<R extends IndexReader> {
 		this.ensureOpen();
 		long total = 0;
 
-		for(int i = 0; i < this.subReaders.length; ++i) {
-			int sub = this.subReaders[i].docFreq(term);
+		for (R subReader : this.subReaders) {
+			int sub = subReader.docFreq(term);
 
 			assert sub >= 0;
 
-			assert sub <= this.subReaders[i].getDocCount(term.field());
+			assert sub <= subReader.getDocCount(term.field());
 
 			total += sub;
 		}
@@ -135,11 +128,8 @@ public class BigCompositeReader<R extends IndexReader> {
 		long numDocs = this.numDocs.getOpaque();
 		if (numDocs == -1L) {
 			numDocs = 0L;
-			IndexReader[] var2 = this.subReaders;
-			int var3 = var2.length;
 
-			for(int var4 = 0; var4 < var3; ++var4) {
-				IndexReader r = var2[var4];
+			for (IndexReader r : this.subReaders) {
 				numDocs += r.numDocs();
 			}
 
@@ -191,14 +181,6 @@ public class BigCompositeReader<R extends IndexReader> {
 		return hi;
 	}
 
-	protected final long readerBase(int readerIndex) {
-		if (readerIndex >= 0L && readerIndex < this.subReaders.length) {
-			return this.starts[readerIndex];
-		} else {
-			throw new IllegalArgumentException("readerIndex must be >= 0 and < getSequentialSubReaders().size()");
-		}
-	}
-
 	public final void document(long docID, StoredFieldVisitor visitor) throws IOException {
 		this.ensureOpen();
 		int i = this.readerIndex(docID);
@@ -207,13 +189,13 @@ public class BigCompositeReader<R extends IndexReader> {
 
 	public final Document document(long docID) throws IOException {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor();
-		this.document(docID, (StoredFieldVisitor)visitor);
+		this.document(docID, visitor);
 		return visitor.getDocument();
 	}
 
 	public final Document document(long docID, Set<String> fieldsToLoad) throws IOException {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor(fieldsToLoad);
-		this.document(docID, (StoredFieldVisitor)visitor);
+		this.document(docID, visitor);
 		return visitor.getDocument();
 	}
 

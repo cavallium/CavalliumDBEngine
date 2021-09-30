@@ -162,7 +162,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix))),
 						existsAlmostCertainly
 				)
-				.handle((value, sink) -> deserializeValue(value, sink));
+				.handle(this::deserializeValue);
 	}
 
 	@Override
@@ -188,7 +188,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
 		return dictionary
 				.update(keyMono, getSerializedUpdater(updater), updateReturnMode, existsAlmostCertainly)
-				.handle((value, sink) -> deserializeValue(value, sink));
+				.handle(this::deserializeValue);
 	}
 
 	@Override
@@ -249,7 +249,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.put(keyMono,
 						valueMono,
 						LLDictionaryResultType.PREVIOUS_VALUE)
-				.handle((value1, sink) -> deserializeValue(value1, sink));
+				.handle(this::deserializeValue);
 	}
 
 	@Override
@@ -258,7 +258,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var valueMono = Mono.fromCallable(() -> valueSerializer.serialize(value));
 		return dictionary
 				.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE)
-				.handle((Send<Buffer> value1, SynchronousSink<U> sink) -> deserializeValue(value1, sink))
+				.handle(this::deserializeValue)
 				.map(oldValue -> !Objects.equals(oldValue, value))
 				.defaultIfEmpty(value != null);
 	}
@@ -277,7 +277,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> toKey(serializeSuffix(keySuffix)));
 		return dictionary
 				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE)
-				.handle((value, sink) -> deserializeValue(value, sink));
+				.handle(this::deserializeValue);
 	}
 
 	@Override

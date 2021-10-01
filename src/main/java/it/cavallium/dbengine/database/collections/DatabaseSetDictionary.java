@@ -20,21 +20,21 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Drop<DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>>> drop) {
-		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()), drop);
+			Runnable onClose) {
+		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()), onClose);
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer,
-			Drop<DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>>> drop) {
-		return new DatabaseSetDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer, drop);
+			Runnable onClose) {
+		return new DatabaseSetDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer, onClose);
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Drop<DatabaseMapDictionaryDeep<T, Nothing, DatabaseStageEntry<Nothing>>> drop) {
-		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer, drop);
+			Runnable onClose) {
+		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer, onClose);
 	}
 
 	public Mono<Set<T>> getKeySet(@Nullable CompositeSnapshot snapshot) {

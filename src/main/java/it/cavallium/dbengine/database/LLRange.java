@@ -9,13 +9,54 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 
 /**
  * Range of data, from min (inclusive),to max (exclusive)
  */
 public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 
-	private static final LLRange RANGE_ALL = new LLRange(null, null, null, d -> {});
+	private static final Logger logger = LoggerFactory.getLogger(LLRange.class);
+
+	private static final Drop<LLRange> DROP = new Drop<>() {
+		@Override
+		public void drop(LLRange obj) {
+			try {
+				if (obj.min != null) {
+					obj.min.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close min", ex);
+			}
+			try {
+				if (obj.max != null) {
+					obj.max.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close max", ex);
+			}
+			try {
+				if (obj.single != null) {
+					obj.single.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close single", ex);
+			}
+		}
+
+		@Override
+		public Drop<LLRange> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LLRange obj) {
+
+		}
+	};
+
+	private static final LLRange RANGE_ALL = new LLRange(null, null, null);
 	@Nullable
 	private Buffer min;
 	@Nullable
@@ -23,8 +64,8 @@ public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 	@Nullable
 	private Buffer single;
 
-	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single, Drop<LLRange> drop) {
-		super(new CloseOnDrop(drop));
+	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single) {
+		super(DROP);
 		assert isAllAccessible();
 		assert single == null || (min == null && max == null);
 		this.min = min != null ? min.receive().makeReadOnly() : null;
@@ -46,19 +87,19 @@ public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 	}
 
 	public static LLRange from(Send<Buffer> min) {
-		return new LLRange(min, null, null, d -> {});
+		return new LLRange(min, null, null);
 	}
 
 	public static LLRange to(Send<Buffer> max) {
-		return new LLRange(null, max, null, d -> {});
+		return new LLRange(null, max, null);
 	}
 
 	public static LLRange single(Send<Buffer> single) {
-		return new LLRange(null, null, single, d -> {});
+		return new LLRange(null, null, single);
 	}
 
 	public static LLRange of(Send<Buffer> min, Send<Buffer> max) {
-		return new LLRange(min, max, null, d -> {});
+		return new LLRange(min, max, null);
 	}
 
 	public boolean isAll() {
@@ -179,8 +220,7 @@ public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 		ensureOwned();
 		return new LLRange(min != null ? min.copy().send() : null,
 				max != null ? max.copy().send() : null,
-				single != null ? single.copy().send(): null,
-				d -> {}
+				single != null ? single.copy().send(): null
 		);
 	}
 
@@ -197,33 +237,16 @@ public class LLRange extends LiveResourceSupport<LLRange, LLRange> {
 		minSend = this.min != null ? this.min.send() : null;
 		maxSend = this.max != null ? this.max.send() : null;
 		singleSend = this.single != null ? this.single.send() : null;
-		return drop -> new LLRange(minSend, maxSend, singleSend, drop);
+		return drop -> {
+			var instance = new LLRange(minSend, maxSend, singleSend);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
 	protected void makeInaccessible() {
 		this.min = null;
 		this.max = null;
 		this.single = null;
-	}
-
-	private static class CloseOnDrop implements Drop<LLRange> {
-
-		private final Drop<LLRange> delegate;
-
-		public CloseOnDrop(Drop<LLRange> drop) {
-			if (drop instanceof CloseOnDrop closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(LLRange obj) {
-			if (obj.min != null) obj.min.close();
-			if (obj.max != null) obj.max.close();
-			if (obj.single != null) obj.single.close();
-			delegate.drop(obj);
-		}
 	}
 }

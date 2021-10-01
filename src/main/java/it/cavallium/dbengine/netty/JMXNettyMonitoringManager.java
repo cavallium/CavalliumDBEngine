@@ -31,7 +31,7 @@ public class JMXNettyMonitoringManager {
 
 	public static void initialize() {
 		var instance = getInstance();
-		instance.register("global", DefaultGlobalBufferAllocator.DEFAUL_GLOBAL_BUFFER_ALLOCATOR);
+		instance.register("global", DefaultGlobalBufferAllocator.DEFAULT_GLOBAL_BUFFER_ALLOCATOR);
 	}
 
 	public synchronized static JMXNettyMonitoringManager getInstance() {

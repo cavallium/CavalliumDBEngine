@@ -42,8 +42,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKeyMono) {
 		return LLUtils.usingSend(prefixKeyMono, prefixKey -> Mono.just(DatabaseMapDictionaryDeep
-				.deepIntermediate(dictionary, prefixKey, keySerializer, subStageGetter, keyExtLength,
-						d -> {})), true);
+				.deepIntermediate(dictionary, prefixKey, keySerializer, subStageGetter, keyExtLength, null)), true);
 	}
 
 	public int getKeyBinaryLength() {

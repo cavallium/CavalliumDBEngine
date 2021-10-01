@@ -13,13 +13,38 @@ public final class LLSearchResultShard extends LiveResourceSupport<LLSearchResul
 
 	private static final Logger logger = LoggerFactory.getLogger(LLSearchResultShard.class);
 
+	private static final Drop<LLSearchResultShard> DROP = new Drop<>() {
+		@Override
+		public void drop(LLSearchResultShard obj) {
+			try {
+				if (obj.onClose != null) {
+					obj.onClose.run();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close onClose", ex);
+			}
+		}
+
+		@Override
+		public Drop<LLSearchResultShard> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LLSearchResultShard obj) {
+
+		}
+	};
+
 	private Flux<LLKeyScore> results;
 	private TotalHitsCount totalHitsCount;
+	private Runnable onClose;
 
-	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Drop<LLSearchResultShard> drop) {
-		super(drop);
+	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Runnable onClose) {
+		super(DROP);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
+		this.onClose = onClose;
 	}
 
 	public Flux<LLKeyScore> results() {
@@ -65,11 +90,13 @@ public final class LLSearchResultShard extends LiveResourceSupport<LLSearchResul
 	protected Owned<LLSearchResultShard> prepareSend() {
 		var results = this.results;
 		var totalHitsCount = this.totalHitsCount;
-		return drop -> new LLSearchResultShard(results, totalHitsCount, drop);
+		var onClose = this.onClose;
+		return drop -> new LLSearchResultShard(results, totalHitsCount, onClose);
 	}
 
 	protected void makeInaccessible() {
 		this.results = null;
 		this.totalHitsCount = null;
+		this.onClose = null;
 	}
 }

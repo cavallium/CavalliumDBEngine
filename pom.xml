@@ -100,10 +100,6 @@
       <artifactId>netty-buffer</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.net5.incubator</groupId>
-      <artifactId>netty-incubator-buffer-memseg</artifactId>
-    </dependency>
-    <dependency>
       <groupId>javax.xml.bind</groupId>
       <artifactId>jaxb-api</artifactId>
     </dependency>
@@ -274,11 +270,6 @@
         <groupId>io.net5</groupId>
         <artifactId>netty-buffer</artifactId>
         <version>5.0.0.Final-SNAPSHOT</version>
-      </dependency>
-      <dependency>
-        <groupId>io.net5.incubator</groupId>
-        <artifactId>netty-incubator-buffer-memseg</artifactId>
-        <version>0.0.1.Final-SNAPSHOT</version>
       </dependency>
       <dependency>
         <groupId>javax.xml.bind</groupId>

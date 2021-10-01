@@ -92,9 +92,7 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 							.skip(queryParams.offset())
 							.take(queryParams.limit(), true);
 
-					return new LuceneSearchResult(totalHitsCount, mergedFluxes, d -> {
-						indexSearchers.close();
-					}).send();
+					return new LuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers::close).send();
 				}), false);
 	}
 

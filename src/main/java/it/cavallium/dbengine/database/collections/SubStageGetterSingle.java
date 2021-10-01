@@ -20,7 +20,7 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> keyPrefixMono) {
-		return keyPrefixMono.map(keyPrefix -> new DatabaseSingle<>(dictionary, keyPrefix, serializer, d -> {}));
+		return keyPrefixMono.map(keyPrefix -> new DatabaseSingle<>(dictionary, keyPrefix, serializer, null));
 	}
 
 }

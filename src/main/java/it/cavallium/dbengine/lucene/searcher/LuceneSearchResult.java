@@ -19,13 +19,38 @@ public final class LuceneSearchResult extends LiveResourceSupport<LuceneSearchRe
 
 	private static final Logger logger = LoggerFactory.getLogger(LuceneSearchResult.class);
 
+	private static final Drop<LuceneSearchResult> DROP = new Drop<>() {
+		@Override
+		public void drop(LuceneSearchResult obj) {
+			try {
+				if (obj.onClose != null) {
+					obj.onClose.run();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close onClose", ex);
+			}
+		}
+
+		@Override
+		public Drop<LuceneSearchResult> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LuceneSearchResult obj) {
+
+		}
+	};
+
 	private TotalHitsCount totalHitsCount;
 	private Flux<LLKeyScore> results;
+	private Runnable onClose;
 
-	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results, Drop<LuceneSearchResult> drop) {
-		super(drop);
+	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results, Runnable onClose) {
+		super(DROP);
 		this.totalHitsCount = totalHitsCount;
 		this.results = results;
+		this.onClose = onClose;
 	}
 
 	public TotalHitsCount totalHitsCount() {
@@ -71,12 +96,18 @@ public final class LuceneSearchResult extends LiveResourceSupport<LuceneSearchRe
 	protected Owned<LuceneSearchResult> prepareSend() {
 		var totalHitsCount = this.totalHitsCount;
 		var results = this.results;
-		return drop -> new LuceneSearchResult(totalHitsCount, results, drop);
+		var onClose = this.onClose;
+		return drop -> {
+			var instance = new LuceneSearchResult(totalHitsCount, results, onClose);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
 	protected void makeInaccessible() {
 		this.totalHitsCount = null;
 		this.results = null;
+		this.onClose = null;
 	}
 
 }

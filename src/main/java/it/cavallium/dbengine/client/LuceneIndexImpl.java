@@ -94,7 +94,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 							.fromCallable(signal::key)
 							.map(indicizer::getKey), signal.score())),
 					llSearchResult.totalHitsCount(),
-					d -> llSearchResult.close()
+					llSearchResult::close
 			).send();
 		});
 	}
@@ -107,7 +107,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 			return new SearchResult<>(llSearchResult.results().map(signal -> {
 				var key = Mono.fromCallable(signal::key).map(indicizer::getKey);
 				return new SearchResultItem<>(key, key.flatMap(valueGetter::get), signal.score());
-			}), llSearchResult.totalHitsCount(), d -> llSearchResult.close()).send();
+			}), llSearchResult.totalHitsCount(), llSearchResult::close).send();
 		});
 	}
 
@@ -131,10 +131,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 									Mono.just(tuple3.getT3().orElseThrow()),
 									tuple3.getT1()
 							));
-					return new SearchResult<>(resultItemsFlux,
-							llSearchResult.totalHitsCount(),
-							d -> llSearchResult.close()
-					).send();
+					return new SearchResult<>(resultItemsFlux, llSearchResult.totalHitsCount(), llSearchResult::close).send();
 				});
 	}
 

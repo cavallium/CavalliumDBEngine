@@ -332,7 +332,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 		return localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer).map(resultToReceive -> {
 			var result = resultToReceive.receive();
-			return new LLSearchResultShard(result.results(), result.totalHitsCount(), d -> result.close()).send();
+			return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
 		}).doOnDiscard(Send.class, Send::close);
 	}
 
@@ -344,7 +344,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 		return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION).map(resultToReceive -> {
 			var result = resultToReceive.receive();
-			return new LLSearchResultShard(result.results(), result.totalHitsCount(), d -> result.close()).send();
+			return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
 		}).doOnDiscard(Send.class, Send::close);
 	}
 

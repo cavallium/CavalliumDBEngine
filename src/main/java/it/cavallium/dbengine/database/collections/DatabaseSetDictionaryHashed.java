@@ -25,14 +25,14 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
-			Drop<DatabaseMapDictionaryHashed<T, Nothing, TH>> drop) {
+			Runnable onClose) {
 		super(dictionary,
 				prefixKey,
 				keySuffixSerializer,
 				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
 				keySuffixHashFunction,
 				keySuffixHashSerializer,
-				drop
+				onClose
 		);
 	}
 
@@ -40,13 +40,13 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			Serializer<T> keySerializer,
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH> keyHashSerializer,
-			Drop<DatabaseMapDictionaryHashed<T, Nothing, TH>> drop) {
+			Runnable onClose) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				LLUtils.empty(dictionary.getAllocator()),
 				keySerializer,
 				keyHashFunction,
 				keyHashSerializer,
-				drop
+				onClose
 		);
 	}
 
@@ -54,13 +54,14 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			Send<Buffer> prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH> keyHashSerializer, Drop<DatabaseMapDictionaryHashed<T, Nothing, TH>> drop) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer,
+			Runnable onClose) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,
 				keyHashFunction,
 				keyHashSerializer,
-				drop
+				onClose
 		);
 	}
 

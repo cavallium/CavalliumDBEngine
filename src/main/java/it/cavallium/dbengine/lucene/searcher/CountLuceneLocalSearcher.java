@@ -26,7 +26,7 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 						}).subscribeOn(Schedulers.boundedElastic()),
 						is -> Mono.empty()
 				)
-				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), drop -> {}).send())
+				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null).send())
 				.doOnDiscard(Send.class, Send::close);
 	}
 }

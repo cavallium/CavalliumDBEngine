@@ -25,6 +25,8 @@ import java.util.Set;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -33,19 +35,45 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 		LiveResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryHashed<T, U, TH>>
 		implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
+	private static final Logger logger = LoggerFactory.getLogger(DatabaseMapDictionaryHashed.class);
+
+	private static final Drop<DatabaseMapDictionaryHashed<?, ?, ?>> DROP = new Drop<>() {
+		@Override
+		public void drop(DatabaseMapDictionaryHashed<?, ?, ?> obj) {
+			try {
+				if (obj.subDictionary != null) {
+					obj.subDictionary.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close subDictionary", ex);
+			}
+		}
+
+		@Override
+		public Drop<DatabaseMapDictionaryHashed<?, ?, ?>> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(DatabaseMapDictionaryHashed<?, ?, ?> obj) {
+
+		}
+	};
+
 	private final BufferAllocator alloc;
 	private final Function<T, TH> keySuffixHashFunction;
 
 	private DatabaseMapDictionary<TH, ObjectArraySet<Entry<T, U>>> subDictionary;
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
 			@NotNull Send<Buffer> prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
-			Drop<DatabaseMapDictionaryHashed<T, U, TH>> drop) {
-		super(new DatabaseMapDictionaryHashed.CloseOnDrop<>(drop));
+			Runnable onClose) {
+		super((Drop<DatabaseMapDictionaryHashed<T, U, TH>>) (Drop) DROP);
 		if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
 			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
@@ -55,15 +83,16 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 		ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
 				= new ValuesSetSerializer<>(alloc, valueWithHashSerializer);
 		this.subDictionary = DatabaseMapDictionary.tail(dictionary, prefixKey, keySuffixHashSerializer,
-				valuesSetSerializer, d -> {});
+				valuesSetSerializer, onClose);
 		this.keySuffixHashFunction = keySuffixHashFunction;
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	private DatabaseMapDictionaryHashed(BufferAllocator alloc,
 			Function<T, TH> keySuffixHashFunction,
 			Send<DatabaseStage<Map<TH, ObjectArraySet<Entry<T, U>>>>> subDictionary,
 			Drop<DatabaseMapDictionaryHashed<T, U, TH>> drop) {
-		super(new CloseOnDrop<>(drop));
+		super((Drop<DatabaseMapDictionaryHashed<T, U, TH>>) (Drop) DROP);
 		this.alloc = alloc;
 		this.keySuffixHashFunction = keySuffixHashFunction;
 
@@ -75,7 +104,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 			Serializer<U> valueSerializer,
 			Function<T, UH> keyHashFunction,
 			SerializerFixedBinaryLength<UH> keyHashSerializer,
-			Drop<DatabaseMapDictionaryHashed<T, U, UH>> drop) {
+			Runnable onClose) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
 				LLUtils.empty(dictionary.getAllocator()),
@@ -83,7 +112,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 				valueSerializer,
 				keyHashFunction,
 				keyHashSerializer,
-				drop
+				onClose
 		);
 	}
 
@@ -93,14 +122,14 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 			Serializer<U> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<UH> keySuffixHashSerializer,
-			Drop<DatabaseMapDictionaryHashed<T, U, UH>> drop) {
+			Runnable onClose) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
 				prefixKey,
 				keySuffixSerializer,
 				valueSerializer,
 				keySuffixHashFunction,
 				keySuffixHashSerializer,
-				drop
+				onClose
 		);
 	}
 
@@ -173,7 +202,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	private Mono<DatabaseSingleBucket<T, U, TH>> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
 		return subDictionary
 				.at(snapshot, hash)
-				.map(entry -> new DatabaseSingleBucket<T, U, TH>(entry, key, d -> {}))
+				.map(entry -> new DatabaseSingleBucket<T, U, TH>(entry, key, null))
 				.doOnDiscard(Resource.class, Resource::close);
 	}
 
@@ -324,24 +353,5 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	@Override
 	protected void makeInaccessible() {
 		this.subDictionary = null;
-	}
-
-	private static class CloseOnDrop<T, U, TH> implements Drop<DatabaseMapDictionaryHashed<T,U,TH>> {
-
-		private final Drop<DatabaseMapDictionaryHashed<T,U,TH>> delegate;
-
-		public CloseOnDrop(Drop<DatabaseMapDictionaryHashed<T,U,TH>> drop) {
-			if (drop instanceof CloseOnDrop<T, U, TH> closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(DatabaseMapDictionaryHashed<T, U, TH> obj) {
-			obj.subDictionary.close();
-			delegate.drop(obj);
-		}
 	}
 }

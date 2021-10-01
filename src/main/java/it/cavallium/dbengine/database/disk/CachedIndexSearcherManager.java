@@ -152,7 +152,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 		});
 	}
 
-	private void dropCachedIndexSearcher(LLIndexSearcher cachedIndexSearcher) {
+	private void dropCachedIndexSearcher() {
 		// This shouldn't happen more than once per searcher.
 		activeSearchers.arriveAndDeregister();
 	}

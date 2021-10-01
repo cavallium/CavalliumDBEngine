@@ -5,20 +5,66 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.client.SearchResultKeys;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 
 public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
-	@Nullable
-	private final Buffer previous;
-	@Nullable
-	private final Buffer current;
 
-	private LLDelta(@Nullable Send<Buffer> previous, @Nullable Send<Buffer> current, Drop<LLDelta> drop) {
-		super(new LLDelta.CloseOnDrop(drop));
+	private static final Logger logger = LoggerFactory.getLogger(LLDelta.class);
+
+	private static final Drop<LLDelta> DROP = new Drop<>() {
+		@Override
+		public void drop(LLDelta obj) {
+			try {
+				if (obj.previous != null) {
+					obj.previous.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close previous", ex);
+			}
+			try {
+				if (obj.current != null) {
+					obj.current.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close current", ex);
+			}
+			try {
+				if (obj.onClose != null) {
+					obj.onClose.run();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close onDrop", ex);
+			}
+		}
+
+		@Override
+		public Drop<LLDelta> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LLDelta obj) {
+
+		}
+	};
+
+	@Nullable
+	private Buffer previous;
+	@Nullable
+	private Buffer current;
+	@Nullable
+	private Runnable onClose;
+
+	private LLDelta(@Nullable Send<Buffer> previous, @Nullable Send<Buffer> current, @Nullable Runnable onClose) {
+		super(DROP);
 		assert isAllAccessible();
 		this.previous = previous != null ? previous.receive().makeReadOnly() : null;
 		this.current = current != null ? current.receive().makeReadOnly() : null;
+		this.onClose = onClose;
 	}
 
 	private boolean isAllAccessible() {
@@ -31,7 +77,7 @@ public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 
 	public static LLDelta of(Send<Buffer> min, Send<Buffer> max) {
 		assert (min == null && max == null) || (min != max);
-		return new LLDelta(min, max, d -> {});
+		return new LLDelta(min, max, null);
 	}
 
 	public Send<Buffer> previous() {
@@ -86,42 +132,28 @@ public class LLDelta extends LiveResourceSupport<LLDelta, LLDelta> {
 				.toString();
 	}
 
-	public LLDelta copy() {
-		ensureOwned();
-		var prevCopy = previous != null ? previous.copy().send() : null;
-		Send<Buffer> curCopy = current != null ? current.copy().send() : null;
-		return new LLDelta(prevCopy, curCopy, d -> {});
-	}
-
 	@Override
 	protected RuntimeException createResourceClosedException() {
 		return new IllegalStateException("Closed");
 	}
 
 	@Override
+	protected void makeInaccessible() {
+		this.current = null;
+		this.previous = null;
+		this.onClose = null;
+	}
+
+	@Override
 	protected Owned<LLDelta> prepareSend() {
 		Send<Buffer> minSend = this.previous != null ? this.previous.send() : null;
 		Send<Buffer> maxSend = this.current != null ? this.current.send() : null;
-		return drop -> new LLDelta(minSend, maxSend, drop);
+		Runnable onClose = this.onClose;
+		return drop -> {
+			var instance = new LLDelta(minSend, maxSend, onClose);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
-	private static class CloseOnDrop implements Drop<LLDelta> {
-
-		private final Drop<LLDelta> delegate;
-
-		public CloseOnDrop(Drop<LLDelta> drop) {
-			if (drop instanceof CloseOnDrop closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(LLDelta obj) {
-			if (obj.previous != null) obj.previous.close();
-			if (obj.current != null) obj.current.close();
-			delegate.drop(obj);
-		}
-	}
 }

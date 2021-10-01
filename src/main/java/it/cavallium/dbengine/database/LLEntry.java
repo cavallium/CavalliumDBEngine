@@ -5,38 +5,74 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
+import java.util.Objects;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 
 public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
-	@NotNull
-	private final Buffer key;
-	@NotNull
-	private final Buffer value;
 
-	private LLEntry(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value, Drop<LLEntry> drop) {
-		super(new LLEntry.CloseOnDrop(drop));
+	private static final Logger logger = LoggerFactory.getLogger(LLEntry.class);
+
+	private static final Drop<LLEntry> DROP = new Drop<>() {
+		@Override
+		public void drop(LLEntry obj) {
+			try {
+				if (obj.key != null) {
+					obj.key.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close key", ex);
+			}
+			try {
+				if (obj.value != null) {
+					obj.value.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close value", ex);
+			}
+		}
+
+		@Override
+		public Drop<LLEntry> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LLEntry obj) {
+
+		}
+	};
+
+	@Nullable
+	private Buffer key;
+	@Nullable
+	private Buffer value;
+
+	private LLEntry(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value) {
+		super(DROP);
 		this.key = key.receive().makeReadOnly();
 		this.value = value.receive().makeReadOnly();
 		assert isAllAccessible();
 	}
 
 	private boolean isAllAccessible() {
-		assert key.isAccessible();
-		assert value.isAccessible();
+		assert key != null && key.isAccessible();
+		assert value != null && value.isAccessible();
 		assert this.isAccessible();
 		assert this.isOwned();
 		return true;
 	}
 
 	public static LLEntry of(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value) {
-		return new LLEntry(key, value, d -> {});
+		return new LLEntry(key, value);
 	}
 
 	public Send<Buffer> getKey() {
 		ensureOwned();
-		return key.copy().send();
+		return Objects.requireNonNull(key).copy().send();
 	}
 
 	public Buffer getKeyUnsafe() {
@@ -45,7 +81,7 @@ public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
 
 	public Send<Buffer> getValue() {
 		ensureOwned();
-		return value.copy().send();
+		return Objects.requireNonNull(value).copy().send();
 	}
 
 
@@ -62,6 +98,12 @@ public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
 				throw new IllegalStateException("Resource not owned");
 			}
 		}
+	}
+
+	@Override
+	protected void makeInaccessible() {
+		this.key = null;
+		this.value = null;
 	}
 
 	@Override
@@ -91,11 +133,6 @@ public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
 				.toString();
 	}
 
-	public LLEntry copy() {
-		ensureOwned();
-		return new LLEntry(key.copy().send(), value.copy().send(), d -> {});
-	}
-
 	@Override
 	protected RuntimeException createResourceClosedException() {
 		return new IllegalStateException("Closed");
@@ -105,28 +142,12 @@ public class LLEntry extends LiveResourceSupport<LLEntry, LLEntry> {
 	protected Owned<LLEntry> prepareSend() {
 		Send<Buffer> keySend;
 		Send<Buffer> valueSend;
-		keySend = this.key.send();
-		valueSend = this.value.send();
-		return drop -> new LLEntry(keySend, valueSend, drop);
-	}
-
-	private static class CloseOnDrop implements Drop<LLEntry> {
-
-		private final Drop<LLEntry> delegate;
-
-		public CloseOnDrop(Drop<LLEntry> drop) {
-			if (drop instanceof CloseOnDrop closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(LLEntry obj) {
-			obj.key.close();
-			obj.value.close();
-			delegate.drop(obj);
-		}
+		keySend = Objects.requireNonNull(this.key).send();
+		valueSend = Objects.requireNonNull(this.value).send();
+		return drop -> {
+			var instance = new LLEntry(keySend, valueSend);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 }

@@ -206,8 +206,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				// Transform the result type
 				.map(resultToReceive -> {
 					var result = resultToReceive.receive();
-					return new LLSearchResultShard(result.results(), result.totalHitsCount(),
-							d -> result.close()).send();
+					return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
 				})
 				.doOnDiscard(Send.class, Send::close);
 	}
@@ -225,8 +224,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				// Transform the result type
 				.map(resultToReceive -> {
 					var result = resultToReceive.receive();
-					return new LLSearchResultShard(result.results(), result.totalHitsCount(),
-							d -> result.close()).send();
+					return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
 				})
 				.doOnDiscard(Send.class, Send::close);
 	}

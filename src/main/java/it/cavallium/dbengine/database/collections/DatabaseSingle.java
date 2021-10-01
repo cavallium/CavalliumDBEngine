@@ -7,6 +7,7 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.SearchResultKeys;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -19,6 +20,8 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
@@ -26,20 +29,49 @@ import reactor.core.publisher.SynchronousSink;
 public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseSingle<U>> implements
 		DatabaseStageEntry<U> {
 
+	private static final Logger logger = LoggerFactory.getLogger(DatabaseSingle.class);
+
+	private static final Drop<DatabaseSingle<?>> DROP = new Drop<>() {
+		@Override
+		public void drop(DatabaseSingle<?> obj) {
+			try {
+				obj.key.close();
+			} catch (Throwable ex) {
+				logger.error("Failed to close key", ex);
+			}
+			if (obj.onClose != null) {
+				obj.onClose.run();
+			}
+		}
+
+		@Override
+		public Drop<DatabaseSingle<?>> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(DatabaseSingle<?> obj) {
+
+		}
+	};
+
 	private final LLDictionary dictionary;
 	private final Mono<Send<Buffer>> keyMono;
 	private final Serializer<U> serializer;
 
 	private Buffer key;
+	private Runnable onClose;
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U> serializer,
-			Drop<DatabaseSingle<U>> drop) {
-		super(new CloseOnDrop<>(drop));
+			Runnable onClose) {
+		super((Drop<DatabaseSingle<U>>) (Drop) DROP);
 		try (key) {
 			this.dictionary = dictionary;
 			this.key = key.receive();
 			this.keyMono = LLUtils.lazyRetain(this.key);
 			this.serializer = serializer;
+			this.onClose = onClose;
 		}
 	}
 
@@ -144,30 +176,17 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 	@Override
 	protected Owned<DatabaseSingle<U>> prepareSend() {
 		var key = this.key.send();
-		return drop -> new DatabaseSingle<>(dictionary, key, serializer, drop);
+		var onClose = this.onClose;
+		return drop -> {
+			var instance = new DatabaseSingle<>(dictionary, key, serializer, onClose);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
 	@Override
 	protected void makeInaccessible() {
 		this.key = null;
-	}
-
-	private static class CloseOnDrop<U> implements Drop<DatabaseSingle<U>> {
-
-		private final Drop<DatabaseSingle<U>> delegate;
-
-		public CloseOnDrop(Drop<DatabaseSingle<U>> drop) {
-			if (drop instanceof CloseOnDrop<U> closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(DatabaseSingle<U> obj) {
-			obj.key.close();
-			delegate.drop(obj);
-		}
+		this.onClose = null;
 	}
 }

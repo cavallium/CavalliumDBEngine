@@ -3,18 +3,49 @@ package it.cavallium.dbengine.database.disk;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import it.cavallium.dbengine.database.LiveResourceSupport;
+import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryHashed;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.IndexSearcher;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 
 public class LLIndexSearcher extends LiveResourceSupport<LLIndexSearcher, LLIndexSearcher> {
+
+	private static final Logger logger = LoggerFactory.getLogger(LLIndexSearcher.class);
+
+	private static final Drop<LLIndexSearcher> DROP = new Drop<>() {
+		@Override
+		public void drop(LLIndexSearcher obj) {
+			try {
+				if (obj.onClose != null) {
+					obj.onClose.run();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close onClose", ex);
+			}
+		}
+
+		@Override
+		public Drop<LLIndexSearcher> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LLIndexSearcher obj) {
+
+		}
+	};
 
 	private IndexSearcher indexSearcher;
 	private final boolean decRef;
 
-	public LLIndexSearcher(IndexSearcher indexSearcher, boolean decRef, Drop<LLIndexSearcher> drop) {
-		super(drop);
+	private Runnable onClose;
+
+	public LLIndexSearcher(IndexSearcher indexSearcher, boolean decRef, Runnable onClose) {
+		super(DROP);
 		this.indexSearcher = indexSearcher;
 		this.decRef = decRef;
+		this.onClose = onClose;
 	}
 
 	public IndexReader getIndexReader() {
@@ -39,11 +70,13 @@ public class LLIndexSearcher extends LiveResourceSupport<LLIndexSearcher, LLInde
 	@Override
 	protected Owned<LLIndexSearcher> prepareSend() {
 		var indexSearcher = this.indexSearcher;
-		return drop -> new LLIndexSearcher(indexSearcher, decRef, drop);
+		var onClose = this.onClose;
+		return drop -> new LLIndexSearcher(indexSearcher, decRef, onClose);
 	}
 
 	protected void makeInaccessible() {
 		this.indexSearcher = null;
+		this.onClose = null;
 	}
 
 }

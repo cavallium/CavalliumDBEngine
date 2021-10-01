@@ -14,6 +14,8 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
@@ -22,20 +24,47 @@ import reactor.core.publisher.SynchronousSink;
 public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>, DatabaseSingleMapped<A, B>>
 		implements DatabaseStageEntry<A> {
 
+	private static final Logger logger = LoggerFactory.getLogger(DatabaseSingleMapped.class);
+
+	private static final Drop<DatabaseSingleMapped<?, ?>> DROP = new Drop<>() {
+		@Override
+		public void drop(DatabaseSingleMapped<?, ?> obj) {
+			try {
+				if (obj.serializedSingle != null) {
+					obj.serializedSingle.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close serializedSingle", ex);
+			}
+		}
+
+		@Override
+		public Drop<DatabaseSingleMapped<?, ?>> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(DatabaseSingleMapped<?, ?> obj) {
+
+		}
+	};
+
 	private final Mapper<A, B> mapper;
 
 	private DatabaseStageEntry<B> serializedSingle;
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Mapper<A, B> mapper,
 			Drop<DatabaseSingleMapped<A, B>> drop) {
-		super(new CloseOnDrop<>(drop));
+		super((Drop<DatabaseSingleMapped<A,B>>) (Drop) DROP);
 		this.serializedSingle = serializedSingle;
 		this.mapper = mapper;
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	private DatabaseSingleMapped(Send<DatabaseStage<B>> serializedSingle, Mapper<A, B> mapper,
 			Drop<DatabaseSingleMapped<A, B>> drop) {
-		super(new CloseOnDrop<>(drop));
+		super((Drop<DatabaseSingleMapped<A,B>>) (Drop) DROP);
 		this.mapper = mapper;
 
 		this.serializedSingle = (DatabaseStageEntry<B>) serializedSingle.receive();
@@ -170,22 +199,4 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 		this.serializedSingle = null;
 	}
 
-	private static class CloseOnDrop<A, B> implements Drop<DatabaseSingleMapped<A, B>> {
-
-		private final Drop<DatabaseSingleMapped<A, B>> delegate;
-
-		public CloseOnDrop(Drop<DatabaseSingleMapped<A, B>> drop) {
-			if (drop instanceof CloseOnDrop<A, B> closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(DatabaseSingleMapped<A, B> obj) {
-			obj.serializedSingle.close();
-			delegate.drop(obj);
-		}
-	}
 }

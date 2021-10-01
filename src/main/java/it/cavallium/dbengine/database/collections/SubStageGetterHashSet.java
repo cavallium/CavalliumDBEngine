@@ -35,7 +35,7 @@ public class SubStageGetterHashSet<T, TH> implements
 		return Mono.usingWhen(prefixKeyMono,
 				prefixKey -> Mono
 						.fromSupplier(() -> DatabaseSetDictionaryHashed.tail(dictionary, prefixKey, keySerializer,
-								keyHashFunction, keyHashSerializer, d -> {})
+								keyHashFunction, keyHashSerializer, null)
 						),
 				prefixKey -> Mono.fromRunnable(prefixKey::close)
 		);

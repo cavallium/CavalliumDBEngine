@@ -24,6 +24,8 @@ import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.functional.TriFunction;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -32,22 +34,58 @@ public class DatabaseSingleBucket<K, V, TH>
 		extends LiveResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
 		implements DatabaseStageEntry<V> {
 
+	private static final Logger logger = LoggerFactory.getLogger(DatabaseSingleBucket.class);
+
+	private static final Drop<DatabaseSingleBucket<?, ?, ?>> DROP = new Drop<>() {
+		@Override
+		public void drop(DatabaseSingleBucket<?, ?, ?> obj) {
+			try {
+				if (obj.bucketStage != null) {
+					obj.bucketStage.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close bucketStage", ex);
+			}
+			try {
+				if (obj.onClose != null) {
+					obj.onClose.run();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close onClose", ex);
+			}
+		}
+
+		@Override
+		public Drop<DatabaseSingleBucket<?, ?, ?>> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(DatabaseSingleBucket<?, ?, ?> obj) {
+
+		}
+	};
+
 	private final K key;
 
 	private DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage;
 
-	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key,
-			Drop<DatabaseSingleBucket<K, V, TH>> drop) {
-		super(new CloseOnDrop<>(drop));
+	private Runnable onClose;
+
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key, Runnable onClose) {
+		super((Drop<DatabaseSingleBucket<K,V,TH>>) (Drop) DROP);
 		this.key = key;
 		this.bucketStage = bucketStage;
+		this.onClose = onClose;
 	}
 
-	private DatabaseSingleBucket(Send<DatabaseStage<ObjectArraySet<Entry<K, V>>>> bucketStage, K key,
-			Drop<DatabaseSingleBucket<K, V, TH>> drop) {
-		super(new CloseOnDrop<>(drop));
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private DatabaseSingleBucket(Send<DatabaseStage<ObjectArraySet<Entry<K, V>>>> bucketStage, K key, Runnable onClose) {
+		super((Drop<DatabaseSingleBucket<K,V,TH>>) (Drop) DROP);
 		this.key = key;
 		this.bucketStage = (DatabaseStageEntry<ObjectArraySet<Entry<K, V>>>) bucketStage.receive();
+		this.onClose = onClose;
 	}
 
 	@Override
@@ -210,31 +248,17 @@ public class DatabaseSingleBucket<K, V, TH>
 	@Override
 	protected Owned<DatabaseSingleBucket<K, V, TH>> prepareSend() {
 		var bucketStage = this.bucketStage.send();
-		return drop -> new DatabaseSingleBucket<>(bucketStage, key, drop);
+		var onClose = this.onClose;
+		return drop -> {
+			var instance = new DatabaseSingleBucket<K, V, TH>(bucketStage, key, onClose);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
 	@Override
 	protected void makeInaccessible() {
 		this.bucketStage = null;
-	}
-
-	private static class CloseOnDrop<K, V, TH> implements
-			Drop<DatabaseSingleBucket<K, V, TH>> {
-
-		private final Drop<DatabaseSingleBucket<K, V, TH>> delegate;
-
-		public CloseOnDrop(Drop<DatabaseSingleBucket<K, V, TH>> drop) {
-			if (drop instanceof CloseOnDrop<K, V, TH> closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(DatabaseSingleBucket<K, V, TH> obj) {
-			obj.bucketStage.close();
-			delegate.drop(obj);
-		}
+		this.onClose = null;
 	}
 }

@@ -37,7 +37,7 @@ public class SubStageGetterHashMap<T, U, TH> implements
 			Mono<Send<Buffer>> prefixKeyMono) {
 		return LLUtils.usingSend(prefixKeyMono, prefixKey -> Mono.just(DatabaseMapDictionaryHashed
 				.tail(dictionary, prefixKey, keySerializer, valueSerializer, keyHashFunction,
-						keyHashSerializer, d -> {})), true);
+						keyHashSerializer, null)), true);
 	}
 
 	public int getKeyHashBinaryLength() {

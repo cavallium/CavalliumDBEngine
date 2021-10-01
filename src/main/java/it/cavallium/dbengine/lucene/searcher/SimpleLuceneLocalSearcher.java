@@ -102,7 +102,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			Runnable drop) {
+			Runnable onClose) {
 		return firstResultMono.map(firstResult -> {
 			var totalHitsCount = firstResult.totalHitsCount();
 			var firstPageHitsFlux = firstResult.firstPageHitsFlux();
@@ -111,7 +111,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 			Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-			return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> drop.run()).send();
+			return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose).send();
 		});
 	}
 

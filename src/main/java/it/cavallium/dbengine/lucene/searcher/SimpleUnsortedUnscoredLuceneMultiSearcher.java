@@ -44,7 +44,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 				indexSearchers -> Flux
 						.fromIterable(indexSearchers.shards())
 						.flatMap(searcher -> {
-							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, d -> {}).send());
+							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, null).send());
 							return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
 						})
 						.collectList()
@@ -67,7 +67,7 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 									.skip(queryParams.offset())
 									.take(queryParams.limit(), true);
 
-							return new LuceneSearchResult(totalHitsCount, mergedFluxes, d -> {
+							return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
 								for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
 									luceneSearchResult.close();
 								}

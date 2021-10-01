@@ -28,7 +28,7 @@ public class SubStageGetterMap<T, U> implements SubStageGetter<Map<T, U>, Databa
 			Mono<Send<Buffer>> prefixKeyMono) {
 		return LLUtils.usingSend(prefixKeyMono,
 				prefixKey -> Mono.fromSupplier(() -> DatabaseMapDictionary
-						.tail(dictionary, prefixKey, keySerializer, valueSerializer, d -> {})), true);
+						.tail(dictionary, prefixKey, keySerializer, valueSerializer, null)), true);
 	}
 
 	public int getKeyBinaryLength() {

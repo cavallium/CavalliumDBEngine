@@ -14,18 +14,39 @@ import reactor.core.publisher.Mono;
 
 public final class SearchResult<T, U> extends LiveResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
 
+	private static final Drop<SearchResult<?, ?>> DROP = new Drop<>() {
+		@Override
+		public void drop(SearchResult<?, ?> obj) {
+			if (obj.onClose != null) {
+				obj.onClose.run();
+			}
+		}
+
+		@Override
+		public Drop<SearchResult<?, ?>> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(SearchResult<?, ?> obj) {
+
+		}
+	};
+
 	private Flux<SearchResultItem<T, U>> results;
 	private TotalHitsCount totalHitsCount;
+	private Runnable onClose;
 
-	public SearchResult(Flux<SearchResultItem<T, U>> results, TotalHitsCount totalHitsCount,
-			Drop<SearchResult<T, U>> drop) {
-		super(drop);
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	public SearchResult(Flux<SearchResultItem<T, U>> results, TotalHitsCount totalHitsCount, Runnable onClose) {
+		super((Drop<SearchResult<T,U>>) (Drop) DROP);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
+		this.onClose = onClose;
 	}
 
 	public static <T, U> SearchResult<T, U> empty() {
-		return new SearchResult<T, U>(Flux.empty(), TotalHitsCount.of(0, true), d -> {});
+		return new SearchResult<T, U>(Flux.empty(), TotalHitsCount.of(0, true), null);
 	}
 
 	public Flux<SearchResultItem<T, U>> results() {
@@ -50,11 +71,17 @@ public final class SearchResult<T, U> extends LiveResourceSupport<SearchResult<T
 	protected Owned<SearchResult<T, U>> prepareSend() {
 		var results = this.results;
 		var totalHitsCount = this.totalHitsCount;
-		return drop -> new SearchResult<>(results, totalHitsCount, drop);
+		var onClose = this.onClose;
+		return drop -> {
+			var instance = new SearchResult<>(results, totalHitsCount, onClose);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
 	protected void makeInaccessible() {
 		this.results = null;
 		this.totalHitsCount = null;
+		this.onClose = null;
 	}
 }

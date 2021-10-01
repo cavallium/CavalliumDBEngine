@@ -111,7 +111,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			Runnable drop) {
+			Runnable onClose) {
 		var totalHitsCount = firstResult.totalHitsCount();
 		var firstPageHitsFlux = firstResult.firstPageHitsFlux();
 		var secondPageInfo = firstResult.nextPageInfo();
@@ -119,7 +119,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 		Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 		Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-		return new LuceneSearchResult(totalHitsCount, combinedFlux, d -> drop.run()).send();
+		return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose).send();
 	}
 
 	/**

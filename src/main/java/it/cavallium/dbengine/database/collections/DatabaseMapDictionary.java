@@ -44,26 +44,26 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			@NotNull Send<Buffer> prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
-			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
+			Runnable onClose) {
 		// Do not retain or release or use the prefixKey here
-		super(dictionary, prefixKey, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0, drop);
+		super(dictionary, prefixKey, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0, onClose);
 		this.valueSerializer = valueSerializer;
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer,
 			Serializer<U> valueSerializer,
-			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
+			Runnable onClose) {
 		return new DatabaseMapDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer,
-				valueSerializer, drop);
+				valueSerializer, onClose);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
 			Send<Buffer> prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
-			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
-		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer, drop);
+			Runnable onClose) {
+		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer, onClose);
 	}
 
 	private Send<Buffer> toKey(Send<Buffer> suffixKeyToSend) {
@@ -152,7 +152,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono.fromCallable(() ->
-				new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), valueSerializer, d -> {}));
+				new DatabaseSingle<>(dictionary, toKey(serializeSuffix(keySuffix)), valueSerializer, null));
 	}
 
 	@Override
@@ -401,7 +401,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						removePrefix(keyBuf);
 						suffixKeyConsistency(keyBuf.readableBytes());
 						sink.next(Map.entry(deserializeSuffix(keyBuf.copy().send()),
-								new DatabaseSingle<>(dictionary, toKey(keyBuf.send()), valueSerializer, d -> {})
+								new DatabaseSingle<>(dictionary, toKey(keyBuf.send()), valueSerializer, null)
 						));
 					} catch (SerializationException ex) {
 						sink.error(ex);

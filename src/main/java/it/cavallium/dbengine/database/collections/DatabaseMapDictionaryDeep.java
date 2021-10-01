@@ -25,6 +25,8 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.log.Logger;
+import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -32,6 +34,45 @@ import reactor.core.publisher.Mono;
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends
 		LiveResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryDeep<T, U, US>>
 		implements DatabaseStageMap<T, U, US> {
+
+	private static final Logger logger = LoggerFactory.getLogger(DatabaseMapDictionaryDeep.class);
+
+	private static final Drop<DatabaseMapDictionaryDeep<?, ?, ?>> DROP = new Drop<>() {
+		@Override
+		public void drop(DatabaseMapDictionaryDeep<?, ?, ?> obj) {
+			try {
+				if (obj.range != null) {
+					obj.range.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close range", ex);
+			}
+			try {
+				if (obj.keyPrefix != null) {
+					obj.keyPrefix.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close keyPrefix", ex);
+			}
+			try {
+				if (obj.onClose != null) {
+					obj.onClose.run();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close onClose", ex);
+			}
+		}
+
+		@Override
+		public Drop<DatabaseMapDictionaryDeep<?, ?, ?>> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(DatabaseMapDictionaryDeep<?, ?, ?> obj) {
+
+		}
+	};
 
 	protected final LLDictionary dictionary;
 	private final BufferAllocator alloc;
@@ -44,6 +85,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	protected LLRange range;
 	protected Buffer keyPrefix;
+	protected Runnable onClose;
 
 	private static void incrementPrefix(Buffer prefix, int prefixLength) {
 		assert prefix.readableBytes() >= prefixLength;
@@ -151,29 +193,30 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	@Deprecated
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer, SubStageGetterSingle<U> subStageGetter,
-			Drop<DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>>> drop) {
+			Runnable onClose) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer,
-				subStageGetter, 0, drop);
+				subStageGetter, 0, onClose);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(
 			LLDictionary dictionary, SerializerFixedBinaryLength<T> keySerializer, int keyExtLength,
-			SubStageGetter<U, US> subStageGetter, Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+			SubStageGetter<U, US> subStageGetter, Runnable onClose) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer,
-				subStageGetter, keyExtLength, drop);
+				subStageGetter, keyExtLength, onClose);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(
 			LLDictionary dictionary, Send<Buffer> prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer,
-			SubStageGetter<U, US> subStageGetter, int keyExtLength, Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
+			SubStageGetter<U, US> subStageGetter, int keyExtLength, Runnable onClose) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter,
-				keyExtLength, drop);
+				keyExtLength, onClose);
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary, @NotNull Send<Buffer> prefixKeyToReceive,
 			SerializerFixedBinaryLength<T> keySuffixSerializer, SubStageGetter<U, US> subStageGetter, int keyExtLength,
-			Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
-		super(new CloseOnDrop<>(drop));
+			Runnable onClose) {
+		super((Drop<DatabaseMapDictionaryDeep<T, U, US>>) (Drop) DROP);
 		try (var prefixKey = prefixKeyToReceive.receive()) {
 			this.dictionary = dictionary;
 			this.alloc = dictionary.getAllocator();
@@ -198,9 +241,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			}
 
 			this.keyPrefix = prefixKey.send().receive();
+			this.onClose = onClose;
 		}
 	}
 
+	@SuppressWarnings({"unchecked", "rawtypes"})
 	private DatabaseMapDictionaryDeep(LLDictionary dictionary,
 			BufferAllocator alloc,
 			SubStageGetter<U, US> subStageGetter,
@@ -211,8 +256,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			Mono<Send<LLRange>> rangeMono,
 			Send<LLRange> range,
 			Send<Buffer> keyPrefix,
-			Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
-		super(new CloseOnDrop<>(drop));
+			Runnable onClose) {
+		super((Drop<DatabaseMapDictionaryDeep<T,U,US>>) (Drop) DROP);
 		this.dictionary = dictionary;
 		this.alloc = alloc;
 		this.subStageGetter = subStageGetter;
@@ -224,6 +269,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 		this.range = range.receive();
 		this.keyPrefix = keyPrefix.receive();
+		this.onClose = onClose;
 	}
 
 	@SuppressWarnings("unused")
@@ -418,34 +464,29 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	protected Owned<DatabaseMapDictionaryDeep<T, U, US>> prepareSend() {
 		var keyPrefix = this.keyPrefix.send();
 		var range = this.range.send();
-		return drop -> new DatabaseMapDictionaryDeep<>(dictionary, alloc, subStageGetter, keySuffixSerializer,
-				keyPrefixLength, keySuffixLength, keyExtLength, rangeMono, range, keyPrefix, drop);
+		var onClose = this.onClose;
+		return drop -> {
+			var instance = new DatabaseMapDictionaryDeep<>(dictionary,
+					alloc,
+					subStageGetter,
+					keySuffixSerializer,
+					keyPrefixLength,
+					keySuffixLength,
+					keyExtLength,
+					rangeMono,
+					range,
+					keyPrefix,
+					onClose
+			);
+			drop.attach(instance);
+			return instance;
+		};
 	}
 
 	@Override
 	protected void makeInaccessible() {
 		this.keyPrefix = null;
 		this.range = null;
-	}
-
-	private static class CloseOnDrop<T, U, US extends DatabaseStage<U>>
-			implements Drop<DatabaseMapDictionaryDeep<T, U, US>> {
-
-		private final Drop<DatabaseMapDictionaryDeep<T,U,US>> delegate;
-
-		public CloseOnDrop(Drop<DatabaseMapDictionaryDeep<T, U, US>> drop) {
-			if (drop instanceof CloseOnDrop<T, U, US> closeOnDrop) {
-				this.delegate = closeOnDrop.delegate;
-			} else {
-				this.delegate = drop;
-			}
-		}
-
-		@Override
-		public void drop(DatabaseMapDictionaryDeep<T, U, US> obj) {
-			obj.range.close();
-			obj.keyPrefix.close();
-			delegate.drop(obj);
-		}
+		this.onClose = null;
 	}
 }

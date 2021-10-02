@@ -2,7 +2,7 @@
 
 ![Maven Package](https://github.com/Cavallium/CavalliumDBEngine/workflows/Maven%20Package/badge.svg)
 
-[Reactive](https://www.reactive-streams.org/) database engine written in Java using [Project Reactor](https://github.com/reactor/reactor-core).
+[Reactive](https://www.reactive-streams.org/) database engine written in Java (17+) using [Project Reactor](https://github.com/reactor/reactor-core).
 
 This library provides a basic reactive abstraction and implementation of a **key-value store** and a **search engine**.
 

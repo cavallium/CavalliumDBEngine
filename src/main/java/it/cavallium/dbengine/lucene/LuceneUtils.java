@@ -364,7 +364,6 @@ public class LuceneUtils {
 			boolean preserveOrder) {
 		if (preserveOrder) {
 			return hitsFlux
-					.publishOn(Schedulers.boundedElastic())
 					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
 		} else {
 			// Compute parallelism
@@ -375,7 +374,6 @@ public class LuceneUtils {
 			return hitsFlux
 					.groupBy(hit -> hit.shardIndex % maxParallelGroups) // Max n groups
 					.flatMap(shardHits -> shardHits
-									.publishOn(Schedulers.boundedElastic())
 									.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName)),
 							maxParallelGroups // Max n concurrency. Concurrency must be >= total groups count
 					);

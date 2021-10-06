@@ -177,12 +177,14 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 				.flatMap(sharedManager -> Flux
 						.fromIterable(indexSearchers)
 						.flatMap(shard -> Mono.fromCallable(() -> {
+							LLUtils.ensureBlocking();
 							var collector = sharedManager.newCollector();
 							shard.search(queryParams.query(), collector);
 							return collector;
 						}))
 						.collectList()
 						.flatMap(collectors -> Mono.fromCallable(() -> {
+							LLUtils.ensureBlocking();
 							var pageTopDocs = sharedManager.reduce(collectors);
 							var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 							long nextRemainingLimit;

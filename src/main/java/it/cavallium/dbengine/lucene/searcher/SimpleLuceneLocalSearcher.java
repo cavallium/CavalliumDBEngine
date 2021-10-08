@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
@@ -37,18 +38,24 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded);
 
-		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> this
-				// Search first page results
-				.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
-				// Compute the results of the first page
-				.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers.shards(),
-						keyFieldName, queryParams))
-				// Compute other results
-				.transform(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams,
-						keyFieldName, indexSearchers::close))
-				// Ensure that one LuceneSearchResult is always returned
-				.single(),
-				false);
+		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> {
+			var queryParamsMono = transformer
+							.transform(Mono.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams)));
+
+			return queryParamsMono.flatMap(queryParams2 -> this
+					// Search first page results
+					.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
+					// Compute the results of the first page
+					.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers.shards(),
+							keyFieldName, queryParams2))
+					// Compute other results
+					.transform(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams2,
+							keyFieldName, indexSearchers::close))
+					// Ensure that one LuceneSearchResult is always returned
+					.single()
+			);
+		},
+		false);
 	}
 
 	/**

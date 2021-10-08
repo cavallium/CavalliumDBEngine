@@ -28,7 +28,8 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 		} else if (queryParams.isSorted() || queryParams.isScored()) {
 			return scoredSimpleLuceneShardSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 		} else {
-			if (((long) queryParams.offset() + (long) queryParams.limit()) <= (long) queryParams.pageLimits().getPageLimit(0)) {
+			if (((long) queryParams.offset() + (long) queryParams.limit()) <= (long) queryParams.pageLimits().getPageLimit(0)
+					|| transformer != null) {
 				// Run single-page searches using the paged multi searcher
 				return unsortedUnscoredPagedLuceneMultiSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else {

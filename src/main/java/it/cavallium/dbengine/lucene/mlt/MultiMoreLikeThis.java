@@ -50,7 +50,7 @@ import org.apache.lucene.util.PriorityQueue;
  * Generate "more like this" similarity queries. Based on this mail:
  *
  * <pre><code>
- * Lucene does let you access the document frequency of terms, with BigCompositeReader.docFreq().
+ * Lucene does let you access the document frequency of terms, with IndexReader.docFreq().
  * Term frequencies can be computed by re-tokenizing the text, which, for a single document,
  * is usually fast enough.  But looking up the docFreq() of every term in the document is
  * probably too slow.
@@ -84,7 +84,7 @@ import org.apache.lucene.util.PriorityQueue;
  * usage is as follows. The bold fragment is specific to this class. <br>
  *
  * <pre class="prettyprint">
- * BigCompositeReader ir = ...
+ * IndexReader ir = ...
  * IndexSearcher is = ...
  *
  * MoreLikeThis mlt = new MoreLikeThis(ir);
@@ -264,7 +264,7 @@ public final class MultiMoreLikeThis {
 	/** For idf() calculations. */
 	private TFIDFSimilarity similarity; // = new DefaultSimilarity();
 
-	/** BigCompositeReader to use */
+	/** IndexReader to use */
 	private final BigCompositeReader<?> ir;
 
 	/** Boost factor to use when boosting the terms */
@@ -289,7 +289,7 @@ public final class MultiMoreLikeThis {
 		this.boostFactor = boostFactor;
 	}
 
-	/** Constructor requiring a BigCompositeReader. */
+	/** Constructor requiring an IndexReader. */
 	public MultiMoreLikeThis(BigCompositeReader<?> ir) {
 		this(ir, new ClassicSimilarity());
 	}
@@ -401,7 +401,7 @@ public final class MultiMoreLikeThis {
 	 *     be still considered relevant.
 	 */
 	public void setMaxDocFreqPct(long maxPercentage) {
-		setMaxDocFreq((maxPercentage) * ir.maxDoc() / 100L);
+		setMaxDocFreq(maxPercentage * ir.maxDoc() / 100L);
 	}
 
 	/**
@@ -437,7 +437,7 @@ public final class MultiMoreLikeThis {
 
 	/**
 	 * Sets the field names that will be used when generating the 'More Like This' query. Set this to
-	 * null for the field names to be determined at runtime from the BigCompositeReader provided in the
+	 * null for the field names to be determined at runtime from the IndexReader provided in the
 	 * constructor.
 	 *
 	 * @param fieldNames the field names that will be used when generating the 'More Like This' query.

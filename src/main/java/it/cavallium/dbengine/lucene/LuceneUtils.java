@@ -486,11 +486,12 @@ public class LuceneUtils {
 	}
 
 	public static Mono<LocalQueryParams> getMoreLikeThisQuery(
-			List<LLIndexSearcher> indexSearchers,
+			LLIndexSearchers inputIndexSearchers,
 			LocalQueryParams localQueryParams,
 			Analyzer analyzer,
 			Similarity similarity,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
+		var indexSearchers = inputIndexSearchers.shards();
 		Query luceneAdditionalQuery;
 		try {
 			luceneAdditionalQuery = localQueryParams.query();

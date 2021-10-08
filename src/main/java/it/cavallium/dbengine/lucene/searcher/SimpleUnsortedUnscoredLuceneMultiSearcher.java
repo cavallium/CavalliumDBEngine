@@ -7,6 +7,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.ArrayList;
 import java.util.List;
 import reactor.core.publisher.Flux;
@@ -25,55 +26,62 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
-		var indexSearchersSendResource = Mono
-				.fromRunnable(() -> {
-					LLUtils.ensureBlocking();
-					if (queryParams.isSorted() && queryParams.limit() > 0) {
-						throw new UnsupportedOperationException("Sorted queries are not supported"
-								+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
-					}
-					if (queryParams.isScored() && queryParams.limit() > 0) {
-						throw new UnsupportedOperationException("Scored queries are not supported"
-								+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
-					}
-				})
-				.then(indexSearchersMono);
-		var localQueryParams = getLocalQueryParams(queryParams);
 
-		return LLUtils.usingSendResource(indexSearchersSendResource,
-				indexSearchers -> Flux
-						.fromIterable(indexSearchers.shards())
-						.flatMap(searcher -> {
-							var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, null).send());
-							return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
-						})
-						.collectList()
-						.map(results -> {
-							List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
-							List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
-							boolean exactTotalHitsCount = true;
-							long totalHitsCountValue = 0;
-							for (Send<LuceneSearchResult> resultToReceive : results) {
-								LuceneSearchResult result = resultToReceive.receive();
-								resultsToDrop.add(result);
-								resultsFluxes.add(result.results());
-								exactTotalHitsCount &= result.totalHitsCount().exact();
-								totalHitsCountValue += result.totalHitsCount().value();
+		return LLUtils.usingSendResource(indexSearchersMono,
+				indexSearchers -> {
+					var queryParamsMono = transformer
+							.transform(Mono.fromSupplier(() -> new TransformerInput(indexSearchers,
+									queryParams)));
+
+					return queryParamsMono.flatMap(queryParams2 -> {
+						var localQueryParams = getLocalQueryParams(queryParams2);
+						return Mono
+								.fromRunnable(() -> {
+									LLUtils.ensureBlocking();
+									if (queryParams2.isSorted() && queryParams2.limit() > 0) {
+										throw new UnsupportedOperationException("Sorted queries are not supported"
+												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
+									}
+									if (queryParams2.isScored() && queryParams2.limit() > 0) {
+										throw new UnsupportedOperationException("Scored queries are not supported"
+												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
+									}
+								})
+								.thenMany(Flux.fromIterable(indexSearchers.shards()))
+								.flatMap(searcher -> {
+									var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, null).send());
+									return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
+								})
+								.collectList()
+								.map(results -> {
+									List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
+									List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
+									boolean exactTotalHitsCount = true;
+									long totalHitsCountValue = 0;
+									for (Send<LuceneSearchResult> resultToReceive : results) {
+										LuceneSearchResult result = resultToReceive.receive();
+										resultsToDrop.add(result);
+										resultsFluxes.add(result.results());
+										exactTotalHitsCount &= result.totalHitsCount().exact();
+										totalHitsCountValue += result.totalHitsCount().value();
+									}
+
+									var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
+									Flux<LLKeyScore> mergedFluxes = Flux
+											.merge(resultsFluxes)
+											.skip(queryParams2.offset())
+											.take(queryParams2.limit(), true);
+
+									return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
+										for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
+											luceneSearchResult.close();
+										}
+										indexSearchers.close();
+									}).send();
+								});
 							}
-
-							var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
-							Flux<LLKeyScore> mergedFluxes = Flux
-									.merge(resultsFluxes)
-									.skip(queryParams.offset())
-									.take(queryParams.limit(), true);
-
-							return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-								for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
-									luceneSearchResult.close();
-								}
-								indexSearchers.close();
-							}).send();
-						}),
+					);
+				},
 				false
 		);
 	}

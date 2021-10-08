@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {

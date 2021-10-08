@@ -39,6 +39,10 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 		var indexSearchersSendResource = Mono
 				.fromRunnable(() -> {
 					LLUtils.ensureBlocking();
+					if (transformer != null) {
+						throw new UnsupportedOperationException("Transformers are not supported"
+								+ " by UnsortedUnscoredContinuousLuceneMultiSearcher");
+					}
 					if (queryParams.isSorted() && queryParams.limit() > 0) {
 						throw new UnsupportedOperationException("Sorted queries are not supported"
 								+ " by UnsortedUnscoredContinuousLuceneMultiSearcher");

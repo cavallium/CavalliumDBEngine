@@ -22,9 +22,13 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 				.usingWhen(
 						indexSearcherMono,
 						indexSearcher -> {
-							var queryParamsMono = transformer
-									.transform(Mono.fromSupplier(() -> new TransformerInput(LLIndexSearchers.unsharded(indexSearcher),
-											queryParams)));
+							Mono<LocalQueryParams> queryParamsMono;
+							if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+								queryParamsMono = Mono.just(queryParams);
+							} else {
+								queryParamsMono = transformer.transform(Mono
+										.fromSupplier(() -> new TransformerInput(LLIndexSearchers.unsharded(indexSearcher), queryParams)));
+							}
 
 							return queryParamsMono.flatMap(queryParams2 -> Mono.fromCallable(() -> {
 								try (var is = indexSearcher.receive()) {

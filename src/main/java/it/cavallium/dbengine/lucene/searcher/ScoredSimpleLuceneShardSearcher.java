@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLLocalGroupedReactiveRocksIterator;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -35,20 +36,31 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
-		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
-		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
+		Mono<LocalQueryParams> queryParamsMono;
+		if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+			queryParamsMono = Mono.just(queryParams);
+		} else {
+			queryParamsMono = LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> transformer.transform(Mono
+					.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams))), true);
+		}
 
-		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
-						// Search first page results
-						.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
-						// Compute the results of the first page
-						.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
-								keyFieldName, queryParams))
-						// Compute other results
-						.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams, keyFieldName, indexSearchers::close))
-						// Ensure that one LuceneSearchResult is always returned
-						.single(),
-				false);
+		return queryParamsMono.flatMap(queryParams2 -> {
+			Objects.requireNonNull(queryParams2.scoreMode(), "ScoreMode must not be null");
+			PaginationInfo paginationInfo = getPaginationInfo(queryParams2);
+
+			return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
+							// Search first page results
+							.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
+							// Compute the results of the first page
+							.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
+									keyFieldName, queryParams2))
+							// Compute other results
+							.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(),
+									queryParams2, keyFieldName, indexSearchers::close))
+							// Ensure that one LuceneSearchResult is always returned
+							.single(),
+					false);
+		});
 	}
 
 	private Sort getSort(LocalQueryParams queryParams) {

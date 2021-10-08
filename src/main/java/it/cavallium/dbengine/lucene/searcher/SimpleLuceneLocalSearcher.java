@@ -5,6 +5,7 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.FIRST_PAGE_LI
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
@@ -36,13 +37,18 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded);
+		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded).map(ResourceSupport::send);
 
-		return LLUtils.usingResource(indexSearchersMono, indexSearchers -> {
-			var queryParamsMono = transformer
-							.transform(Mono.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams)));
+		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
+					Mono<LocalQueryParams> queryParamsMono;
+					if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+						queryParamsMono = Mono.just(queryParams);
+					} else {
+						queryParamsMono = transformer.transform(Mono
+								.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams)));
+					}
 
-			return queryParamsMono.flatMap(queryParams2 -> this
+					return queryParamsMono.flatMap(queryParams2 -> this
 					// Search first page results
 					.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
 					// Compute the results of the first page

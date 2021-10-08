@@ -29,9 +29,13 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 
 		return LLUtils.usingSendResource(indexSearchersMono,
 				indexSearchers -> {
-					var queryParamsMono = transformer
-							.transform(Mono.fromSupplier(() -> new TransformerInput(indexSearchers,
-									queryParams)));
+					Mono<LocalQueryParams> queryParamsMono;
+					if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+						queryParamsMono = Mono.just(queryParams);
+					} else {
+						queryParamsMono = transformer.transform(Mono
+								.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams)));
+					}
 
 					return queryParamsMono.flatMap(queryParams2 -> {
 						var localQueryParams = getLocalQueryParams(queryParams2);

@@ -31,6 +31,7 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 	);
 	private static final Supplier<Queue<ScoreDoc>> QUEUE_SUPPLIER = Queues.get(1024);
 
+	//todo: Support transformers
 	@Override
 	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,

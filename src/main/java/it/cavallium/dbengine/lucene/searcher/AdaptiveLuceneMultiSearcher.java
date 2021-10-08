@@ -18,6 +18,7 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 	private static final LuceneMultiSearcher unsortedUnscoredContinuousLuceneMultiSearcher
 			= new UnsortedUnscoredContinuousLuceneMultiSearcher();
 
+	//todo: detect transformed query params, not input query params!
 	@Override
 	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,

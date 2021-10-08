@@ -12,6 +12,7 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	private static final LuceneLocalSearcher countSearcher = new CountLuceneLocalSearcher();
 
+	//todo: detect transformed query params, not input query params!
 	@Override
 	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcher,
 			LocalQueryParams queryParams,

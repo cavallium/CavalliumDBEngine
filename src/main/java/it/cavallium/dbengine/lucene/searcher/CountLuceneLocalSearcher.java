@@ -42,4 +42,9 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null).send())
 				.doOnDiscard(Send.class, Send::close);
 	}
+
+	@Override
+	public String getName() {
+		return "count";
+	}
 }

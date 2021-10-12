@@ -16,11 +16,14 @@ import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInpu
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
+import org.apache.lucene.search.TotalHits;
+import org.apache.lucene.search.TotalHits.Relation;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
@@ -64,6 +67,11 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		false);
 	}
 
+	@Override
+	public String getName() {
+		return "simplelocal";
+	}
+
 	/**
 	 * Get the pagination info
 	 */
@@ -84,9 +92,12 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		var limit = paginationInfo.totalLimit();
 		var pagination = !paginationInfo.forceSinglePage();
 		var resultsOffset = LuceneUtils.safeLongToInt(paginationInfo.firstPageOffset());
+		var currentPageInfo = new CurrentPageInfo(null, limit, 0);
 		return Mono
-				.fromSupplier(() -> new CurrentPageInfo(null, limit, 0))
-				.handle((s, sink) -> this.searchPageSync(queryParams, indexSearchers, pagination, resultsOffset, s, sink));
+				.just(currentPageInfo)
+				.<PageData>handle((s, sink) -> this.searchPageSync(queryParams, indexSearchers, pagination, resultsOffset, s, sink))
+				//defaultIfEmpty(new PageData(new TopDocs(new TotalHits(0, Relation.EQUAL_TO), new ScoreDoc[0]), currentPageInfo))
+				.single();
 	}
 
 	/**
@@ -108,7 +119,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			CurrentPageInfo nextPageInfo = firstPageData.nextPageInfo();
 
 			return new FirstPageResults(totalHitsCount, firstPageHitsFlux, nextPageInfo);
-		});
+		}).single();
 	}
 
 	private Mono<Send<LuceneSearchResult>> computeOtherResults(Mono<FirstPageResults> firstResultMono,
@@ -125,7 +136,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 			Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
 			return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose).send();
-		});
+		}).single();
 	}
 
 	/**
@@ -162,7 +173,18 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 			throw new IndexOutOfBoundsException(resultsOffset);
 		}
 		var currentPageLimit = queryParams.pageLimits().getPageLimit(s.pageIndex());
-		if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
+		if (s.pageIndex() == 0 && s.remainingLimit() == 0) {
+			int count;
+			try {
+				count = indexSearchers.get(0).count(queryParams.query());
+			} catch (IOException e) {
+				sink.error(e);
+				return EMPTY_STATUS;
+			}
+			var nextPageInfo = new CurrentPageInfo(null, 0, 1);
+			sink.next(new PageData(new TopDocs(new TotalHits(count, Relation.EQUAL_TO), new ScoreDoc[0]), nextPageInfo));
+			return EMPTY_STATUS;
+		} else if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
 			TopDocs pageTopDocs;
 			try {
 				TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),

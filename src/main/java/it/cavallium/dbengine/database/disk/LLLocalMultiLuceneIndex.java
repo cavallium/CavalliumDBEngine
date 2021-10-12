@@ -10,11 +10,13 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -33,6 +35,7 @@ import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
@@ -43,14 +46,15 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final PerFieldAnalyzerWrapper luceneAnalyzer;
 	private final PerFieldSimilarityWrapper luceneSimilarity;
 
-	private final LuceneMultiSearcher multiSearcher = new AdaptiveLuceneMultiSearcher();
+	private final LuceneMultiSearcher multiSearcher;
 
 	public LLLocalMultiLuceneIndex(Path lucene,
 			String name,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions) throws IOException {
+			LuceneOptions luceneOptions,
+			@Nullable LuceneHacks luceneHacks) throws IOException {
 
 		if (instancesCount <= 1 || instancesCount > 100) {
 			throw new IOException("Unsupported instances count: " + instancesCount);
@@ -68,12 +72,19 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					instanceName,
 					indicizerAnalyzers,
 					indicizerSimilarities,
-					luceneOptions
+					luceneOptions,
+					luceneHacks
 			);
 		}
 		this.luceneIndices = luceneIndices;
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
+
+		if (luceneHacks != null && luceneHacks.customMultiSearcher() != null) {
+			multiSearcher = luceneHacks.customMultiSearcher().get();
+		} else {
+			multiSearcher = new AdaptiveLuceneMultiSearcher();
+		}
 	}
 
 	private LLLocalLuceneIndex getLuceneIndex(LLTerm id) {
@@ -234,6 +245,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return Flux
 				.fromArray(luceneIndices)
 				.flatMap(LLLocalLuceneIndex::close)
+				.then(Mono.fromCallable(() -> {
+					if (multiSearcher instanceof Closeable closeable) {
+						closeable.close();
+					}
+					return null;
+				}).subscribeOn(Schedulers.boundedElastic()))
 				.then();
 	}
 

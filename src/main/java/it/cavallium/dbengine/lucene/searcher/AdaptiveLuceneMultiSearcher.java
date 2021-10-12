@@ -4,21 +4,28 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.io.Closeable;
+import java.io.IOException;
 import reactor.core.publisher.Mono;
 
-public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
+public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher, Closeable {
 
 	private static final LuceneMultiSearcher count
 			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new CountLuceneLocalSearcher());
 
-	private static final LuceneMultiSearcher scoredSimple
-			= new ScoredSimpleLuceneShardSearcher();
+	private static final LuceneMultiSearcher scoredSimple = new ScoredSimpleLuceneMultiSearcher();
 
 	private static final LuceneMultiSearcher unsortedUnscoredPaged
 			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new SimpleLuceneLocalSearcher());
 
 	private static final LuceneMultiSearcher unsortedUnscoredContinuous
 			= new UnsortedUnscoredContinuousLuceneMultiSearcher();
+
+	private final UnsortedScoredFullLuceneMultiSearcher scoredFull;
+
+	public AdaptiveLuceneMultiSearcher() throws IOException {
+		scoredFull = new UnsortedScoredFullLuceneMultiSearcher();
+	}
 
 	@Override
 	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
@@ -47,7 +54,11 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 			if (queryParams.limit() == 0) {
 				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else if (queryParams.isSorted() || queryParams.isScored()) {
-				return scoredSimple.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+				if (queryParams.isSorted() || realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
+					return scoredSimple.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+				} else {
+					return scoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+				}
 			} else if (realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
 				// Run single-page searches using the paged multi searcher
 				return unsortedUnscoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
@@ -56,5 +67,15 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher {
 				return unsortedUnscoredContinuous.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			}
 		}, true);
+	}
+
+	@Override
+	public void close() throws IOException {
+		scoredFull.close();
+	}
+
+	@Override
+	public String getName() {
+		return "adaptivemulti";
 	}
 }

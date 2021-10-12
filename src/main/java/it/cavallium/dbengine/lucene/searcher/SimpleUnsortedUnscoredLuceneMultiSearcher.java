@@ -100,4 +100,9 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 				queryParams.scoreMode()
 		);
 	}
+
+	@Override
+	public String getName() {
+		return "simpleunsortedunscoredmulti";
+	}
 }

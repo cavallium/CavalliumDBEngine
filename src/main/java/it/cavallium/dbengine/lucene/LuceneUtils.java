@@ -406,7 +406,8 @@ public class LuceneUtils {
 		}
 	}
 
-	public static TopDocs mergeTopDocs(Sort sort,
+	public static TopDocs mergeTopDocs(
+			@Nullable Sort sort,
 			@Nullable Integer startN,
 			@Nullable Integer topN,
 			TopDocs[] topDocs,

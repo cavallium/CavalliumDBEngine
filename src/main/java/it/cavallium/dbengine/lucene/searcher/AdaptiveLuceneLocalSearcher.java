@@ -35,6 +35,12 @@ public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
 					true);
 		}
 	}
+
+	@Override
+	public String getName() {
+		return "adaptivelocal";
+	}
+
 	public Mono<Send<LuceneSearchResult>> transformedCollect(Mono<Send<LLIndexSearcher>> indexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,

@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene;
+package it.cavallium.dbengine.lucene.collector;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.ALLOW_UNSCORED_PAGINATION_MODE;
 

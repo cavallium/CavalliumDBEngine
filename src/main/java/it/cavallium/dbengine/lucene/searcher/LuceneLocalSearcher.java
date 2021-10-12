@@ -16,4 +16,10 @@ public interface LuceneLocalSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer);
+
+	/**
+	 * Get the name of this searcher type
+	 * @return searcher type name
+	 */
+	String getName();
 }

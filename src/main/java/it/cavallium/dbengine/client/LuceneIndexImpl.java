@@ -188,7 +188,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()
 				)
-				.transform(this::transformLuceneResultWithTransformer);
+				.single()
+				.transform(this::transformLuceneResultWithTransformer)
+				.single();
 	}
 
 	@Override
@@ -217,6 +219,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this
 				.search(ClientQueryParams.<SearchResultKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
+				.single()
 				.map(searchResultKeysSend -> {
 					try (var searchResultKeys = searchResultKeysSend.receive()) {
 						return searchResultKeys.totalHitsCount();

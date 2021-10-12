@@ -122,7 +122,7 @@ public class LLUtils {
 			case COMPLETE -> ScoreMode.COMPLETE;
 			case TOP_SCORES -> ScoreMode.TOP_SCORES;
 			case COMPLETE_NO_SCORES -> ScoreMode.COMPLETE_NO_SCORES;
-			default -> throw new IllegalStateException("Unexpected value: " + scoreMode);
+			case NO_SCORES -> ScoreMode.TOP_DOCS;
 		};
 	}
 

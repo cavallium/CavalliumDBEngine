@@ -114,4 +114,9 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 				queryParams.scoreMode()
 		);
 	}
+
+	@Override
+	public String getName() {
+		return "unsortedunscoredcontinuousmulti";
+	}
 }

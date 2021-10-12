@@ -9,9 +9,12 @@ import io.net5.buffer.api.pool.MetricUtils;
 import io.net5.buffer.api.pool.PoolArenaMetric;
 import io.net5.buffer.api.pool.PooledBufferAllocator;
 import io.net5.util.internal.PlatformDependent;
+import it.cavallium.dbengine.client.LuceneIndex;
+import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
+import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
@@ -23,6 +26,7 @@ import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.lucene.StringIndicizer;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
@@ -121,6 +125,9 @@ public class DbTestUtils {
 	}
 
 	public static record TempDb(TestAllocator allocator, LLDatabaseConnection connection, LLKeyValueDatabase db,
+															LLLuceneIndex luceneSingle,
+															LLLuceneIndex luceneMulti,
+															SwappableLuceneSearcher swappableLuceneSearcher,
 															Path path) {}
 
 	static boolean computeCanUseNettyDirect() {
@@ -164,6 +171,10 @@ public class DbTestUtils {
 			String name,
 			UpdateMode updateMode) {
 		return database.getDictionary(name, updateMode);
+	}
+
+	public static Mono<? extends LuceneIndex<String, String>> tempLuceneIndex(LLLuceneIndex index) {
+		return Mono.fromCallable(() -> new LuceneIndexImpl<>(index, new StringIndicizer()));
 	}
 
 

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.query.current.data.DocSort;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.RandomSort;
@@ -7,6 +8,8 @@ import it.cavallium.dbengine.client.query.current.data.ScoreSort;
 import it.cavallium.dbengine.client.query.current.data.Sort;
 import it.cavallium.dbengine.database.LLKeyScore;
 import java.util.Comparator;
+import java.util.Objects;
+import java.util.StringJoiner;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
@@ -63,6 +66,18 @@ public class MultiSort<T> {
 		return new MultiSort<>(ScoreSort.of());
 	}
 
+	public static <T> MultiSort<SearchResultKey<T>> noSort() {
+		return new MultiSort<>(NoSort.of());
+	}
+
+	public static <T> MultiSort<SearchResultKey<T>> docSort() {
+		return new MultiSort<>(DocSort.of());
+	}
+
+	public static <T> MultiSort<SearchResultKey<T>> numericSort(String field, boolean reverse) {
+		return new MultiSort<>(NumericSort.of(field, reverse));
+	}
+
 	public static <T, U> MultiSort<SearchResultItem<T, U>> topScoreWithValues() {
 		return new MultiSort<>(ScoreSort.of());
 	}
@@ -73,5 +88,27 @@ public class MultiSort<T> {
 
 	public Sort getQuerySort() {
 		return querySort;
+	}
+
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+		MultiSort<?> multiSort = (MultiSort<?>) o;
+		return Objects.equals(querySort, multiSort.querySort);
+	}
+
+	@Override
+	public int hashCode() {
+		return Objects.hash(querySort);
+	}
+
+	@Override
+	public String toString() {
+		return querySort.toString();
 	}
 }

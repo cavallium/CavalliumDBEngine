@@ -8,11 +8,14 @@ import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedList;
 import java.util.List;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -68,7 +71,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions) {
+			LuceneOptions luceneOptions,
+			@Nullable LuceneHacks luceneHacks) {
 		return Mono
 				.fromCallable(() -> {
 					if (instancesCount != 1) {
@@ -77,14 +81,16 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								instancesCount,
 								indicizerAnalyzers,
 								indicizerSimilarities,
-								luceneOptions
+								luceneOptions,
+								luceneHacks
 						);
 					} else {
 						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
 								name,
 								indicizerAnalyzers,
 								indicizerSimilarities,
-								luceneOptions
+								luceneOptions,
+								luceneHacks
 						);
 					}
 				})

@@ -1,34 +1,38 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.FIRST_PAGE_LIMIT;
+import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLLocalGroupedReactiveRocksIterator;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.TotalHits;
+import org.apache.lucene.search.TotalHits.Relation;
+import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
+public class ScoredSimpleLuceneMultiSearcher implements LuceneMultiSearcher {
 
-	protected static final Logger logger = LoggerFactory.getLogger(ScoredSimpleLuceneShardSearcher.class);
+	protected static final Logger logger = LoggerFactory.getLogger(ScoredSimpleLuceneMultiSearcher.class);
 
-	public ScoredSimpleLuceneShardSearcher() {
+	public ScoredSimpleLuceneMultiSearcher() {
 	}
 
 	@Override
@@ -64,11 +68,7 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 	}
 
 	private Sort getSort(LocalQueryParams queryParams) {
-		Sort luceneSort = queryParams.sort();
-		if (luceneSort == null) {
-			luceneSort = Sort.RELEVANCE;
-		}
-		return luceneSort;
+		return queryParams.sort();
 	}
 
 	/**
@@ -175,8 +175,8 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 					if (resultsOffset < 0) {
 						throw new IndexOutOfBoundsException(resultsOffset);
 					}
-					if ((s.pageIndex() == 0 || s.last() != null) && s.remainingLimit() > 0) {
-						var sort = getSort(queryParams);
+					if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
+						@Nullable var sort = getSort(queryParams);
 						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
 						var after = (FieldDoc) s.last();
 						var totalHitsThreshold = LuceneUtils.totalHitsThreshold();
@@ -210,5 +210,10 @@ public class ScoredSimpleLuceneShardSearcher implements LuceneMultiSearcher {
 							return new PageData(pageTopDocs, nextPageInfo);
 						}))
 				);
+	}
+
+	@Override
+	public String getName() {
+		return "scoredsimplemulti";
 	}
 }

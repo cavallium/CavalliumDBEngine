@@ -224,6 +224,7 @@
     <dependency>
       <groupId>io.projectreactor</groupId>
       <artifactId>reactor-test</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.novasearch</groupId>
@@ -247,6 +248,11 @@
       <groupId>io.micrometer</groupId>
       <artifactId>micrometer-registry-jmx</artifactId>
       <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>org.lmdbjava</groupId>
+      <artifactId>lmdbjava</artifactId>
+      <version>0.8.2</version>
     </dependency>
   </dependencies>
   <dependencyManagement>

@@ -10,8 +10,10 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
+import it.cavallium.dbengine.database.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.util.List;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
@@ -55,13 +57,15 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions) {
+			LuceneOptions luceneOptions,
+			@Nullable LuceneHacks luceneHacks) {
 		return Mono
 				.<LLLuceneIndex>fromCallable(() -> new LLLocalLuceneIndex(null,
 						name,
 						indicizerAnalyzers,
 						indicizerSimilarities,
-						luceneOptions
+						luceneOptions,
+						luceneHacks
 				))
 				.subscribeOn(Schedulers.boundedElastic());
 	}

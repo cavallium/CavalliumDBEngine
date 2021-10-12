@@ -2,28 +2,13 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.ALLOW_UNSCORED_PAGINATION_MODE;
 
-import it.cavallium.dbengine.lucene.UnscoredCollector;
-import java.io.IOException;
-import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.index.NumericDocValues;
-import org.apache.lucene.misc.search.DiversifiedTopDocsCollector;
-import org.apache.lucene.search.BulkScorer;
-import org.apache.lucene.search.Collector;
+import it.cavallium.dbengine.lucene.collector.UnscoredCollector;
 import org.apache.lucene.search.FieldDoc;
-import org.apache.lucene.search.HitQueue;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.LeafCollector;
-import org.apache.lucene.search.Query;
-import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
-import org.apache.lucene.search.TotalHits.Relation;
-import reactor.core.scheduler.Schedulers;
 
 class TopDocsSearcher {
 

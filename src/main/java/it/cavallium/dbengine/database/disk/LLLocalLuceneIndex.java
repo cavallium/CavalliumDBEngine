@@ -16,6 +16,7 @@ import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
@@ -61,7 +62,7 @@ import reactor.util.function.Tuple2;
 public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
-	private static final LuceneLocalSearcher localSearcher = new AdaptiveLuceneLocalSearcher();
+	private final LuceneLocalSearcher localSearcher;
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with
@@ -85,7 +86,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			String name,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions) throws IOException {
+			LuceneOptions luceneOptions,
+			@Nullable LuceneHacks luceneHacks) throws IOException {
 		Path directoryPath;
 		if (luceneOptions.inMemory() != (luceneBasePath == null)) {
 			throw new IllegalArgumentException();
@@ -165,6 +167,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.lowMemory = lowMemory;
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
+		if (luceneHacks != null && luceneHacks.customLocalSearcher() != null) {
+			localSearcher = luceneHacks.customLocalSearcher().get();
+		} else {
+			localSearcher = new AdaptiveLuceneLocalSearcher();
+		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
@@ -188,7 +195,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		logger.trace("WriterSchedulerMaxThreadCount: {}", writerSchedulerMaxThreadCount);
 		indexWriterConfig.setMergeScheduler(mergeScheduler);
-		indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterBufferSize() / 1024D / 1024D);
+		if (luceneOptions.indexWriterBufferSize() == -1) {
+			//todo: allow to configure maxbuffereddocs fallback
+			indexWriterConfig.setMaxBufferedDocs(1000);
+			// disable ram buffer size after enabling maxBufferedDocs
+			indexWriterConfig.setRAMBufferSizeMB(-1);
+		} else {
+			indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterBufferSize() / 1024D / 1024D);
+		}
 		indexWriterConfig.setReaderPooling(false);
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);

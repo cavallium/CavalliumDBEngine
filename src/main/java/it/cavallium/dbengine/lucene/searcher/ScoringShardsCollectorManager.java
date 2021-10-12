@@ -18,6 +18,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class ScoringShardsCollectorManager implements CollectorManager<TopFieldCollector, TopDocs> {
 
+	@Nullable
 	private final Sort sort;
 	private final int numHits;
 	private final FieldDoc after;
@@ -26,7 +27,7 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 	private final @Nullable Integer topN;
 	private final CollectorManager<TopFieldCollector, TopFieldDocs> sharedCollectorManager;
 
-	public ScoringShardsCollectorManager(final Sort sort,
+	public ScoringShardsCollectorManager(@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold,
@@ -35,7 +36,7 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 		this(sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) topN);
 	}
 
-	public ScoringShardsCollectorManager(final Sort sort,
+	public ScoringShardsCollectorManager(@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold,
@@ -43,14 +44,14 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 		this(sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) 2147483630);
 	}
 
-	public ScoringShardsCollectorManager(final Sort sort,
+	public ScoringShardsCollectorManager(@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold) {
 		this(sort, numHits, after, totalHitsThreshold, null, null);
 	}
 
-	private ScoringShardsCollectorManager(final Sort sort,
+	private ScoringShardsCollectorManager(@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold,
@@ -68,7 +69,7 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 		} else {
 			this.topN = topN;
 		}
-		this.sharedCollectorManager = TopFieldCollector.createSharedManager(sort, numHits, after, totalHitsThreshold);
+		this.sharedCollectorManager = TopFieldCollector.createSharedManager(sort == null ? Sort.RELEVANCE : sort, numHits, after, totalHitsThreshold);
 	}
 
 	@Override

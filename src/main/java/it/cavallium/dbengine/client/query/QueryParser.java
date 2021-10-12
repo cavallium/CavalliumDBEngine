@@ -18,6 +18,7 @@ import it.cavallium.dbengine.client.query.current.data.TermAndBoost;
 import it.cavallium.dbengine.client.query.current.data.TermPosition;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
+import it.cavallium.dbengine.lucene.RandomSortField;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
@@ -146,6 +147,8 @@ public class QueryParser {
 			case NumericSort:
 				NumericSort numericSort = (NumericSort) sort;
 				return new Sort(new SortedNumericSortField(numericSort.field(), Type.LONG, numericSort.reverse()));
+			case RandomSort:
+				return new Sort(new RandomSortField());
 			default:
 				throw new IllegalStateException("Unexpected value: " + sort.getBasicType$());
 		}

@@ -36,7 +36,9 @@ import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredStreamingMultiSearc
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.Callable;
 import java.util.stream.Stream;
+import org.apache.commons.lang3.function.FailableConsumer;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
@@ -174,6 +176,14 @@ public class TestLuceneSearches {
 				.toStream();
 	}
 
+	private static  <E extends Throwable> void runSearchers(ExpectedQueryType expectedQueryType, FailableConsumer<LocalSearcher, E> consumer) throws E {
+		var searchers = run(getSearchers(expectedQueryType).collectList());
+		for (LocalSearcher searcher : searchers) {
+			log.info("Using searcher \"{}\"", searcher.getName());
+			consumer.accept(searcher);
+		}
+	}
+
 	@AfterAll
 	public static void afterAll() {
 		TEMP_DB_GENERATOR.closeTempDb(tempDb).block();
@@ -216,10 +226,7 @@ public class TestLuceneSearches {
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchNoDocs(boolean shards, LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var searchers = run(getSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false)).collectList());
-		for (LocalSearcher searcher : searchers) {
-			log.info("Using searcher \"{}\"", searcher.getName());
-
+		runSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false), searcher -> {
 			var luceneIndex = getLuceneIndex(shards, searcher);
 			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
 			queryBuilder.query(new MatchNoDocsQuery());
@@ -236,7 +243,7 @@ public class TestLuceneSearches {
 				var keys = getResults(results);
 				assertEquals(List.of(), keys);
 			}
-		}
+		});
 	}
 
 	private boolean supportsPreciseHitsCount(LocalSearcher searcher,
@@ -257,10 +264,7 @@ public class TestLuceneSearches {
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAllDocs(boolean shards, LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var searchers = run(getSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false)).collectList());
-		for (LocalSearcher searcher : searchers) {
-			log.info("Using searcher \"{}\"", searcher.getName());
-
+		runSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false), (LocalSearcher searcher) -> {
 			var luceneIndex = getLuceneIndex(shards, searcher);
 			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
 			queryBuilder.query(new MatchNoDocsQuery());
@@ -277,7 +281,7 @@ public class TestLuceneSearches {
 				var keys = getResults(results);
 				assertEquals(List.of(), keys);
 			}
-		}
+		});
 	}
 
 	private boolean isSorted(MultiSort<SearchResultKey<String>> multiSort) {

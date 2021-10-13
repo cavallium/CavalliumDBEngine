@@ -10,6 +10,7 @@ import org.apache.lucene.search.ScoreCachingWrappingScorer;
 import org.jetbrains.annotations.NotNull;
 import org.warp.commonutils.random.LFSR.LFSRIterator;
 
+//todo: fix
 public class RandomFieldComparator extends FieldComparator<Float> implements LeafFieldComparator {
 
 	private final @NotNull LFSRIterator rand;
@@ -99,7 +100,14 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 	}
 
 	private float randomize(int num) {
-		int val = rand.next(BigInteger.valueOf(num)).intValue();
+		int val = rand.next(BigInteger.valueOf(num)).intValueExact();
+		int pow24 = 1 << 24;
+		if (val >= pow24) {
+			throw new IndexOutOfBoundsException();
+		}
+		if (val < 0) {
+			throw new IndexOutOfBoundsException();
+		}
 		return (val & 0x00FFFFFF) / (float)(1 << 24); // only use the lower 24 bits to construct a float from 0.0-1.0
 	}
 }

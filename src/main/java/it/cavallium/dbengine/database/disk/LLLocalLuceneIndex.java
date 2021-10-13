@@ -16,13 +16,12 @@ import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
-import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -50,7 +49,6 @@ import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NRTCachingDirectory;
 import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.Nullable;
-import org.reactivestreams.Publisher;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -62,7 +60,7 @@ import reactor.util.function.Tuple2;
 public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
-	private final LuceneLocalSearcher localSearcher;
+	private final LocalSearcher localSearcher;
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with
@@ -170,7 +168,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		if (luceneHacks != null && luceneHacks.customLocalSearcher() != null) {
 			localSearcher = luceneHacks.customLocalSearcher().get();
 		} else {
-			localSearcher = new AdaptiveLuceneLocalSearcher();
+			localSearcher = new AdaptiveLocalSearcher();
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);

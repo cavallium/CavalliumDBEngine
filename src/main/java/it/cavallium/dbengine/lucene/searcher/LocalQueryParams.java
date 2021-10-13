@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import it.cavallium.dbengine.lucene.PageLimits;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;

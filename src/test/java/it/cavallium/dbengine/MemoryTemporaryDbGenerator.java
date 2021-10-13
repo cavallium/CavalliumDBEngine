@@ -8,7 +8,7 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.database.memory.LLMemoryDatabaseConnection;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
@@ -22,7 +22,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 
 	private static final Optional<NRTCachingOptions> NRT = Optional.empty();
 	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(), Duration.ofSeconds(5), Duration.ofSeconds(5),
-			false, true, Optional.empty(), true, NRT, -1, true, true);
+			false, true, Optional.empty(), true, NRT, 16 * 1024 * 1024, true, false);
 
 	@Override
 	public Mono<TempDb> openTempDb(TestAllocator allocator) {

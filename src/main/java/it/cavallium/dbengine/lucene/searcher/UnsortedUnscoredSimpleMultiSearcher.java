@@ -13,11 +13,11 @@ import java.util.List;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSearcher {
+public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 
-	private final LuceneLocalSearcher localSearcher;
+	private final LocalSearcher localSearcher;
 
-	public SimpleUnsortedUnscoredLuceneMultiSearcher(LuceneLocalSearcher localSearcher) {
+	public UnsortedUnscoredSimpleMultiSearcher(LocalSearcher localSearcher) {
 		this.localSearcher = localSearcher;
 	}
 
@@ -103,6 +103,6 @@ public class SimpleUnsortedUnscoredLuceneMultiSearcher implements LuceneMultiSea
 
 	@Override
 	public String getName() {
-		return "simpleunsortedunscoredmulti";
+		return "unsorted unscored simple multi";
 	}
 }

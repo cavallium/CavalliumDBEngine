@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import java.util.Comparator;
-import org.apache.lucene.search.ScoreDoc;
+import it.cavallium.dbengine.lucene.PageLimits;
 
 public record PaginationInfo(long totalLimit, long firstPageOffset, PageLimits pageLimits, boolean forceSinglePage) {
 

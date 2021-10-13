@@ -8,23 +8,23 @@ import java.io.Closeable;
 import java.io.IOException;
 import reactor.core.publisher.Mono;
 
-public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher, Closeable {
+public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 
-	private static final LuceneMultiSearcher count
-			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new CountLuceneLocalSearcher());
+	private static final MultiSearcher count
+			= new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher());
 
-	private static final LuceneMultiSearcher scoredSimple = new ScoredSimpleLuceneMultiSearcher();
+	private static final MultiSearcher scoredSimple = new ScoredPagedMultiSearcher();
 
-	private static final LuceneMultiSearcher unsortedUnscoredPaged
-			= new SimpleUnsortedUnscoredLuceneMultiSearcher(new SimpleLuceneLocalSearcher());
+	private static final MultiSearcher unsortedUnscoredPaged
+			= new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher());
 
-	private static final LuceneMultiSearcher unsortedUnscoredContinuous
-			= new UnsortedUnscoredContinuousLuceneMultiSearcher();
+	private static final MultiSearcher unsortedUnscoredContinuous
+			= new UnsortedUnscoredStreamingMultiSearcher();
 
-	private final UnsortedScoredFullLuceneMultiSearcher scoredFull;
+	private final UnsortedScoredFullMultiSearcher scoredFull;
 
-	public AdaptiveLuceneMultiSearcher() throws IOException {
-		scoredFull = new UnsortedScoredFullLuceneMultiSearcher();
+	public AdaptiveMultiSearcher() throws IOException {
+		scoredFull = new UnsortedScoredFullMultiSearcher();
 	}
 
 	@Override
@@ -76,6 +76,6 @@ public class AdaptiveLuceneMultiSearcher implements LuceneMultiSearcher, Closeab
 
 	@Override
 	public String getName() {
-		return "adaptivemulti";
+		return "adaptive local";
 	}
 }

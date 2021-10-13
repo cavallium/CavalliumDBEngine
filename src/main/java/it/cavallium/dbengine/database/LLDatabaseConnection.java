@@ -5,7 +5,7 @@ import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import java.util.List;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;

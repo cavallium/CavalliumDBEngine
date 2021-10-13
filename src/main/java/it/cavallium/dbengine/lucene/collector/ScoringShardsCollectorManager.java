@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene.searcher;
+package it.cavallium.dbengine.lucene.collector;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 

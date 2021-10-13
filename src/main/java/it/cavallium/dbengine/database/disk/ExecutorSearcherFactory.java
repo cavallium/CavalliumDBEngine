@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene.searcher;
+package it.cavallium.dbengine.database.disk;
 
 import java.util.concurrent.Executor;
 import org.apache.lucene.index.IndexReader;

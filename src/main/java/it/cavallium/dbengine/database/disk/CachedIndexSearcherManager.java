@@ -5,7 +5,6 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.lucene.searcher.ExecutorSearcherFactory;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.Executor;

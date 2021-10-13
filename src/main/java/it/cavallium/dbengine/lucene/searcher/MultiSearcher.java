@@ -5,7 +5,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import reactor.core.publisher.Mono;
 
-public interface LuceneMultiSearcher extends LuceneLocalSearcher {
+public interface MultiSearcher extends LocalSearcher {
 
 	/**
 	 * @param indexSearchersMono Lucene index searcher

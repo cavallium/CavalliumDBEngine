@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
-import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.FIRST_PAGE_LIMIT;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
@@ -10,13 +9,11 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.NoSuchElementException;
 import java.util.Objects;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
@@ -29,7 +26,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 import reactor.core.scheduler.Schedulers;
 
-public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
+public class PagedLocalSearcher implements LocalSearcher {
 
 	@Override
 	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
@@ -69,7 +66,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
 	public String getName() {
-		return "simplelocal";
+		return "paged local";
 	}
 
 	/**
@@ -187,7 +184,7 @@ public class SimpleLuceneLocalSearcher implements LuceneLocalSearcher {
 		} else if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
 			TopDocs pageTopDocs;
 			try {
-				TopDocsCollector<ScoreDoc> collector = TopDocsSearcher.getTopDocsCollector(queryParams.sort(),
+				TopDocsCollector<ScoreDoc> collector = TopDocsCollectorUtils.getTopDocsCollector(queryParams.sort(),
 						currentPageLimit, s.last(), LuceneUtils.totalHitsThreshold(),
 						allowPagination, queryParams.isScored());
 				indexSearchers.get(0).search(queryParams.query(), collector);

@@ -4,7 +4,7 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import reactor.core.publisher.Mono;
 
-public interface LuceneLocalSearcher {
+public interface LocalSearcher {
 
 	/**
 	 * @param indexSearcherMono Lucene index searcher

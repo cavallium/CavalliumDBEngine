@@ -10,16 +10,15 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
-import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -46,7 +45,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final PerFieldAnalyzerWrapper luceneAnalyzer;
 	private final PerFieldSimilarityWrapper luceneSimilarity;
 
-	private final LuceneMultiSearcher multiSearcher;
+	private final MultiSearcher multiSearcher;
 
 	public LLLocalMultiLuceneIndex(Path lucene,
 			String name,
@@ -83,7 +82,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		if (luceneHacks != null && luceneHacks.customMultiSearcher() != null) {
 			multiSearcher = luceneHacks.customMultiSearcher().get();
 		} else {
-			multiSearcher = new AdaptiveLuceneMultiSearcher();
+			multiSearcher = new AdaptiveMultiSearcher();
 		}
 	}
 

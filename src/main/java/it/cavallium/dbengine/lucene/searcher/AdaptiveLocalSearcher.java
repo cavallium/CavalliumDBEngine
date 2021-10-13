@@ -5,16 +5,14 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Mono;
 
-public class AdaptiveLuceneLocalSearcher implements LuceneLocalSearcher {
+public class AdaptiveLocalSearcher implements LocalSearcher {
 
-	private static final LuceneLocalSearcher localSearcher = new SimpleLuceneLocalSearcher();
+	private static final LocalSearcher localSearcher = new PagedLocalSearcher();
 
-	private static final LuceneLocalSearcher countSearcher = new CountLuceneLocalSearcher();
+	private static final LocalSearcher countSearcher = new CountLocalSearcher();
 
 	@Override
 	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcher,

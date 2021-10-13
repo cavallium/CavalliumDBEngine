@@ -1,6 +1,4 @@
-package it.cavallium.dbengine.lucene.searcher;
-
-import it.cavallium.dbengine.lucene.LuceneUtils;
+package it.cavallium.dbengine.lucene;
 
 /**
  * <pre>y = (x * factor) + firstPageLimit</pre>

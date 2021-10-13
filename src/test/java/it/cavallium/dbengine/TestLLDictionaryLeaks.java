@@ -3,6 +3,7 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
+import static it.cavallium.dbengine.SyncUtils.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -131,9 +132,9 @@ public abstract class TestLLDictionaryLeaks {
 	public void testGet(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test"));
-		DbTestUtils.runVoid(dict.get(null, key).then().transform(LLUtils::handleDiscard));
-		DbTestUtils.runVoid(dict.get(null, key, true).then().transform(LLUtils::handleDiscard));
-		DbTestUtils.runVoid(dict.get(null, key, false).then().transform(LLUtils::handleDiscard));
+		runVoid(dict.get(null, key).then().transform(LLUtils::handleDiscard));
+		runVoid(dict.get(null, key, true).then().transform(LLUtils::handleDiscard));
+		runVoid(dict.get(null, key, false).then().transform(LLUtils::handleDiscard));
 	}
 
 	@ParameterizedTest
@@ -142,14 +143,14 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		var value = Mono.fromCallable(() -> fromString("test-value"));
-		DbTestUtils.runVoid(dict.put(key, value, resultType).then().doOnDiscard(Send.class, Send::close));
+		runVoid(dict.put(key, value, resultType).then().doOnDiscard(Send.class, Send::close));
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testGetUpdateMode(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		assertEquals(updateMode, DbTestUtils.run(dict.getUpdateMode()));
+		assertEquals(updateMode, run(dict.getUpdateMode()));
 	}
 
 	@ParameterizedTest
@@ -157,13 +158,13 @@ public abstract class TestLLDictionaryLeaks {
 	public void testUpdate(UpdateMode updateMode, UpdateReturnMode updateReturnMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
+		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, old -> old, updateReturnMode, true).then().transform(LLUtils::handleDiscard)
 		);
-		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
+		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, old -> old, updateReturnMode, false).then().transform(LLUtils::handleDiscard)
 		);
-		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
+		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, old -> old, updateReturnMode).then().transform(LLUtils::handleDiscard)
 		);
 	}
@@ -173,13 +174,13 @@ public abstract class TestLLDictionaryLeaks {
 	public void testUpdateAndGetDelta(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
+		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, old -> old, true).then().transform(LLUtils::handleDiscard)
 		);
-		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
+		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, old -> old, false).then().transform(LLUtils::handleDiscard)
 		);
-		DbTestUtils.runVoid(updateMode == UpdateMode.DISALLOW,
+		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, old -> old).then().transform(LLUtils::handleDiscard)
 		);
 	}
@@ -188,7 +189,7 @@ public abstract class TestLLDictionaryLeaks {
 	@MethodSource("provideArguments")
 	public void testClear(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		DbTestUtils.runVoid(dict.clear());
+		runVoid(dict.clear());
 	}
 
 	@ParameterizedTest
@@ -196,6 +197,6 @@ public abstract class TestLLDictionaryLeaks {
 	public void testRemove(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		DbTestUtils.runVoid(dict.remove(key, resultType).then().doOnDiscard(Send.class, Send::close));
+		runVoid(dict.remove(key, resultType).then().doOnDiscard(Send.class, Send::close));
 	}
 }

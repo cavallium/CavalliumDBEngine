@@ -3,6 +3,7 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
+import static it.cavallium.dbengine.SyncUtils.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.net5.buffer.api.Buffer;
@@ -113,38 +114,6 @@ public abstract class TestLLDictionary {
 			bb.copyInto(bb.readerOffset(), data, 0, data.length);
 			return new String(data, StandardCharsets.UTF_8);
 		}
-	}
-
-	private void run(Flux<?> publisher) {
-		publisher.subscribeOn(Schedulers.immediate()).blockLast();
-	}
-
-	private void runVoid(Mono<Void> publisher) {
-		publisher.then().subscribeOn(Schedulers.immediate()).block();
-	}
-
-	private <T> T run(Mono<T> publisher) {
-		return publisher.subscribeOn(Schedulers.immediate()).block();
-	}
-
-	private <T> T run(boolean shouldFail, Mono<T> publisher) {
-		return publisher.subscribeOn(Schedulers.immediate()).transform(mono -> {
-			if (shouldFail) {
-				return mono.onErrorResume(ex -> Mono.empty());
-			} else {
-				return mono;
-			}
-		}).block();
-	}
-
-	private void runVoid(boolean shouldFail, Mono<Void> publisher) {
-		publisher.then().subscribeOn(Schedulers.immediate()).transform(mono -> {
-			if (shouldFail) {
-				return mono.onErrorResume(ex -> Mono.empty());
-			} else {
-				return mono;
-			}
-		}).block();
 	}
 
 	@Test

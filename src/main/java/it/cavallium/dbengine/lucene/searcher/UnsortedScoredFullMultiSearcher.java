@@ -20,13 +20,13 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class UnsortedScoredFullLuceneMultiSearcher implements LuceneMultiSearcher, Closeable {
+public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable {
 
-	protected static final Logger logger = LoggerFactory.getLogger(UnsortedScoredFullLuceneMultiSearcher.class);
+	protected static final Logger logger = LoggerFactory.getLogger(UnsortedScoredFullMultiSearcher.class);
 
 	private final LLTempLMDBEnv env;
 
-	public UnsortedScoredFullLuceneMultiSearcher() throws IOException {
+	public UnsortedScoredFullMultiSearcher() throws IOException {
 		this.env = new LLTempLMDBEnv();
 	}
 
@@ -46,7 +46,7 @@ public class UnsortedScoredFullLuceneMultiSearcher implements LuceneMultiSearche
 		return queryParamsMono.flatMap(queryParams2 -> {
 			Objects.requireNonNull(queryParams2.scoreMode(), "ScoreMode must not be null");
 			if (queryParams2.sort() != null && queryParams2.sort() != Sort.RELEVANCE) {
-				throw new IllegalArgumentException(UnsortedScoredFullLuceneMultiSearcher.this.getClass().getSimpleName()
+				throw new IllegalArgumentException(UnsortedScoredFullMultiSearcher.this.getClass().getSimpleName()
 						+ " doesn't support sorted queries");
 			}
 
@@ -115,6 +115,6 @@ public class UnsortedScoredFullLuceneMultiSearcher implements LuceneMultiSearche
 
 	@Override
 	public String getName() {
-		return "scoredfullmulti";
+		return "unsorted scored full multi";
 	}
 }

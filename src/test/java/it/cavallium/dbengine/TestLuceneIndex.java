@@ -3,6 +3,7 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
+import static it.cavallium.dbengine.SyncUtils.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -11,29 +12,16 @@ import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.client.SearchResultKey;
-import it.cavallium.dbengine.client.SearchResultKeys;
-import it.cavallium.dbengine.client.query.ClientQueryParams;
-import it.cavallium.dbengine.client.query.ClientQueryParamsBuilder;
-import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
-import it.cavallium.dbengine.client.query.current.data.MatchNoDocsQuery;
-import it.cavallium.dbengine.client.query.current.data.NoSort;
-import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
-import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.CountLuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.UnsortedScoredFullLuceneMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.ScoredSimpleLuceneMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.SimpleLuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.SimpleUnsortedUnscoredLuceneMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredContinuousLuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.CountLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher;
 import java.io.IOException;
-import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
@@ -47,9 +35,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.FluxSink.OverflowStrategy;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuples;
 
 public class TestLuceneIndex {
@@ -92,38 +77,6 @@ public class TestLuceneIndex {
 			MultiSort.numericSort("longsort", true)
 	);
 
-	private static Flux<LuceneLocalSearcher> getSearchers(ExpectedQueryType info) {
-		return Flux.push(sink -> {
-			try {
-				if (info.shard()) {
-					sink.next(new AdaptiveLuceneMultiSearcher());
-					if (info.onlyCount()) {
-						sink.next(new SimpleUnsortedUnscoredLuceneMultiSearcher(new CountLuceneLocalSearcher()));
-					} else {
-						sink.next(new ScoredSimpleLuceneMultiSearcher());
-						if (!info.sorted()) {
-							sink.next(new UnsortedScoredFullLuceneMultiSearcher());
-						}
-						if (!info.scored() && !info.sorted()) {
-							sink.next(new SimpleUnsortedUnscoredLuceneMultiSearcher(new SimpleLuceneLocalSearcher()));
-							sink.next(new UnsortedUnscoredContinuousLuceneMultiSearcher());
-						}
-					}
-				} else {
-					sink.next(new AdaptiveLuceneLocalSearcher());
-					if (info.onlyCount()) {
-						sink.next(new CountLuceneLocalSearcher());
-					} else {
-						sink.next(new SimpleLuceneLocalSearcher());
-					}
-				}
-				sink.complete();
-			} catch (IOException e) {
-				sink.error(e);
-			}
-		}, OverflowStrategy.BUFFER);
-	}
-
 	public static Stream<Arguments> provideQueryArgumentsScoreMode() {
 		return multi
 				.concatMap(shard -> scoreModes.map(scoreMode -> Tuples.of(shard, scoreMode)))
@@ -153,7 +106,7 @@ public class TestLuceneIndex {
 		destroyAllocator(allocator);
 	}
 
-	private LuceneIndex<String, String> getLuceneIndex(boolean shards, @Nullable LuceneLocalSearcher customSearcher) {
+	private LuceneIndex<String, String> getLuceneIndex(boolean shards, @Nullable LocalSearcher customSearcher) {
 		LuceneIndex<String, String> index = run(DbTestUtils.tempLuceneIndex(shards ? luceneSingle : luceneMulti));
 		index.updateDocument("test-key-1", "0123456789").block();
 		index.updateDocument("test-key-2", "test 0123456789 test word").block();
@@ -171,59 +124,27 @@ public class TestLuceneIndex {
 		index.updateDocument("test-key-14", "2999").block();
 		index.updateDocument("test-key-15", "3902").block();
 		Flux.range(1, 1000).concatMap(i -> index.updateDocument("test-key-" + (15 + i), "" + i)).blockLast();
-		tempDb.swappableLuceneSearcher().setSingle(new CountLuceneLocalSearcher());
-		tempDb.swappableLuceneSearcher().setMulti(new SimpleUnsortedUnscoredLuceneMultiSearcher(new CountLuceneLocalSearcher()));
+		tempDb.swappableLuceneSearcher().setSingle(new CountLocalSearcher());
+		tempDb.swappableLuceneSearcher().setMulti(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
 		assertCount(index, 1000 + 15);
 		try {
 			if (customSearcher != null) {
 				tempDb.swappableLuceneSearcher().setSingle(customSearcher);
 				if (shards) {
-					if (customSearcher instanceof LuceneMultiSearcher multiSearcher) {
+					if (customSearcher instanceof MultiSearcher multiSearcher) {
 						tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
 					} else {
 						throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
 					}
 				}
 			} else {
-				tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLuceneLocalSearcher());
-				tempDb.swappableLuceneSearcher().setMulti(new AdaptiveLuceneMultiSearcher());
+				tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
+				tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher());
 			}
 		} catch (IOException e) {
 			fail(e);
 		}
 		return index;
-	}
-
-	private void run(Flux<?> publisher) {
-		publisher.subscribeOn(Schedulers.immediate()).blockLast();
-	}
-
-	private void runVoid(Mono<Void> publisher) {
-		publisher.then().subscribeOn(Schedulers.immediate()).block();
-	}
-
-	private <T> T run(Mono<T> publisher) {
-		return publisher.subscribeOn(Schedulers.immediate()).block();
-	}
-
-	private <T> T run(boolean shouldFail, Mono<T> publisher) {
-		return publisher.subscribeOn(Schedulers.immediate()).transform(mono -> {
-			if (shouldFail) {
-				return mono.onErrorResume(ex -> Mono.empty());
-			} else {
-				return mono;
-			}
-		}).block();
-	}
-
-	private void runVoid(boolean shouldFail, Mono<Void> publisher) {
-		publisher.then().subscribeOn(Schedulers.immediate()).transform(mono -> {
-			if (shouldFail) {
-				return mono.onErrorResume(ex -> Mono.empty());
-			} else {
-				return mono;
-			}
-		}).block();
 	}
 
 	private void assertCount(LuceneIndex<String, String> luceneIndex, long expected) {
@@ -289,97 +210,6 @@ public class TestLuceneIndex {
 		var prevCount = getCount(luceneIndex);
 		runVoid(luceneIndex.updateDocument("test-key-new", "new-value"));
 		assertCount(luceneIndex, prevCount + 1);
-	}
-
-	@ParameterizedTest
-	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchNoDocs(boolean shards, LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var searchers = run(getSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false)).collectList());
-		for (LuceneLocalSearcher searcher : searchers) {
-			log.info("Using searcher \"{}\"", searcher.getName());
-
-			var luceneIndex = getLuceneIndex(shards, searcher);
-			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
-			queryBuilder.query(new MatchNoDocsQuery());
-			queryBuilder.snapshot(null);
-			queryBuilder.scoreMode(scoreMode);
-			queryBuilder.sort(multiSort);
-			var query = queryBuilder.build();
-			try (var results = run(luceneIndex.search(query)).receive()) {
-				var hits = results.totalHitsCount();
-				if (supportsPreciseHitsCount(searcher, query)) {
-					assertEquals(new TotalHitsCount(0, true), hits);
-				}
-
-				var keys = getResults(results);
-				assertEquals(List.of(), keys);
-			}
-		}
-	}
-
-	private boolean supportsPreciseHitsCount(LuceneLocalSearcher searcher,
-			ClientQueryParams<SearchResultKey<String>> query) {
-		if (searcher instanceof UnsortedUnscoredContinuousLuceneMultiSearcher) {
-			return false;
-		}
-		var scored = isScored(query.scoreMode(), Objects.requireNonNullElse(query.sort(), MultiSort.noSort()));
-		var sorted = isSorted(Objects.requireNonNullElse(query.sort(), MultiSort.noSort()));
-		if (!sorted && !scored) {
-			if (searcher instanceof AdaptiveLuceneMultiSearcher || searcher instanceof AdaptiveLuceneLocalSearcher) {
-				return false;
-			}
-		}
-		return true;
-	}
-
-	@ParameterizedTest
-	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchAllDocs(boolean shards, LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var searchers = run(getSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false)).collectList());
-		for (LuceneLocalSearcher searcher : searchers) {
-			log.info("Using searcher \"{}\"", searcher.getName());
-
-			var luceneIndex = getLuceneIndex(shards, searcher);
-			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
-			queryBuilder.query(new MatchNoDocsQuery());
-			queryBuilder.snapshot(null);
-			queryBuilder.scoreMode(scoreMode);
-			queryBuilder.sort(multiSort);
-			var query = queryBuilder.build();
-			try (var results = run(luceneIndex.search(query)).receive()) {
-				var hits = results.totalHitsCount();
-				if (supportsPreciseHitsCount(searcher, query)) {
-					assertEquals(new TotalHitsCount(0, true), hits);
-				}
-
-				var keys = getResults(results);
-				assertEquals(List.of(), keys);
-			}
-		}
-	}
-
-	private boolean isSorted(MultiSort<SearchResultKey<String>> multiSort) {
-		return !(multiSort.getQuerySort() instanceof NoSort);
-	}
-
-	private boolean isScored(LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var needsScores = LLUtils.toScoreMode(scoreMode).needsScores();
-		var sort =QueryParser.toSort(multiSort.getQuerySort());
-		if (sort != null) {
-			needsScores |= sort.needsScores();
-		}
-		return needsScores;
-	}
-
-	private List<Scored> getResults(SearchResultKeys<String> results) {
-		return run(results
-				.results()
-				.flatMapSequential(searchResultKey -> searchResultKey
-						.key()
-						.single()
-						.map(key -> new Scored(key, searchResultKey.score()))
-				)
-				.collectList());
 	}
 
 }

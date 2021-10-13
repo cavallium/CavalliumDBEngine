@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene.searcher;
+package it.cavallium.dbengine.lucene;
 
 public class SinglePageLimits implements PageLimits {
 

@@ -10,7 +10,7 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
-import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.util.List;
 import org.jetbrains.annotations.Nullable;

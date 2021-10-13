@@ -6,22 +6,20 @@ import static java.util.Objects.requireNonNullElseGet;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLLocalSingleton;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
-import it.cavallium.dbengine.lucene.searcher.LuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.LuceneMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import reactor.core.publisher.Mono;
 
-public class SwappableLuceneSearcher implements LuceneLocalSearcher, LuceneMultiSearcher, Closeable {
+public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Closeable {
 
-	private final AtomicReference<LuceneLocalSearcher> single = new AtomicReference<>(null);
-	private final AtomicReference<LuceneMultiSearcher> multi = new AtomicReference<>(null);
+	private final AtomicReference<LocalSearcher> single = new AtomicReference<>(null);
+	private final AtomicReference<MultiSearcher> multi = new AtomicReference<>(null);
 
 	public SwappableLuceneSearcher() {
 
@@ -61,11 +59,11 @@ public class SwappableLuceneSearcher implements LuceneLocalSearcher, LuceneMulti
 		return multi.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 	}
 
-	public void setSingle(LuceneLocalSearcher single) {
+	public void setSingle(LocalSearcher single) {
 		this.single.set(single);
 	}
 
-	public void setMulti(LuceneMultiSearcher multi) {
+	public void setMulti(MultiSearcher multi) {
 		this.multi.set(multi);
 	}
 

@@ -10,7 +10,7 @@ import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
 
-class TopDocsSearcher {
+class TopDocsCollectorUtils {
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public static TopDocsCollector<ScoreDoc> getTopDocsCollector(Sort luceneSort,

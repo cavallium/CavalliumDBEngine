@@ -23,7 +23,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
 
-public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMultiSearcher {
+public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 
 	private static final Scheduler UNSCORED_UNSORTED_EXECUTOR = Schedulers.newBoundedElastic(
 			Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE,
@@ -117,6 +117,6 @@ public class UnsortedUnscoredContinuousLuceneMultiSearcher implements LuceneMult
 
 	@Override
 	public String getName() {
-		return "unsortedunscoredcontinuousmulti";
+		return "unsorted unscored streaming multi";
 	}
 }

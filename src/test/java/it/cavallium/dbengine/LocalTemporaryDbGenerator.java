@@ -12,11 +12,9 @@ import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
-import it.cavallium.dbengine.database.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneLocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLuceneMultiSearcher;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +34,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 
 	private static final Optional<NRTCachingOptions> NRT = Optional.empty();
 	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(), Duration.ofSeconds(5), Duration.ofSeconds(5),
-			false, true, Optional.empty(), true, NRT, -1, true, true);
+			false, true, Optional.empty(), true, NRT, 16 * 1024 * 1024, true, false);
 
 	@Override
 	public Mono<TempDb> openTempDb(TestAllocator allocator) {

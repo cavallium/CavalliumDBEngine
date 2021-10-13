@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene.searcher;
+package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.lucene.LuceneUtils;
 

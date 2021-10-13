@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
@@ -8,19 +7,16 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.PageLimits;
+import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.TotalHits;
-import org.apache.lucene.search.TotalHits.Relation;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
@@ -28,11 +24,11 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-public class ScoredSimpleLuceneMultiSearcher implements LuceneMultiSearcher {
+public class ScoredPagedMultiSearcher implements MultiSearcher {
 
-	protected static final Logger logger = LoggerFactory.getLogger(ScoredSimpleLuceneMultiSearcher.class);
+	protected static final Logger logger = LoggerFactory.getLogger(ScoredPagedMultiSearcher.class);
 
-	public ScoredSimpleLuceneMultiSearcher() {
+	public ScoredPagedMultiSearcher() {
 	}
 
 	@Override
@@ -214,6 +210,6 @@ public class ScoredSimpleLuceneMultiSearcher implements LuceneMultiSearcher {
 
 	@Override
 	public String getName() {
-		return "scoredsimplemulti";
+		return "scored paged multi";
 	}
 }

@@ -6,12 +6,11 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
+public class CountLocalSearcher implements LocalSearcher {
 
 	@Override
 	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
@@ -45,6 +44,6 @@ public class CountLuceneLocalSearcher implements LuceneLocalSearcher {
 
 	@Override
 	public String getName() {
-		return "count";
+		return "count local";
 	}
 }

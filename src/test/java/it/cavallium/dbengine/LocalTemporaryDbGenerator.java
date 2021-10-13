@@ -74,7 +74,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 												luceneHacks
 										),
 										conn.getLuceneIndex("testluceneindex16",
-												1,
+												3,
 												IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
 												IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 												LUCENE_OPTS,

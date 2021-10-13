@@ -72,7 +72,7 @@ public class TestLuceneSearches {
 	private static LuceneIndex<String, String> multiIndex;
 	private static LuceneIndex<String, String> localIndex;
 
-	private static Map<String, String> elements;
+	private static final Map<String, String> ELEMENTS;
 	static {
 		var modifiableElements = new HashMap<String, String>();
 		modifiableElements.put("test-key-1", "0123456789");
@@ -91,7 +91,7 @@ public class TestLuceneSearches {
 		modifiableElements.put("test-key-14", "2999");
 		modifiableElements.put("test-key-15", "3902");
 		runVoid(Flux.range(1, 1000).doOnNext(i -> modifiableElements.put("test-key-" + (15 + i), "" + i)).then());
-		elements = Collections.unmodifiableMap(modifiableElements);
+		ELEMENTS = Collections.unmodifiableMap(modifiableElements);
 	}
 
 	@BeforeAll
@@ -110,7 +110,7 @@ public class TestLuceneSearches {
 		LuceneIndex<String, String> index = run(DbTestUtils.tempLuceneIndex(shards ? luceneSingle : luceneMulti));
 
 		Flux
-				.fromIterable(elements.entrySet())
+				.fromIterable(ELEMENTS.entrySet())
 				.flatMap(entry -> index.updateDocument(entry.getKey(), entry.getValue()))
 				.subscribeOn(Schedulers.boundedElastic())
 				.blockLast();
@@ -129,11 +129,6 @@ public class TestLuceneSearches {
 	}
 
 	private static final Flux<Boolean> multi = Flux.just(false, true);
-	private static final Flux<LLScoreMode> scoreModes = Flux.just(LLScoreMode.NO_SCORES,
-			LLScoreMode.TOP_SCORES,
-			LLScoreMode.COMPLETE_NO_SCORES,
-			LLScoreMode.COMPLETE
-	);
 	private static final Flux<MultiSort<SearchResultKey<String>>> multiSort = Flux.just(MultiSort.topScore(),
 			//todo: fix random sort field
 			//MultiSort.randomSortField(),
@@ -147,7 +142,6 @@ public class TestLuceneSearches {
 		return Flux.push(sink -> {
 			try {
 				if (info.shard()) {
-					sink.next(new AdaptiveMultiSearcher());
 					if (info.onlyCount()) {
 						sink.next(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
 					} else {
@@ -155,18 +149,19 @@ public class TestLuceneSearches {
 						if (!info.sorted()) {
 							sink.next(new UnsortedScoredFullMultiSearcher());
 						}
-						if (!info.scored() && !info.sorted()) {
+						if (!info.sorted()) {
 							sink.next(new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher()));
 							sink.next(new UnsortedUnscoredStreamingMultiSearcher());
 						}
 					}
+					sink.next(new AdaptiveMultiSearcher());
 				} else {
-					sink.next(new AdaptiveLocalSearcher());
 					if (info.onlyCount()) {
 						sink.next(new CountLocalSearcher());
 					} else {
 						sink.next(new PagedLocalSearcher());
 					}
+					sink.next(new AdaptiveLocalSearcher());
 				}
 				sink.complete();
 			} catch (IOException e) {
@@ -176,35 +171,26 @@ public class TestLuceneSearches {
 	}
 
 	public static Stream<Arguments> provideQueryArgumentsScoreMode() {
-		return multi
-				.concatMap(shard -> scoreModes.map(scoreMode -> Tuples.of(shard, scoreMode)))
-				.map(tuple -> Arguments.of(tuple.toArray()))
-				.toStream();
-	}
-
-	public static Stream<Arguments> provideQueryArgumentsSort() {
-		return multi
-				.concatMap(shard -> multiSort.map(multiSort -> Tuples.of(shard, multiSort)))
-				.map(tuple -> Arguments.of(tuple.toArray()))
-				.toStream();
+		return multi.map(tuple -> Arguments.of(multi)).toStream();
 	}
 
 	public static Stream<Arguments> provideQueryArgumentsScoreModeAndSort() {
 		return multi
-				.concatMap(shard -> scoreModes.map(scoreMode -> Tuples.of(shard, scoreMode)))
-				.concatMap(tuple -> multiSort.map(multiSort -> Tuples.of(tuple.getT1(), tuple.getT2(), multiSort)))
+				.concatMap(multi -> multiSort.map(multiSort -> Tuples.of(multi, multiSort)))
 				.map(tuple -> Arguments.of(tuple.toArray()))
 				.toStream();
 	}
 
 	private static void runSearchers(ExpectedQueryType expectedQueryType, FailableConsumer<LocalSearcher, Throwable> consumer) {
-		Assertions.assertDoesNotThrow(() -> {
-			var searchers = run(getSearchers(expectedQueryType).collectList());
-			for (LocalSearcher searcher : searchers) {
-				log.info("Using searcher \"{}\"", searcher.getName());
+		var searchers = run(getSearchers(expectedQueryType).collectList());
+		for (LocalSearcher searcher : searchers) {
+			log.info("Using searcher \"{}\"", searcher.getName());
+			try {
 				consumer.accept(searcher);
+			} catch (Throwable e) {
+				Assertions.fail(e);
 			}
-		});
+		}
 	}
 
 	@AfterAll
@@ -248,28 +234,25 @@ public class TestLuceneSearches {
 
 	private boolean supportsPreciseHitsCount(LocalSearcher searcher,
 			ClientQueryParams<SearchResultKey<String>> query) {
+		var sorted = query.isSorted();
 		if (searcher instanceof UnsortedUnscoredStreamingMultiSearcher) {
 			return false;
+		} else if (!sorted) {
+			return !(searcher instanceof AdaptiveMultiSearcher) && !(searcher instanceof AdaptiveLocalSearcher);
+		} else {
+			return true;
 		}
-		var scored = isScored(query.scoreMode(), Objects.requireNonNullElse(query.sort(), MultiSort.noSort()));
-		var sorted = isSorted(Objects.requireNonNullElse(query.sort(), MultiSort.noSort()));
-		if (!sorted && !scored) {
-			if (searcher instanceof AdaptiveMultiSearcher || searcher instanceof AdaptiveLocalSearcher) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchNoDocs(boolean shards, LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		runSearchers(new ExpectedQueryType(shards, isSorted(multiSort), isScored(scoreMode, multiSort), true, false), searcher -> {
+	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) {
+		runSearchers(new ExpectedQueryType(shards, multiSort.isSorted(), true, false), searcher -> {
 			var luceneIndex = getLuceneIndex(shards, searcher);
 			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
 			queryBuilder.query(new MatchNoDocsQuery());
 			queryBuilder.snapshot(null);
-			queryBuilder.scoreMode(scoreMode);
+			queryBuilder.complete(true);
 			queryBuilder.sort(multiSort);
 			var query = queryBuilder.build();
 			try (var results = run(luceneIndex.search(query)).receive()) {
@@ -284,22 +267,22 @@ public class TestLuceneSearches {
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchAllDocs(boolean shards, LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var sorted = isSorted(multiSort);
-		runSearchers(new ExpectedQueryType(shards, sorted, isScored(scoreMode, multiSort), true, false), (LocalSearcher searcher) -> {
+	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) {
+		var sorted = multiSort.isSorted();
+		runSearchers(new ExpectedQueryType(shards, sorted, true, false), (LocalSearcher searcher) -> {
 			var luceneIndex = getLuceneIndex(shards, searcher);
 			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
 			queryBuilder.query(new MatchAllDocsQuery());
 			queryBuilder.snapshot(null);
-			queryBuilder.scoreMode(scoreMode);
+			queryBuilder.complete(true);
 			queryBuilder.sort(multiSort);
 			var query = queryBuilder.build();
 			try (var results = run(luceneIndex.search(query)).receive()) {
 				var hits = results.totalHitsCount();
-				assertHitsIfPossible(0, hits);
+				assertHitsIfPossible(ELEMENTS.size(), hits);
 
 				var keys = getResults(results);
-				assertResults(elements.keySet().stream().toList(), keys, false);
+				assertResults(ELEMENTS.keySet().stream().toList(), keys, false);
 			}
 		});
 	}
@@ -327,19 +310,6 @@ public class TestLuceneSearches {
 		if (supportsPreciseHitsCount(searcher, query)) {
 			assertEquals(new TotalHitsCount(expectedCount, true), hits);
 		}
-	}
-
-	private boolean isSorted(MultiSort<SearchResultKey<String>> multiSort) {
-		return !(multiSort.getQuerySort() instanceof NoSort);
-	}
-
-	private boolean isScored(LLScoreMode scoreMode, MultiSort<SearchResultKey<String>> multiSort) {
-		var needsScores = LLUtils.toScoreMode(scoreMode).needsScores();
-		var sort =QueryParser.toSort(multiSort.getQuerySort());
-		if (sort != null) {
-			needsScores |= sort.needsScores();
-		}
-		return needsScores;
 	}
 
 	private List<Scored> getResults(SearchResultKeys<String> results) {

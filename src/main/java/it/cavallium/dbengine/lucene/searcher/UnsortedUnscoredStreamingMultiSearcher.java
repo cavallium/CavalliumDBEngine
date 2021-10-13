@@ -54,7 +54,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 							return Mono.error(new UnsupportedOperationException("Sorted queries are not supported"
 									+ " by UnsortedUnscoredContinuousLuceneMultiSearcher"));
 						}
-						if (queryParams2.isScored() && queryParams2.limit() > 0) {
+						if (queryParams2.needsScores() && queryParams2.limit() > 0) {
 							return Mono.error(new UnsupportedOperationException("Scored queries are not supported"
 									+ " by UnsortedUnscoredContinuousLuceneMultiSearcher"));
 						}
@@ -75,7 +75,13 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 								UNSCORED_UNSORTED_EXECUTOR.schedule(() -> {
 									try {
 										var collector = cm.newCollector();
+										assert queryParams.complete() == collector.scoreMode().isExhaustive();
+										queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
+											assert scoreMode == collector.scoreMode();
+										});
+
 										collector.setShardIndex(shardIndex);
+
 										shard.search(localQueryParams.query(), collector);
 									} catch (Throwable e) {
 										while (scoreDocsSink.tryEmitError(e) == EmitResult.FAIL_NON_SERIALIZED) {
@@ -111,7 +117,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.scoreMode()
+				queryParams.complete()
 		);
 	}
 

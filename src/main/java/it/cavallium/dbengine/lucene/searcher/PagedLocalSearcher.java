@@ -33,8 +33,6 @@ public class PagedLocalSearcher implements LocalSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
-
-		Objects.requireNonNull(queryParams.scoreMode(), "ScoreMode must not be null");
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
 		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded).map(ResourceSupport::send);
@@ -185,8 +183,13 @@ public class PagedLocalSearcher implements LocalSearcher {
 			TopDocs pageTopDocs;
 			try {
 				TopDocsCollector<ScoreDoc> collector = TopDocsCollectorUtils.getTopDocsCollector(queryParams.sort(),
-						currentPageLimit, s.last(), LuceneUtils.totalHitsThreshold(),
-						allowPagination, queryParams.isScored());
+						currentPageLimit, s.last(), queryParams.getTotalHitsThreshold(),
+						allowPagination, queryParams.needsScores());
+				assert queryParams.complete() == collector.scoreMode().isExhaustive();
+				queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
+					assert scoreMode == collector.scoreMode();
+				});
+
 				indexSearchers.get(0).search(queryParams.query(), collector);
 				if (resultsOffset > 0) {
 					pageTopDocs = collector.topDocs(resultsOffset, currentPageLimit);

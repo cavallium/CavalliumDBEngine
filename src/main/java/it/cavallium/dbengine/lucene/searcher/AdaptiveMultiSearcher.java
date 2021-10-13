@@ -53,7 +53,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 			if (queryParams.limit() == 0) {
 				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-			} else if (queryParams.isSorted() || queryParams.isScored()) {
+			} else if (queryParams.isSorted() || queryParams.needsScores()) {
 				if (queryParams.isSorted() || realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
 					return scoredSimple.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 				} else {

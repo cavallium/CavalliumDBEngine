@@ -5,7 +5,6 @@ import it.cavallium.data.generator.nativedata.Nullablefloat;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import it.cavallium.dbengine.client.query.current.data.ScoreMode;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.List;
@@ -54,7 +53,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<Send<LLSearchResultShard>> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
 
 	default Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query) {
-		QueryParams params = QueryParams.of(query, 0, 0, Nullablefloat.empty(), NoSort.of(), ScoreMode.of(false, false));
+		QueryParams params = QueryParams.of(query, 0, 0, Nullablefloat.empty(), NoSort.of(), false);
 		return Mono.from(this.search(snapshot, params, null)
 				.map(llSearchResultShardToReceive -> {
 					try (var llSearchResultShard = llSearchResultShardToReceive.receive()) {

@@ -40,7 +40,6 @@ import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 
-
 	public static final String BIG_STRING = generateBigString();
 
 	private static String generateBigString() {

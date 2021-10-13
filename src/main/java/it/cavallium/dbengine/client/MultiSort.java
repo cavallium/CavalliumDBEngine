@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.current.data.DocSort;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
@@ -22,6 +23,10 @@ public class MultiSort<T> {
 
 	public MultiSort(Sort querySort) {
 		this.querySort = querySort;
+	}
+
+	public boolean isSorted() {
+		return querySort.getBasicType$() != BasicType.NoSort;
 	}
 
 	/**

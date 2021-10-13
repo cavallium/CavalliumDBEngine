@@ -179,7 +179,7 @@ versions:
           limit: long
           minCompetitiveScore: -float
           sort: Sort
-          scoreMode: ScoreMode
+          complete: boolean
       NoSort:
         data: { }
       NumericSort:
@@ -192,10 +192,6 @@ versions:
         data: { }
       DocSort:
         data: { }
-      ScoreMode:
-        data:
-          onlyTopScores: boolean
-          computeScores: boolean
       TotalHitsCount:
         stringRepresenter: "it.cavallium.dbengine.lucene.LuceneUtils.toHumanReadableString"
         data:

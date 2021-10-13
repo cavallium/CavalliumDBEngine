@@ -347,7 +347,7 @@ public class LuceneUtils {
 				DEFAULT_PAGE_LIMITS,
 				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
-				QueryParser.toScoreMode(queryParams.scoreMode())
+				queryParams.complete()
 		);
 	}
 
@@ -453,8 +453,8 @@ public class LuceneUtils {
 		return result;
 	}
 
-	public static int totalHitsThreshold() {
-		return 1;
+	public static int totalHitsThreshold(boolean complete) {
+		return complete ? Integer.MAX_VALUE : 1;
 	}
 
 	public static TotalHitsCount convertTotalHitsCount(TotalHits totalHits) {
@@ -503,7 +503,7 @@ public class LuceneUtils {
 								DEFAULT_PAGE_LIMITS,
 								localQueryParams.minCompetitiveScore(),
 								localQueryParams.sort(),
-								localQueryParams.scoreMode()
+								localQueryParams.complete()
 						);
 					}
 					MultiMoreLikeThis mlt;
@@ -521,7 +521,7 @@ public class LuceneUtils {
 					mlt.setMinTermFreq(1);
 					mlt.setMinDocFreq(3);
 					mlt.setMaxDocFreqPct(20);
-					mlt.setBoost(localQueryParams.scoreMode().needsScores());
+					mlt.setBoost(localQueryParams.needsScores());
 					mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
 					if (similarity instanceof TFIDFSimilarity tfidfSimilarity) {
 						mlt.setSimilarity(tfidfSimilarity);
@@ -548,7 +548,7 @@ public class LuceneUtils {
 							DEFAULT_PAGE_LIMITS,
 							localQueryParams.minCompetitiveScore(),
 							localQueryParams.sort(),
-							localQueryParams.scoreMode()
+							localQueryParams.complete()
 					);
 				}).subscribeOn(Schedulers.boundedElastic()));
 	}

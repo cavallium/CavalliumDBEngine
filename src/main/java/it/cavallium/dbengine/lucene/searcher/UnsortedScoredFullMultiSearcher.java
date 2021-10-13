@@ -44,8 +44,7 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 		}
 
 		return queryParamsMono.flatMap(queryParams2 -> {
-			Objects.requireNonNull(queryParams2.scoreMode(), "ScoreMode must not be null");
-			if (queryParams2.sort() != null && queryParams2.sort() != Sort.RELEVANCE) {
+			if (queryParams2.isSorted()) {
 				throw new IllegalArgumentException(UnsortedScoredFullMultiSearcher.this.getClass().getSimpleName()
 						+ " doesn't support sorted queries");
 			}
@@ -70,14 +69,20 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 		return Mono
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
-					var totalHitsThreshold = LuceneUtils.totalHitsThreshold();
+					var totalHitsThreshold = queryParams.getTotalHitsThreshold();
 					return LMDBFullScoreDocCollector.createSharedManager(env, totalHitsThreshold);
 				})
 				.flatMap(sharedManager -> Flux
 						.fromIterable(indexSearchers)
 						.flatMap(shard -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
+
 							var collector = sharedManager.newCollector();
+							assert queryParams.complete() == collector.scoreMode().isExhaustive();
+							queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
+								assert scoreMode == collector.scoreMode();
+							});
+
 							shard.search(queryParams.query(), collector);
 							return collector;
 						}))

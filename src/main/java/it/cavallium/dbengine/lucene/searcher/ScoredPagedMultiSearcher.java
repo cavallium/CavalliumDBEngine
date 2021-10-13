@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
@@ -45,7 +46,6 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 		}
 
 		return queryParamsMono.flatMap(queryParams2 -> {
-			Objects.requireNonNull(queryParams2.scoreMode(), "ScoreMode must not be null");
 			PaginationInfo paginationInfo = getPaginationInfo(queryParams2);
 
 			return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
@@ -175,7 +175,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						@Nullable var sort = getSort(queryParams);
 						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
 						var after = (FieldDoc) s.last();
-						var totalHitsThreshold = LuceneUtils.totalHitsThreshold();
+						var totalHitsThreshold = queryParams.getTotalHitsThreshold();
 						return new ScoringShardsCollectorManager(sort, pageLimit, after, totalHitsThreshold,
 								resultsOffset);
 					} else {
@@ -186,7 +186,13 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						.fromIterable(indexSearchers)
 						.flatMap(shard -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
+
 							var collector = sharedManager.newCollector();
+							assert queryParams.complete() == collector.scoreMode().isExhaustive();
+							queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
+								assert scoreMode == collector.scoreMode();
+							});
+
 							shard.search(queryParams.query(), collector);
 							return collector;
 						}))

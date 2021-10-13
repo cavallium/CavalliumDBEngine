@@ -132,10 +132,6 @@ public class QueryParser {
 		return new Term(term.field(), term.value());
 	}
 
-	public static boolean isScoringEnabled(QueryParams queryParams) {
-		return queryParams.scoreMode().computeScores();
-	}
-
 	public static Sort toSort(it.cavallium.dbengine.client.query.current.data.Sort sort) {
 		switch (sort.getBasicType$()) {
 			case NoSort:
@@ -151,21 +147,6 @@ public class QueryParser {
 				return new Sort(new RandomSortField());
 			default:
 				throw new IllegalStateException("Unexpected value: " + sort.getBasicType$());
-		}
-	}
-
-	@SuppressWarnings("ConstantConditions")
-	public static ScoreMode toScoreMode(it.cavallium.dbengine.client.query.current.data.ScoreMode scoreMode) {
-		if (scoreMode.computeScores() && scoreMode.onlyTopScores()) {
-			return ScoreMode.TOP_SCORES;
-		} else if (scoreMode.computeScores() && !scoreMode.onlyTopScores()) {
-			return ScoreMode.COMPLETE;
-		} else if (!scoreMode.computeScores() && scoreMode.onlyTopScores()) {
-			return ScoreMode.TOP_DOCS;
-		} else if (!scoreMode.computeScores() && !scoreMode.onlyTopScores()) {
-			return ScoreMode.COMPLETE_NO_SCORES;
-		} else {
-			throw new IllegalStateException("Unexpected value: " + scoreMode);
 		}
 	}
 

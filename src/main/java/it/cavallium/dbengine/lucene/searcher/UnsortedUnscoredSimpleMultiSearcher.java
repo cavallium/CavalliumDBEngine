@@ -46,7 +46,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 										throw new UnsupportedOperationException("Sorted queries are not supported"
 												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 									}
-									if (queryParams2.isScored() && queryParams2.limit() > 0) {
+									if (queryParams2.needsScores() && queryParams2.limit() > 0) {
 										throw new UnsupportedOperationException("Scored queries are not supported"
 												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 									}
@@ -97,7 +97,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.scoreMode()
+				queryParams.complete()
 		);
 	}
 

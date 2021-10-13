@@ -1,3 +1,3 @@
 package it.cavallium.dbengine;
 
-record ExpectedQueryType(boolean shard, boolean sorted, boolean scored, boolean unlimited, boolean onlyCount) {}
+record ExpectedQueryType(boolean shard, boolean sorted, boolean complete, boolean onlyCount) {}

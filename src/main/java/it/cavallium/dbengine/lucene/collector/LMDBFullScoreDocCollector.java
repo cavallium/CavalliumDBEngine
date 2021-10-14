@@ -24,6 +24,7 @@ import it.cavallium.dbengine.lucene.LLScoreDocCodec;
 import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
+import it.cavallium.dbengine.lucene.ResourceIterable;
 import java.io.IOException;
 import java.util.Collection;
 import org.apache.lucene.index.LeafReaderContext;
@@ -48,7 +49,7 @@ import org.jetbrains.annotations.Nullable;
  * <p><b>NOTE</b>: The values {@link Float#NaN} and {@link Float#NEGATIVE_INFINITY} are not valid
  * scores. This collector will not properly collect hits with such scores.
  */
-public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScoreDoc> {
+public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScoreDoc, LLScoreDoc> {
 
 	/** Scorable leaf collector */
 	public abstract static class ScorerLeafCollector implements LeafCollector {
@@ -125,6 +126,11 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 					updateMinCompetitiveScore(scorer);
 				}
 			};
+		}
+
+		@Override
+		public ResourceIterable<LLScoreDoc> mapResults(ResourceIterable<LLScoreDoc> it) {
+			return it;
 		}
 	}
 

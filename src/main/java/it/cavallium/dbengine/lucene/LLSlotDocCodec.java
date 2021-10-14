@@ -3,6 +3,8 @@ package it.cavallium.dbengine.lucene;
 import io.net5.buffer.ByteBuf;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Function;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.FieldComparator;
@@ -155,14 +157,14 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 	 * @see IndexSearcher#search(Query,int, Sort)
 	 */
 	@Override
-	public FieldDoc fillFields(final Entry entry) {
+	public LLFieldDoc fillFields(final LLSlotDoc entry) {
 		final int n = comparators.length;
-		final Object[] fields = new Object[n];
-		for (int i = 0; i < n; ++i) {
-			fields[i] = comparators[i].value(entry.slot);
+		final List<Object> fields = new ArrayList<>(n);
+		for (FieldComparator<?> comparator : comparators) {
+			fields.add(comparator.value(entry.slot()));
 		}
 		// if (maxscore > 1.0f) doc.score /= maxscore;   // normalize scores
-		return new FieldDoc(entry.doc, entry.score, fields);
+		return new LLFieldDoc(entry.doc(), entry.score(), entry.shardIndex(), fields);
 	}
 
 	/** Returns the SortFields being used by this hit queue. */

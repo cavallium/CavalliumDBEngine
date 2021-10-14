@@ -2,7 +2,6 @@ package it.cavallium.dbengine.lucene.collector;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.util.Collection;

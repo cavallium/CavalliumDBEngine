@@ -3,12 +3,12 @@ package it.cavallium.dbengine.lucene;
 import org.apache.lucene.search.TotalHits;
 import reactor.core.publisher.Flux;
 
-public class PqFullDocs<T extends LLDocElement> implements FullDocs<T> {
+public class LazyFullDocs<T extends LLDoc> implements FullDocs<T> {
 
-	private final PriorityQueue<T> pq;
+	private final ResourceIterable<T> pq;
 	private final TotalHits totalHits;
 
-	public PqFullDocs(PriorityQueue<T> pq, TotalHits totalHits) {
+	public LazyFullDocs(ResourceIterable<T> pq, TotalHits totalHits) {
 		this.pq = pq;
 		this.totalHits = totalHits;
 	}

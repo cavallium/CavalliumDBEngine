@@ -16,11 +16,11 @@
  */
 package it.cavallium.dbengine.lucene.collector;
 
-import it.cavallium.dbengine.lucene.EmptyPriorityQueue;
 import it.cavallium.dbengine.lucene.FullDocs;
-import it.cavallium.dbengine.lucene.LLDocElement;
-import it.cavallium.dbengine.lucene.PqFullDocs;
+import it.cavallium.dbengine.lucene.LLDoc;
+import it.cavallium.dbengine.lucene.LazyFullDocs;
 import it.cavallium.dbengine.lucene.PriorityQueue;
+import it.cavallium.dbengine.lucene.ResourceIterable;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TotalHits;
@@ -34,7 +34,7 @@ import org.apache.lucene.search.TotalHits;
  * #FullDocsCollector(PriorityQueue)}. In that case however, you might want to consider overriding
  * all methods, in order to avoid a NullPointerException.
  */
-public abstract class FullDocsCollector<T extends LLDocElement> implements Collector, AutoCloseable {
+public abstract class FullDocsCollector<INTERNAL extends LLDoc, EXTERNAL extends LLDoc> implements Collector, AutoCloseable {
 
 	/**
 	 * The priority queue which holds the top documents. Note that different implementations of
@@ -42,7 +42,7 @@ public abstract class FullDocsCollector<T extends LLDocElement> implements Colle
 	 * top scoring documents, while other PQ implementations may hold documents sorted by other
 	 * criteria.
 	 */
-	protected final PriorityQueue<T> pq;
+	protected final PriorityQueue<INTERNAL> pq;
 
 	/** The total number of documents that the collector encountered. */
 	protected int totalHits;
@@ -50,7 +50,7 @@ public abstract class FullDocsCollector<T extends LLDocElement> implements Colle
 	/** Whether {@link #totalHits} is exact or a lower bound. */
 	protected TotalHits.Relation totalHitsRelation = TotalHits.Relation.EQUAL_TO;
 
-	protected FullDocsCollector(PriorityQueue<T> pq) {
+	protected FullDocsCollector(PriorityQueue<INTERNAL> pq) {
 		this.pq = pq;
 	}
 
@@ -60,9 +60,11 @@ public abstract class FullDocsCollector<T extends LLDocElement> implements Colle
 	}
 
 	/** Returns the top docs that were collected by this collector. */
-	public FullDocs<T> fullDocs() {
-		return new PqFullDocs<>(this.pq, new TotalHits(totalHits, totalHitsRelation));
+	public FullDocs<EXTERNAL> fullDocs() {
+		return new LazyFullDocs<>(mapResults(this.pq), new TotalHits(totalHits, totalHitsRelation));
 	}
+
+	public abstract ResourceIterable<EXTERNAL> mapResults(ResourceIterable<INTERNAL> it);
 
 	@Override
 	public void close() throws Exception {

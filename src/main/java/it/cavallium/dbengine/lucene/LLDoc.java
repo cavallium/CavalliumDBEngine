@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-public sealed interface LLDocElement permits LLSlotDoc, LLFieldDoc, LLScoreDoc {
+public sealed interface LLDoc permits LLSlotDoc, LLFieldDoc, LLScoreDoc {
 
 	int doc();
 

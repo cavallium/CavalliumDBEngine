@@ -16,7 +16,7 @@ public interface FieldValueHitQueue {
 
 	LeafFieldComparator[] getComparators(LeafReaderContext context) throws IOException;
 
-	FieldDoc fillFields(Entry entry);
+	LLFieldDoc fillFields(LLSlotDoc entry);
 
 	SortField[] getFields();
 }

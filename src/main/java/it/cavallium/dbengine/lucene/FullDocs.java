@@ -12,11 +12,11 @@ import org.apache.lucene.search.TotalHits.Relation;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 
-public interface FullDocs<T extends LLDocElement> extends ResourceIterable<T> {
+public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 
-	Comparator<LLDocElement> SHARD_INDEX_TIE_BREAKER = Comparator.comparingInt(LLDocElement::shardIndex);
-	Comparator<LLDocElement> DOC_ID_TIE_BREAKER = Comparator.comparingInt(LLDocElement::doc);
-	Comparator<LLDocElement> DEFAULT_TIE_BREAKER = SHARD_INDEX_TIE_BREAKER.thenComparing(DOC_ID_TIE_BREAKER);
+	Comparator<LLDoc> SHARD_INDEX_TIE_BREAKER = Comparator.comparingInt(LLDoc::shardIndex);
+	Comparator<LLDoc> DOC_ID_TIE_BREAKER = Comparator.comparingInt(LLDoc::doc);
+	Comparator<LLDoc> DEFAULT_TIE_BREAKER = SHARD_INDEX_TIE_BREAKER.thenComparing(DOC_ID_TIE_BREAKER);
 
 	@Override
 	Flux<T> iterate();
@@ -26,7 +26,7 @@ public interface FullDocs<T extends LLDocElement> extends ResourceIterable<T> {
 
 	TotalHits totalHits();
 
-	static <T extends LLDocElement> FullDocs<T> merge(@Nullable Sort sort, FullDocs<T>[] fullDocs) {
+	static <T extends LLDoc> FullDocs<T> merge(@Nullable Sort sort, FullDocs<T>[] fullDocs) {
 		ResourceIterable<T> mergedIterable = mergeResourceIterable(sort, fullDocs);
 		TotalHits mergedTotalHits = mergeTotalHits(fullDocs);
 		return new FullDocs<>() {
@@ -47,7 +47,7 @@ public interface FullDocs<T extends LLDocElement> extends ResourceIterable<T> {
 		};
 	}
 
-	static <T extends LLDocElement> int tieBreakCompare(
+	static <T extends LLDoc> int tieBreakCompare(
 			T firstDoc,
 			T secondDoc,
 			Comparator<T> tieBreaker) {
@@ -61,7 +61,7 @@ public interface FullDocs<T extends LLDocElement> extends ResourceIterable<T> {
 		}
 	}
 
-	static <T extends LLDocElement> ResourceIterable<T> mergeResourceIterable(
+	static <T extends LLDoc> ResourceIterable<T> mergeResourceIterable(
 			@Nullable Sort sort,
 			FullDocs<T>[] fullDocs) {
 		return () -> {
@@ -73,7 +73,7 @@ public interface FullDocs<T extends LLDocElement> extends ResourceIterable<T> {
 				iterables[i] = singleFullDocs;
 			}
 
-			Comparator<LLDocElement> comp;
+			Comparator<LLDoc> comp;
 			if (sort == null) {
 				// Merge maintaining sorting order (Algorithm taken from TopDocs.ScoreMergeSortQueue)
 
@@ -132,7 +132,7 @@ public interface FullDocs<T extends LLDocElement> extends ResourceIterable<T> {
 		};
 	}
 
-	static <T extends LLDocElement> TotalHits mergeTotalHits(FullDocs<T>[] fullDocs) {
+	static <T extends LLDoc> TotalHits mergeTotalHits(FullDocs<T>[] fullDocs) {
 		long totalCount = 0;
 		Relation totalRelation = EQUAL_TO;
 		for (FullDocs<T> fullDoc : fullDocs) {

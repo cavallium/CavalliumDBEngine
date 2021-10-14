@@ -1,12 +1,11 @@
 package it.cavallium.dbengine.lucene;
 
 import org.apache.lucene.search.FieldComparator;
-import org.apache.lucene.search.FieldValueHitQueue;
 import org.apache.lucene.search.FieldValueHitQueue.Entry;
 import org.apache.lucene.search.ScoreDoc;
 
 /** Extension of ScoreDoc to also store the {@link FieldComparator} slot. */
-public record LLSlotDoc(int doc, float score, int shardIndex, int slot) implements LLDocElement {
+public record LLSlotDoc(int doc, float score, int shardIndex, int slot) implements LLDoc {
 
 	public ScoreDoc toScoreDoc() {
 		return new ScoreDoc(doc, score, shardIndex);

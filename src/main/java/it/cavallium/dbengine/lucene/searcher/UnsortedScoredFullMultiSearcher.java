@@ -44,7 +44,7 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 		}
 
 		return queryParamsMono.flatMap(queryParams2 -> {
-			if (queryParams2.isSorted()) {
+			if (queryParams2.isSorted() && !queryParams2.isSortedByScore()) {
 				throw new IllegalArgumentException(UnsortedScoredFullMultiSearcher.this.getClass().getSimpleName()
 						+ " doesn't support sorted queries");
 			}
@@ -70,7 +70,7 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThreshold();
-					return LMDBFullScoreDocCollector.createSharedManager(env, totalHitsThreshold);
+					return LMDBFullScoreDocCollector.createSharedManager(env, queryParams.limit(), totalHitsThreshold);
 				})
 				.flatMap(sharedManager -> Flux
 						.fromIterable(indexSearchers)

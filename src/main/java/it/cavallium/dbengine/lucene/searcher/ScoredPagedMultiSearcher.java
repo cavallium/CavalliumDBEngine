@@ -140,10 +140,10 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 					AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
 					return Mono
 							.fromSupplier(currentPageInfoRef::get)
-							.doOnNext(s -> logger.debug("Current page info: {}", s))
+							.doOnNext(s -> logger.trace("Current page info: {}", s))
 							.flatMap(currentPageInfo -> this.searchPage(queryParams, indexSearchers, true,
 									queryParams.pageLimits(), 0, currentPageInfo))
-							.doOnNext(s -> logger.debug("Next page info: {}", s.nextPageInfo()))
+							.doOnNext(s -> logger.trace("Next page info: {}", s.nextPageInfo()))
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})

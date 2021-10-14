@@ -21,10 +21,10 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 	private static final MultiSearcher unsortedUnscoredContinuous
 			= new UnsortedUnscoredStreamingMultiSearcher();
 
-	private final UnsortedScoredFullMultiSearcher scoredFull;
+	private final UnsortedScoredFullMultiSearcher unsortedScoredFull;
 
 	public AdaptiveMultiSearcher() throws IOException {
-		scoredFull = new UnsortedScoredFullMultiSearcher();
+		unsortedScoredFull = new UnsortedScoredFullMultiSearcher();
 	}
 
 	@Override
@@ -54,10 +54,11 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 			if (queryParams.limit() == 0) {
 				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else if (queryParams.isSorted() || queryParams.needsScores()) {
-				if (queryParams.isSorted() || realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
+				if ((queryParams.isSorted() && !queryParams.isSortedByScore())
+						|| realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
 					return scoredSimple.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 				} else {
-					return scoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+					return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 				}
 			} else if (realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
 				// Run single-page searches using the paged multi searcher
@@ -71,7 +72,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 
 	@Override
 	public void close() throws IOException {
-		scoredFull.close();
+		unsortedScoredFull.close();
 	}
 
 	@Override

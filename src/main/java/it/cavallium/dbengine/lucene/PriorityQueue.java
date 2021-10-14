@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
 import java.io.Closeable;
-import java.util.Iterator;
 
 public interface PriorityQueue<T> extends ResourceIterable<T>, Closeable {
 
@@ -22,28 +21,9 @@ public interface PriorityQueue<T> extends ResourceIterable<T>, Closeable {
 	T pop();
 
 	/**
-	 * Should be called when the Object at top changes values. Still log(n) worst case, but it's at least twice as fast
-	 * to
-	 *
-	 * <pre class="prettyprint">
-	 * pq.top().change();
-	 * pq.updateTop();
-	 * </pre>
-	 * <p>
-	 * instead of
-	 *
-	 * <pre class="prettyprint">
-	 * o = pq.pop();
-	 * o.change();
-	 * pq.push(o);
-	 * </pre>
+	 * Replace the top of the pq with {@code newTop}
 	 */
-	void updateTop();
-
-	/**
-	 * Replace the top of the pq with {@code newTop} and run {@link #updateTop()}.
-	 */
-	void updateTop(T newTop);
+	void replaceTop(T newTop);
 
 	/**
 	 * Returns the number of elements currently stored in the PriorityQueue.

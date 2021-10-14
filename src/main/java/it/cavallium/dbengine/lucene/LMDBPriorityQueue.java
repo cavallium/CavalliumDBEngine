@@ -4,11 +4,12 @@ import static org.lmdbjava.DbiFlags.*;
 
 import io.net5.buffer.ByteBuf;
 import io.net5.buffer.PooledByteBufAllocator;
-import io.net5.buffer.Unpooled;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Objects;
+import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.NotNull;
@@ -17,7 +18,7 @@ import org.lmdbjava.CursorIterable;
 import org.lmdbjava.CursorIterable.KeyVal;
 import org.lmdbjava.Dbi;
 import org.lmdbjava.Env;
-import org.lmdbjava.PutFlags;
+import org.lmdbjava.GetOp;
 import org.lmdbjava.Txn;
 import reactor.core.publisher.Flux;
 import reactor.core.scheduler.Scheduler;
@@ -32,7 +33,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 	private static final boolean FORCE_THREAD_LOCAL = true;
 
 	private static final AtomicLong NEXT_LMDB_QUEUE_ID = new AtomicLong(0);
-	private static final ByteBuf EMPTY = Unpooled.directBuffer(1, 1).writeByte(1).asReadOnly();
+	private static final AtomicLong NEXT_ITEM_UID = new AtomicLong(0);
 
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final Runnable onClose;
@@ -57,7 +58,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 		var name = "$queue_" + NEXT_LMDB_QUEUE_ID.getAndIncrement();
 		this.codec = codec;
 		this.env = env.getEnvAndIncrementRef();
-		this.lmdb = this.env.openDbi(name, codec::compareDirect, MDB_CREATE);
+		this.lmdb = this.env.openDbi(name, codec::compareDirect, MDB_CREATE, MDB_DUPSORT, MDB_DUPFIXED);
 		
 		this.writing = true;
 		this.iterating = false;
@@ -153,12 +154,14 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 	}
 
 	private static void ensureThread() {
+		LLUtils.ensureBlocking();
 	}
 
 	private static void ensureItThread() {
-		if (!(Thread.currentThread() instanceof LMDBThread)) {
-			throw new IllegalStateException("Must run in LMDB scheduler");
-		}
+		ensureThread();
+		//if (!(Thread.currentThread() instanceof LMDBThread)) {
+  	//		throw new IllegalStateException("Must run in LMDB scheduler");
+		//}
 	}
 
 	@Override
@@ -166,8 +169,10 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 		ensureThread();
 		switchToMode(true, false);
 		var buf = codec.serialize(this::allocate, element);
+		var uid = allocate(Long.BYTES);
+		uid.writeLong(NEXT_ITEM_UID.getAndIncrement());
 		try {
-			if (lmdb.put(rwTxn, buf, EMPTY, PutFlags.MDB_NOOVERWRITE)) {
+			if (lmdb.put(rwTxn, buf, uid)) {
 				if (++size == 1) {
 					topValid = true;
 					top = element;
@@ -230,10 +235,13 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 					top = null;
 				} else {
 					topValid = false;
+					top = null;
 				}
 				cur.delete();
 				return data;
 			} else {
+				topValid = true;
+				top = null;
 				return null;
 			}
 		} finally {
@@ -242,14 +250,10 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public void updateTop() {
-		// do nothing
-	}
-
-	@Override
-	public void updateTop(T newTop) {
+	public void replaceTop(T newTop) {
 		ensureThread();
-		assert codec.compare(newTop, databaseTop()) == 0;
+		this.pop();
+		this.add(newTop);
 	}
 
 	@Override
@@ -276,11 +280,12 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 	public boolean remove(@NotNull T element) {
 		ensureThread();
 		Objects.requireNonNull(element);
-		switchToMode(true, false);
+		switchToMode(true, true);
 		var buf = codec.serialize(this::allocate, element);
 		try {
-			var deleted = lmdb.delete(rwTxn, buf);
-			if (deleted) {
+			var deletable = cur.get(buf, GetOp.MDB_SET);
+			if (deletable) {
+				cur.delete();
 				if (topValid && codec.compare(top, element) == 0) {
 					if (--size == 0) {
 						top = null;
@@ -294,7 +299,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 					}
 				}
 			}
-			return deleted;
+			return deletable;
 		} finally {
 			endMode();
 		}
@@ -315,22 +320,26 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 					var it = cit.iterator();
 					return Tuples.of(cit, it);
 				}, (t, sink) -> {
-					ensureItThread();
-					var it = t.getT2();
-					if (it.hasNext()) {
-						sink.next(codec.deserialize(it.next().key()));
-					} else {
-						sink.complete();
+					try {
+						ensureItThread();
+						var it = t.getT2();
+						if (it.hasNext()) {
+							sink.next(codec.deserialize(it.next().key()));
+						} else {
+							sink.complete();
+						}
+						return t;
+					} catch (Throwable ex) {
+						sink.error(ex);
+						return t;
 					}
-					return t;
 				}, t -> {
 					ensureItThread();
 					var cit = t.getT1();
 					cit.close();
 					iterating = false;
 					endMode();
-				})
-				.subscribeOn(scheduler, false);
+				});
 	}
 
 	@Override
@@ -400,4 +409,10 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 		return scheduler;
 	}
 
+	@Override
+	public String toString() {
+		return new StringJoiner(", ", LMDBPriorityQueue.class.getSimpleName() + "[", "]")
+				.add("size=" + size)
+				.toString();
+	}
 }

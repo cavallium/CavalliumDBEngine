@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
+import java.util.Objects;
 import java.util.Optional;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreMode;
@@ -14,6 +15,10 @@ public record LocalQueryParams(@NotNull Query query, int offset, int limit, @Not
 
 	public boolean isSorted() {
 		return sort != null;
+	}
+
+	public boolean isSortedByScore() {
+		return Objects.equals(sort, Sort.RELEVANCE);
 	}
 
 	public boolean needsScores() {

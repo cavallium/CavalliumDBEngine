@@ -24,12 +24,7 @@ public class EmptyPriorityQueue<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public void updateTop() {
-
-	}
-
-	@Override
-	public void updateTop(T newTop) {
+	public void replaceTop(T newTop) {
 		assert newTop == null;
 	}
 

@@ -13,12 +13,14 @@ import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.MultiSort;
 import it.cavallium.dbengine.client.SearchResultKey;
 import it.cavallium.dbengine.client.SearchResultKeys;
+import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.ClientQueryParamsBuilder;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.client.query.current.data.MatchNoDocsQuery;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
+import it.cavallium.dbengine.client.query.current.data.ScoreSort;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
@@ -146,7 +148,7 @@ public class TestLuceneSearches {
 						sink.next(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
 					} else {
 						sink.next(new ScoredPagedMultiSearcher());
-						if (!info.sorted()) {
+						if (!info.sorted() || info.sortedByScore()) {
 							sink.next(new UnsortedScoredFullMultiSearcher());
 						}
 						if (!info.sorted()) {
@@ -247,7 +249,9 @@ public class TestLuceneSearches {
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) {
-		runSearchers(new ExpectedQueryType(shards, multiSort.isSorted(), true, false), searcher -> {
+		var sorted = multiSort.isSorted();
+		var sortedByScore = multiSort.getQuerySort().getBasicType$() == BasicType.ScoreSort;
+		runSearchers(new ExpectedQueryType(shards, sorted, sortedByScore, true, false), searcher -> {
 			var luceneIndex = getLuceneIndex(shards, searcher);
 			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
 			queryBuilder.query(new MatchNoDocsQuery());
@@ -269,7 +273,8 @@ public class TestLuceneSearches {
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) {
 		var sorted = multiSort.isSorted();
-		runSearchers(new ExpectedQueryType(shards, sorted, true, false), (LocalSearcher searcher) -> {
+		var sortedByScore = multiSort.getQuerySort().getBasicType$() == BasicType.ScoreSort;
+		runSearchers(new ExpectedQueryType(shards, sorted, sortedByScore, true, false), (LocalSearcher searcher) -> {
 			var luceneIndex = getLuceneIndex(shards, searcher);
 			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
 			queryBuilder.query(new MatchAllDocsQuery());
@@ -282,12 +287,23 @@ public class TestLuceneSearches {
 				assertHitsIfPossible(ELEMENTS.size(), hits);
 
 				var keys = getResults(results);
-				assertResults(ELEMENTS.keySet().stream().toList(), keys, false);
+				assertResults(ELEMENTS.keySet().stream().toList(), keys, false, sortedByScore);
 			}
 		});
 	}
 
-	private void assertResults(List<String> expectedKeys, List<Scored> resultKeys, boolean sorted) {
+	private void assertResults(List<String> expectedKeys, List<Scored> resultKeys, boolean sorted, boolean sortedByScore) {
+
+		if (sortedByScore) {
+			float lastScore = Float.NEGATIVE_INFINITY;
+			for (Scored resultKey : resultKeys) {
+				if (!Float.isNaN(resultKey.score())) {
+					Assertions.assertTrue(resultKey.score() >= lastScore);
+					lastScore = resultKey.score();
+				}
+			}
+		}
+
 		if (!sorted) {
 			var results = resultKeys.stream().map(Scored::key).collect(Collectors.toSet());
 			Assertions.assertEquals(new HashSet<>(expectedKeys), results);

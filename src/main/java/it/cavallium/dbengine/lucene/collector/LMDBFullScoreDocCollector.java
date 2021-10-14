@@ -16,11 +16,13 @@
  */
 package it.cavallium.dbengine.lucene.collector;
 
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.LLScoreDocCodec;
 import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import java.io.IOException;
 import java.util.Collection;
@@ -33,6 +35,8 @@ import it.cavallium.dbengine.lucene.MaxScoreAccumulator.DocAndScore;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.TotalHits;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * A {@link Collector} implementation that collects the top-scoring hits, returning them as a {@link
@@ -59,9 +63,9 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 
 	private static class SimpleLMDBFullScoreDocCollector extends LMDBFullScoreDocCollector {
 
-		SimpleLMDBFullScoreDocCollector(LLTempLMDBEnv env,
+		SimpleLMDBFullScoreDocCollector(LLTempLMDBEnv env, @Nullable Long limit,
 				HitsThresholdChecker hitsThresholdChecker, MaxScoreAccumulator minScoreAcc) {
-			super(env, hitsThresholdChecker, minScoreAcc);
+			super(env, limit, hitsThresholdChecker, minScoreAcc);
 		}
 
 		@Override
@@ -94,9 +98,10 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 						updateGlobalMinCompetitiveScore(scorer);
 					}
 
-					var pqTop = pq.top();
-					if (pqTop != null) {
-						if (score <= pqTop.score()) {
+					// If there is a limit, and it's reached, use the replacement logic
+					if (limit != null && pq.size() >= limit) {
+						var pqTop = pq.top();
+						if (pqTop != null && score <= pqTop.score()) {
 							if (totalHitsRelation == TotalHits.Relation.EQUAL_TO) {
 								// we just reached totalHitsThreshold, we can start setting the min
 								// competitive score now
@@ -106,10 +111,17 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 							// with equal score to pqTop.score cannot compete since HitQueue favors
 							// documents with lower doc Ids. Therefore reject those docs too.
 							return;
+						} else {
+							// Remove the top element, then add the following element
+							pq.replaceTop(new LLScoreDoc(doc + docBase, score, -1));
+							// The minimum competitive score will be updated later
 						}
+					} else {
+						// There is no limit or the limit has not been reached. Add the document to the queue
+						pq.add(new LLScoreDoc(doc + docBase, score, -1));
+						// The minimum competitive score will be updated later
 					}
-					pq.add(new LLScoreDoc(doc + docBase, score, -1));
-					pq.updateTop();
+					// Update the minimum competitive score
 					updateMinCompetitiveScore(scorer);
 				}
 			};
@@ -129,6 +141,16 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 	 * <p><b>NOTE</b>: The instances returned by this method pre-allocate a full array of length
 	 * <code>numHits</code>, and fill the array with sentinel objects.
 	 */
+	public static LMDBFullScoreDocCollector create(LLTempLMDBEnv env, long numHits, int totalHitsThreshold) {
+		return create(env, numHits, HitsThresholdChecker.create(totalHitsThreshold), null);
+	}
+
+	/**
+	 * Creates a new {@link LMDBFullScoreDocCollector} given the number of hits to count accurately.
+	 *
+	 * <p><b>NOTE</b>:  A value of {@link Integer#MAX_VALUE} will make the hit count accurate
+	 * but will also likely make query processing slower.
+	 */
 	public static LMDBFullScoreDocCollector create(LLTempLMDBEnv env, int totalHitsThreshold) {
 		return create(env, HitsThresholdChecker.create(totalHitsThreshold), null);
 	}
@@ -142,12 +164,55 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 			throw new IllegalArgumentException("hitsThresholdChecker must be non null");
 		}
 
-		return new SimpleLMDBFullScoreDocCollector(env, hitsThresholdChecker, minScoreAcc);
+		return new SimpleLMDBFullScoreDocCollector(env, null, hitsThresholdChecker, minScoreAcc);
+	}
+
+	static LMDBFullScoreDocCollector create(
+			LLTempLMDBEnv env,
+			@NotNull Long numHits,
+			HitsThresholdChecker hitsThresholdChecker,
+			MaxScoreAccumulator minScoreAcc) {
+
+		if (hitsThresholdChecker == null) {
+			throw new IllegalArgumentException("hitsThresholdChecker must be non null");
+		}
+
+		return new SimpleLMDBFullScoreDocCollector(env,
+				(numHits < 0 || numHits >= 2147483630L) ? null : numHits,
+				hitsThresholdChecker,
+				minScoreAcc
+		);
 	}
 
 	/**
 	 * Create a CollectorManager which uses a shared hit counter to maintain number of hits and a
 	 * shared {@link MaxScoreAccumulator} to propagate the minimum score accross segments
+	 */
+	public static CollectorManager<LMDBFullScoreDocCollector, FullDocs<LLScoreDoc>> createSharedManager(
+			LLTempLMDBEnv env,
+			long numHits,
+			int totalHitsThreshold) {
+		return new CollectorManager<>() {
+
+			private final HitsThresholdChecker hitsThresholdChecker =
+					HitsThresholdChecker.createShared(totalHitsThreshold);
+			private final MaxScoreAccumulator minScoreAcc = new MaxScoreAccumulator();
+
+			@Override
+			public LMDBFullScoreDocCollector newCollector() {
+				return LMDBFullScoreDocCollector.create(env, numHits, hitsThresholdChecker, minScoreAcc);
+			}
+
+			@Override
+			public FullDocs<LLScoreDoc> reduce(Collection<LMDBFullScoreDocCollector> collectors) {
+				return reduceShared(collectors);
+			}
+		};
+	}
+
+	/**
+	 * Create a CollectorManager which uses a shared {@link MaxScoreAccumulator} to propagate
+	 * the minimum score accross segments
 	 */
 	public static CollectorManager<LMDBFullScoreDocCollector, FullDocs<LLScoreDoc>> createSharedManager(
 			LLTempLMDBEnv env,
@@ -165,28 +230,33 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 
 			@Override
 			public FullDocs<LLScoreDoc> reduce(Collection<LMDBFullScoreDocCollector> collectors) {
-				@SuppressWarnings("unchecked")
-				final FullDocs<LLScoreDoc>[] fullDocs = new FullDocs[collectors.size()];
-				int i = 0;
-				for (LMDBFullScoreDocCollector collector : collectors) {
-					fullDocs[i++] = collector.fullDocs();
-				}
-				return FullDocs.merge(null, fullDocs);
+				return reduceShared(collectors);
 			}
 		};
 	}
 
+	private static FullDocs<LLScoreDoc> reduceShared(Collection<LMDBFullScoreDocCollector> collectors) {
+		@SuppressWarnings("unchecked")
+		final FullDocs<LLScoreDoc>[] fullDocs = new FullDocs[collectors.size()];
+		int i = 0;
+		for (LMDBFullScoreDocCollector collector : collectors) {
+			fullDocs[i++] = collector.fullDocs();
+		}
+		return FullDocs.merge(null, fullDocs);
+	}
+
 	int docBase;
+	final @Nullable Long limit;
 	final HitsThresholdChecker hitsThresholdChecker;
 	final MaxScoreAccumulator minScoreAcc;
 	float minCompetitiveScore;
 
 	// prevents instantiation
-	LMDBFullScoreDocCollector(LLTempLMDBEnv env,
+	LMDBFullScoreDocCollector(LLTempLMDBEnv env, @Nullable Long limit,
 			HitsThresholdChecker hitsThresholdChecker, MaxScoreAccumulator minScoreAcc) {
 		super(new LMDBPriorityQueue<>(env, new LLScoreDocCodec()));
 		assert hitsThresholdChecker != null;
-
+		this.limit = limit;
 		this.hitsThresholdChecker = hitsThresholdChecker;
 		this.minScoreAcc = minScoreAcc;
 	}

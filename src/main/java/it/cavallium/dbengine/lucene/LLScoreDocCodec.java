@@ -3,7 +3,7 @@ package it.cavallium.dbengine.lucene;
 import io.net5.buffer.ByteBuf;
 import java.util.function.Function;
 
-public class LLScoreDocCodec implements LMDBCodec<LLScoreDoc> {
+public class LLScoreDocCodec implements LMDBSortedCodec<LLScoreDoc> {
 
 	@Override
 	public ByteBuf serialize(Function<Integer, ByteBuf> allocator, LLScoreDoc data) {
@@ -11,7 +11,7 @@ public class LLScoreDocCodec implements LMDBCodec<LLScoreDoc> {
 		setScore(buf, data.score());
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
-		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES);
+		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
 		return buf.asReadOnly();
 	}
 

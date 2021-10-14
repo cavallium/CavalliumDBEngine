@@ -4,7 +4,7 @@ import com.google.common.collect.Lists;
 import io.net5.buffer.ByteBuf;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
-import it.cavallium.dbengine.lucene.LMDBCodec;
+import it.cavallium.dbengine.lucene.LMDBSortedCodec;
 import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
 import it.cavallium.dbengine.lucene.PriorityQueue;
 import java.io.Closeable;
@@ -67,7 +67,7 @@ public class TestLMDBHitQueue {
 	@BeforeEach
 	public void beforeEach() throws IOException {
 		this.env = new LLTempLMDBEnv();
-		var lmdbQueue = new LMDBPriorityQueue<ScoreDoc>(env, new LMDBCodec<>() {
+		var lmdbQueue = new LMDBPriorityQueue<ScoreDoc>(env, new LMDBSortedCodec<>() {
 
 			@Override
 			public ByteBuf serialize(Function<Integer, ByteBuf> allocator, ScoreDoc data) {

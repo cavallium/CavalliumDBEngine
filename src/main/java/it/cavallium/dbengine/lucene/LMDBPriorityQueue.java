@@ -37,7 +37,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final Runnable onClose;
-	private final LMDBCodec<T> codec;
+	private final LMDBSortedCodec<T> codec;
 	private final Env<ByteBuf> env;
 	private final Dbi<ByteBuf> lmdb;
 	private final Scheduler scheduler = Schedulers.newBoundedElastic(1,
@@ -53,7 +53,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 	private T top = null;
 	private long size = 0;
 
-	public LMDBPriorityQueue(LLTempLMDBEnv env, LMDBCodec<T> codec) {
+	public LMDBPriorityQueue(LLTempLMDBEnv env, LMDBSortedCodec<T> codec) {
 		this.onClose = env::decrementRef;
 		var name = "$queue_" + NEXT_LMDB_QUEUE_ID.getAndIncrement();
 		this.codec = codec;
@@ -69,6 +69,10 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 		}
 		this.readTxn = null;
 		this.cur = null;
+	}
+
+	public LMDBSortedCodec<T> getCodec() {
+		return codec;
 	}
 
 	private ByteBuf allocate(int size) {

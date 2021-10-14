@@ -2,7 +2,7 @@ package it.cavallium.dbengine;
 
 import io.net5.buffer.ByteBuf;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.LMDBCodec;
+import it.cavallium.dbengine.lucene.LMDBSortedCodec;
 import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -21,7 +21,7 @@ public class TestLMDB {
 	@BeforeEach
 	public void beforeEach() throws IOException {
 		this.env = new LLTempLMDBEnv();
-		this.queue = new LMDBPriorityQueue<>(env, new LMDBCodec<Integer>() {
+		this.queue = new LMDBPriorityQueue<>(env, new LMDBSortedCodec<Integer>() {
 			@Override
 			public ByteBuf serialize(Function<Integer, ByteBuf> allocator, Integer data) {
 				return allocator.apply(Integer.BYTES).writeInt(data).asReadOnly();

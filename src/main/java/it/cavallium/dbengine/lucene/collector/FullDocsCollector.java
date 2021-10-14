@@ -37,13 +37,6 @@ import org.apache.lucene.search.TotalHits;
 public abstract class FullDocsCollector<T extends LLDocElement> implements Collector, AutoCloseable {
 
 	/**
-	 * This is used in case topDocs() is called with illegal parameters, or there simply aren't
-	 * (enough) results.
-	 */
-	private static final FullDocs<?> EMPTY_FULLDOCS =
-			new PqFullDocs(new EmptyPriorityQueue<>(), new TotalHits(0, TotalHits.Relation.EQUAL_TO));
-
-	/**
 	 * The priority queue which holds the top documents. Note that different implementations of
 	 * PriorityQueue give different meaning to 'top documents'. HitQueue for example aggregates the
 	 * top scoring documents, while other PQ implementations may hold documents sorted by other

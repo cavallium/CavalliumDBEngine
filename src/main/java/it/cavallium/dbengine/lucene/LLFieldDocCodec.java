@@ -4,7 +4,7 @@ import io.net5.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.function.Function;
 
-public class LLFieldDocCodec implements LMDBCodec<LLFieldDoc> {
+public class LLFieldDocCodec implements LMDBSortedCodec<LLFieldDoc> {
 
 	private enum FieldType {
 		FLOAT,

@@ -2085,16 +2085,14 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean fast) {
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> {
-					try (var range = rangeSend.receive()) {
-						if (Schedulers.isInNonBlockingThread()) {
-							throw new UnsupportedOperationException("Called sizeRange in a nonblocking thread");
-						}
-						if (range.isAll()) {
-							return this
-									.runOnDb(() -> fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot))
-									.onErrorMap(IOException::new);
-						} else {
-							return runOnDb(() -> {
+					return runOnDb(() -> {
+						try (var range = rangeSend.receive()) {
+							if (Schedulers.isInNonBlockingThread()) {
+								throw new UnsupportedOperationException("Called sizeRange in a nonblocking thread");
+							}
+							if (range.isAll()) {
+								return fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot);
+							} else {
 								try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 									readOpts.setFillCache(false);
 									readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
@@ -2149,9 +2147,9 @@ public class LLLocalDictionary implements LLDictionary {
 										minBound.close();
 									}
 								}
-							}).onErrorMap(cause -> new IOException("Failed to get size of range " + range, cause));
+							}
 						}
-					}
+					}).onErrorMap(cause -> new IOException("Failed to get size of range", cause));
 				},
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);

@@ -49,7 +49,7 @@ import org.jetbrains.annotations.Nullable;
  * <p><b>NOTE</b>: The values {@link Float#NaN} and {@link Float#NEGATIVE_INFINITY} are not valid
  * scores. This collector will not properly collect hits with such scores.
  */
-public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScoreDoc, LLScoreDoc> {
+public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPriorityQueue<LLScoreDoc>, LLScoreDoc, LLScoreDoc> {
 
 	/** Scorable leaf collector */
 	public abstract static class ScorerLeafCollector implements LeafCollector {
@@ -197,7 +197,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 	public static CollectorManager<LMDBFullScoreDocCollector, FullDocs<LLScoreDoc>> createSharedManager(
 			LLTempLMDBEnv env,
 			long numHits,
-			int totalHitsThreshold) {
+			long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
 			private final HitsThresholdChecker hitsThresholdChecker =
@@ -222,7 +222,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 	 */
 	public static CollectorManager<LMDBFullScoreDocCollector, FullDocs<LLScoreDoc>> createSharedManager(
 			LLTempLMDBEnv env,
-			int totalHitsThreshold) {
+			long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
 			private final HitsThresholdChecker hitsThresholdChecker =
@@ -282,7 +282,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 			float score =
 					docBase > maxMinScore.docID ? Math.nextUp(maxMinScore.score) : maxMinScore.score;
 			if (score > minCompetitiveScore) {
-				assert hitsThresholdChecker.isThresholdReached();
+				assert hitsThresholdChecker.isThresholdReached(true);
 				scorer.setMinCompetitiveScore(score);
 				minCompetitiveScore = score;
 				totalHitsRelation = TotalHits.Relation.GREATER_THAN_OR_EQUAL_TO;
@@ -292,7 +292,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LLScor
 
 	protected void updateMinCompetitiveScore(Scorable scorer) throws IOException {
 		var pqTop = pq.top();
-		if (hitsThresholdChecker.isThresholdReached()
+		if (hitsThresholdChecker.isThresholdReached(true)
 				&& pqTop != null
 				&& pqTop.score() != Float.NEGATIVE_INFINITY) { // -Infinity is the score of sentinels
 			// since we tie-break on doc id and collect in doc id order, we can require

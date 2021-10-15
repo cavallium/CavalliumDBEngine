@@ -11,7 +11,7 @@ public class LLScoreDocCodec implements LMDBSortedCodec<LLScoreDoc> {
 		setScore(buf, data.score());
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
-		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
+		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES);
 		return buf.asReadOnly();
 	}
 

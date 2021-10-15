@@ -5,28 +5,32 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.FullDocs;
-import it.cavallium.dbengine.lucene.LLScoreDoc;
-import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
+import it.cavallium.dbengine.lucene.LLFieldDoc;
+import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Objects;
+import java.util.List;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.TopDocsCollector;
+import org.apache.lucene.search.TopFieldCollector;
+import org.apache.lucene.search.TopScoreDocCollector;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable {
+public class OfficialSearcher implements MultiSearcher, Closeable {
 
-	protected static final Logger logger = LoggerFactory.getLogger(UnsortedScoredFullMultiSearcher.class);
+	protected static final Logger logger = LoggerFactory.getLogger(OfficialSearcher.class);
 
 	private final LLTempLMDBEnv env;
 
-	public UnsortedScoredFullMultiSearcher() throws IOException {
+	public OfficialSearcher() throws IOException {
 		this.env = new LLTempLMDBEnv();
 	}
 
@@ -43,34 +47,33 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 					.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams))), true);
 		}
 
-		return queryParamsMono.flatMap(queryParams2 -> {
-			if (queryParams2.isSorted() && !queryParams2.isSortedByScore()) {
-				throw new IllegalArgumentException(UnsortedScoredFullMultiSearcher.this.getClass().getSimpleName()
-						+ " doesn't support sorted queries");
-			}
-
-			return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
-							// Search results
-							.search(indexSearchers.shards(), queryParams2)
-							// Compute the results
-							.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers,
-									keyFieldName, queryParams2))
-							// Ensure that one LuceneSearchResult is always returned
-							.single(),
-					false);
-		});
+		return queryParamsMono.flatMap(queryParams2 -> LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
+						// Search results
+						.search(indexSearchers.shards(), queryParams2)
+						// Compute the results
+						.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers,
+								keyFieldName, queryParams2))
+						// Ensure that one LuceneSearchResult is always returned
+						.single(),
+				false));
 	}
 
 	/**
 	 * Search effectively the raw results
 	 */
-	private Mono<FullDocs<LLScoreDoc>> search(Iterable<IndexSearcher> indexSearchers,
+	@SuppressWarnings({"unchecked", "rawtypes"})
+	private Mono<TopDocs> search(Iterable<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
-					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
-					return LMDBFullScoreDocCollector.createSharedManager(env, queryParams.limitLong(), totalHitsThreshold);
+					var totalHitsThreshold = queryParams.getTotalHitsThresholdInt();
+					if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
+						return TopFieldCollector.createSharedManager(queryParams.sort(), queryParams.limitInt(), null,
+								totalHitsThreshold);
+					} else {
+						return TopScoreDocCollector.createSharedManager(queryParams.limitInt(), null, totalHitsThreshold);
+					}
 				})
 				.flatMap(sharedManager -> Flux
 						.fromIterable(indexSearchers)
@@ -89,7 +92,7 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 						.collectList()
 						.flatMap(collectors -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
-							return sharedManager.reduce(collectors);
+							return sharedManager.reduce((List) collectors);
 						}))
 				);
 	}
@@ -97,16 +100,17 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 	/**
 	 * Compute the results, extracting useful data
 	 */
-	private Mono<Send<LuceneSearchResult>> computeResults(Mono<FullDocs<LLScoreDoc>> dataMono,
+	private Mono<Send<LuceneSearchResult>> computeResults(Mono<TopDocs> dataMono,
 			LLIndexSearchers indexSearchers,
 			String keyFieldName,
 			LocalQueryParams queryParams) {
 		return dataMono.map(data -> {
-			var totalHitsCount = LuceneUtils.convertTotalHitsCount(data.totalHits());
+			var totalHitsCount = LuceneUtils.convertTotalHitsCount(data.totalHits);
 
 			Flux<LLKeyScore> hitsFlux = LuceneUtils
-					.convertHits(data.iterate(queryParams.offsetLong()).map(LLScoreDoc::toScoreDoc),
+					.convertHits(Flux.fromArray(data.scoreDocs),
 							indexSearchers.shards(), keyFieldName, true)
+					.skip(queryParams.offsetLong())
 					.take(queryParams.limitLong(), true);
 
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close).send();
@@ -120,6 +124,6 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 
 	@Override
 	public String getName() {
-		return "unsorted scored full multi";
+		return "official";
 	}
 }

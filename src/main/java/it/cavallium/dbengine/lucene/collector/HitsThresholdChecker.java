@@ -24,10 +24,10 @@ import org.apache.lucene.search.ScoreMode;
 abstract class HitsThresholdChecker {
 	/** Implementation of HitsThresholdChecker which allows global hit counting */
 	private static class GlobalHitsThresholdChecker extends HitsThresholdChecker {
-		private final int totalHitsThreshold;
+		private final long totalHitsThreshold;
 		private final AtomicLong globalHitCount;
 
-		public GlobalHitsThresholdChecker(int totalHitsThreshold) {
+		public GlobalHitsThresholdChecker(long totalHitsThreshold) {
 
 			if (totalHitsThreshold < 0) {
 				throw new IllegalArgumentException(
@@ -44,27 +44,38 @@ abstract class HitsThresholdChecker {
 		}
 
 		@Override
-		public boolean isThresholdReached() {
-			return globalHitCount.getAcquire() > totalHitsThreshold;
+		public boolean isThresholdReached(boolean supports64Bit) {
+			if (supports64Bit) {
+				return globalHitCount.getAcquire() > totalHitsThreshold;
+			} else {
+				return Math.min(globalHitCount.getAcquire(), Integer.MAX_VALUE) > Math.min(totalHitsThreshold, Integer.MAX_VALUE);
+			}
 		}
 
 		@Override
 		public ScoreMode scoreMode() {
-			return totalHitsThreshold == Integer.MAX_VALUE ? ScoreMode.COMPLETE : ScoreMode.TOP_SCORES;
+			if (totalHitsThreshold == Long.MAX_VALUE) {
+				return ScoreMode.COMPLETE;
+			}
+			return ScoreMode.TOP_SCORES;
 		}
 
 		@Override
-		public int getHitsThreshold() {
-			return totalHitsThreshold;
+		public long getHitsThreshold(boolean supports64Bit) {
+			if (supports64Bit) {
+				return totalHitsThreshold;
+			} else {
+				return Math.min(totalHitsThreshold, Integer.MAX_VALUE);
+			}
 		}
 	}
 
 	/** Default implementation of HitsThresholdChecker to be used for single threaded execution */
 	private static class LocalHitsThresholdChecker extends HitsThresholdChecker {
-		private final int totalHitsThreshold;
-		private int hitCount;
+		private final long totalHitsThreshold;
+		private long hitCount;
 
-		public LocalHitsThresholdChecker(int totalHitsThreshold) {
+		public LocalHitsThresholdChecker(long totalHitsThreshold) {
 
 			if (totalHitsThreshold < 0) {
 				throw new IllegalArgumentException(
@@ -80,32 +91,43 @@ abstract class HitsThresholdChecker {
 		}
 
 		@Override
-		public boolean isThresholdReached() {
-			return hitCount > totalHitsThreshold;
+		public boolean isThresholdReached(boolean supports64Bit) {
+			if (supports64Bit) {
+				return hitCount > totalHitsThreshold;
+			} else {
+				return Math.min(hitCount, Integer.MAX_VALUE) > Math.min(totalHitsThreshold, Integer.MAX_VALUE);
+			}
 		}
 
 		@Override
 		public ScoreMode scoreMode() {
-			return totalHitsThreshold == Integer.MAX_VALUE ? ScoreMode.COMPLETE : ScoreMode.TOP_SCORES;
+			if (totalHitsThreshold == Long.MAX_VALUE) {
+				return ScoreMode.COMPLETE;
+			}
+			return ScoreMode.TOP_SCORES;
 		}
 
 		@Override
-		public int getHitsThreshold() {
-			return totalHitsThreshold;
+		public long getHitsThreshold(boolean supports64Bit) {
+			if (supports64Bit) {
+				return totalHitsThreshold;
+			} else {
+				return Math.min(totalHitsThreshold, Integer.MAX_VALUE);
+			}
 		}
 	}
 
 	/*
 	 * Returns a threshold checker that is useful for single threaded searches
 	 */
-	public static HitsThresholdChecker create(final int totalHitsThreshold) {
+	public static HitsThresholdChecker create(final long totalHitsThreshold) {
 		return new LocalHitsThresholdChecker(totalHitsThreshold);
 	}
 
 	/*
 	 * Returns a threshold checker that is based on a shared counter
 	 */
-	public static HitsThresholdChecker createShared(final int totalHitsThreshold) {
+	public static HitsThresholdChecker createShared(final long totalHitsThreshold) {
 		return new GlobalHitsThresholdChecker(totalHitsThreshold);
 	}
 
@@ -113,7 +135,7 @@ abstract class HitsThresholdChecker {
 
 	public abstract ScoreMode scoreMode();
 
-	public abstract int getHitsThreshold();
+	public abstract long getHitsThreshold(boolean supports64Bit);
 
-	public abstract boolean isThresholdReached();
+	public abstract boolean isThresholdReached(boolean supports64Bit);
 }

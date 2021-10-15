@@ -12,11 +12,9 @@ import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
@@ -71,17 +69,17 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	 * Get the pagination info
 	 */
 	private PaginationInfo getPaginationInfo(LocalQueryParams queryParams) {
-		if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), true);
+		if (queryParams.limitInt() <= MAX_SINGLE_SEARCH_LIMIT) {
+			return new PaginationInfo(queryParams.limitInt(), queryParams.offsetInt(), queryParams.pageLimits(), true);
 		} else {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), false);
+			return new PaginationInfo(queryParams.limitInt(), queryParams.offsetInt(), queryParams.pageLimits(), false);
 		}
 	}
 
 	/**
 	 * Search effectively the raw results of the first page
 	 */
-	private Mono<PageData> searchFirstPage(Iterable<IndexSearcher> indexSearchers,
+	private Mono<PageData> searchFirstPage(List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			PaginationInfo paginationInfo) {
 		var limit = paginationInfo.totalLimit();
@@ -107,7 +105,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 
 			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(scoreDocs),
 							indexSearchers.shards(), keyFieldName, true)
-					.take(queryParams.limit(), true);
+					.take(queryParams.limitInt(), true);
 
 			CurrentPageInfo nextPageInfo = firstPageData.nextPageInfo();
 
@@ -160,7 +158,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	 *                       skip the first n results in the first page
 	 */
 	private Mono<PageData> searchPage(LocalQueryParams queryParams,
-			Iterable<IndexSearcher> indexSearchers,
+			List<IndexSearcher> indexSearchers,
 			boolean allowPagination,
 			PageLimits pageLimits,
 			int resultsOffset,
@@ -172,11 +170,12 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						throw new IndexOutOfBoundsException(resultsOffset);
 					}
 					if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
+						var query = queryParams.query();
 						@Nullable var sort = getSort(queryParams);
 						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
 						var after = (FieldDoc) s.last();
-						var totalHitsThreshold = queryParams.getTotalHitsThreshold();
-						return new ScoringShardsCollectorManager(sort, pageLimit, after, totalHitsThreshold,
+						var totalHitsThreshold = queryParams.getTotalHitsThresholdInt();
+						return new ScoringShardsCollectorManager(query, sort, pageLimit, after, totalHitsThreshold,
 								resultsOffset);
 					} else {
 						return null;
@@ -199,7 +198,9 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						.collectList()
 						.flatMap(collectors -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
+							sharedManager.setIndexSearchers(indexSearchers);
 							var pageTopDocs = sharedManager.reduce(collectors);
+
 							var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 							long nextRemainingLimit;
 							if (allowPagination) {

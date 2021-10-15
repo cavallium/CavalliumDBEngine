@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene;
 import static it.cavallium.dbengine.lucene.LLDocElementScoreComparator.SCORE_DOC_SCORE_ELEM_COMPARATOR;
 import static org.apache.lucene.search.TotalHits.Relation.*;
 
+import it.cavallium.dbengine.lucene.collector.FullFieldDocs;
 import java.util.Comparator;
 import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.Sort;
@@ -29,7 +30,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 	static <T extends LLDoc> FullDocs<T> merge(@Nullable Sort sort, FullDocs<T>[] fullDocs) {
 		ResourceIterable<T> mergedIterable = mergeResourceIterable(sort, fullDocs);
 		TotalHits mergedTotalHits = mergeTotalHits(fullDocs);
-		return new FullDocs<>() {
+		FullDocs<T> docs = new FullDocs<>() {
 			@Override
 			public Flux<T> iterate() {
 				return mergedIterable.iterate();
@@ -45,6 +46,11 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 				return mergedTotalHits;
 			}
 		};
+		if (sort != null) {
+			return new FullFieldDocs<>(docs, sort.getSort());
+		} else {
+			return docs;
+		}
 	}
 
 	static <T extends LLDoc> int tieBreakCompare(
@@ -119,6 +125,12 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 					if (shard instanceof LLScoreDoc scoreDoc) {
 						//noinspection unchecked
 						return (T) new LLScoreDoc(scoreDoc.doc(), scoreDoc.score(), shardIndex);
+					} else if (shard instanceof LLFieldDoc fieldDoc) {
+						//noinspection unchecked
+						return (T) new LLFieldDoc(fieldDoc.doc(), fieldDoc.score(), shardIndex, fieldDoc.fields());
+					} else if (shard instanceof LLSlotDoc slotDoc) {
+						//noinspection unchecked
+						return (T) new LLSlotDoc(slotDoc.doc(), slotDoc.score(), shardIndex, slotDoc.slot());
 					} else {
 						throw new UnsupportedOperationException("Unsupported type " + shard.getClass());
 					}

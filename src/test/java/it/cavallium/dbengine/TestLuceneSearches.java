@@ -7,6 +7,7 @@ import static it.cavallium.dbengine.SyncUtils.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.LuceneIndex;
@@ -30,8 +31,10 @@ import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.CountLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.OfficialSearcher;
 import it.cavallium.dbengine.lucene.searcher.ScoredPagedMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.PagedLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.SortedScoredFullMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedScoredFullMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredStreamingMultiSearcher;
@@ -76,6 +79,9 @@ public class TestLuceneSearches {
 
 	private static final Map<String, String> ELEMENTS;
 	static {
+		// Start the pool by creating and deleting a direct buffer
+		PooledByteBufAllocator.DEFAULT.directBuffer().release();
+
 		var modifiableElements = new HashMap<String, String>();
 		modifiableElements.put("test-key-1", "0123456789");
 		modifiableElements.put("test-key-2", "test 0123456789 test word");
@@ -148,7 +154,9 @@ public class TestLuceneSearches {
 						sink.next(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
 					} else {
 						sink.next(new ScoredPagedMultiSearcher());
-						if (!info.sorted() || info.sortedByScore()) {
+						if (info.sorted() && !info.sortedByScore()) {
+							sink.next(new SortedScoredFullMultiSearcher());
+						} else {
 							sink.next(new UnsortedScoredFullMultiSearcher());
 						}
 						if (!info.sorted()) {
@@ -183,15 +191,12 @@ public class TestLuceneSearches {
 				.toStream();
 	}
 
-	private static void runSearchers(ExpectedQueryType expectedQueryType, FailableConsumer<LocalSearcher, Throwable> consumer) {
+	private static void runSearchers(ExpectedQueryType expectedQueryType, FailableConsumer<LocalSearcher, Throwable> consumer)
+			throws Throwable {
 		var searchers = run(getSearchers(expectedQueryType).collectList());
 		for (LocalSearcher searcher : searchers) {
 			log.info("Using searcher \"{}\"", searcher.getName());
-			try {
-				consumer.accept(searcher);
-			} catch (Throwable e) {
-				Assertions.fail(e);
-			}
+			consumer.accept(searcher);
 		}
 	}
 
@@ -248,7 +253,7 @@ public class TestLuceneSearches {
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) {
+	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
 		var sorted = multiSort.isSorted();
 		var sortedByScore = multiSort.getQuerySort().getBasicType$() == BasicType.ScoreSort;
 		runSearchers(new ExpectedQueryType(shards, sorted, sortedByScore, true, false), searcher -> {
@@ -271,7 +276,7 @@ public class TestLuceneSearches {
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) {
+	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
 		var sorted = multiSort.isSorted();
 		var sortedByScore = multiSort.getQuerySort().getBasicType$() == BasicType.ScoreSort;
 		runSearchers(new ExpectedQueryType(shards, sorted, sortedByScore, true, false), (LocalSearcher searcher) -> {
@@ -287,12 +292,21 @@ public class TestLuceneSearches {
 				assertHitsIfPossible(ELEMENTS.size(), hits);
 
 				var keys = getResults(results);
-				assertResults(ELEMENTS.keySet().stream().toList(), keys, false, sortedByScore);
+
+				var officialSearcher = new OfficialSearcher();
+				luceneIndex = getLuceneIndex(shards, officialSearcher);
+				var officialQuery = queryBuilder.limit(ELEMENTS.size() * 2L).build();
+				try (var officialResults = run(luceneIndex.search(officialQuery)).receive()) {
+					var officialKeys = getResults(officialResults).stream().toList();
+
+					assertResults(officialKeys, keys, sorted, sortedByScore);
+				}
+
 			}
 		});
 	}
 
-	private void assertResults(List<String> expectedKeys, List<Scored> resultKeys, boolean sorted, boolean sortedByScore) {
+	private void assertResults(List<Scored> expectedKeys, List<Scored> resultKeys, boolean sorted, boolean sortedByScore) {
 
 		if (sortedByScore) {
 			float lastScore = Float.NEGATIVE_INFINITY;
@@ -304,12 +318,14 @@ public class TestLuceneSearches {
 			}
 		}
 
-		if (!sorted) {
-			var results = resultKeys.stream().map(Scored::key).collect(Collectors.toSet());
-			Assertions.assertEquals(new HashSet<>(expectedKeys), results);
-		} else {
+		if (sortedByScore) {
+			Assertions.assertEquals(expectedKeys, resultKeys);
+		} else if (sorted) {
 			var results = resultKeys.stream().map(Scored::key).toList();
-			Assertions.assertEquals(expectedKeys, results);
+			Assertions.assertEquals(expectedKeys.stream().map(Scored::key).toList(), results);
+		} else {
+			var results = resultKeys.stream().map(Scored::key).collect(Collectors.toSet());
+			Assertions.assertEquals(new HashSet<>(expectedKeys.stream().map(Scored::key).toList()), results);
 		}
 	}
 

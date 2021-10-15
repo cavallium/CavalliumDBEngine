@@ -8,8 +8,6 @@ import java.util.List;
 import java.util.function.Function;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.FieldComparator;
-import org.apache.lucene.search.FieldDoc;
-import org.apache.lucene.search.FieldValueHitQueue.Entry;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Query;
@@ -23,7 +21,7 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 	protected final FieldComparator<?>[] comparators;
 	protected final int[] reverseMul;
 
-	public LLSlotDocCodec(LLTempLMDBEnv env, SortField[] fields) {
+	public LLSlotDocCodec(LLTempLMDBEnv env, int numHits, SortField[] fields) {
 		// When we get here, fields.length is guaranteed to be > 0, therefore no
 		// need to check it again.
 
@@ -37,7 +35,7 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 		for (int i = 0; i < numComparators; ++i) {
 			SortField field = fields[i];
 			reverseMul[i] = field.getReverse() ? -1 : 1;
-			comparators[i] = LMDBComparator.getComparator(env, field, i);
+			comparators[i] = LMDBComparator.getComparator(env, field, numHits, i);
 		}
 	}
 
@@ -48,7 +46,7 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
 		setSlot(buf, data.slot());
-		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
+		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
 		return buf.asReadOnly();
 	}
 
@@ -59,10 +57,6 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 
 	@Override
 	public int compare(LLSlotDoc hitA, LLSlotDoc hitB) {
-
-		assert hitA != hitB;
-		assert hitA.slot() != hitB.slot();
-
 		int numComparators = comparators.length;
 		for (int i = 0; i < numComparators; ++i) {
 			final int c = reverseMul[i] * comparators[i].compare(hitA.slot(), hitB.slot());

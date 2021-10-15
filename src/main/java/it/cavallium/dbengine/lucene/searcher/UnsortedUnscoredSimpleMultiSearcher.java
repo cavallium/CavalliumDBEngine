@@ -42,11 +42,11 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 						return Mono
 								.fromRunnable(() -> {
 									LLUtils.ensureBlocking();
-									if (queryParams2.isSorted() && queryParams2.limit() > 0) {
+									if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
 										throw new UnsupportedOperationException("Sorted queries are not supported"
 												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 									}
-									if (queryParams2.needsScores() && queryParams2.limit() > 0) {
+									if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
 										throw new UnsupportedOperationException("Scored queries are not supported"
 												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 									}
@@ -73,8 +73,8 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 									var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
 									Flux<LLKeyScore> mergedFluxes = Flux
 											.merge(resultsFluxes)
-											.skip(queryParams2.offset())
-											.take(queryParams2.limit(), true);
+											.skip(queryParams2.offsetLong())
+											.take(queryParams2.limitLong(), true);
 
 									return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
 										for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
@@ -92,8 +92,8 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
 		return new LocalQueryParams(queryParams.query(),
-				0,
-				LuceneUtils.safeLongToInt((long) queryParams.offset() + (long) queryParams.limit()),
+				0L,
+				queryParams.offsetLong() + queryParams.limitLong(),
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),

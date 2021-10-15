@@ -5,8 +5,12 @@ import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.util.Collection;
+import java.util.List;
+import java.util.Objects;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.FieldDoc;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TopDocs;
@@ -17,6 +21,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class ScoringShardsCollectorManager implements CollectorManager<TopFieldCollector, TopDocs> {
 
+	private final Query query;
 	@Nullable
 	private final Sort sort;
 	private final int numHits;
@@ -25,37 +30,43 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 	private final @Nullable Integer startN;
 	private final @Nullable Integer topN;
 	private final CollectorManager<TopFieldCollector, TopFieldDocs> sharedCollectorManager;
+	private List<IndexSearcher> indexSearchers;
 
-	public ScoringShardsCollectorManager(@Nullable final Sort sort,
+	public ScoringShardsCollectorManager(Query query,
+			@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold,
 			int startN,
 			int topN) {
-		this(sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) topN);
+		this(query, sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) topN);
 	}
 
-	public ScoringShardsCollectorManager(@Nullable final Sort sort,
+	public ScoringShardsCollectorManager(Query query,
+			@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold,
 			int startN) {
-		this(sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) 2147483630);
+		this(query, sort, numHits, after, totalHitsThreshold, (Integer) startN, (Integer) 2147483630);
 	}
 
-	public ScoringShardsCollectorManager(@Nullable final Sort sort,
+	public ScoringShardsCollectorManager(Query query,
+			@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold) {
-		this(sort, numHits, after, totalHitsThreshold, null, null);
+		this(query, sort, numHits, after, totalHitsThreshold, null, null);
 	}
 
-	private ScoringShardsCollectorManager(@Nullable final Sort sort,
+	private ScoringShardsCollectorManager(Query query,
+			@Nullable final Sort sort,
 			final int numHits,
 			final FieldDoc after,
 			final int totalHitsThreshold,
 			@Nullable Integer startN,
 			@Nullable Integer topN) {
+		this.query = query;
 		this.sort = sort;
 		this.numHits = numHits;
 		this.after = after;
@@ -76,6 +87,10 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 		return sharedCollectorManager.newCollector();
 	}
 
+	public void setIndexSearchers(List<IndexSearcher> indexSearcher) {
+		this.indexSearchers = indexSearcher;
+	}
+
 	@Override
 	public TopDocs reduce(Collection<TopFieldCollector> collectors) throws IOException {
 		if (Schedulers.isInNonBlockingThread()) {
@@ -87,6 +102,13 @@ public class ScoringShardsCollectorManager implements CollectorManager<TopFieldC
 			var i = 0;
 			for (TopFieldCollector collector : collectors) {
 				topDocs[i] = collector.topDocs();
+
+				// Populate scores of topfieldcollector. By default it doesn't popupate the scores
+				if (topDocs[i].scoreDocs.length > 0 && Float.isNaN(topDocs[i].scoreDocs[0].score) && sort.needsScores()) {
+					Objects.requireNonNull(indexSearchers, "You must call setIndexSearchers before calling reduce!");
+					TopFieldCollector.populateScores(topDocs[i].scoreDocs, indexSearchers.get(i), query);
+				}
+
 				for (ScoreDoc scoreDoc : topDocs[i].scoreDocs) {
 					scoreDoc.shardIndex = i;
 				}

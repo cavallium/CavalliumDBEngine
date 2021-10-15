@@ -13,7 +13,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 	private static final MultiSearcher count
 			= new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher());
 
-	private static final MultiSearcher scoredSimple = new ScoredPagedMultiSearcher();
+	private static final MultiSearcher scoredPaged = new ScoredPagedMultiSearcher();
 
 	private static final MultiSearcher unsortedUnscoredPaged
 			= new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher());
@@ -23,8 +23,11 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 
 	private final UnsortedScoredFullMultiSearcher unsortedScoredFull;
 
+	private final SortedScoredFullMultiSearcher sortedScoredFull;
+
 	public AdaptiveMultiSearcher() throws IOException {
 		unsortedScoredFull = new UnsortedScoredFullMultiSearcher();
+		sortedScoredFull = new SortedScoredFullMultiSearcher();
 	}
 
 	@Override
@@ -48,17 +51,20 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 			String keyFieldName,
 			LLSearchTransformer transformer) {
 		// offset + limit
-		long realLimit = ((long) queryParams.offset() + (long) queryParams.limit());
+		long realLimit = queryParams.offsetLong() + queryParams.limitLong();
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
-			if (queryParams.limit() == 0) {
+			if (queryParams.limitLong() == 0) {
 				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else if (queryParams.isSorted() || queryParams.needsScores()) {
-				if ((queryParams.isSorted() && !queryParams.isSortedByScore())
-						|| realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
-					return scoredSimple.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+				if (realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
+					return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 				} else {
-					return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+					if ((queryParams.isSorted() && !queryParams.isSortedByScore())) {
+						return sortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+					} else {
+						return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+					}
 				}
 			} else if (realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
 				// Run single-page searches using the paged multi searcher
@@ -72,6 +78,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 
 	@Override
 	public void close() throws IOException {
+		sortedScoredFull.close();
 		unsortedScoredFull.close();
 	}
 

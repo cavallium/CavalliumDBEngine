@@ -43,7 +43,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
-		if (queryParams.limit() == 0) {
+		if (queryParams.limitLong() == 0) {
 			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
 		} else {
 			return localSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);

@@ -15,10 +15,12 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
+import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
+import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.TotalHits.Relation;
 import reactor.core.publisher.Flux;
@@ -71,10 +73,10 @@ public class PagedLocalSearcher implements LocalSearcher {
 	 * Get the pagination info
 	 */
 	private PaginationInfo getPaginationInfo(LocalQueryParams queryParams) {
-		if (queryParams.limit() <= MAX_SINGLE_SEARCH_LIMIT) {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), true);
+		if (queryParams.limitInt() <= MAX_SINGLE_SEARCH_LIMIT) {
+			return new PaginationInfo(queryParams.limitInt(), queryParams.offsetInt(), queryParams.pageLimits(), true);
 		} else {
-			return new PaginationInfo(queryParams.limit(), queryParams.offset(), queryParams.pageLimits(), false);
+			return new PaginationInfo(queryParams.limitInt(), queryParams.offsetInt(), queryParams.pageLimits(), false);
 		}
 	}
 
@@ -109,7 +111,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 
 			Flux<LLKeyScore> firstPageHitsFlux = LuceneUtils.convertHits(Flux.fromArray(scoreDocs),
 							indexSearchers, keyFieldName, true)
-					.take(queryParams.limit(), true);
+					.take(queryParams.limitInt(), true);
 
 			CurrentPageInfo nextPageInfo = firstPageData.nextPageInfo();
 
@@ -183,7 +185,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 			TopDocs pageTopDocs;
 			try {
 				TopDocsCollector<ScoreDoc> collector = TopDocsCollectorUtils.getTopDocsCollector(queryParams.sort(),
-						currentPageLimit, s.last(), queryParams.getTotalHitsThreshold(),
+						currentPageLimit, s.last(), queryParams.getTotalHitsThresholdInt(),
 						allowPagination, queryParams.needsScores());
 				assert queryParams.complete() == collector.scoreMode().isExhaustive();
 				queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
@@ -195,6 +197,10 @@ public class PagedLocalSearcher implements LocalSearcher {
 					pageTopDocs = collector.topDocs(resultsOffset, currentPageLimit);
 				} else {
 					pageTopDocs = collector.topDocs();
+				}
+				// Populate scores of topfieldcollector. By default it doesn't popupate the scores
+				if (queryParams.needsScores() && ((Collector) collector) instanceof TopFieldCollector) {
+					TopFieldCollector.populateScores(pageTopDocs.scoreDocs, indexSearchers.get(0), queryParams.query());
 				}
 			} catch (IOException e) {
 				sink.error(e);

@@ -9,10 +9,12 @@ import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.lmdbjava.Cursor;
 import org.lmdbjava.CursorIterable;
 import org.lmdbjava.CursorIterable.KeyVal;
@@ -27,7 +29,7 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
 import reactor.util.function.Tuples;
 
-public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
+public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<ReversableResourceIterable<T>>, ReversableResourceIterable<T> {
 
 	private static final boolean FORCE_SYNC = false;
 	private static final boolean FORCE_THREAD_LOCAL = true;
@@ -40,8 +42,6 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 	private final LMDBSortedCodec<T> codec;
 	private final Env<ByteBuf> env;
 	private final Dbi<ByteBuf> lmdb;
-	private final Scheduler scheduler = Schedulers.newBoundedElastic(1,
-			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, LMDBThread::new, Integer.MAX_VALUE);
 
 	private boolean writing;
 	private boolean iterating;
@@ -186,6 +186,8 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 			}
 		} finally {
 			endMode();
+			buf.release();
+			uid.release();
 		}
 
 		assert topSingleValid(element);
@@ -309,6 +311,39 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 		}
 	}
 
+	public Flux<T> reverseIterate() {
+		return Flux
+				.generate(() -> {
+					ensureItThread();
+					switchToMode(false, true);
+					iterating = true;
+					return true;
+				}, (isLastKey, sink) -> {
+					try {
+						ensureItThread();
+						boolean found;
+						if (isLastKey) {
+							found = cur.last();
+						} else {
+							found = cur.prev();
+						}
+						if (found) {
+							sink.next(codec.deserialize(cur.key()));
+						} else {
+							sink.complete();
+						}
+						return false;
+					} catch (Throwable ex) {
+						sink.error(ex);
+						return false;
+					}
+				}, t -> {
+					ensureItThread();
+					iterating = false;
+					endMode();
+				});
+	}
+
 	@Override
 	public Flux<T> iterate() {
 		return Flux
@@ -379,8 +414,54 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 					cit.close();
 					iterating = false;
 					endMode();
-				})
-				.subscribeOn(scheduler, false);
+				});
+	}
+
+	public Flux<T> reverseIterate(long skips) {
+		return Flux
+				.generate(() -> {
+					ensureItThread();
+					switchToMode(false, true);
+					iterating = true;
+					return true;
+				}, (isLastKey, sink) -> {
+					try {
+						ensureItThread();
+						boolean found;
+						if (isLastKey) {
+							found = cur.last();
+						} else {
+							found = cur.prev();
+						}
+						if (found) {
+
+							// Skip elements
+							if (isLastKey) {
+								long remainingSkips = skips;
+								while (remainingSkips > 0) {
+									if (cur.prev()) {
+										remainingSkips--;
+									} else {
+										sink.complete();
+										return false;
+									}
+								}
+							}
+
+							sink.next(codec.deserialize(cur.key()));
+						} else {
+							sink.complete();
+						}
+						return false;
+					} catch (Throwable ex) {
+						sink.error(ex);
+						return false;
+					}
+				}, t -> {
+					ensureItThread();
+					iterating = false;
+					endMode();
+				});
 	}
 
 	@Override
@@ -406,11 +487,6 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 				onClose.run();
 			}
 		}
-		scheduler.dispose();
-	}
-
-	public Scheduler getScheduler() {
-		return scheduler;
 	}
 
 	@Override
@@ -418,5 +494,25 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T> {
 		return new StringJoiner(", ", LMDBPriorityQueue.class.getSimpleName() + "[", "]")
 				.add("size=" + size)
 				.toString();
+	}
+
+	@Override
+	public ReversableResourceIterable<T> reverse() {
+		return new ReversableResourceIterable<>() {
+			@Override
+			public Flux<T> iterate() {
+				return reverseIterate();
+			}
+
+			@Override
+			public Flux<T> iterate(long skips) {
+				return reverseIterate(skips);
+			}
+
+			@Override
+			public ReversableResourceIterable<T> reverse() {
+				return LMDBPriorityQueue.this;
+			}
+		};
 	}
 }

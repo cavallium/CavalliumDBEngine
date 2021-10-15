@@ -342,8 +342,8 @@ public class LuceneUtils {
 
 	public static LocalQueryParams toLocalQueryParams(QueryParams queryParams) {
 		return new LocalQueryParams(QueryParser.toQuery(queryParams.query()),
-				safeLongToInt(queryParams.offset()),
-				safeLongToInt(queryParams.limit()),
+				queryParams.offset(),
+				queryParams.limit(),
 				DEFAULT_PAGE_LIMITS,
 				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
@@ -457,6 +457,10 @@ public class LuceneUtils {
 		return complete ? Integer.MAX_VALUE : 1;
 	}
 
+	public static long totalHitsThresholdLong(boolean complete) {
+		return complete ? Long.MAX_VALUE : 1;
+	}
+
 	public static TotalHitsCount convertTotalHitsCount(TotalHits totalHits) {
 		return switch (totalHits.relation) {
 			case EQUAL_TO -> TotalHitsCount.of(totalHits.value, true);
@@ -498,8 +502,8 @@ public class LuceneUtils {
 					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
 					if (mltDocumentFields.isEmpty()) {
 						return new LocalQueryParams(new MatchNoDocsQuery(),
-								localQueryParams.offset(),
-								localQueryParams.limit(),
+								localQueryParams.offsetLong(),
+								localQueryParams.limitLong(),
 								DEFAULT_PAGE_LIMITS,
 								localQueryParams.minCompetitiveScore(),
 								localQueryParams.sort(),
@@ -543,8 +547,8 @@ public class LuceneUtils {
 					}
 
 					return new LocalQueryParams(luceneQuery,
-							localQueryParams.offset(),
-							localQueryParams.limit(),
+							localQueryParams.offsetLong(),
+							localQueryParams.limitLong(),
 							DEFAULT_PAGE_LIMITS,
 							localQueryParams.minCompetitiveScore(),
 							localQueryParams.sort(),

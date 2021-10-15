@@ -92,7 +92,7 @@ public class UnscoredCollector extends TopDocsCollector<ScoreDoc> implements Lea
 	private void populateResults(ScoreDoc[] results, int start, int howMany) {
 		int i = 0;
 		for (int docId : docIds.subList(start, start + howMany)) {
-			results[i] = new ScoreDoc(docId, 1.0f);
+			results[i] = new ScoreDoc(docId, Float.NaN);
 			i++;
 		}
 	}

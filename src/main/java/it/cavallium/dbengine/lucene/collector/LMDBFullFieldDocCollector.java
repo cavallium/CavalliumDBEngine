@@ -61,7 +61,8 @@ import reactor.core.publisher.Flux;
  * TopFieldCollector.
  *
  */
-public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlotDoc, LLFieldDoc> {
+public abstract class LMDBFullFieldDocCollector
+		extends FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
 
 	// TODO: one optimization we could do is to pre-fill
 	// the queue with sentinel value that guaranteed to
@@ -109,7 +110,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 			}
 			if (scoreMode.isExhaustive() == false
 					&& totalHitsRelation == TotalHits.Relation.EQUAL_TO
-					&& hitsThresholdChecker.isThresholdReached()) {
+					&& hitsThresholdChecker.isThresholdReached(false)) {
 				// for the first time hitsThreshold is reached, notify comparator about this
 				comparator.setHitsThresholdReached();
 				totalHitsRelation = TotalHits.Relation.GREATER_THAN_OR_EQUAL_TO;
@@ -122,7 +123,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 				// this document is largest than anything else in the queue, and
 				// therefore not competitive.
 				if (searchSortPartOfIndexSort) {
-					if (hitsThresholdChecker.isThresholdReached()) {
+					if (hitsThresholdChecker.isThresholdReached(false)) {
 						totalHitsRelation = Relation.GREATER_THAN_OR_EQUAL_TO;
 						throw new CollectionTerminatedException();
 					} else {
@@ -209,9 +210,9 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 
 		public SimpleFieldCollector(
 				Sort sort,
-				PriorityQueue<LLSlotDoc> queue,
+				LMDBPriorityQueue<LLSlotDoc> queue,
 				FieldValueHitQueue fieldValueHitQueue,
-				int numHits,
+				long numHits,
 				HitsThresholdChecker hitsThresholdChecker,
 				MaxScoreAccumulator minScoreAcc) {
 			super(queue, fieldValueHitQueue, numHits, hitsThresholdChecker, sort.needsScores(), minScoreAcc);
@@ -257,9 +258,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 		}
 	}
 
-	private static final LLFieldDoc[] EMPTY_SCOREDOCS = new LLFieldDoc[0];
-
-	final int numHits;
+	final long numHits;
 	final HitsThresholdChecker hitsThresholdChecker;
 	final FieldComparator<?> firstComparator;
 	final boolean canSetMinScore;
@@ -283,9 +282,9 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 	// visibility, then anyone will be able to extend the class, which is not what
 	// we want.
 	private LMDBFullFieldDocCollector(
-			PriorityQueue<LLSlotDoc> pq,
+			LMDBPriorityQueue<LLSlotDoc> pq,
 			FieldValueHitQueue fieldValueHitQueue,
-			int numHits,
+			long numHits,
 			HitsThresholdChecker hitsThresholdChecker,
 			boolean needsScores,
 			MaxScoreAccumulator minScoreAcc) {
@@ -299,12 +298,12 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 
 		if (firstComparator.getClass().equals(FieldComparator.RelevanceComparator.class)
 				&& reverseMul == 1 // if the natural sort is preserved (sort by descending relevance)
-				&& hitsThresholdChecker.getHitsThreshold() != Integer.MAX_VALUE) {
+				&& hitsThresholdChecker.getHitsThreshold(false) != Integer.MAX_VALUE) {
 			scoreMode = ScoreMode.TOP_SCORES;
 			canSetMinScore = true;
 		} else {
 			canSetMinScore = false;
-			if (hitsThresholdChecker.getHitsThreshold() != Integer.MAX_VALUE) {
+			if (hitsThresholdChecker.getHitsThreshold(false) != Integer.MAX_VALUE) {
 				scoreMode = needsScores ? ScoreMode.TOP_DOCS_WITH_SCORES : ScoreMode.TOP_DOCS;
 			} else {
 				scoreMode = needsScores ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES;
@@ -320,7 +319,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 
 	protected void updateGlobalMinCompetitiveScore(Scorable scorer) throws IOException {
 		assert minScoreAcc != null;
-		if (canSetMinScore && hitsThresholdChecker.isThresholdReached()) {
+		if (canSetMinScore && hitsThresholdChecker.isThresholdReached(false)) {
 			// we can start checking the global maximum score even
 			// if the local queue is not full because the threshold
 			// is reached.
@@ -334,7 +333,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 	}
 
 	protected void updateMinCompetitiveScore(Scorable scorer) throws IOException {
-		if (canSetMinScore && queueFull && hitsThresholdChecker.isThresholdReached()) {
+		if (canSetMinScore && queueFull && hitsThresholdChecker.isThresholdReached(false)) {
 			assert pq.top() != null;
 			float minScore = (float) firstComparator.value(pq.top().slot());
 			if (minScore > minCompetitiveScore) {
@@ -401,7 +400,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 			throw new IllegalArgumentException("hitsThresholdChecker should not be null");
 		}
 
-		var fieldValueHitQueue = new LLSlotDocCodec(env, sort.getSort());
+		var fieldValueHitQueue = new LLSlotDocCodec(env, numHits, sort.getSort());
 		var queue = new LMDBPriorityQueue<>(env, fieldValueHitQueue);
 
 		// inform a comparator that sort is based on this single field
@@ -420,7 +419,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LLSlot
 	 * primary sort is by relevancy.
 	 */
 	public static CollectorManager<LMDBFullFieldDocCollector, FullFieldDocs<LLFieldDoc>> createSharedManager(
-			LLTempLMDBEnv env, Sort sort, int numHits, FieldDoc after, int totalHitsThreshold) {
+			LLTempLMDBEnv env, Sort sort, int numHits, long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
 			private final HitsThresholdChecker hitsThresholdChecker =

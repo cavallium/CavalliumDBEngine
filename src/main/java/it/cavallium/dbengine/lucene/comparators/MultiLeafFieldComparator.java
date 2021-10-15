@@ -14,9 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.lucene.search;
+package it.cavallium.dbengine.lucene.comparators;
 
 import java.io.IOException;
+import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.LeafFieldComparator;
+import org.apache.lucene.search.Scorable;
 
 public final class MultiLeafFieldComparator implements LeafFieldComparator {
 

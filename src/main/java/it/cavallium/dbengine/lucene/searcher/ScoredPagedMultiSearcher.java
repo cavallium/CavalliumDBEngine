@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
@@ -188,9 +189,10 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 
 							var collector = sharedManager.newCollector();
 							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
-								assert scoreMode == collector.scoreMode();
-							});
+							assert pageLimits.getPageLimit(s.pageIndex()) < Integer.MAX_VALUE || queryParams
+									.getScoreModeOptional()
+									.map(scoreMode -> scoreMode == collector.scoreMode())
+									.orElse(true);
 
 							shard.search(queryParams.query(), collector);
 							return collector;

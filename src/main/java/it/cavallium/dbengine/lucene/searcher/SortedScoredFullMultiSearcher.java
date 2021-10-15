@@ -73,9 +73,10 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher, Closeable {
 
 							var collector = sharedManager.newCollector();
 							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
-								assert scoreMode == collector.scoreMode();
-							});
+							assert queryParams
+									.getScoreModeOptional()
+									.map(scoreMode -> scoreMode == collector.scoreMode())
+									.orElse(true);
 
 							shard.search(queryParams.query(), collector);
 							return collector;

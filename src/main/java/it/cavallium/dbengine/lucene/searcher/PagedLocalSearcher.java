@@ -18,6 +18,7 @@ import java.util.Objects;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
@@ -188,9 +189,10 @@ public class PagedLocalSearcher implements LocalSearcher {
 						currentPageLimit, s.last(), queryParams.getTotalHitsThresholdInt(),
 						allowPagination, queryParams.needsScores());
 				assert queryParams.complete() == collector.scoreMode().isExhaustive();
-				queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
-					assert scoreMode == collector.scoreMode();
-				});
+				assert currentPageLimit < Integer.MAX_VALUE || queryParams
+						.getScoreModeOptional()
+						.map(scoreMode -> scoreMode == collector.scoreMode())
+						.orElse(true);
 
 				indexSearchers.get(0).search(queryParams.query(), collector);
 				if (resultsOffset > 0) {

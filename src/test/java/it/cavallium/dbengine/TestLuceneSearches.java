@@ -18,10 +18,17 @@ import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.ClientQueryParamsBuilder;
 import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.BooleanQuery;
+import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
+import it.cavallium.dbengine.client.query.current.data.BoostQuery;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.client.query.current.data.MatchNoDocsQuery;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
+import it.cavallium.dbengine.client.query.current.data.OccurMust;
+import it.cavallium.dbengine.client.query.current.data.OccurShould;
 import it.cavallium.dbengine.client.query.current.data.ScoreSort;
+import it.cavallium.dbengine.client.query.current.data.Term;
+import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
@@ -321,18 +328,27 @@ public class TestLuceneSearches {
 		testSearch(queryBuilder, expectedQueryType);
 	}
 
+	@ParameterizedTest
+	@MethodSource("provideQueryArgumentsScoreModeAndSort")
+	public void testSearchAdvancedText(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
+		var queryBuilder = ClientQueryParams
+				.<SearchResultKey<String>>builder()
+				.query(new BooleanQuery(List.of(
+						new BooleanQueryPart(new BoostQuery(new TermQuery(new Term("text", "hello")), 3), new OccurShould()),
+						new BooleanQueryPart(new TermQuery(new Term("text", "world")), new OccurShould()),
+						new BooleanQueryPart(new BoostQuery(new TermQuery(new Term("text", "hello")), 2), new OccurShould()),
+						new BooleanQueryPart(new BoostQuery(new TermQuery(new Term("text", "hello")), 100), new OccurShould()),
+						new BooleanQueryPart(new TermQuery(new Term("text", "hello")), new OccurMust())
+				), 1))
+				.snapshot(null)
+				.complete(true)
+				.sort(multiSort);
+
+		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
+		testSearch(queryBuilder, expectedQueryType);
+	}
+
 	private void assertResults(List<Scored> expectedKeys, List<Scored> resultKeys, boolean sorted, boolean sortedByScore) {
-
-		if (sortedByScore) {
-			float lastScore = Float.NEGATIVE_INFINITY;
-			for (Scored resultKey : resultKeys) {
-				if (!Float.isNaN(resultKey.score())) {
-					Assertions.assertTrue(resultKey.score() >= lastScore);
-					lastScore = resultKey.score();
-				}
-			}
-		}
-
 		if (sortedByScore) {
 			Assertions.assertEquals(expectedKeys, resultKeys);
 		} else if (sorted) {

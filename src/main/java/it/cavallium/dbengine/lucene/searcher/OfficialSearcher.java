@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.List;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
@@ -82,9 +83,10 @@ public class OfficialSearcher implements MultiSearcher, Closeable {
 
 							var collector = sharedManager.newCollector();
 							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							queryParams.getScoreModeOptional().ifPresent(scoreMode -> {
-								assert scoreMode == collector.scoreMode();
-							});
+							assert queryParams
+									.getScoreModeOptional()
+									.map(scoreMode -> scoreMode == collector.scoreMode())
+									.orElse(true);
 
 							shard.search(queryParams.query(), collector);
 							return collector;

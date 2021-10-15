@@ -251,59 +251,69 @@ public class TestLuceneSearches {
 		}
 	}
 
-	@ParameterizedTest
-	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
-		var sorted = multiSort.isSorted();
-		var sortedByScore = multiSort.getQuerySort().getBasicType$() == BasicType.ScoreSort;
-		runSearchers(new ExpectedQueryType(shards, sorted, sortedByScore, true, false), searcher -> {
-			var luceneIndex = getLuceneIndex(shards, searcher);
-			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
-			queryBuilder.query(new MatchNoDocsQuery());
-			queryBuilder.snapshot(null);
-			queryBuilder.complete(true);
-			queryBuilder.sort(multiSort);
-			var query = queryBuilder.build();
+	public void testSearch(ClientQueryParamsBuilder<SearchResultKey<String>> queryParamsBuilder,
+			ExpectedQueryType expectedQueryType) throws Throwable {
+
+		runSearchers(expectedQueryType, searcher -> {
+			var luceneIndex = getLuceneIndex(expectedQueryType.shard(), searcher);
+			var query = queryParamsBuilder.build();
 			try (var results = run(luceneIndex.search(query)).receive()) {
 				var hits = results.totalHitsCount();
-				assertExactHits(searcher, query, 0, hits);
-
 				var keys = getResults(results);
-				assertEquals(List.of(), keys);
+				if (hits.exact()) {
+					Assertions.assertEquals(keys.size(), hits.value());
+				} else {
+					Assertions.assertTrue(keys.size() >= hits.value());
+				}
+
+				var officialSearcher = new OfficialSearcher();
+				luceneIndex = getLuceneIndex(expectedQueryType.shard(), officialSearcher);
+				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
+				try (var officialResults = run(luceneIndex.search(officialQuery)).receive()) {
+					var officialHits = officialResults.totalHitsCount();
+					var officialKeys = getResults(officialResults).stream().toList();
+					if (officialHits.exact()) {
+						Assertions.assertEquals(officialKeys.size(), officialHits.value());
+					} else {
+						Assertions.assertTrue(officialKeys.size() >= officialHits.value());
+					}
+
+					if (hits.exact() && officialHits.exact()) {
+						assertExactHits(officialHits.value(), hits);
+					}
+
+					Assertions.assertEquals(officialKeys.size(), keys.size());
+					
+					assertResults(officialKeys, keys, expectedQueryType.sorted(), expectedQueryType.sortedByScore());
+				}
 			}
 		});
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
+	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
+		ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
+		queryBuilder.query(new MatchNoDocsQuery());
+		queryBuilder.snapshot(null);
+		queryBuilder.complete(true);
+		queryBuilder.sort(multiSort);
+
+		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
+		testSearch(queryBuilder, expectedQueryType);
+	}
+
+	@ParameterizedTest
+	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
-		var sorted = multiSort.isSorted();
-		var sortedByScore = multiSort.getQuerySort().getBasicType$() == BasicType.ScoreSort;
-		runSearchers(new ExpectedQueryType(shards, sorted, sortedByScore, true, false), (LocalSearcher searcher) -> {
-			var luceneIndex = getLuceneIndex(shards, searcher);
-			ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
-			queryBuilder.query(new MatchAllDocsQuery());
-			queryBuilder.snapshot(null);
-			queryBuilder.complete(true);
-			queryBuilder.sort(multiSort);
-			var query = queryBuilder.build();
-			try (var results = run(luceneIndex.search(query)).receive()) {
-				var hits = results.totalHitsCount();
-				assertHitsIfPossible(ELEMENTS.size(), hits);
+		ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
+		queryBuilder.query(new MatchAllDocsQuery());
+		queryBuilder.snapshot(null);
+		queryBuilder.complete(true);
+		queryBuilder.sort(multiSort);
 
-				var keys = getResults(results);
-
-				var officialSearcher = new OfficialSearcher();
-				luceneIndex = getLuceneIndex(shards, officialSearcher);
-				var officialQuery = queryBuilder.limit(ELEMENTS.size() * 2L).build();
-				try (var officialResults = run(luceneIndex.search(officialQuery)).receive()) {
-					var officialKeys = getResults(officialResults).stream().toList();
-
-					assertResults(officialKeys, keys, sorted, sortedByScore);
-				}
-
-			}
-		});
+		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
+		testSearch(queryBuilder, expectedQueryType);
 	}
 
 	private void assertResults(List<Scored> expectedKeys, List<Scored> resultKeys, boolean sorted, boolean sortedByScore) {
@@ -335,13 +345,8 @@ public class TestLuceneSearches {
 		}
 	}
 
-	private void assertExactHits(LocalSearcher searcher,
-			ClientQueryParams<SearchResultKey<String>> query,
-			long expectedCount,
-			TotalHitsCount hits) {
-		if (supportsPreciseHitsCount(searcher, query)) {
-			assertEquals(new TotalHitsCount(expectedCount, true), hits);
-		}
+	private void assertExactHits(long expectedCount, TotalHitsCount hits) {
+		assertEquals(new TotalHitsCount(expectedCount, true), hits);
 	}
 
 	private List<Scored> getResults(SearchResultKeys<String> results) {

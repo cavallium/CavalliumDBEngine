@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene;
+package it.cavallium.dbengine;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;

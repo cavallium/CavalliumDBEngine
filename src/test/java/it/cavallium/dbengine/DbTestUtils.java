@@ -26,7 +26,6 @@ import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import it.cavallium.dbengine.lucene.StringIndicizer;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
@@ -36,7 +35,6 @@ import org.jetbrains.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class DbTestUtils {
 

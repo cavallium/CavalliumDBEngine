@@ -137,13 +137,16 @@ public class TestLuceneSearches {
 	}
 
 	private static final Flux<Boolean> multi = Flux.just(false, true);
-	private static final Flux<MultiSort<SearchResultKey<String>>> multiSort = Flux.just(MultiSort.topScore(),
+	private static final Flux<MultiSort<SearchResultKey<String>>> multiSort = Flux.just(
+			MultiSort.topScore(),
 			//todo: fix random sort field
 			//MultiSort.randomSortField(),
 			MultiSort.noSort(),
 			MultiSort.docSort(),
 			MultiSort.numericSort("longsort", false),
-			MultiSort.numericSort("longsort", true)
+			MultiSort.numericSort("longsort", true),
+			MultiSort.numericSort("intsort", false),
+			MultiSort.numericSort("intsort", true)
 	);
 
 	private static Flux<LocalSearcher> getSearchers(ExpectedQueryType info) {
@@ -283,7 +286,7 @@ public class TestLuceneSearches {
 					}
 
 					Assertions.assertEquals(officialKeys.size(), keys.size());
-					
+
 					assertResults(officialKeys, keys, expectedQueryType.sorted(), expectedQueryType.sortedByScore());
 				}
 			}
@@ -293,11 +296,12 @@ public class TestLuceneSearches {
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
-		ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
-		queryBuilder.query(new MatchNoDocsQuery());
-		queryBuilder.snapshot(null);
-		queryBuilder.complete(true);
-		queryBuilder.sort(multiSort);
+		var queryBuilder = ClientQueryParams
+				.<SearchResultKey<String>>builder()
+				.query(new MatchNoDocsQuery())
+				.snapshot(null)
+				.complete(true)
+				.sort(multiSort);
 
 		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
 		testSearch(queryBuilder, expectedQueryType);
@@ -306,11 +310,12 @@ public class TestLuceneSearches {
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
-		ClientQueryParamsBuilder<SearchResultKey<String>> queryBuilder = ClientQueryParams.builder();
-		queryBuilder.query(new MatchAllDocsQuery());
-		queryBuilder.snapshot(null);
-		queryBuilder.complete(true);
-		queryBuilder.sort(multiSort);
+		var queryBuilder = ClientQueryParams
+				.<SearchResultKey<String>>builder()
+				.query(new MatchAllDocsQuery())
+				.snapshot(null)
+				.complete(true)
+				.sort(multiSort);
 
 		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
 		testSearch(queryBuilder, expectedQueryType);

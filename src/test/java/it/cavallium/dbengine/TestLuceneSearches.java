@@ -33,6 +33,7 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.CountLocalSearcher;
@@ -46,6 +47,7 @@ import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher
 import it.cavallium.dbengine.lucene.searcher.UnsortedScoredFullMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredStreamingMultiSearcher;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -55,6 +57,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.function.FailableConsumer;
@@ -75,6 +78,7 @@ import reactor.util.function.Tuples;
 public class TestLuceneSearches {
 
 	private static final Logger log = LoggerFactory.getLogger(TestLuceneSearches.class);
+	private static LLTempLMDBEnv ENV;
 	private static final MemoryTemporaryDbGenerator TEMP_DB_GENERATOR = new MemoryTemporaryDbGenerator();
 
 	private static TestAllocator allocator;
@@ -110,12 +114,13 @@ public class TestLuceneSearches {
 	}
 
 	@BeforeAll
-	public static void beforeAll() {
+	public static void beforeAll() throws IOException {
 		allocator = newAllocator();
 		ensureNoLeaks(allocator.allocator(), false, false);
 		tempDb = Objects.requireNonNull(TEMP_DB_GENERATOR.openTempDb(allocator).block(), "TempDB");
 		luceneSingle = tempDb.luceneSingle();
 		luceneMulti = tempDb.luceneMulti();
+		ENV = new LLTempLMDBEnv();
 
 		setUpIndex(true);
 		setUpIndex(false);
@@ -158,35 +163,31 @@ public class TestLuceneSearches {
 
 	private static Flux<LocalSearcher> getSearchers(ExpectedQueryType info) {
 		return Flux.push(sink -> {
-			try {
-				if (info.shard()) {
-					if (info.onlyCount()) {
-						sink.next(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
-					} else {
-						sink.next(new ScoredPagedMultiSearcher());
-						if (info.sorted() && !info.sortedByScore()) {
-							sink.next(new SortedScoredFullMultiSearcher());
-						} else {
-							sink.next(new UnsortedScoredFullMultiSearcher());
-						}
-						if (!info.sorted()) {
-							sink.next(new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher()));
-							sink.next(new UnsortedUnscoredStreamingMultiSearcher());
-						}
-					}
-					sink.next(new AdaptiveMultiSearcher());
+			if (info.shard()) {
+				if (info.onlyCount()) {
+					sink.next(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
 				} else {
-					if (info.onlyCount()) {
-						sink.next(new CountLocalSearcher());
+					sink.next(new ScoredPagedMultiSearcher());
+					if (info.sorted() && !info.sortedByScore()) {
+						sink.next(new SortedScoredFullMultiSearcher(ENV));
 					} else {
-						sink.next(new PagedLocalSearcher());
+						sink.next(new UnsortedScoredFullMultiSearcher(ENV));
 					}
-					sink.next(new AdaptiveLocalSearcher());
+					if (!info.sorted()) {
+						sink.next(new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher()));
+						sink.next(new UnsortedUnscoredStreamingMultiSearcher());
+					}
 				}
-				sink.complete();
-			} catch (IOException e) {
-				sink.error(e);
+				sink.next(new AdaptiveMultiSearcher(ENV));
+			} else {
+				if (info.onlyCount()) {
+					sink.next(new CountLocalSearcher());
+				} else {
+					sink.next(new PagedLocalSearcher());
+				}
+				sink.next(new AdaptiveLocalSearcher());
 			}
+			sink.complete();
 		}, OverflowStrategy.BUFFER);
 	}
 
@@ -211,29 +212,26 @@ public class TestLuceneSearches {
 	}
 
 	@AfterAll
-	public static void afterAll() {
+	public static void afterAll() throws IOException, InterruptedException, TimeoutException {
 		TEMP_DB_GENERATOR.closeTempDb(tempDb).block();
+		ENV.close(Duration.ofSeconds(10));
 		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);
 	}
 
 	private LuceneIndex<String, String> getLuceneIndex(boolean shards, @Nullable LocalSearcher customSearcher) {
-		try {
-			if (customSearcher != null) {
-				tempDb.swappableLuceneSearcher().setSingle(customSearcher);
-				if (shards) {
-					if (customSearcher instanceof MultiSearcher multiSearcher) {
-						tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
-					} else {
-						throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
-					}
+		if (customSearcher != null) {
+			tempDb.swappableLuceneSearcher().setSingle(customSearcher);
+			if (shards) {
+				if (customSearcher instanceof MultiSearcher multiSearcher) {
+					tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
+				} else {
+					throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
 				}
-			} else {
-				tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
-				tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher());
 			}
-		} catch (IOException e) {
-			fail(e);
+		} else {
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
+			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV));
 		}
 		return shards ? multiIndex : localIndex;
 	}
@@ -276,7 +274,7 @@ public class TestLuceneSearches {
 					Assertions.assertTrue(keys.size() >= hits.value());
 				}
 
-				var officialSearcher = new OfficialSearcher();
+				var officialSearcher = new OfficialSearcher(ENV);
 				luceneIndex = getLuceneIndex(expectedQueryType.shard(), officialSearcher);
 				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
 				try (var officialResults = run(luceneIndex.search(officialQuery)).receive()) {

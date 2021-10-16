@@ -20,14 +20,14 @@ import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable {
+public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
 
 	protected static final Logger logger = LoggerFactory.getLogger(UnsortedScoredFullMultiSearcher.class);
 
 	private final LLTempLMDBEnv env;
 
-	public UnsortedScoredFullMultiSearcher() throws IOException {
-		this.env = new LLTempLMDBEnv();
+	public UnsortedScoredFullMultiSearcher(LLTempLMDBEnv env) {
+		this.env = env;
 	}
 
 	@Override
@@ -112,11 +112,6 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher, Closeable
 
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close).send();
 		});
-	}
-
-	@Override
-	public void close() throws IOException {
-		env.close();
 	}
 
 	@Override

@@ -3,12 +3,13 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.Closeable;
 import java.io.IOException;
 import reactor.core.publisher.Mono;
 
-public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
+public class AdaptiveMultiSearcher implements MultiSearcher {
 
 	private static final MultiSearcher count
 			= new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher());
@@ -25,9 +26,9 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
-	public AdaptiveMultiSearcher() throws IOException {
-		unsortedScoredFull = new UnsortedScoredFullMultiSearcher();
-		sortedScoredFull = new SortedScoredFullMultiSearcher();
+	public AdaptiveMultiSearcher(LLTempLMDBEnv env) {
+		unsortedScoredFull = new UnsortedScoredFullMultiSearcher(env);
+		sortedScoredFull = new SortedScoredFullMultiSearcher(env);
 	}
 
 	@Override
@@ -74,12 +75,6 @@ public class AdaptiveMultiSearcher implements MultiSearcher, Closeable {
 				return unsortedUnscoredContinuous.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			}
 		}, true);
-	}
-
-	@Override
-	public void close() throws IOException {
-		sortedScoredFull.close();
-		unsortedScoredFull.close();
 	}
 
 	@Override

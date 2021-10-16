@@ -12,8 +12,13 @@ import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import org.checkerframework.checker.units.qual.A;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -24,8 +29,10 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		JMXNettyMonitoringManager.initialize();
 	}
 
+	private final AtomicBoolean connected = new AtomicBoolean();
 	private final BufferAllocator allocator;
 	private final Path basePath;
+	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
 
 	public LLLocalDatabaseConnection(BufferAllocator allocator, Path basePath) {
 		this.allocator = allocator;
@@ -41,8 +48,15 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	public Mono<LLDatabaseConnection> connect() {
 		return Mono
 				.<LLDatabaseConnection>fromCallable(() -> {
+					if (!connected.compareAndSet(false, true)) {
+						throw new IllegalStateException("Already connected");
+					}
 					if (Files.notExists(basePath)) {
 						Files.createDirectories(basePath);
+					}
+					var prev = env.getAndSet(new LLTempLMDBEnv());
+					if (prev != null) {
+						throw new IllegalStateException("Env was already set");
 					}
 					return this;
 				})
@@ -75,7 +89,10 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		return Mono
 				.fromCallable(() -> {
 					if (instancesCount != 1) {
-						return new LLLocalMultiLuceneIndex(basePath.resolve("lucene"),
+						var env = this.env.get();
+						Objects.requireNonNull(env, "Environment not set");
+						return new LLLocalMultiLuceneIndex(env,
+								basePath.resolve("lucene"),
 								name,
 								instancesCount,
 								indicizerAnalyzers,
@@ -98,6 +115,14 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public Mono<Void> disconnect() {
-		return Mono.empty();
+		return Mono.<Void>fromCallable(() -> {
+			if (connected.compareAndSet(true, false)) {
+				var env = this.env.get();
+				if (env != null) {
+					env.close(Duration.ofSeconds(30));
+				}
+			}
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 }

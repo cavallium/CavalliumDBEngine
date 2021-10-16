@@ -15,6 +15,7 @@ import it.cavallium.dbengine.client.SearchResultKey;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.CountLocalSearcher;
@@ -22,11 +23,16 @@ import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -40,6 +46,7 @@ import reactor.util.function.Tuples;
 public class TestLuceneIndex {
 
 	private final Logger log = LoggerFactory.getLogger(this.getClass());
+	private static LLTempLMDBEnv ENV;
 
 	private TestAllocator allocator;
 	private TempDb tempDb;
@@ -48,6 +55,11 @@ public class TestLuceneIndex {
 
 	protected TemporaryDbGenerator getTempDbGenerator() {
 		return new MemoryTemporaryDbGenerator();
+	}
+
+	@BeforeAll
+	public static void beforeAll() throws IOException {
+		ENV = new LLTempLMDBEnv();
 	}
 
 	@BeforeEach
@@ -106,6 +118,11 @@ public class TestLuceneIndex {
 		destroyAllocator(allocator);
 	}
 
+	@AfterAll
+	public static void afterAll() throws IOException, InterruptedException, TimeoutException {
+		ENV.close(Duration.ofSeconds(10));
+	}
+
 	private LuceneIndex<String, String> getLuceneIndex(boolean shards, @Nullable LocalSearcher customSearcher) {
 		LuceneIndex<String, String> index = run(DbTestUtils.tempLuceneIndex(shards ? luceneSingle : luceneMulti));
 		index.updateDocument("test-key-1", "0123456789").block();
@@ -127,22 +144,18 @@ public class TestLuceneIndex {
 		tempDb.swappableLuceneSearcher().setSingle(new CountLocalSearcher());
 		tempDb.swappableLuceneSearcher().setMulti(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
 		assertCount(index, 1000 + 15);
-		try {
-			if (customSearcher != null) {
-				tempDb.swappableLuceneSearcher().setSingle(customSearcher);
-				if (shards) {
-					if (customSearcher instanceof MultiSearcher multiSearcher) {
-						tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
-					} else {
-						throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
-					}
+		if (customSearcher != null) {
+			tempDb.swappableLuceneSearcher().setSingle(customSearcher);
+			if (shards) {
+				if (customSearcher instanceof MultiSearcher multiSearcher) {
+					tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
+				} else {
+					throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
 				}
-			} else {
-				tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
-				tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher());
 			}
-		} catch (IOException e) {
-			fail(e);
+		} else {
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
+			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV));
 		}
 		return index;
 	}

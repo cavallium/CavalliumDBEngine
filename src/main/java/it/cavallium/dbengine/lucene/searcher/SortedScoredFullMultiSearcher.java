@@ -14,20 +14,21 @@ import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.ServiceLoader;
 import org.apache.lucene.search.IndexSearcher;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class SortedScoredFullMultiSearcher implements MultiSearcher, Closeable {
+public class SortedScoredFullMultiSearcher implements MultiSearcher {
 
 	protected static final Logger logger = LoggerFactory.getLogger(SortedScoredFullMultiSearcher.class);
 
 	private final LLTempLMDBEnv env;
 
-	public SortedScoredFullMultiSearcher() throws IOException {
-		this.env = new LLTempLMDBEnv();
+	public SortedScoredFullMultiSearcher(LLTempLMDBEnv env) {
+		this.env = env;
 	}
 
 	@Override
@@ -106,11 +107,6 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher, Closeable {
 
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close).send();
 		});
-	}
-
-	@Override
-	public void close() throws IOException {
-		env.close();
 	}
 
 	@Override

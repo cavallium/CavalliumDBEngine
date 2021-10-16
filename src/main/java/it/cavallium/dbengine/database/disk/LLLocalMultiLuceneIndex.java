@@ -47,7 +47,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	private final MultiSearcher multiSearcher;
 
-	public LLLocalMultiLuceneIndex(Path lucene,
+	public LLLocalMultiLuceneIndex(LLTempLMDBEnv env,
+			Path lucene,
 			String name,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
@@ -82,7 +83,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		if (luceneHacks != null && luceneHacks.customMultiSearcher() != null) {
 			multiSearcher = luceneHacks.customMultiSearcher().get();
 		} else {
-			multiSearcher = new AdaptiveMultiSearcher();
+			multiSearcher = new AdaptiveMultiSearcher(env);
 		}
 	}
 

@@ -9,12 +9,10 @@ import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.lmdbjava.Cursor;
 import org.lmdbjava.CursorIterable;
 import org.lmdbjava.CursorIterable.KeyVal;
@@ -23,8 +21,6 @@ import org.lmdbjava.Env;
 import org.lmdbjava.GetOp;
 import org.lmdbjava.Txn;
 import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
 import reactor.util.function.Tuples;
@@ -38,7 +34,6 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	private static final AtomicLong NEXT_ITEM_UID = new AtomicLong(0);
 
 	private final AtomicBoolean closed = new AtomicBoolean();
-	private final Runnable onClose;
 	private final LMDBSortedCodec<T> codec;
 	private final Env<ByteBuf> env;
 	private final Dbi<ByteBuf> lmdb;
@@ -54,10 +49,9 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	private long size = 0;
 
 	public LMDBPriorityQueue(LLTempLMDBEnv env, LMDBSortedCodec<T> codec) {
-		this.onClose = env::decrementRef;
 		var name = "$queue_" + NEXT_LMDB_QUEUE_ID.getAndIncrement();
 		this.codec = codec;
-		this.env = env.getEnvAndIncrementRef();
+		this.env = env.getEnv();
 		this.lmdb = this.env.openDbi(name, codec::compareDirect, MDB_CREATE, MDB_DUPSORT, MDB_DUPFIXED);
 		
 		this.writing = true;
@@ -467,25 +461,21 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	@Override
 	public void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
-			try {
-				ensureThread();
-				if (cur != null) {
-					cur.close();
-				}
-				if (rwTxn != null) {
-					rwTxn.close();
-				}
-				if (readTxn != null) {
-					readTxn.close();
-				}
-				try (var txn = env.txnWrite()) {
-					lmdb.drop(txn, true);
-					txn.commit();
-				}
-				lmdb.close();
-			} finally {
-				onClose.run();
+			ensureThread();
+			if (cur != null) {
+				cur.close();
 			}
+			if (rwTxn != null) {
+				rwTxn.close();
+			}
+			if (readTxn != null) {
+				readTxn.close();
+			}
+			try (var txn = env.txnWrite()) {
+				lmdb.drop(txn, true);
+				txn.commit();
+			}
+			lmdb.close();
 		}
 	}
 

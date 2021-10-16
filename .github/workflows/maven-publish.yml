@@ -38,6 +38,24 @@ jobs:
         env:
           MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}
+      - name: Deploy lucene to Maven (Release)
+        if: github.ref == 'refs/heads/master'
+        shell: bash
+        run: |
+          git clone https://github.com/apache/lucene --depth 1
+          cd lucene
+          ./gradlew assemble -x test -x errorprone publishToMavenLocal -x signJarsPublication
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-core -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/core/build/libs/lucene-core-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/core/build/libs/lucene-core-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/core/build/libs/lucene-core-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-join -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/join/build/libs/lucene-join-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/join/build/libs/lucene-join-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/join/build/libs/lucene-join-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-analysis-common -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/analysis/common/build/libs/lucene-analysis-common-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/analysis/common/build/libs/lucene-analysis-common-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/analysis/common/build/libs/lucene-analysis-common-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-analysis-icu -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/analysis/icu/build/libs/lucene-analysis-icu-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/analysis/icu/build/libs/lucene-analysis-icu-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/analysis/icu/build/libs/lucene-analysis-icu-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-codecs -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/codecs/build/libs/lucene-codecs-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/codecs/build/libs/lucene-codecs-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/codecs/build/libs/lucene-codecs-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-backward-codecs -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/backward-codecs/build/libs/lucene-backward-codecs-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/backward-codecs/build/libs/lucene-backward-codecs-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/backward-codecs/build/libs/lucene-backward-codecs-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-queries -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/queries/build/libs/lucene-queries-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/queries/build/libs/lucene-queries-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/queries/build/libs/lucene-queries-9.0.0-SNAPSHOT-sources.jar
+          mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-misc -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/misc/build/libs/lucene-misc-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/misc/build/libs/lucene-misc-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/misc/build/libs/lucene-misc-9.0.0-SNAPSHOT-sources.jar
+        env:
+          MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}
       - name: Deploy to Maven (Release)
         if: github.ref == 'refs/heads/master'
         shell: bash

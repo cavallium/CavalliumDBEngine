@@ -119,7 +119,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 			if (connected.compareAndSet(true, false)) {
 				var env = this.env.get();
 				if (env != null) {
-					env.close(Duration.ofSeconds(30));
+					env.close();
 				}
 			}
 			return null;

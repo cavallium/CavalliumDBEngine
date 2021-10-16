@@ -119,8 +119,8 @@ public class TestLuceneIndex {
 	}
 
 	@AfterAll
-	public static void afterAll() throws IOException, InterruptedException, TimeoutException {
-		ENV.close(Duration.ofSeconds(10));
+	public static void afterAll() throws IOException {
+		ENV.close();
 	}
 
 	private LuceneIndex<String, String> getLuceneIndex(boolean shards, @Nullable LocalSearcher customSearcher) {

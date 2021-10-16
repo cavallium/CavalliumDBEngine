@@ -8,24 +8,12 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Iterator;
-import java.util.Objects;
-import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.lmdbjava.CursorIterable;
-import org.lmdbjava.CursorIterable.KeyVal;
 import org.lmdbjava.Dbi;
 import org.lmdbjava.Env;
-import org.lmdbjava.GetOp;
 import org.lmdbjava.Txn;
-import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
-import reactor.util.function.Tuples;
 
 public class LMDBArray<V> implements IArray<V>, Closeable {
 
@@ -35,7 +23,6 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	private static final AtomicLong NEXT_LMDB_ARRAY_ID = new AtomicLong(0);
 
 	private final AtomicBoolean closed = new AtomicBoolean();
-	private final Runnable onClose;
 	private final LMDBCodec<V> valueCodec;
 	private final Env<ByteBuf> env;
 	private final Dbi<ByteBuf> lmdb;
@@ -49,10 +36,9 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	private final long virtualSize;
 
 	public LMDBArray(LLTempLMDBEnv env, LMDBCodec<V> codec, long size, @Nullable V defaultValue) {
-		this.onClose = env::decrementRef;
 		var name = "$array_" + NEXT_LMDB_ARRAY_ID.getAndIncrement();
 		this.valueCodec = codec;
-		this.env = env.getEnvAndIncrementRef();
+		this.env = env.getEnv();
 		this.lmdb = this.env.openDbi(name, MDB_CREATE);
 		this.defaultValue = defaultValue;
 		
@@ -207,22 +193,18 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	@Override
 	public void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
-			try {
-				ensureThread();
-				if (rwTxn != null) {
-					rwTxn.close();
-				}
-				if (readTxn != null) {
-					readTxn.close();
-				}
-				try (var txn = env.txnWrite()) {
-					lmdb.drop(txn, true);
-					txn.commit();
-				}
-				lmdb.close();
-			} finally {
-				onClose.run();
+			ensureThread();
+			if (rwTxn != null) {
+				rwTxn.close();
 			}
+			if (readTxn != null) {
+				readTxn.close();
+			}
+			try (var txn = env.txnWrite()) {
+				lmdb.drop(txn, true);
+				txn.commit();
+			}
+			lmdb.close();
 		}
 	}
 

@@ -20,8 +20,6 @@ public class LLTempLMDBEnv implements Closeable {
 	private static final long TWENTY_GIBIBYTES = 20L * 1024L * 1024L * 1024L;
 	private static final int MAX_DATABASES = 1024;
 
-	private final Phaser resources = new Phaser(1);
-
 	private final Path tempDirectory;
 	private final Env<ByteBuf> env;
 	private volatile boolean closed;
@@ -35,33 +33,15 @@ public class LLTempLMDBEnv implements Closeable {
 		env = envBuilder.open(tempDirectory.toFile(), MDB_NOTLS, MDB_WRITEMAP, MDB_NORDAHEAD);
 	}
 
-	public Env<ByteBuf> getEnvAndIncrementRef() {
+	public Env<ByteBuf> getEnv() {
 		if (closed) {
 			throw new IllegalStateException("Environment closed");
 		}
-		resources.register();
 		return env;
-	}
-
-	public void decrementRef() {
-		resources.arriveAndDeregister();
 	}
 
 	@Override
 	public void close() throws IOException {
-		this.closed = true;
-		resources.arriveAndAwaitAdvance();
-		closeInternal();
-	}
-
-	public void close(Duration timeout) throws InterruptedException, TimeoutException, IOException {
-		this.closed = true;
-		int phase = resources.arrive();
-		resources.awaitAdvanceInterruptibly(phase, timeout.toMillis(), TimeUnit.MILLISECONDS);
-		closeInternal();
-	}
-
-	private void closeInternal() throws IOException {
 		this.closed = true;
 		env.close();
 		//noinspection ResultOfMethodCallIgnored

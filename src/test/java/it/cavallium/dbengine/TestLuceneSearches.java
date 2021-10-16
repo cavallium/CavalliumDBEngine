@@ -212,9 +212,9 @@ public class TestLuceneSearches {
 	}
 
 	@AfterAll
-	public static void afterAll() throws IOException, InterruptedException, TimeoutException {
+	public static void afterAll() throws IOException {
 		TEMP_DB_GENERATOR.closeTempDb(tempDb).block();
-		ENV.close(Duration.ofSeconds(10));
+		ENV.close();
 		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);
 	}

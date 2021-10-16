@@ -4,24 +4,16 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
-import it.cavallium.dbengine.database.LLEntry;
-import it.cavallium.dbengine.database.LLSearchResultShard;
-import it.cavallium.dbengine.database.LiveResourceSupport;
+import it.cavallium.dbengine.database.DatabaseResourceSupport;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
 import java.util.List;
-import org.apache.lucene.index.Fields;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexReaderContext;
 import org.apache.lucene.index.MultiReader;
-import org.apache.lucene.index.StoredFieldVisitor;
-import org.apache.lucene.index.Term;
 import org.apache.lucene.search.IndexSearcher;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
@@ -42,7 +34,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 	IndexReader allShards();
 
-	class UnshardedIndexSearchers extends LiveResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
+	class UnshardedIndexSearchers extends DatabaseResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
 			implements LLIndexSearchers {
 
 		private static final Logger logger = LoggerFactory.getLogger(UnshardedIndexSearchers.class);
@@ -133,7 +125,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		}
 	}
 
-	class ShardedIndexSearchers extends LiveResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
+	class ShardedIndexSearchers extends DatabaseResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
 			implements LLIndexSearchers {
 
 		private static final Logger logger = LoggerFactory.getLogger(ShardedIndexSearchers.class);

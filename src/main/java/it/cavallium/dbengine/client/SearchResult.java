@@ -2,17 +2,11 @@ package it.cavallium.dbengine.client;
 
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
-import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.database.LLSearchResultShard;
-import it.cavallium.dbengine.database.LiveResourceSupport;
-import java.util.Objects;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
+import it.cavallium.dbengine.database.DatabaseResourceSupport;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-public final class SearchResult<T, U> extends LiveResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
+public final class SearchResult<T, U> extends DatabaseResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
 
 	private static final Drop<SearchResult<?, ?>> DROP = new Drop<>() {
 		@Override

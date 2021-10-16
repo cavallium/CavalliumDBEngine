@@ -4,16 +4,12 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
-import it.cavallium.dbengine.client.SearchResult;
-import it.cavallium.dbengine.database.LLSearchResultShard;
-import it.cavallium.dbengine.database.LiveResourceSupport;
-import it.cavallium.dbengine.database.collections.DatabaseSingle;
+import it.cavallium.dbengine.database.DatabaseResourceSupport;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 
-public class NullableBuffer extends LiveResourceSupport<NullableBuffer, NullableBuffer> {
+public class NullableBuffer extends DatabaseResourceSupport<NullableBuffer, NullableBuffer> {
 
 	private static final Logger logger = LoggerFactory.getLogger(NullableBuffer.class);
 

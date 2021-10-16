@@ -92,7 +92,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						var env = this.env.get();
 						Objects.requireNonNull(env, "Environment not set");
 						return new LLLocalMultiLuceneIndex(env,
-								basePath.resolve("lucene"),
+								luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
 								name,
 								instancesCount,
 								indicizerAnalyzers,
@@ -101,7 +101,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								luceneHacks
 						);
 					} else {
-						return new LLLocalLuceneIndex(basePath.resolve("lucene"),
+						return new LLLocalLuceneIndex(luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
 								name,
 								indicizerAnalyzers,
 								indicizerSimilarities,

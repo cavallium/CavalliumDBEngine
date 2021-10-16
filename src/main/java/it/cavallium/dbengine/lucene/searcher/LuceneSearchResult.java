@@ -2,20 +2,15 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
-import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLSearchResultShard;
-import it.cavallium.dbengine.database.LiveResourceSupport;
-import it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase;
-import java.io.IOException;
+import it.cavallium.dbengine.database.DatabaseResourceSupport;
 import java.util.Objects;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-public final class LuceneSearchResult extends LiveResourceSupport<LuceneSearchResult, LuceneSearchResult> {
+public final class LuceneSearchResult extends DatabaseResourceSupport<LuceneSearchResult, LuceneSearchResult> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LuceneSearchResult.class);
 

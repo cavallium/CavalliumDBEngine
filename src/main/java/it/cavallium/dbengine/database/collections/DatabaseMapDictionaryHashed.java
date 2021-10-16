@@ -9,9 +9,8 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.LiveResourceSupport;
+import it.cavallium.dbengine.database.DatabaseResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -31,8 +30,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseMapDictionaryHashed<T, U, TH> extends
-		LiveResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryHashed<T, U, TH>>
+public class DatabaseMapDictionaryHashed<T, U, TH> extends DatabaseResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryHashed<T, U, TH>>
 		implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
 	private static final Logger logger = LoggerFactory.getLogger(DatabaseMapDictionaryHashed.class);

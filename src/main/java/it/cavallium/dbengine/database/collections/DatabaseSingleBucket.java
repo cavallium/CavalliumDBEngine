@@ -5,25 +5,18 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.LiveResourceSupport;
+import it.cavallium.dbengine.database.DatabaseResourceSupport;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
-import it.unimi.dsi.fastutil.objects.ObjectSets;
-import java.util.HashSet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.function.BiFunction;
-import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.functional.TriFunction;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -31,7 +24,7 @@ import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
 public class DatabaseSingleBucket<K, V, TH>
-		extends LiveResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
+		extends DatabaseResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
 		implements DatabaseStageEntry<V> {
 
 	private static final Logger logger = LoggerFactory.getLogger(DatabaseSingleBucket.class);

@@ -1,0 +1,3 @@
+[submodule "lucene"]
+	path = lucene
+	url = https://github.com/apache/lucene

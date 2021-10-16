@@ -42,7 +42,6 @@ jobs:
         if: github.ref == 'refs/heads/master'
         shell: bash
         run: |
-          git clone https://github.com/apache/lucene --depth 1
           cd lucene
           ./gradlew assemble -x test -x errorprone publishToMavenLocal -x signJarsPublication
           mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-core -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/core/build/libs/lucene-core-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/core/build/libs/lucene-core-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/core/build/libs/lucene-core-9.0.0-SNAPSHOT-sources.jar

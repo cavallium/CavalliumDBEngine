@@ -27,11 +27,11 @@ jobs:
           export REVISION=${{ github.run_number }}
 
           echo "REVISION=$REVISION" >> $GITHUB_ENV
-      - name: Set up JDK 17
+      - name: Set up JDK 11
         if: github.ref == 'refs/heads/master'
         uses: actions/setup-java@v1
         with:
-          java-version: 17
+          java-version: 11
           server-id: mchv-release-distribution
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD
@@ -52,6 +52,17 @@ jobs:
           mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-backward-codecs -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/backward-codecs/build/libs/lucene-backward-codecs-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/backward-codecs/build/libs/lucene-backward-codecs-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/backward-codecs/build/libs/lucene-backward-codecs-9.0.0-SNAPSHOT-sources.jar
           mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-queries -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/queries/build/libs/lucene-queries-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/queries/build/libs/lucene-queries-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/queries/build/libs/lucene-queries-9.0.0-SNAPSHOT-sources.jar
           mvn deploy:deploy-file -DgroupId=org.lucene -DartifactId=lucene-misc -Dversion=9.0.0-SNAPSHOT -DgeneratePom=true -Dpackaging=jar -DrepositoryId=mchv-snapshot-distribution -Durl=https://mvn.mchv.eu/repository/mchv-snapshot -Dfile=lucene/misc/build/libs/lucene-misc-9.0.0-SNAPSHOT.jar -Djavadoc=lucene/misc/build/libs/lucene-misc-9.0.0-SNAPSHOT-javadoc.jar -Dsources=lucene/misc/build/libs/lucene-misc-9.0.0-SNAPSHOT-sources.jar
+        env:
+          MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}
+      - name: Set up JDK 17
+        if: github.ref == 'refs/heads/master'
+        uses: actions/setup-java@v1
+        with:
+          java-version: 17
+          server-id: mchv-release-distribution
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
         env:
           MAVEN_USERNAME: ${{ secrets.MCHV_USERNAME }}
           MAVEN_PASSWORD: ${{ secrets.MCHV_TOKEN }}

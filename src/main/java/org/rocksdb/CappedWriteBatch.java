@@ -48,9 +48,12 @@ public class CappedWriteBatch extends WriteBatch {
 
 	private synchronized void flushIfNeeded(boolean force) throws RocksDBException {
 		if (this.count() >= (force ? 1 : cap)) {
-			db.write(writeOptions, this.getWriteBatch());
-			this.clear();
-			releaseAllBuffers();
+			try {
+				db.write(writeOptions, this.getWriteBatch());
+				this.clear();
+			} finally {
+				releaseAllBuffers();
+			}
 		}
 	}
 

@@ -44,11 +44,14 @@ import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
+import org.rocksdb.MergeOperator;
+import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.Options;
 import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
+import org.rocksdb.TransactionDB;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.warp.commonutils.log.Logger;
@@ -77,7 +80,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final DatabaseOptions databaseOptions;
 
 	private final boolean enableColumnsBug;
-	private RocksDB db;
+	private OptimisticTransactionDB db;
 	private final Map<Column, ColumnFamilyHandle> handles;
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
@@ -146,7 +149,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
-					this.db = RocksDB.open(new DBOptions(rocksdbOptions),
+					this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions),
 							dbPathString,
 							descriptors,
 							handles
@@ -194,7 +197,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return name;
 	}
 
-	private void flushAndCloseDb(RocksDB db, List<ColumnFamilyHandle> handles)
+	private void flushAndCloseDb(OptimisticTransactionDB db, List<ColumnFamilyHandle> handles)
 			throws RocksDBException {
 		flushDb(db, handles);
 
@@ -223,7 +226,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 	}
 
-	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
+	private void flushDb(OptimisticTransactionDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
 		if (Schedulers.isInNonBlockingThread()) {
 			logger.error("Called flushDb in a nonblocking thread");
 		}
@@ -240,7 +243,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@SuppressWarnings("unused")
-	private void compactDb(RocksDB db, List<ColumnFamilyHandle> handles) {
+	private void compactDb(OptimisticTransactionDB db, List<ColumnFamilyHandle> handles) {
 		if (Schedulers.isInNonBlockingThread()) {
 			logger.error("Called compactDb in a nonblocking thread");
 		}
@@ -452,7 +455,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			LinkedList<ColumnFamilyHandle> handles = new LinkedList<>();
 
-			this.db = RocksDB.open(options, dbPathString);
+			this.db = OptimisticTransactionDB.open(options, dbPathString);
 			for (ColumnFamilyDescriptor columnFamilyDescriptor : descriptorsToCreate) {
 				handles.add(db.createColumnFamily(columnFamilyDescriptor));
 			}

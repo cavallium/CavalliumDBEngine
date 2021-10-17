@@ -7,6 +7,7 @@ import static java.util.Objects.requireNonNull;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.MemoryManager;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
@@ -40,6 +41,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -54,12 +56,18 @@ import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.DirectSlice;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
+import org.rocksdb.OptimisticTransactionDB;
+import org.rocksdb.OptimisticTransactionOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
+import org.rocksdb.Status;
+import org.rocksdb.Status.Code;
+import org.rocksdb.Transaction;
+import org.rocksdb.TransactionDB;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
@@ -88,6 +96,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
 	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
+	static final OptimisticTransactionOptions DEFAULT_OPTIMISTIC_TX_OPTIONS = new OptimisticTransactionOptions();
 	static final boolean PREFER_SEEK_TO_FIRST = false;
 	/**
 	 * It used to be false,
@@ -131,6 +140,7 @@ public class LLLocalDictionary implements LLDictionary {
 	 * 1KiB dummy buffer, write only, used for debugging purposes
 	 */
 	private static final ByteBuffer DUMMY_WRITE_ONLY_BYTE_BUFFER = ByteBuffer.allocateDirect(1024);
+	private static final BufferAllocator BYTE_ARRAY_BUFFERS = BufferAllocator.onHeapPooled();
 
 	static {
 		boolean assertionsEnabled = false;
@@ -140,13 +150,12 @@ public class LLLocalDictionary implements LLDictionary {
 		ASSERTIONS_ENABLED = assertionsEnabled;
 	}
 
-	private final RocksDB db;
+	private final OptimisticTransactionDB db;
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;
 	private final String columnName;
 	private final Scheduler dbScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
-	private final Striped<StampedLock> itemsLock = Striped.readWriteStampedLock(STRIPES);
 	private final UpdateMode updateMode;
 	private final BufferAllocator alloc;
 	private final String getRangeMultiDebugName;
@@ -155,7 +164,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	public LLLocalDictionary(
 			BufferAllocator allocator,
-			@NotNull RocksDB db,
+			@NotNull OptimisticTransactionDB db,
 			@NotNull ColumnFamilyHandle columnFamilyHandle,
 			String databaseName,
 			String columnName,
@@ -256,37 +265,21 @@ public class LLLocalDictionary implements LLDictionary {
 				keySend -> runOnDb(() -> {
 					try (var key = keySend.receive()) {
 						try {
-							StampedLock lock;
-							long stamp;
-							if (updateMode == UpdateMode.ALLOW) {
-								lock = itemsLock.getAt(getLockIndex(key));
-
-								stamp = lock.readLock();
+							Buffer logKey;
+							if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
+								logKey = key.copy();
 							} else {
-								lock = null;
-								stamp = 0;
+								logKey = null;
 							}
-							try {
-								Buffer logKey;
+							try (logKey) {
+								var result = dbGet(cfh, resolveSnapshot(snapshot), key.send(), existsAlmostCertainly);
 								if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
-									logKey = key.copy();
-								} else {
-									logKey = null;
-								}
-								try (logKey) {
-									var result = dbGet(cfh, resolveSnapshot(snapshot), key.send(), existsAlmostCertainly);
-									if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
-										try (var result2 = result == null ? null : result.receive()) {
-											logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(logKey), LLUtils.toString(result2));
-											return result2 == null ? null : result2.send();
-										}
-									} else {
-										return result;
+									try (var result2 = result == null ? null : result.receive()) {
+										logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(logKey), LLUtils.toString(result2));
+										return result2 == null ? null : result2.send();
 									}
-								}
-							} finally {
-								if (updateMode == UpdateMode.ALLOW) {
-									lock.unlockRead(stamp);
+								} else {
+									return result;
 								}
 							}
 						} catch (Exception ex) {
@@ -556,40 +549,24 @@ public class LLLocalDictionary implements LLDictionary {
 						if (Schedulers.isInNonBlockingThread()) {
 							throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
 						}
-						StampedLock lock;
-						long stamp;
-						if (updateMode == UpdateMode.ALLOW) {
-							lock = itemsLock.getAt(getLockIndex(key));
-
-							stamp = lock.readLock();
-						} else {
-							lock = null;
-							stamp = 0;
-						}
+						int size = RocksDB.NOT_FOUND;
+						byte[] keyBytes = LLUtils.toArray(key);
+						Holder<byte[]> data = new Holder<>();
+						var unmodifiableReadOpts = resolveSnapshot(snapshot);
 						try {
-							int size = RocksDB.NOT_FOUND;
-							byte[] keyBytes = LLUtils.toArray(key);
-							Holder<byte[]> data = new Holder<>();
-							var unmodifiableReadOpts = resolveSnapshot(snapshot);
-							try {
-								if (db.keyMayExist(cfh, unmodifiableReadOpts, keyBytes, data)) {
-									if (data.getValue() != null) {
-										size = data.getValue().length;
-									} else {
-										size = db.get(cfh, unmodifiableReadOpts, keyBytes, NO_DATA);
-									}
-								}
-							} finally {
-								if (unmodifiableReadOpts != null && !(unmodifiableReadOpts instanceof UnreleasableReadOptions)) {
-									unmodifiableReadOpts.close();
+							if (db.keyMayExist(cfh, unmodifiableReadOpts, keyBytes, data)) {
+								if (data.getValue() != null) {
+									size = data.getValue().length;
+								} else {
+									size = db.get(cfh, unmodifiableReadOpts, keyBytes, NO_DATA);
 								}
 							}
-							return size != RocksDB.NOT_FOUND;
 						} finally {
-							if (updateMode == UpdateMode.ALLOW) {
-								lock.unlockRead(stamp);
+							if (unmodifiableReadOpts != null && !(unmodifiableReadOpts instanceof UnreleasableReadOptions)) {
+								unmodifiableReadOpts.close();
 							}
 						}
+						return size != RocksDB.NOT_FOUND;
 					}
 				}).onErrorMap(cause -> new IOException("Failed to read", cause)),
 				keySend -> Mono.fromRunnable(keySend::close)
@@ -609,28 +586,12 @@ public class LLLocalDictionary implements LLDictionary {
 										try (var value = valueSend.receive()) {
 											assert key.isAccessible();
 											assert value.isAccessible();
-											StampedLock lock;
-											long stamp;
-											if (updateMode == UpdateMode.ALLOW) {
-												lock = itemsLock.getAt(getLockIndex(key));
-
-												stamp = lock.writeLock();
-											} else {
-												lock = null;
-												stamp = 0;
+											if (logger.isTraceEnabled()) {
+												logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
+														LLUtils.toStringSafe(key), LLUtils.toStringSafe(value));
 											}
-											try {
-												if (logger.isTraceEnabled()) {
-													logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
-															LLUtils.toStringSafe(key), LLUtils.toStringSafe(value));
-												}
-												dbPut(cfh, null, key.send(), value.send());
-												return null;
-											} finally {
-												if (updateMode == UpdateMode.ALLOW) {
-													lock.unlockWrite(stamp);
-												}
-											}
+											dbPut(cfh, null, key.send(), value.send());
+											return null;
 										}
 									}
 								}),
@@ -653,311 +614,166 @@ public class LLLocalDictionary implements LLDictionary {
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
-		return Mono.usingWhen(keyMono,
-				keySend -> runOnDb(() -> {
-					try (var key = keySend.receive()) {
-						if (Schedulers.isInNonBlockingThread()) {
-							throw new UnsupportedOperationException("Called update in a nonblocking thread");
-						}
-						if (updateMode == UpdateMode.DISALLOW) {
-							throw new UnsupportedOperationException("update() is disallowed");
-						}
-						StampedLock lock;
-						long stamp;
-						if (updateMode == UpdateMode.ALLOW) {
-							lock = itemsLock.getAt(getLockIndex(key));
-
-							stamp = lock.readLock();
+		return Mono.usingWhen(keyMono, keySend -> runOnDb(() -> {
+			try (Buffer key = keySend.receive()) {
+				var keyArray = LLUtils.toArray(key);
+				if (Schedulers.isInNonBlockingThread()) {
+					throw new UnsupportedOperationException("Called update in a nonblocking thread");
+				}
+				if (updateMode == UpdateMode.DISALLOW) {
+					throw new UnsupportedOperationException("update() is disallowed");
+				}
+				try (var tx = db.beginTransaction(EMPTY_WRITE_OPTIONS, DEFAULT_OPTIMISTIC_TX_OPTIONS)) {
+					var prevDataArray = tx.getForUpdate(EMPTY_READ_OPTIONS, cfh, keyArray, true);
+					Buffer prevData;
+					if (prevDataArray != null) {
+						prevData = BYTE_ARRAY_BUFFERS.allocate(prevDataArray.length);
+						prevData.writeBytes(prevDataArray);
+					} else {
+						prevData = null;
+					}
+					try (prevData) {
+						Buffer prevDataToSendToUpdater;
+						if (prevData != null) {
+							prevDataToSendToUpdater = prevData.copy();
 						} else {
-							lock = null;
-							stamp = 0;
+							prevDataToSendToUpdater = null;
 						}
-						try {
-							while (true) {
-								@Nullable Buffer prevData;
-								var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
-								if (existsAlmostCertainly
-										|| db.keyMayExist(cfh, LLUtils.toArray(key), prevDataHolder)) {
-									if (!existsAlmostCertainly && prevDataHolder.getValue() != null) {
-										byte @Nullable [] prevDataBytes = prevDataHolder.getValue();
-										if (prevDataBytes != null) {
-											prevData = LLUtils.fromByteArray(alloc, prevDataBytes);
-										} else {
-											prevData = null;
-										}
-									} else {
-										var obtainedPrevData = dbGet(cfh, null, key.copy().send(), existsAlmostCertainly);
-										if (obtainedPrevData == null) {
-											prevData = null;
-										} else {
-											prevData = obtainedPrevData.receive();
-										}
-									}
+
+						@Nullable Buffer newData;
+						try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
+							try (var newDataToReceive = updater.apply(sentData)) {
+								if (newDataToReceive != null) {
+									newData = newDataToReceive.receive();
 								} else {
-									prevData = null;
+									newData = null;
 								}
+							}
+						}
+						try (newData) {
+							var newDataArray = newData == null ? null : LLUtils.toArray(newData);
+							if (prevData != null && newData == null) {
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
+								}
+								tx.delete(cfh, keyArray, true);
+								commitOptimistically(tx);
+							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB,
-											"Reading {}: {} (before update)",
+											"Writing {}: {} (after update)",
 											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(prevData)
+											LLUtils.toStringSafe(newData)
 									);
 								}
-								try {
-									@Nullable Buffer newData;
-									try (Buffer prevDataToSendToUpdater = prevData == null ? null : prevData.copy()) {
-										try (var sentData = prevDataToSendToUpdater == null ? null
-												: prevDataToSendToUpdater.send()) {
-											try (var newDataToReceive = updater.apply(sentData)) {
-												if (newDataToReceive != null) {
-													newData = newDataToReceive.receive();
-												} else {
-													newData = null;
-												}
-											}
-										}
-									}
-									assert newData == null || newData.isAccessible();
-									try {
-										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB,
-													"Updating {}. previous data: {}, updated data: {}",
-													LLUtils.toStringSafe(key),
-													LLUtils.toStringSafe(prevData),
-													LLUtils.toStringSafe(newData)
-											);
-										}
-										if (prevData != null && newData == null) {
-											//noinspection DuplicatedCode
-											if (updateMode == UpdateMode.ALLOW) {
-												var ws = lock.tryConvertToWriteLock(stamp);
-												if (ws != 0) {
-													stamp = ws;
-												} else {
-													lock.unlockRead(stamp);
-
-													stamp = lock.writeLock();
-													continue;
-												}
-											}
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-											}
-											dbDelete(cfh, null, key.send());
-										} else if (newData != null
-												&& (prevData == null || !LLUtils.equals(prevData, newData))) {
-											//noinspection DuplicatedCode
-											if (updateMode == UpdateMode.ALLOW) {
-												var ws = lock.tryConvertToWriteLock(stamp);
-												if (ws != 0) {
-													stamp = ws;
-												} else {
-													lock.unlockRead(stamp);
-
-													stamp = lock.writeLock();
-													continue;
-												}
-											}
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB,
-														"Writing {}: {} (after update)",
-														LLUtils.toStringSafe(key),
-														LLUtils.toStringSafe(newData)
-												);
-											}
-											Buffer dataToPut;
-											if (updateReturnMode == UpdateReturnMode.GET_NEW_VALUE) {
-												dataToPut = newData.copy();
-											} else {
-												dataToPut = newData;
-											}
-											try {
-												dbPut(cfh, null, key.send(), dataToPut.send());
-											} finally {
-												if (dataToPut != newData) {
-													dataToPut.close();
-												}
-											}
-										}
-										return switch (updateReturnMode) {
-											case GET_NEW_VALUE -> newData != null ? newData.send() : null;
-											case GET_OLD_VALUE -> prevData != null ? prevData.send() : null;
-											case NOTHING -> null;
-											//noinspection UnnecessaryDefault
-											default -> throw new IllegalArgumentException();
-										};
-									} finally {
-										if (newData != null) {
-											newData.close();
-										}
-									}
-								} finally {
-									if (prevData != null) {
-										prevData.close();
-									}
-								}
+								tx.put(cfh, keyArray, newDataArray);
+								commitOptimistically(tx);
+							} else {
+								tx.rollback();
 							}
-						} finally {
-							if (updateMode == UpdateMode.ALLOW) {
-								lock.unlock(stamp);
-							}
+							return switch (updateReturnMode) {
+								case GET_NEW_VALUE -> newData != null ? newData.send() : null;
+								case GET_OLD_VALUE -> prevData != null ? prevData.send() : null;
+								case NOTHING -> null;
+								//noinspection UnnecessaryDefault
+								default -> throw new IllegalArgumentException();
+							};
 						}
 					}
-				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-				keySend -> Mono.fromRunnable(keySend::close)
-		);
+				}
+			}
+		}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
+				keySend -> Mono.fromRunnable(keySend::close));
+	}
+
+	private void commitOptimistically(Transaction tx) throws RocksDBException {
+		Code commitStatusCode = null;
+		do {
+			try {
+				tx.commit();
+			} catch (RocksDBException ex) {
+				if (ex.getStatus() != null && ex.getStatus().getCode() == Code.TryAgain) {
+					commitStatusCode = Code.TryAgain;
+					// Park for maximum 5ms
+					LockSupport.parkNanos(5000000);
+				} else {
+					throw ex;
+				}
+			}
+		} while (commitStatusCode == Code.TryAgain);
 	}
 
 	// Remember to change also update() if you are modifying this function
-	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly) {
-		return Mono.usingWhen(keyMono,
-				keySend -> runOnDb(() -> {
-					try (var key = keySend.receive()) {
+		return Mono.usingWhen(keyMono, keySend -> runOnDb(() -> {
+					try (Buffer key = keySend.receive()) {
+						var keyArray = LLUtils.toArray(key);
 						if (Schedulers.isInNonBlockingThread()) {
 							throw new UnsupportedOperationException("Called update in a nonblocking thread");
 						}
 						if (updateMode == UpdateMode.DISALLOW) {
 							throw new UnsupportedOperationException("update() is disallowed");
 						}
-						StampedLock lock;
-						long stamp;
-						if (updateMode == UpdateMode.ALLOW) {
-							lock = itemsLock.getAt(getLockIndex(key));
-
-							stamp = lock.readLock();
-						} else {
-							lock = null;
-							stamp = 0;
-						}
-						try {
-							while (true) {
-								@Nullable Buffer prevData;
-								var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
-								if (existsAlmostCertainly
-										|| db.keyMayExist(cfh, LLUtils.toArray(key), prevDataHolder)) {
-									if (!existsAlmostCertainly && prevDataHolder.getValue() != null) {
-										byte @Nullable [] prevDataBytes = prevDataHolder.getValue();
-										if (prevDataBytes != null) {
-											prevData = LLUtils.fromByteArray(alloc, prevDataBytes);
-										} else {
-											prevData = null;
-										}
-									} else {
-										var obtainedPrevData = dbGet(cfh, null, key.copy().send(), existsAlmostCertainly);
-										if (obtainedPrevData == null) {
-											prevData = null;
-										} else {
-											prevData = obtainedPrevData.receive();
-										}
-									}
+						try (var tx = db.beginTransaction(EMPTY_WRITE_OPTIONS, DEFAULT_OPTIMISTIC_TX_OPTIONS)) {
+							var prevDataArray = tx.getForUpdate(EMPTY_READ_OPTIONS, cfh, keyArray, true);
+							Buffer prevData;
+							if (prevDataArray != null) {
+								prevData = BYTE_ARRAY_BUFFERS.allocate(prevDataArray.length);
+								prevData.writeBytes(prevDataArray);
+							} else {
+								prevData = null;
+							}
+							try (prevData) {
+								Buffer prevDataToSendToUpdater;
+								if (prevData != null) {
+									prevDataToSendToUpdater = prevData.copy();
 								} else {
-									prevData = null;
+									prevDataToSendToUpdater = null;
 								}
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB,
-											"Reading {}: {} (before update)",
-											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(prevData)
-									);
-								}
-								try {
-									@Nullable Buffer newData;
-									try (Buffer prevDataToSendToUpdater = prevData == null ? null : prevData.copy()) {
-										try (var sentData = prevDataToSendToUpdater == null ? null
-												: prevDataToSendToUpdater.send()) {
-											try (var newDataToReceive = updater.apply(sentData)) {
-												if (newDataToReceive != null) {
-													newData = newDataToReceive.receive();
-												} else {
-													newData = null;
-												}
-											}
+
+								@Nullable Buffer newData;
+								try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
+									try (var newDataToReceive = updater.apply(sentData)) {
+										if (newDataToReceive != null) {
+											newData = newDataToReceive.receive();
+										} else {
+											newData = null;
 										}
 									}
-									assert newData == null || newData.isAccessible();
-									try {
+								}
+								try (newData) {
+									var newDataArray = newData == null ? null : LLUtils.toArray(newData);
+									if (prevData != null && newData == null) {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
+										}
+										tx.delete(cfh, keyArray, true);
+										commitOptimistically(tx);
+									} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 										if (logger.isTraceEnabled()) {
 											logger.trace(MARKER_ROCKSDB,
-													"Updating {}. previous data: {}, updated data: {}",
+													"Writing {}: {} (after update)",
 													LLUtils.toStringSafe(key),
-													LLUtils.toStringSafe(prevData),
 													LLUtils.toStringSafe(newData)
 											);
 										}
-										if (prevData != null && newData == null) {
-											//noinspection DuplicatedCode
-											if (updateMode == UpdateMode.ALLOW) {
-												var ws = lock.tryConvertToWriteLock(stamp);
-												if (ws != 0) {
-													stamp = ws;
-												} else {
-													lock.unlockRead(stamp);
-
-													stamp = lock.writeLock();
-													continue;
-												}
-											}
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-											}
-											dbDelete(cfh, null, key.send());
-										} else if (newData != null
-												&& (prevData == null || !LLUtils.equals(prevData, newData))) {
-											//noinspection DuplicatedCode
-											if (updateMode == UpdateMode.ALLOW) {
-												var ws = lock.tryConvertToWriteLock(stamp);
-												if (ws != 0) {
-													stamp = ws;
-												} else {
-													lock.unlockRead(stamp);
-
-													stamp = lock.writeLock();
-													continue;
-												}
-											}
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB,
-														"Writing {}: {} (after update)",
-														LLUtils.toStringSafe(key),
-														LLUtils.toStringSafe(newData)
-												);
-											}
-											assert key.isAccessible();
-											assert newData.isAccessible();
-											dbPut(cfh, null, key.send(), newData.copy().send());
-										}
-										if (newData == prevData && newData != null) {
-											newData = newData.copy();
-										}
-										assert (prevData == null && newData == null) || newData != prevData;
-										return LLDelta.of(
-												prevData != null ? prevData.send() : null,
-												newData != null ? newData.send() : null
-										).send();
-									} finally {
-										if (newData != null) {
-											newData.close();
-										}
+										tx.put(cfh, keyArray, newDataArray);
+										commitOptimistically(tx);
+									} else {
+										tx.rollback();
 									}
-								} finally {
-									if (prevData != null) {
-										prevData.close();
-									}
+									return LLDelta
+											.of(prevData != null ? prevData.send() : null, newData != null ? newData.send() : null)
+											.send();
 								}
-							}
-						} finally {
-							if (updateMode == UpdateMode.ALLOW) {
-								lock.unlock(stamp);
 							}
 						}
 					}
 				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-				keySend -> Mono.fromRunnable(keySend::close)
-		);
+				keySend -> Mono.fromRunnable(keySend::close));
 	}
 
 	private void dbDelete(ColumnFamilyHandle cfh, @Nullable WriteOptions writeOptions, Send<Buffer> keyToReceive)
@@ -989,27 +805,11 @@ public class LLLocalDictionary implements LLDictionary {
 						.concatWith(this
 								.<Send<Buffer>>runOnDb(() -> {
 									try (var key = keySend.receive()) {
-										StampedLock lock;
-										long stamp;
-										if (updateMode == UpdateMode.ALLOW) {
-											lock = itemsLock.getAt(getLockIndex(key));
-
-											stamp = lock.writeLock();
-										} else {
-											lock = null;
-											stamp = 0;
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
 										}
-										try {
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
-											}
-											dbDelete(cfh, null, key.send());
-											return null;
-										} finally {
-											if (updateMode == UpdateMode.ALLOW) {
-												lock.unlockWrite(stamp);
-											}
-										}
+										dbDelete(cfh, null, key.send());
+										return null;
 									}
 								})
 								.onErrorMap(cause -> new IOException("Failed to delete", cause))
@@ -1033,40 +833,24 @@ public class LLLocalDictionary implements LLDictionary {
 									if (Schedulers.isInNonBlockingThread()) {
 										throw new UnsupportedOperationException("Called getPreviousData in a nonblocking thread");
 									}
-									StampedLock lock;
-									long stamp;
-									if (updateMode == UpdateMode.ALLOW) {
-										lock = itemsLock.getAt(getLockIndex(key));
-
-										stamp = lock.readLock();
-									} else {
-										lock = null;
-										stamp = 0;
-									}
-									try {
-										var data = new Holder<byte[]>();
-										Buffer bufferResult;
-										if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
-											if (data.getValue() != null) {
-												bufferResult = LLUtils.fromByteArray(alloc, data.getValue());
-											} else {
-												try (var bufferResultToReceive = dbGet(cfh, null, key.send(), true)) {
-													bufferResult = bufferResultToReceive == null ? null : bufferResultToReceive.receive();
-												}
-											}
+									var data = new Holder<byte[]>();
+									Buffer bufferResult;
+									if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
+										if (data.getValue() != null) {
+											bufferResult = LLUtils.fromByteArray(alloc, data.getValue());
 										} else {
-											bufferResult = null;
-										}
-										try (bufferResult) {
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(bufferResult));
+											try (var bufferResultToReceive = dbGet(cfh, null, key.send(), true)) {
+												bufferResult = bufferResultToReceive == null ? null : bufferResultToReceive.receive();
 											}
-											return bufferResult == null ? null : bufferResult.send();
 										}
-									} finally {
-										if (updateMode == UpdateMode.ALLOW) {
-											lock.unlockRead(stamp);
+									} else {
+										bufferResult = null;
+									}
+									try (bufferResult) {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(bufferResult));
 										}
+										return bufferResult == null ? null : bufferResult.send();
 									}
 								}
 							})
@@ -1109,48 +893,25 @@ public class LLLocalDictionary implements LLDictionary {
 							if (Schedulers.isInNonBlockingThread()) {
 								throw new UnsupportedOperationException("Called getMulti in a nonblocking thread");
 							}
-							Iterable<StampedLock> locks;
-							ArrayList<Long> stamps;
-							if (updateMode == UpdateMode.ALLOW) {
-								locks = itemsLock.bulkGetAt(getLockIndices(keyBufsWindow));
-								stamps = new ArrayList<>();
-								for (var lock : locks) {
-
-									stamps.add(lock.readLock());
+							var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
+							List<byte[]> results = db.multiGetAsList(resolveSnapshot(snapshot),
+									columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
+							var mappedResults = new ArrayList<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>>(results.size());
+							for (int i = 0; i < results.size(); i++) {
+								byte[] val = results.get(i);
+								Optional<Buffer> valueOpt;
+								if (val != null) {
+									results.set(i, null);
+									valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
+								} else {
+									valueOpt = Optional.empty();
 								}
-							} else {
-								locks = null;
-								stamps = null;
+								mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
+										keyBufsWindow.get(i).send(),
+										valueOpt.map(Resource::send)
+								));
 							}
-							try {
-								var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
-								List<byte[]> results = db.multiGetAsList(resolveSnapshot(snapshot),
-										columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
-								var mappedResults = new ArrayList<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>>(results.size());
-								for (int i = 0; i < results.size(); i++) {
-									byte[] val = results.get(i);
-									Optional<Buffer> valueOpt;
-									if (val != null) {
-										results.set(i, null);
-										valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
-									} else {
-										valueOpt = Optional.empty();
-									}
-									mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
-											keyBufsWindow.get(i).send(),
-											valueOpt.map(Resource::send)
-									));
-								}
-								return mappedResults;
-							} finally {
-								if (updateMode == UpdateMode.ALLOW) {
-									int index = 0;
-									for (var lock : locks) {
-										lock.unlockRead(stamps.get(index));
-										index++;
-									}
-								}
-							}
+							return mappedResults;
 						} finally {
 							for (Buffer buffer : keyBufsWindow) {
 								buffer.close();
@@ -1188,85 +949,63 @@ public class LLLocalDictionary implements LLDictionary {
 								if (Schedulers.isInNonBlockingThread()) {
 									throw new UnsupportedOperationException("Called putMulti in a nonblocking thread");
 								}
-								Iterable<StampedLock> locks;
-								ArrayList<Long> stamps;
-								if (updateMode == UpdateMode.ALLOW) {
-									locks = itemsLock.bulkGetAt(getLockIndicesEntries(entriesWindow));
-									stamps = new ArrayList<>();
-									for (var lock : locks) {
-										stamps.add(lock.writeLock());
+								ArrayList<Send<LLEntry>> oldValues;
+								if (getOldValues) {
+									oldValues = new ArrayList<>(entriesWindow.size());
+									try (var readOptions = resolveSnapshot(null)) {
+										for (LLEntry entry : entriesWindow) {
+											try (var key = entry.getKey().receive()) {
+												Send<Buffer> oldValue = dbGet(cfh, readOptions, key.copy().send(), false);
+												if (oldValue != null) {
+													oldValues.add(LLEntry.of(key.send(), oldValue).send());
+												}
+											}
+										}
 									}
 								} else {
-									locks = null;
-									stamps = null;
+									oldValues = null;
 								}
-								try {
-									ArrayList<Send<LLEntry>> oldValues;
-									if (getOldValues) {
-										oldValues = new ArrayList<>(entriesWindow.size());
-										try (var readOptions = resolveSnapshot(null)) {
-											for (LLEntry entry : entriesWindow) {
-												try (var key = entry.getKey().receive()) {
-													Send<Buffer> oldValue = dbGet(cfh, readOptions, key.copy().send(), false);
-													if (oldValue != null) {
-														oldValues.add(LLEntry.of(key.send(), oldValue).send());
-													}
+								if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
+									var batch = new CappedWriteBatch(db,
+											alloc,
+											CAPPED_WRITE_BATCH_CAP,
+											RESERVED_WRITE_BATCH_SIZE,
+											MAX_WRITE_BATCH_SIZE,
+											BATCH_WRITE_OPTIONS
+									);
+									for (LLEntry entry : entriesWindow) {
+										var k = entry.getKey();
+										var v = entry.getValue();
+										if (databaseOptions.allowNettyDirect()) {
+											batch.put(cfh, k, v);
+										} else {
+											try (var key = k.receive()) {
+												try (var value = v.receive()) {
+													batch.put(cfh, LLUtils.toArray(key), LLUtils.toArray(value));
 												}
 											}
 										}
-									} else {
-										oldValues = null;
 									}
-									if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
-										var batch = new CappedWriteBatch(db,
-												alloc,
-												CAPPED_WRITE_BATCH_CAP,
-												RESERVED_WRITE_BATCH_SIZE,
-												MAX_WRITE_BATCH_SIZE,
-												BATCH_WRITE_OPTIONS
-										);
-										for (LLEntry entry : entriesWindow) {
-											var k = entry.getKey();
-											var v = entry.getValue();
-											if (databaseOptions.allowNettyDirect()) {
-												batch.put(cfh, k, v);
-											} else {
-												try (var key = k.receive()) {
-													try (var value = v.receive()) {
-														batch.put(cfh, LLUtils.toArray(key), LLUtils.toArray(value));
-													}
-												}
-											}
-										}
-										batch.writeToDbAndClose();
-										batch.close();
-									} else {
-										for (LLEntry entry : entriesWindow) {
-											var k = LLUtils.convertToReadableDirect(alloc, entry.getKey());
+									batch.writeToDbAndClose();
+									batch.close();
+								} else {
+									for (LLEntry entry : entriesWindow) {
+										var k = LLUtils.convertToReadableDirect(alloc, entry.getKey());
+										try {
+											var v = LLUtils.convertToReadableDirect(alloc, entry.getValue());
 											try {
-												var v = LLUtils.convertToReadableDirect(alloc, entry.getValue());
-												try {
-													db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
-												} finally {
-													v.buffer().close();
-													PlatformDependent.freeDirectBuffer(v.byteBuffer());
-												}
+												db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
 											} finally {
-												k.buffer().close();
-												PlatformDependent.freeDirectBuffer(k.byteBuffer());
+												v.buffer().close();
+												PlatformDependent.freeDirectBuffer(v.byteBuffer());
 											}
-										}
-									}
-									return oldValues;
-								} finally {
-									if (updateMode == UpdateMode.ALLOW) {
-										int index = 0;
-										for (var lock : locks) {
-											lock.unlockWrite(stamps.get(index));
-											index++;
+										} finally {
+											k.buffer().close();
+											PlatformDependent.freeDirectBuffer(k.byteBuffer());
 										}
 									}
 								}
+								return oldValues;
 							} finally {
 								for (LLEntry llEntry : entriesWindow) {
 									llEntry.close();
@@ -1295,112 +1034,89 @@ public class LLLocalDictionary implements LLDictionary {
 						for (Tuple2<Buffer, X> objects : entriesWindow) {
 							keyBufsWindow.add(objects.getT1());
 						}
-
-						Iterable<StampedLock> locks;
-						ArrayList<Long> stamps;
-						if (updateMode == UpdateMode.ALLOW) {
-							locks = itemsLock.bulkGetAt(getLockIndicesWithExtra(entriesWindow));
-							stamps = new ArrayList<>();
-							for (var lock : locks) {
-								stamps.add(lock.writeLock());
+						var columnFamilyHandles = new RepeatedElementList<>(cfh, entriesWindow.size());
+						ArrayList<Tuple3<Send<Buffer>, X, Optional<Send<Buffer>>>> mappedInputs;
+						{
+							var inputs = db.multiGetAsList(resolveSnapshot(null), columnFamilyHandles,
+									LLUtils.toArray(keyBufsWindow));
+							mappedInputs = new ArrayList<>(inputs.size());
+							for (int i = 0; i < inputs.size(); i++) {
+								var val = inputs.get(i);
+								if (val != null) {
+									inputs.set(i, null);
+									mappedInputs.add(Tuples.of(
+											keyBufsWindow.get(i).send(),
+											entriesWindow.get(i).getT2(),
+											Optional.of(fromByteArray(alloc, val).send())
+									));
+								} else {
+									mappedInputs.add(Tuples.of(
+											keyBufsWindow.get(i).send(),
+											entriesWindow.get(i).getT2(),
+											Optional.empty()
+									));
+								}
 							}
-						} else {
-							locks = null;
-							stamps = null;
 						}
+						var updatedValuesToWrite = new ArrayList<Send<Buffer>>(mappedInputs.size());
+						var valueChangedResult = new ArrayList<ExtraKeyOperationResult<Send<Buffer>, X>>(mappedInputs.size());
 						try {
-							var columnFamilyHandles = new RepeatedElementList<>(cfh, entriesWindow.size());
-							ArrayList<Tuple3<Send<Buffer>, X, Optional<Send<Buffer>>>> mappedInputs;
-							{
-								var inputs = db.multiGetAsList(resolveSnapshot(null), columnFamilyHandles,
-										LLUtils.toArray(keyBufsWindow));
-								mappedInputs = new ArrayList<>(inputs.size());
-								for (int i = 0; i < inputs.size(); i++) {
-									var val = inputs.get(i);
-									if (val != null) {
-										inputs.set(i, null);
-										mappedInputs.add(Tuples.of(
-												keyBufsWindow.get(i).send(),
-												entriesWindow.get(i).getT2(),
-												Optional.of(fromByteArray(alloc, val).send())
-										));
-									} else {
-										mappedInputs.add(Tuples.of(
-												keyBufsWindow.get(i).send(),
-												entriesWindow.get(i).getT2(),
-												Optional.empty()
-										));
+							for (var mappedInput : mappedInputs) {
+								try (var updatedValue = updateFunction
+										.apply(mappedInput.getT1(), mappedInput.getT2()).receive()) {
+									try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
+										valueChangedResult.add(new ExtraKeyOperationResult<>(mappedInput.getT1(),
+												mappedInput.getT2(), !LLUtils.equals(t3, updatedValue)));
 									}
+									updatedValuesToWrite.add(updatedValue.send());
 								}
 							}
-							var updatedValuesToWrite = new ArrayList<Send<Buffer>>(mappedInputs.size());
-							var valueChangedResult = new ArrayList<ExtraKeyOperationResult<Send<Buffer>, X>>(mappedInputs.size());
-							try {
-								for (var mappedInput : mappedInputs) {
-									try (var updatedValue = updateFunction
-											.apply(mappedInput.getT1(), mappedInput.getT2()).receive()) {
-										try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
-											valueChangedResult.add(new ExtraKeyOperationResult<>(mappedInput.getT1(),
-													mappedInput.getT2(), !LLUtils.equals(t3, updatedValue)));
-										}
-										updatedValuesToWrite.add(updatedValue.send());
-									}
-								}
-							} finally {
-								for (var mappedInput : mappedInputs) {
-									mappedInput.getT3().ifPresent(Send::close);
-								}
-							}
-
-							if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
-								var batch = new CappedWriteBatch(db,
-										alloc,
-										CAPPED_WRITE_BATCH_CAP,
-										RESERVED_WRITE_BATCH_SIZE,
-										MAX_WRITE_BATCH_SIZE,
-										BATCH_WRITE_OPTIONS
-								);
-								int i = 0;
-								for (Tuple2<Buffer, X> entry : entriesWindow) {
-									var valueToWrite = updatedValuesToWrite.get(i);
-									if (valueToWrite == null) {
-										batch.delete(cfh, entry.getT1().send());
-									} else {
-										batch.put(cfh, entry.getT1().send(), valueToWrite);
-									}
-									i++;
-								}
-								batch.writeToDbAndClose();
-								batch.close();
-							} else {
-								int i = 0;
-								for (Tuple2<Buffer, X> entry : entriesWindow) {
-									var k = LLUtils.convertToReadableDirect(alloc, entry.getT1().send());
-									try {
-										var v = LLUtils.convertToReadableDirect(alloc, updatedValuesToWrite.get(i));
-										try {
-											db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
-										} finally {
-											v.buffer().close();
-											PlatformDependent.freeDirectBuffer(v.byteBuffer());
-										}
-									} finally {
-										k.buffer().close();
-										PlatformDependent.freeDirectBuffer(k.byteBuffer());
-									}
-									i++;
-								}
-							}
-							return valueChangedResult;
 						} finally {
-							if (updateMode == UpdateMode.ALLOW) {
-								int index = 0;
-								for (var lock : locks) {
-									lock.unlockWrite(stamps.get(index));
-									index++;
-								}
+							for (var mappedInput : mappedInputs) {
+								mappedInput.getT3().ifPresent(Send::close);
 							}
 						}
+
+						if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
+							var batch = new CappedWriteBatch(db,
+									alloc,
+									CAPPED_WRITE_BATCH_CAP,
+									RESERVED_WRITE_BATCH_SIZE,
+									MAX_WRITE_BATCH_SIZE,
+									BATCH_WRITE_OPTIONS
+							);
+							int i = 0;
+							for (Tuple2<Buffer, X> entry : entriesWindow) {
+								var valueToWrite = updatedValuesToWrite.get(i);
+								if (valueToWrite == null) {
+									batch.delete(cfh, entry.getT1().send());
+								} else {
+									batch.put(cfh, entry.getT1().send(), valueToWrite);
+								}
+								i++;
+							}
+							batch.writeToDbAndClose();
+							batch.close();
+						} else {
+							int i = 0;
+							for (Tuple2<Buffer, X> entry : entriesWindow) {
+								var k = LLUtils.convertToReadableDirect(alloc, entry.getT1().send());
+								try {
+									var v = LLUtils.convertToReadableDirect(alloc, updatedValuesToWrite.get(i));
+									try {
+										db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
+									} finally {
+										v.buffer().close();
+										PlatformDependent.freeDirectBuffer(v.byteBuffer());
+									}
+								} finally {
+									k.buffer().close();
+									PlatformDependent.freeDirectBuffer(k.byteBuffer());
+								}
+								i++;
+							}
+						}
+						return valueChangedResult;
 					} finally {
 						for (Tuple2<Buffer, X> tuple : entriesWindow) {
 							tuple.getT1().close();
@@ -2026,6 +1742,7 @@ public class LLLocalDictionary implements LLDictionary {
 					if (Schedulers.isInNonBlockingThread()) {
 						throw new UnsupportedOperationException("Called clear in a nonblocking thread");
 					}
+					boolean shouldCompactLater = false;
 					try (var readOpts = new ReadOptions(getReadOptions(null))) {
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
@@ -2043,31 +1760,45 @@ public class LLLocalDictionary implements LLDictionary {
 							byte[] firstDeletedKey = null;
 							byte[] lastDeletedKey = null;
 							try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
-								rocksIterator.seekToLast();
+								//noinspection ConstantConditions
+								if (db instanceof OptimisticTransactionDB) {
+									rocksIterator.seekToFirst();
+									rocksIterator.status();
+									while (rocksIterator.isValid()) {
+										writeBatch.delete(cfh, rocksIterator.key());
+										rocksIterator.next();
+										rocksIterator.status();
+									}
+								} else {
+									rocksIterator.seekToLast();
 
-								rocksIterator.status();
-								if (rocksIterator.isValid()) {
-									firstDeletedKey = FIRST_KEY;
-									lastDeletedKey = rocksIterator.key();
-									writeBatch.deleteRange(cfh, FIRST_KEY, rocksIterator.key());
-									writeBatch.delete(cfh, rocksIterator.key());
+									rocksIterator.status();
+									if (rocksIterator.isValid()) {
+										firstDeletedKey = FIRST_KEY;
+										lastDeletedKey = rocksIterator.key();
+										writeBatch.deleteRange(cfh, FIRST_KEY, rocksIterator.key());
+										writeBatch.delete(cfh, rocksIterator.key());
+										shouldCompactLater = true;
+									}
 								}
 							}
 
 							writeBatch.writeToDbAndClose();
 
 
-							// Compact range
-							db.suggestCompactRange(cfh);
-							if (firstDeletedKey != null && lastDeletedKey != null) {
-								db.compactRange(cfh,
-										firstDeletedKey,
-										lastDeletedKey,
-										new CompactRangeOptions()
-												.setAllowWriteStall(false)
-												.setExclusiveManualCompaction(false)
-												.setChangeLevel(false)
-								);
+							if (shouldCompactLater) {
+								// Compact range
+								db.suggestCompactRange(cfh);
+								if (firstDeletedKey != null && lastDeletedKey != null) {
+									db.compactRange(cfh,
+											firstDeletedKey,
+											lastDeletedKey,
+											new CompactRangeOptions()
+													.setAllowWriteStall(false)
+													.setExclusiveManualCompaction(false)
+													.setChangeLevel(false)
+									);
+								}
 							}
 
 							db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);

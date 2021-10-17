@@ -74,9 +74,9 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 		return true;
 	}
 
-	public static LLDelta of(Send<Buffer> min, Send<Buffer> max) {
-		assert (min == null && max == null) || (min != max);
-		return new LLDelta(min, max, null);
+	public static LLDelta of(Send<Buffer> previous, Send<Buffer> current) {
+		assert (previous == null && current == null) || (previous != current);
+		return new LLDelta(previous, current, null);
 	}
 
 	public Send<Buffer> previous() {

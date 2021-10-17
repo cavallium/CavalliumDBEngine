@@ -13,7 +13,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -28,7 +28,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods (which?)
-public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends DatabaseResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryDeep<T, U, US>>
+public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends ResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryDeep<T, U, US>>
 		implements DatabaseStageMap<T, U, US> {
 
 	private static final Logger logger = LoggerFactory.getLogger(DatabaseMapDictionaryDeep.class);

@@ -4,6 +4,7 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.Objects;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.NotNull;
@@ -11,7 +12,7 @@ import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 
-public class LLEntry extends DatabaseResourceSupport<LLEntry, LLEntry> {
+public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLEntry.class);
 

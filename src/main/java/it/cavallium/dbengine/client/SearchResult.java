@@ -3,10 +3,10 @@ package it.cavallium.dbengine.client;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import reactor.core.publisher.Flux;
 
-public final class SearchResult<T, U> extends DatabaseResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
+public final class SearchResult<T, U> extends ResourceSupport<SearchResult<T, U>, SearchResult<T, U>> {
 
 	private static final Drop<SearchResult<?, ?>> DROP = new Drop<>() {
 		@Override

@@ -3,14 +3,14 @@ package it.cavallium.dbengine.client;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 @SuppressWarnings("unused")
-public final class SearchResultKeys<T> extends DatabaseResourceSupport<SearchResultKeys<T>, SearchResultKeys<T>> {
+public final class SearchResultKeys<T> extends ResourceSupport<SearchResultKeys<T>, SearchResultKeys<T>> {
 
 	private static final Logger logger = LoggerFactory.getLogger(SearchResultKeys.class);
 

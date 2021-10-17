@@ -4,12 +4,13 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 
-public class LLDelta extends DatabaseResourceSupport<LLDelta, LLDelta> {
+public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLDelta.class);
 

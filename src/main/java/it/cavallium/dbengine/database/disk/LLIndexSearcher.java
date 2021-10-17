@@ -2,13 +2,13 @@ package it.cavallium.dbengine.database.disk;
 
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.search.IndexSearcher;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 
-public class LLIndexSearcher extends DatabaseResourceSupport<LLIndexSearcher, LLIndexSearcher> {
+public class LLIndexSearcher extends ResourceSupport<LLIndexSearcher, LLIndexSearcher> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLIndexSearcher.class);
 

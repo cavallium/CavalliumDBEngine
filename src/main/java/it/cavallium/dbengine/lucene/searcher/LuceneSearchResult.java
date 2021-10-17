@@ -4,13 +4,13 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.Objects;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
-public final class LuceneSearchResult extends DatabaseResourceSupport<LuceneSearchResult, LuceneSearchResult> {
+public final class LuceneSearchResult extends ResourceSupport<LuceneSearchResult, LuceneSearchResult> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LuceneSearchResult.class);
 

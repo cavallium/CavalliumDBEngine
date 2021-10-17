@@ -2,13 +2,14 @@ package it.cavallium.dbengine.database;
 
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import java.util.Objects;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
-public final class LLSearchResultShard extends DatabaseResourceSupport<LLSearchResultShard, LLSearchResultShard> {
+public final class LLSearchResultShard extends ResourceSupport<LLSearchResultShard, LLSearchResultShard> {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLSearchResultShard.class);
 

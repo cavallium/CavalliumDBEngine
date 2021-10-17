@@ -4,7 +4,7 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -34,7 +34,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
 	IndexReader allShards();
 
-	class UnshardedIndexSearchers extends DatabaseResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
+	class UnshardedIndexSearchers extends ResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
 			implements LLIndexSearchers {
 
 		private static final Logger logger = LoggerFactory.getLogger(UnshardedIndexSearchers.class);
@@ -125,7 +125,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 		}
 	}
 
-	class ShardedIndexSearchers extends DatabaseResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
+	class ShardedIndexSearchers extends ResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
 			implements LLIndexSearchers {
 
 		private static final Logger logger = LoggerFactory.getLogger(ShardedIndexSearchers.class);

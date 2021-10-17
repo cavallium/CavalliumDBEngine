@@ -7,7 +7,7 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.DatabaseResourceSupport;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
@@ -24,7 +24,7 @@ import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
 public class DatabaseSingleBucket<K, V, TH>
-		extends DatabaseResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
+		extends ResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
 		implements DatabaseStageEntry<V> {
 
 	private static final Logger logger = LoggerFactory.getLogger(DatabaseSingleBucket.class);

@@ -19,15 +19,17 @@ public class MappedSerializer<A, B> implements Serializer<B> {
 	}
 
 	@Override
-	public @NotNull DeserializationResult<B> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException {
-		try (serialized) {
-			var deserialized = serializer.deserialize(serialized);
-			return new DeserializationResult<>(keyMapper.map(deserialized.deserializedData()), deserialized.bytesRead());
-		}
+	public @NotNull B deserialize(@NotNull Buffer serialized) throws SerializationException {
+		return keyMapper.map(serializer.deserialize(serialized));
 	}
 
 	@Override
-	public @NotNull Send<Buffer> serialize(@NotNull B deserialized) throws SerializationException {
-		return serializer.serialize(keyMapper.unmap(deserialized));
+	public void serialize(@NotNull B deserialized, Buffer output) throws SerializationException {
+		serializer.serialize(keyMapper.unmap(deserialized), output);
+	}
+
+	@Override
+	public int getSerializedSizeHint() {
+		return serializer.getSerializedSizeHint();
 	}
 }

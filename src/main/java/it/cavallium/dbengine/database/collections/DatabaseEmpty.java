@@ -6,8 +6,8 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import it.cavallium.dbengine.database.serialization.Serializer.DeserializationResult;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,20 +15,23 @@ public class DatabaseEmpty {
 
 	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
-	public static final DeserializationResult<Nothing> NOTHING_RESULT = new DeserializationResult<>(NOTHING, 0);
 
 	public static Serializer<Nothing> nothingSerializer(BufferAllocator bufferAllocator) {
 		return new Serializer<>() {
+
 			@Override
-			public @NotNull DeserializationResult<Nothing> deserialize(@Nullable Send<Buffer> serialized) {
-				try (serialized) {
-					return NOTHING_RESULT;
-				}
+			public @NotNull Nothing deserialize(@NotNull Buffer serialized) {
+				return NOTHING;
 			}
 
 			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull Nothing deserialized) {
-				return LLUtils.empty(bufferAllocator);
+			public void serialize(@NotNull Nothing deserialized, Buffer output) {
+
+			}
+
+			@Override
+			public int getSerializedSizeHint() {
+				return 0;
 			}
 		};
 	}

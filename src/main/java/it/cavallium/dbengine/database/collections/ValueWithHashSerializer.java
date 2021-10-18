@@ -15,38 +15,40 @@ import org.jetbrains.annotations.Nullable;
 
 class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 
-	private final BufferAllocator allocator;
 	private final Serializer<X> keySuffixSerializer;
 	private final Serializer<Y> valueSerializer;
 
-	ValueWithHashSerializer(BufferAllocator allocator,
+	ValueWithHashSerializer(
 			Serializer<X> keySuffixSerializer,
 			Serializer<Y> valueSerializer) {
-		this.allocator = allocator;
 		this.keySuffixSerializer = keySuffixSerializer;
 		this.valueSerializer = valueSerializer;
 	}
 
 	@Override
-	public @NotNull DeserializationResult<Entry<X, Y>> deserialize(@Nullable Send<Buffer> serializedToReceive)
-			throws SerializationException {
-		Objects.requireNonNull(serializedToReceive);
-		try (var serialized = serializedToReceive.receive()) {
-			DeserializationResult<X> deserializedKey = keySuffixSerializer.deserialize(serialized.copy().send());
-			DeserializationResult<Y> deserializedValue = valueSerializer.deserialize(serialized
-					.copy(serialized.readerOffset() + deserializedKey.bytesRead(),
-							serialized.readableBytes() - deserializedKey.bytesRead()
-					)
-					.send());
-			return new DeserializationResult<>(Map.entry(deserializedKey.deserializedData(),
-					deserializedValue.deserializedData()), deserializedKey.bytesRead() + deserializedValue.bytesRead());
-		}
+	public @NotNull Entry<X, Y> deserialize(@NotNull Buffer serialized) throws SerializationException {
+		Objects.requireNonNull(serialized);
+		X deserializedKey = keySuffixSerializer.deserialize(serialized);
+		Y deserializedValue = valueSerializer.deserialize(serialized);
+		return Map.entry(deserializedKey, deserializedValue);
 	}
 
 	@Override
-	public @NotNull Send<Buffer> serialize(@NotNull Entry<X, Y> deserialized) throws SerializationException {
-		var keySuffix = keySuffixSerializer.serialize(deserialized.getKey());
-		var value = valueSerializer.serialize(deserialized.getValue());
-		return LLUtils.compositeBuffer(allocator, keySuffix, value).send();
+	public void serialize(@NotNull Entry<X, Y> deserialized, Buffer output) throws SerializationException {
+		keySuffixSerializer.serialize(deserialized.getKey(), output);
+		valueSerializer.serialize(deserialized.getValue(), output);
+	}
+
+	@Override
+	public int getSerializedSizeHint() {
+		var hint1 = keySuffixSerializer.getSerializedSizeHint();
+		var hint2 = valueSerializer.getSerializedSizeHint();
+		if (hint1 == -1 && hint2 == -1) {
+			return -1;
+		} else if (hint1 == -1) {
+			return hint2;
+		} else {
+			return hint1;
+		}
 	}
 }

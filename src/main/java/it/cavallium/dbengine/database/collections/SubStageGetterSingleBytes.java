@@ -7,6 +7,6 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 public class SubStageGetterSingleBytes extends SubStageGetterSingle<Send<Buffer>> {
 
 	public SubStageGetterSingleBytes() {
-		super(Serializer.noop());
+		super(Serializer.NOOP_SEND_SERIALIZER);
 	}
 }

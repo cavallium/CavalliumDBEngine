@@ -11,23 +11,23 @@ import org.warp.commonutils.error.IndexOutOfBoundsException;
 
 public class CodecSerializer<A> implements Serializer<A> {
 
-	private final BufferAllocator allocator;
 	private final Codecs<A> deserializationCodecs;
 	private final Codec<A> serializationCodec;
 	private final int serializationCodecId;
 	private final boolean microCodecs;
+	private final int serializedSizeHint;
 
 	/**
 	 *
 	 * @param microCodecs if true, allow only codecs with a value from 0 to 255 to save disk space
+	 * @param serializedSizeHint suggested default buffer size, -1 if unknown
 	 */
 	public CodecSerializer(
-			BufferAllocator allocator,
 			Codecs<A> deserializationCodecs,
 			Codec<A> serializationCodec,
 			int serializationCodecId,
-			boolean microCodecs) {
-		this.allocator = allocator;
+			boolean microCodecs,
+			int serializedSizeHint) {
 		this.deserializationCodecs = deserializationCodecs;
 		this.serializationCodec = serializationCodec;
 		this.serializationCodecId = serializationCodecId;
@@ -35,11 +35,22 @@ public class CodecSerializer<A> implements Serializer<A> {
 		if (microCodecs && (serializationCodecId > 255 || serializationCodecId < 0)) {
 			throw new IndexOutOfBoundsException(serializationCodecId, 0, 255);
 		}
+		if (serializedSizeHint != -1) {
+			this.serializedSizeHint = (microCodecs ? Byte.BYTES : Integer.BYTES) + serializedSizeHint;
+		} else {
+			this.serializedSizeHint = -1;
+		}
 	}
 
 	@Override
-	public @NotNull DeserializationResult<A> deserialize(@Nullable Send<Buffer> serializedToReceive) {
-		try (var is = new BufferDataInput(serializedToReceive)) {
+	public int getSerializedSizeHint() {
+		return serializedSizeHint;
+	}
+
+	@Override
+	public @NotNull A deserialize(@NotNull Buffer serializedBuf) throws SerializationException {
+		try {
+			var is = new BufferDataInputShared(serializedBuf);
 			int codecId;
 			if (microCodecs) {
 				codecId = is.readUnsignedByte();
@@ -47,7 +58,7 @@ public class CodecSerializer<A> implements Serializer<A> {
 				codecId = is.readInt();
 			}
 			var serializer = deserializationCodecs.getCodec(codecId);
-			return new DeserializationResult<>(serializer.deserialize(is), is.getReadBytesCount());
+			return serializer.deserialize(is);
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);
@@ -55,16 +66,15 @@ public class CodecSerializer<A> implements Serializer<A> {
 	}
 
 	@Override
-	public @NotNull Send<Buffer> serialize(@NotNull A deserialized) {
-		try (Buffer buf = allocator.allocate(64)) {
-			var os = new BufferDataOutput(buf);
+	public void serialize(@NotNull A deserialized, Buffer output) throws SerializationException {
+		try {
+			var os = new BufferDataOutput(output);
 			if (microCodecs) {
 				os.writeByte(serializationCodecId);
 			} else {
 				os.writeInt(serializationCodecId);
 			}
 			serializationCodec.serialize(os, deserialized);
-			return buf.send();
 		} catch (IOException ex) {
 			// This shouldn't happen
 			throw new IOError(ex);

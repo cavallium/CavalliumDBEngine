@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.serialization;
 
-import java.io.DataInput;
-import java.io.DataOutput;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 

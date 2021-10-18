@@ -77,9 +77,9 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 		}
 		this.alloc = dictionary.getAllocator();
 		ValueWithHashSerializer<T, U> valueWithHashSerializer
-				= new ValueWithHashSerializer<>(alloc, keySuffixSerializer, valueSerializer);
+				= new ValueWithHashSerializer<>(keySuffixSerializer, valueSerializer);
 		ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
-				= new ValuesSetSerializer<>(alloc, valueWithHashSerializer);
+				= new ValuesSetSerializer<>(valueWithHashSerializer);
 		this.subDictionary = DatabaseMapDictionary.tail(dictionary, prefixKey, keySuffixHashSerializer,
 				valuesSetSerializer, onClose);
 		this.keySuffixHashFunction = keySuffixHashFunction;

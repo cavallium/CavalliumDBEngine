@@ -224,7 +224,7 @@ public abstract class TestDictionaryMap {
 						.flatMapMany(map -> Flux
 								.concat(
 										map.updateValue(key, old -> {
-											assert old == null;
+											Assertions.assertNull(old);
 											return "error?";
 										}),
 										map.updateValue(key, false, old -> {
@@ -624,8 +624,8 @@ public abstract class TestDictionaryMap {
 								.concat(
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map.get(null)
-										.map(Map::entrySet)
-										.flatMapIterable(list -> list)
+												.map(Map::entrySet)
+												.flatMapIterable(list -> list)
 								)
 								.doFinally(s -> map.close())
 						)
@@ -707,27 +707,37 @@ public abstract class TestDictionaryMap {
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
 	public void testPutMultiClear(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
-		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.isEmpty(null),
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.isEmpty(null),
-										map.clear().then(Mono.empty()),
-										map.isEmpty(null)
-								)
-								.doFinally(s -> map.close())
-						)
-						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
-						.transform(LLUtils::handleDiscard)
-				));
-		if (shouldFail) {
-			this.checkLeaks = false;
-			stpVer.verifyError();
-		} else {
-			stpVer.expectNext(true, entries.isEmpty(), true).verifyComplete();
+		List<Boolean> result;
+		try {
+			result = SyncUtils.run(DbTestUtils.tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
+					.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
+					.flatMapMany(map -> Flux
+							.concat(
+									map.isEmpty(null),
+									map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
+									map.isEmpty(null),
+									map.clear().then(Mono.empty()),
+									map.isEmpty(null)
+							)
+							.doFinally(s -> map.close())
+					)
+					.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
+					.transform(LLUtils::handleDiscard)
+					.collectList()
+			).singleOrEmpty());
+		} catch (Exception ex) {
+			if (shouldFail) {
+				this.checkLeaks = false;
+			} else {
+				throw ex;
+			}
+			return;
 		}
+
+		Assertions.assertEquals(true, result.get(0));
+
+		Assertions.assertEquals(entries.isEmpty(), result.get(1));
+
+		Assertions.assertEquals(true, result.get(2));
 	}
 }

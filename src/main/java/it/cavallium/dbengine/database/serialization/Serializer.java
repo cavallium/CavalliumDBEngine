@@ -1,8 +1,10 @@
 package it.cavallium.dbengine.database.serialization;
 
+import io.net5.buffer.ByteBufUtil;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
+import io.net5.util.internal.StringUtil;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.netty.NullableBuffer;
 import java.nio.charset.StandardCharsets;
@@ -12,56 +14,82 @@ import org.jetbrains.annotations.Nullable;
 
 public interface Serializer<A> {
 
-	record DeserializationResult<T>(T deserializedData, int bytesRead) {}
+	/**
+	 *
+	 * @param serialized the serialized data should be split!
+	 */
+	@NotNull A deserialize(@NotNull Buffer serialized) throws SerializationException;
 
-	@NotNull DeserializationResult<A> deserialize(@NotNull Send<Buffer> serialized) throws SerializationException;
+	/**
+	 * @param output its writable size will be at least equal to the size hint
+	 */
+	void serialize(@NotNull A deserialized, Buffer output) throws SerializationException;
 
-	@NotNull Send<Buffer> serialize(@NotNull A deserialized) throws SerializationException;
+	/**
+	 * @return suggested default buffer size, -1 if unknown
+	 */
+	int getSerializedSizeHint();
 
-	Serializer<Send<Buffer>> NOOP_SERIALIZER = new Serializer<>() {
+	Serializer<Buffer> NOOP_SERIALIZER = new Serializer<>() {
 		@Override
-		public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
-			try (var serializedBuf =  serialized.receive()) {
-				var readableBytes = serializedBuf.readableBytes();
-				return new DeserializationResult<>(serializedBuf.send(), readableBytes);
-			}
+		public @NotNull Buffer deserialize(@NotNull Buffer serialized) {
+			return serialized.split();
 		}
 
 		@Override
-		public @NotNull Send<Buffer> serialize(@NotNull Send<Buffer> deserialized) {
-			return deserialized;
+		public void serialize(@NotNull Buffer deserialized, @NotNull Buffer deserializedToReceive) {
+			deserializedToReceive.ensureWritable(deserialized.readableBytes());
+			deserializedToReceive.writeBytes(deserialized);
+		}
+
+		@Override
+		public int getSerializedSizeHint() {
+			return -1;
 		}
 	};
 
-	static Serializer<Send<Buffer>> noop() {
-		return NOOP_SERIALIZER;
-	}
+	Serializer<Send<Buffer>> NOOP_SEND_SERIALIZER = new Serializer<>() {
+		@Override
+		public @NotNull Send<Buffer> deserialize(@NotNull Buffer serialized) {
+			return serialized.split().send();
+		}
 
-	static Serializer<String> utf8(BufferAllocator allocator) {
-		return new Serializer<>() {
-			@Override
-			public @NotNull DeserializationResult<String> deserialize(@Nullable Send<Buffer> serializedToReceive) {
-				Objects.requireNonNull(serializedToReceive);
-				try (Buffer serialized = serializedToReceive.receive()) {
-					assert serialized.isAccessible();
-					int length = serialized.readInt();
-					var readerOffset = serialized.readerOffset();
-					return new DeserializationResult<>(LLUtils.deserializeString(serialized.send(),
-							readerOffset, length, StandardCharsets.UTF_8), Integer.BYTES + length);
-				}
+		@Override
+		public void serialize(@NotNull Send<Buffer> deserialized, @NotNull Buffer deserializedToReceive) {
+			try (var received = deserialized.receive()) {
+				deserializedToReceive.ensureWritable(received.readableBytes());
+				deserializedToReceive.writeBytes(received);
 			}
+		}
 
-			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) {
-				var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
-				try (Buffer buf = allocator.allocate(Integer.BYTES + bytes.length)) {
-					assert buf.isAccessible();
-					buf.writeInt(bytes.length);
-					buf.writeBytes(bytes);
-					assert buf.isAccessible();
-					return buf.send();
-				}
+		@Override
+		public int getSerializedSizeHint() {
+			return -1;
+		}
+	};
+
+	
+		Serializer<String> UTF8_SERIALIZER = new Serializer<>() {
+		@Override
+		public @NotNull String deserialize(@NotNull Buffer serialized) {
+			assert serialized.isAccessible();
+			int length = serialized.readInt();
+			try (var strBuf = serialized.readSplit(length)) {
+				return LLUtils.deserializeString(strBuf, strBuf.readerOffset(), length, StandardCharsets.UTF_8);
 			}
-		};
-	}
+		}
+
+		@Override
+		public void serialize(@NotNull String deserialized, Buffer output) {
+			var bytes =  deserialized.getBytes(StandardCharsets.UTF_8);
+			output.ensureWritable(Integer.BYTES + bytes.length);
+			output.writeInt(bytes.length);
+			output.writeBytes(bytes);
+		}
+
+		@Override
+		public int getSerializedSizeHint() {
+			return -1;
+		}
+	};
 }

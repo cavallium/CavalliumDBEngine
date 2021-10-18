@@ -24,6 +24,7 @@ import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.nio.file.Path;
@@ -154,14 +155,14 @@ public class DbTestUtils {
 			int keyBytes) {
 		if (mapType == MapType.MAP) {
 			return DatabaseMapDictionary.simple(dictionary,
-					SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), keyBytes),
-					Serializer.utf8(dictionary.getAllocator()),
+					SerializerFixedBinaryLength.utf8(keyBytes),
+					Serializer.UTF8_SERIALIZER,
 					null
 			);
 		} else {
 			return DatabaseMapDictionaryHashed.simple(dictionary,
-					Serializer.utf8(dictionary.getAllocator()),
-					Serializer.utf8(dictionary.getAllocator()),
+					Serializer.UTF8_SERIALIZER,
+					Serializer.UTF8_SERIALIZER,
 					s -> (short) s.hashCode(),
 					new SerializerFixedBinaryLength<>() {
 						@Override
@@ -170,21 +171,15 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull DeserializationResult<Short> deserialize(@Nullable Send<Buffer> serializedToReceive) {
-							Objects.requireNonNull(serializedToReceive);
-							try (var serialized = serializedToReceive.receive()) {
-								var val = serialized.readShort();
-								return new DeserializationResult<>(val, Short.BYTES);
-							}
+						public @NotNull Short deserialize(@NotNull Buffer serialized) throws SerializationException {
+							Objects.requireNonNull(serialized);
+							var val = serialized.readShort();
+							return val;
 						}
 
 						@Override
-						public @NotNull Send<Buffer> serialize(@NotNull Short deserialized) {
-							try (var out = dictionary.getAllocator().allocate(Short.BYTES)) {
-								out.writeShort(deserialized);
-								out.writerOffset(Short.BYTES);
-								return out.send();
-							}
+						public void serialize(@NotNull Short deserialized, Buffer output) throws SerializationException {
+							output.writeShort(deserialized);
 						}
 					},
 					null
@@ -198,10 +193,10 @@ public class DbTestUtils {
 			int key1Bytes,
 			int key2Bytes) {
 		return DatabaseMapDictionaryDeep.deepTail(dictionary,
-				SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), key1Bytes),
+				SerializerFixedBinaryLength.utf8(key1Bytes),
 				key2Bytes,
-				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), key2Bytes),
-						Serializer.utf8(dictionary.getAllocator())
+				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(key2Bytes),
+						Serializer.UTF8_SERIALIZER
 				),
 				null
 		);
@@ -212,10 +207,10 @@ public class DbTestUtils {
 			LLDictionary dictionary,
 			int key1Bytes) {
 		return DatabaseMapDictionaryDeep.deepTail(dictionary,
-				SerializerFixedBinaryLength.utf8(dictionary.getAllocator(), key1Bytes),
+				SerializerFixedBinaryLength.utf8(key1Bytes),
 				Integer.BYTES,
-				new SubStageGetterHashMap<>(Serializer.utf8(dictionary.getAllocator()),
-						Serializer.utf8(dictionary.getAllocator()),
+				new SubStageGetterHashMap<>(Serializer.UTF8_SERIALIZER,
+						Serializer.UTF8_SERIALIZER,
 						String::hashCode,
 						SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator())
 				),
@@ -226,8 +221,8 @@ public class DbTestUtils {
 	public static <T, U> DatabaseMapDictionaryHashed<String, String, Integer> tempDatabaseMapDictionaryHashMap(
 			LLDictionary dictionary) {
 		return DatabaseMapDictionaryHashed.simple(dictionary,
-				Serializer.utf8(dictionary.getAllocator()),
-				Serializer.utf8(dictionary.getAllocator()),
+				Serializer.UTF8_SERIALIZER,
+				Serializer.UTF8_SERIALIZER,
 				String::hashCode,
 				SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator()),
 				null

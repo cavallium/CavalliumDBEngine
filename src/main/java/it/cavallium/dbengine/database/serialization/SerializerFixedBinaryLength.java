@@ -14,31 +14,33 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 
 	int getSerializedBinaryLength();
 
-	static SerializerFixedBinaryLength<Send<Buffer>> noop(int length) {
+	@Override
+	default int getSerializedSizeHint() {
+		return getSerializedBinaryLength();
+	}
+
+	static SerializerFixedBinaryLength<Buffer> noop(int length) {
 		return new SerializerFixedBinaryLength<>() {
 			@Override
-			public @NotNull DeserializationResult<Send<Buffer>> deserialize(@NotNull Send<Buffer> serialized) {
+			public @NotNull Buffer deserialize(@NotNull Buffer serialized) {
 				Objects.requireNonNull(serialized);
-				try (var buf = serialized.receive()) {
-					if (buf.readableBytes() != getSerializedBinaryLength()) {
-						throw new IllegalArgumentException(
-								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
-										+ buf.readableBytes() + " bytes instead");
-					}
-					var readableBytes = buf.readableBytes();
-					return new DeserializationResult<>(buf.send(), readableBytes);
+				if (serialized.readableBytes() < getSerializedBinaryLength()) {
+					throw new IllegalArgumentException(
+							"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+									+ serialized.readableBytes() + " bytes instead");
 				}
+				return serialized.readSplit(getSerializedBinaryLength());
 			}
 
 			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull Send<Buffer> deserialized) {
-				try (Buffer buf = deserialized.receive()) {
-					if (buf.readableBytes() != getSerializedBinaryLength()) {
+			public void serialize(@NotNull Buffer deserialized, Buffer output) {
+				try (deserialized) {
+					if (deserialized.readableBytes() != getSerializedBinaryLength()) {
 						throw new IllegalArgumentException(
 								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to serialize an element with "
-										+ buf.readableBytes() + " bytes instead");
+										+ deserialized.readableBytes() + " bytes instead");
 					}
-					return buf.send();
+					output.writeBytes(deserialized);
 				}
 			}
 
@@ -49,39 +51,32 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 		};
 	}
 
-	static SerializerFixedBinaryLength<String> utf8(BufferAllocator allocator, int length) {
+	static SerializerFixedBinaryLength<String> utf8(int length) {
 		return new SerializerFixedBinaryLength<>() {
+
 			@Override
-			public @NotNull DeserializationResult<String> deserialize(@NotNull Send<Buffer> serializedToReceive)
-					throws SerializationException {
-				try (var serialized = serializedToReceive.receive()) {
-					if (serialized.readableBytes() != getSerializedBinaryLength()) {
-						throw new SerializationException(
-								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
-										+ serialized.readableBytes() + " bytes instead");
-					}
-					var readerOffset = serialized.readerOffset();
-					return new DeserializationResult<>(LLUtils.deserializeString(serialized.send(),
-							readerOffset, length, StandardCharsets.UTF_8), length);
+			public @NotNull String deserialize(@NotNull Buffer serialized) throws SerializationException {
+				if (serialized.readableBytes() < getSerializedBinaryLength()) {
+					throw new SerializationException(
+							"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+									+ serialized.readableBytes() + " bytes instead");
 				}
+				var readerOffset = serialized.readerOffset();
+				return LLUtils.deserializeString(serialized.send(), readerOffset, length, StandardCharsets.UTF_8);
 			}
 
 			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull String deserialized) throws SerializationException {
-				// UTF-8 uses max. 3 bytes per char, so calculate the worst case.
-				try (Buffer buf = allocator.allocate(LLUtils.utf8MaxBytes(deserialized))) {
-					assert buf.isAccessible();
-					var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
-					buf.ensureWritable(bytes.length);
-					buf.writeBytes(bytes);
-					if (buf.readableBytes() != getSerializedBinaryLength()) {
-						throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
-								+ " bytes has tried to serialize an element with "
-								+ buf.readableBytes() + " bytes instead");
-					}
-					assert buf.isAccessible();
-					return buf.send();
+			public void serialize(@NotNull String deserialized, Buffer output) throws SerializationException {
+				assert output.isAccessible();
+				var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
+				output.ensureWritable(bytes.length);
+				output.writeBytes(bytes);
+				if (output.readableBytes() < getSerializedBinaryLength()) {
+					throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
+							+ " bytes has tried to serialize an element with "
+							+ output.readableBytes() + " bytes instead");
 				}
+				assert output.isAccessible();
 			}
 
 			@Override
@@ -93,24 +88,21 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 
 	static SerializerFixedBinaryLength<Integer> intSerializer(BufferAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
+
 			@Override
-			public @NotNull DeserializationResult<Integer> deserialize(@NotNull Send<Buffer> serializedToReceive) {
-				Objects.requireNonNull(serializedToReceive);
-				try (var serialized = serializedToReceive.receive()) {
-					if (serialized.readableBytes() != getSerializedBinaryLength()) {
-						throw new IllegalArgumentException(
-								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
-										+ serialized.readableBytes() + " bytes instead");
-					}
-					return new DeserializationResult<>(serialized.readInt(), Integer.BYTES);
+			public @NotNull Integer deserialize(@NotNull Buffer serialized) {
+				Objects.requireNonNull(serialized);
+				if (serialized.readableBytes() < getSerializedBinaryLength()) {
+					throw new IllegalArgumentException(
+							"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+									+ serialized.readableBytes() + " bytes instead");
 				}
+				return serialized.readInt();
 			}
 
 			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull Integer deserialized) {
-				try (Buffer buf = allocator.allocate(Integer.BYTES)) {
-					return buf.writeInt(deserialized).send();
-				}
+			public void serialize(@NotNull Integer deserialized, Buffer output) {
+				output.writeInt(deserialized);
 			}
 
 			@Override
@@ -122,25 +114,21 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 
 	static SerializerFixedBinaryLength<Long> longSerializer(BufferAllocator allocator) {
 		return new SerializerFixedBinaryLength<>() {
+
 			@Override
-			public @NotNull DeserializationResult<Long> deserialize(@NotNull Send<Buffer> serializedToReceive) {
-				Objects.requireNonNull(serializedToReceive);
-				try (var serialized = serializedToReceive.receive()) {
-					if (serialized.readableBytes() != getSerializedBinaryLength()) {
-						throw new IllegalArgumentException(
-								"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
-										+ serialized.readableBytes() + " bytes instead");
-					}
-					var readableBytes = serialized.readableBytes();
-					return new DeserializationResult<>(serialized.readLong(), Long.BYTES);
+			public @NotNull Long deserialize(@NotNull Buffer serialized) {
+				Objects.requireNonNull(serialized);
+				if (serialized.readableBytes() < getSerializedBinaryLength()) {
+					throw new IllegalArgumentException(
+							"Fixed serializer with " + getSerializedBinaryLength() + " bytes has tried to deserialize an element with "
+									+ serialized.readableBytes() + " bytes instead");
 				}
+				return serialized.readLong();
 			}
 
 			@Override
-			public @NotNull Send<Buffer> serialize(@NotNull Long deserialized) {
-				try (Buffer buf = allocator.allocate(Long.BYTES)) {
-					return buf.writeLong(deserialized).send();
-				}
+			public void serialize(@NotNull Long deserialized, Buffer output) {
+				output.writeLong(deserialized);
 			}
 
 			@Override

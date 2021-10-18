@@ -84,10 +84,23 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 	}
 
 	private void deserializeValue(Send<Buffer> value, SynchronousSink<U> sink) {
-		try (value) {
-			sink.next(serializer.deserialize(value).deserializedData());
+		try {
+			U deserializedValue;
+			try (var valueBuf = value.receive()) {
+				deserializedValue = serializer.deserialize(valueBuf);
+			}
+			sink.next(deserializedValue);
 		} catch (SerializationException ex) {
 			sink.error(ex);
+		}
+	}
+
+	private Send<Buffer> serializeValue(U value) throws SerializationException {
+		var valSizeHint = serializer.getSerializedSizeHint();
+		if (valSizeHint == -1) valSizeHint = 128;
+		try (var valBuf = dictionary.getAllocator().allocate(valSizeHint)) {
+			serializer.serialize(value, valBuf);
+			return valBuf.send();
 		}
 	}
 
@@ -101,7 +114,7 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
 		return dictionary
-				.put(keyMono, Mono.fromCallable(() -> serializer.serialize(value)), LLDictionaryResultType.PREVIOUS_VALUE)
+				.put(keyMono, Mono.fromCallable(() -> serializeValue(value)), LLDictionaryResultType.PREVIOUS_VALUE)
 				.handle(this::deserializeValue);
 	}
 
@@ -112,12 +125,20 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 		return dictionary
 				.update(keyMono, (oldValueSer) -> {
 					try (oldValueSer) {
-						var result = updater.apply(oldValueSer == null ? null
-								: serializer.deserialize(oldValueSer).deserializedData());
+						U result;
+						if (oldValueSer == null) {
+							result = updater.apply(null);
+						} else {
+							U deserializedValue;
+							try (var valueBuf = oldValueSer.receive()) {
+								deserializedValue = serializer.deserialize(valueBuf);
+							}
+							result = updater.apply(deserializedValue);
+						}
 						if (result == null) {
 							return null;
 						} else {
-							return serializer.serialize(result);
+							return serializeValue(result);
 						}
 					}
 				}, updateReturnMode, existsAlmostCertainly)
@@ -130,17 +151,27 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 		return dictionary
 				.updateAndGetDelta(keyMono, (oldValueSer) -> {
 					try (oldValueSer) {
-						var result = updater.apply(oldValueSer == null ? null
-								: serializer.deserialize(oldValueSer).deserializedData());
+						U result;
+						if (oldValueSer == null) {
+							result = updater.apply(null);
+						} else {
+							U deserializedValue;
+							try (var valueBuf = oldValueSer.receive()) {
+								deserializedValue = serializer.deserialize(valueBuf);
+							}
+							result = updater.apply(deserializedValue);
+						}
 						if (result == null) {
 							return null;
 						} else {
-							return serializer.serialize(result);
+							return serializeValue(result);
 						}
 					}
-				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono,
-						serialized -> serializer.deserialize(serialized).deserializedData()
-				));
+				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
+					try (var valueBuf = serialized.receive()) {
+						return serializer.deserialize(valueBuf);
+					}
+				}));
 	}
 
 	@Override

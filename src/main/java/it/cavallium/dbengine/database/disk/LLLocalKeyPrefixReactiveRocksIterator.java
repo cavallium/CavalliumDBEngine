@@ -89,6 +89,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 									}
 
 									if (firstGroupKey != null) {
+										assert firstGroupKey.isAccessible();
 										var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
 										assert groupKeyPrefix.isAccessible();
 
@@ -126,7 +127,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 							tuple.getT3().close();
 							tuple.getT4().close();
 						}),
-				Send::close
+				resource -> resource.close()
 		);
 	}
 

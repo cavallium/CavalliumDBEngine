@@ -63,7 +63,6 @@ import reactor.util.function.Tuple3;
 public class LLUtils {
 
 	private static final Logger logger = LoggerFactory.getLogger(LLUtils.class);
-	public static final Marker MARKER_DB_BUFFER = MarkerFactory.getMarker("DB_BUFFER");
 	public static final Marker MARKER_ROCKSDB = MarkerFactory.getMarker("ROCKSDB");
 	public static final Marker MARKER_LUCENE = MarkerFactory.getMarker("LUCENE");
 
@@ -193,6 +192,18 @@ public class LLUtils {
 		}
 	}
 
+	public static String toStringSafe(byte @Nullable[] key) {
+		try {
+			if (key == null) {
+				return toString(key);
+			} else {
+				return "(released)";
+			}
+		} catch (IllegalReferenceCountException ex) {
+			return "(released)";
+		}
+	}
+
 	public static String toStringSafe(@Nullable LLRange range) {
 		try {
 			if (range == null || range.isAccessible()) {
@@ -239,6 +250,53 @@ public class LLUtils {
 
 				while (true) {
 					var byteVal = key.getUnsignedByte(startIndex + i);
+					arraySB.append(byteVal);
+					if (isAscii) {
+						if (byteVal >= 32 && byteVal < 127) {
+							asciiSB.append((char) byteVal);
+						} else if (byteVal == 0) {
+							asciiSB.append('␀');
+						} else {
+							isAscii = false;
+							asciiSB = null;
+						}
+					}
+					if (i == iLimit) {
+						arraySB.append("…");
+					}
+					if (i == iMax || i == iLimit) {
+						if (isAscii) {
+							return asciiSB.insert(0, "\"").append("\"").toString();
+						} else {
+							return arraySB.append(']').toString();
+						}
+					}
+
+					arraySB.append(", ");
+					++i;
+				}
+			}
+		}
+	}
+
+	public static String toString(byte @Nullable[] key) {
+		if (key == null) {
+			return "null";
+		} else {
+			int startIndex = 0;
+			int iMax = key.length - 1;
+			int iLimit = 128;
+			if (iMax <= -1) {
+				return "[]";
+			} else {
+				StringBuilder arraySB = new StringBuilder();
+				StringBuilder asciiSB = new StringBuilder();
+				boolean isAscii = true;
+				arraySB.append('[');
+				int i = 0;
+
+				while (true) {
+					var byteVal = (int) key[startIndex + i];
 					arraySB.append(byteVal);
 					if (isAscii) {
 						if (byteVal >= 32 && byteVal < 127) {
@@ -1003,6 +1061,12 @@ public class LLUtils {
 			buffer.copyInto(readerOffset, bytes, 0, length);
 			return new String(bytes, charset);
 		}
+	}
+
+	public static String deserializeString(@NotNull Buffer buffer, int readerOffset, int length, Charset charset) {
+		byte[] bytes = new byte[Math.min(length, buffer.readableBytes())];
+		buffer.copyInto(readerOffset, bytes, 0, length);
+		return new String(bytes, charset);
 	}
 
 	public static int utf8MaxBytes(String deserialized) {

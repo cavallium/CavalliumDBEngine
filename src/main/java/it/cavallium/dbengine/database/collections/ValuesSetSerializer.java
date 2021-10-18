@@ -13,46 +13,34 @@ import org.jetbrains.annotations.Nullable;
 
 class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 
-	private final BufferAllocator allocator;
 	private final Serializer<X> entrySerializer;
 
-	ValuesSetSerializer(BufferAllocator allocator, Serializer<X> entrySerializer) {
-		this.allocator = allocator;
+	ValuesSetSerializer(Serializer<X> entrySerializer) {
 		this.entrySerializer = entrySerializer;
 	}
 
 	@Override
-	public @NotNull DeserializationResult<ObjectArraySet<X>> deserialize(@Nullable Send<Buffer> serializedToReceive) throws SerializationException {
-		Objects.requireNonNull(serializedToReceive);
-		try (var serialized = serializedToReceive.receive()) {
-			int initialReaderOffset = serialized.readerOffset();
-			int entriesLength = serialized.readInt();
-			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
-			for (int i = 0; i < entriesLength; i++) {
-				var deserializationResult = entrySerializer.deserialize(serialized
-						.copy(serialized.readerOffset(), serialized.readableBytes())
-						.send());
-				deserializedElements.add(deserializationResult.deserializedData());
-				serialized.readerOffset(serialized.readerOffset() + deserializationResult.bytesRead());
-			}
-			return new DeserializationResult<>(new ObjectArraySet<>(deserializedElements), serialized.readerOffset() - initialReaderOffset);
+	public @NotNull ObjectArraySet<X> deserialize(@NotNull Buffer serialized) throws SerializationException {
+		Objects.requireNonNull(serialized);
+		int entriesLength = serialized.readInt();
+		ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
+		for (int i = 0; i < entriesLength; i++) {
+			var deserializationResult = entrySerializer.deserialize(serialized);
+			deserializedElements.add(deserializationResult);
+		}
+		return new ObjectArraySet<>(deserializedElements);
+	}
+
+	@Override
+	public void serialize(@NotNull ObjectArraySet<X> deserialized, Buffer output) throws SerializationException {
+		output.writeInt(deserialized.size());
+		for (X entry : deserialized) {
+			entrySerializer.serialize(entry, output);
 		}
 	}
 
 	@Override
-	public @NotNull Send<Buffer> serialize(@NotNull ObjectArraySet<X> deserialized) throws SerializationException {
-		try (Buffer output = allocator.allocate(64)) {
-			output.writeInt(deserialized.size());
-			for (X entry : deserialized) {
-				var serializedToReceive = entrySerializer.serialize(entry);
-				try (Buffer serialized = serializedToReceive.receive()) {
-					if (serialized.readableBytes() > 0) {
-						output.ensureWritable(serialized.readableBytes());
-						output.writeBytes(serialized);
-					}
-				}
-			}
-			return output.send();
-		}
+	public int getSerializedSizeHint() {
+		return -1;
 	}
 }

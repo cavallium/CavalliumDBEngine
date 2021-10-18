@@ -269,7 +269,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	}
 
 	@SuppressWarnings("unused")
-	protected boolean suffixKeyConsistency(int keySuffixLength) {
+	protected boolean suffixKeyLengthConsistency(int keySuffixLength) {
 		return this.keySuffixLength == keySuffixLength;
 	}
 
@@ -285,13 +285,15 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	/**
 	 * Removes the prefix from the key
+	 * @return the prefix
 	 */
-	protected void removePrefix(Buffer key) {
+	protected Buffer splitPrefix(Buffer key) {
 		assert key.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength
 				|| key.readableBytes() == keyPrefixLength + keySuffixLength;
-		key.readerOffset(key.readerOffset() + this.keyPrefixLength);
+		var prefix = key.readSplit(this.keyPrefixLength);
 		assert key.readableBytes() == keySuffixLength + keyExtLength
 				|| key.readableBytes() == keySuffixLength;
+		return prefix;
 	}
 
 	/**
@@ -334,7 +336,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
-		var suffixKeyWithoutExt = Mono.fromCallable(() -> toKeyWithoutExt(serializeSuffix(keySuffix)));
+		var suffixKeyWithoutExt = Mono.fromCallable(() -> {
+			try (var keyWithoutExtBuf = keyPrefix.copy()) {
+				keyWithoutExtBuf.ensureWritable(keySuffixLength + keyExtLength);
+				serializeSuffix(keySuffix, keyWithoutExtBuf);
+				return keyWithoutExtBuf.send();
+			}
+		});
 		return this.subStageGetter
 				.subStage(dictionary, snapshot, suffixKeyWithoutExt)
 				.transform(LLUtils::handleDiscard)
@@ -360,8 +368,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 						groupKeyWithoutExtSend -> this.subStageGetter
 								.subStage(dictionary, snapshot, Mono.fromCallable(() -> groupKeyWithoutExtSend.copy().send()))
 								.<Entry<T, US>>handle((us, sink) -> {
+									T deserializedSuffix;
 									try {
-										sink.next(Map.entry(this.deserializeSuffix(getGroupSuffix(groupKeyWithoutExtSend.send())), us));
+										deserializedSuffix = this.deserializeSuffix(splitGroupSuffix(groupKeyWithoutExtSend));
+										sink.next(Map.entry(deserializedSuffix, us));
 									} catch (SerializationException ex) {
 										sink.error(ex);
 									}
@@ -371,13 +381,18 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				.transform(LLUtils::handleDiscard);
 	}
 
-	private Send<Buffer> getGroupSuffix(Send<Buffer> groupKeyWithoutExt) {
-		try (var buffer = groupKeyWithoutExt.receive()) {
-			assert subStageKeysConsistency(buffer.readableBytes() + keyExtLength);
-			this.removePrefix(buffer);
-			assert subStageKeysConsistency(keyPrefixLength + buffer.readableBytes() + keyExtLength);
-			return buffer.send();
-		}
+	/**
+	 * Split the input. The input will become the ext, the returned data will be the group suffix
+	 * @param groupKey group key, will become ext
+	 * @return group suffix
+	 */
+	private Buffer splitGroupSuffix(@NotNull Buffer groupKey) {
+		assert subStageKeysConsistency(groupKey.readableBytes())
+				|| subStageKeysConsistency(groupKey.readableBytes() + keyExtLength);
+		this.splitPrefix(groupKey).close();
+		assert subStageKeysConsistency(keyPrefixLength + groupKey.readableBytes())
+				|| subStageKeysConsistency(keyPrefixLength + groupKey.readableBytes() + keyExtLength);
+		return groupKey.readSplit(keySuffixLength);
 	}
 
 	private Send<Buffer> getGroupWithoutExt(Send<Buffer> groupKeyWithExtSend) {
@@ -430,25 +445,21 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	protected T deserializeSuffix(@NotNull Send<Buffer> keySuffixToReceive) throws SerializationException {
-		try (var keySuffix = keySuffixToReceive.receive()) {
-			assert suffixKeyConsistency(keySuffix.readableBytes());
-			var result = keySuffixSerializer.deserialize(keySuffix.send());
-			assert keyPrefix.isAccessible();
-			return result.deserializedData();
-		}
+	protected T deserializeSuffix(@NotNull Buffer keySuffix) throws SerializationException {
+		assert suffixKeyLengthConsistency(keySuffix.readableBytes());
+		var result = keySuffixSerializer.deserialize(keySuffix);
+		assert keyPrefix.isAccessible();
+		return result;
 	}
 
 	//todo: temporary wrapper. convert the whole class to buffers
-	@NotNull
-	protected Send<Buffer> serializeSuffix(T keySuffix) throws SerializationException {
-		try (var suffixDataToReceive = keySuffixSerializer.serialize(keySuffix)) {
-			try (Buffer suffixData = suffixDataToReceive.receive()) {
-				assert suffixKeyConsistency(suffixData.readableBytes());
-				assert keyPrefix.isAccessible();
-				return suffixData.send();
-			}
-		}
+	protected void serializeSuffix(T keySuffix, Buffer output) throws SerializationException {
+		output.ensureWritable(keySuffixLength);
+		var beforeWriterOffset = output.writerOffset();
+		keySuffixSerializer.serialize(keySuffix, output);
+		var afterWriterOffset = output.writerOffset();
+		assert suffixKeyLengthConsistency(afterWriterOffset - beforeWriterOffset);
+		assert keyPrefix.isAccessible();
 	}
 
 	@Override

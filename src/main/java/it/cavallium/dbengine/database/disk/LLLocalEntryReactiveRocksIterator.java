@@ -11,14 +11,12 @@ import org.rocksdb.RocksDB;
 
 public class LLLocalEntryReactiveRocksIterator extends LLLocalReactiveRocksIterator<Send<LLEntry>> {
 
-	public LLLocalEntryReactiveRocksIterator(RocksDB db,
-			BufferAllocator alloc,
-			ColumnFamilyHandle cfh,
+	public LLLocalEntryReactiveRocksIterator(RocksDBColumn db,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, alloc, cfh, range, allowNettyDirect, readOptions, true);
+		super(db, range, allowNettyDirect, readOptions, true);
 	}
 
 	@Override

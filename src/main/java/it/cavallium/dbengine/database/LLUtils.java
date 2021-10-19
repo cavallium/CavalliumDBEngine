@@ -619,6 +619,9 @@ public class LLUtils {
 			);
 		}
 		assert buffer.isAccessible();
+		if (buffer.readOnly()) {
+			throw new IllegalStateException("Buffer is read only");
+		}
 		buffer.compact();
 		assert buffer.readerOffset() == 0;
 		AtomicLong nativeAddress = new AtomicLong(0);

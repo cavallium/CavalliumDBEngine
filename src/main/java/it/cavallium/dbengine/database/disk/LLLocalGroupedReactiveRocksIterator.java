@@ -21,9 +21,7 @@ import reactor.core.publisher.Flux;
 public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalGroupedReactiveRocksIterator.class);
-	private final RocksDB db;
-	private final BufferAllocator alloc;
-	private final ColumnFamilyHandle cfh;
+	private final RocksDBColumn db;
 	private final int prefixLength;
 	private final LLRange range;
 	private final boolean allowNettyDirect;
@@ -31,7 +29,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	private final boolean canFillCache;
 	private final boolean readValues;
 
-	public LLLocalGroupedReactiveRocksIterator(RocksDB db, BufferAllocator alloc, ColumnFamilyHandle cfh,
+	public LLLocalGroupedReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
@@ -40,8 +38,6 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 			boolean readValues) {
 		try (range) {
 			this.db = db;
-			this.alloc = alloc;
-			this.cfh = cfh;
 			this.prefixLength = prefixLength;
 			this.range = range.receive();
 			this.allowNettyDirect = allowNettyDirect;
@@ -60,7 +56,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 					}
-					return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
+					return LLLocalDictionary.getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range.copy().send(), db);
 				}, (tuple, sink) -> {
 					try {
 						var rocksIterator = tuple.getT1();
@@ -69,7 +65,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 						try {
 							rocksIterator.status();
 							while (rocksIterator.isValid()) {
-								try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
+								try (Buffer key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key)) {
 									if (firstGroupKey == null) {
 										firstGroupKey = key.copy();
 									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(),
@@ -78,7 +74,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 									}
 									@Nullable Buffer value;
 									if (readValues) {
-										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+										value = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::value);
 									} else {
 										value = null;
 									}

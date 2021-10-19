@@ -18,9 +18,7 @@ import reactor.core.publisher.Flux;
 public class LLLocalKeyPrefixReactiveRocksIterator {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyPrefixReactiveRocksIterator.class);
-	private final RocksDB db;
-	private final BufferAllocator alloc;
-	private final ColumnFamilyHandle cfh;
+	private final RocksDBColumn db;
 	private final int prefixLength;
 	private final LLRange range;
 	private final boolean allowNettyDirect;
@@ -28,7 +26,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	private final boolean canFillCache;
 	private final String debugName;
 
-	public LLLocalKeyPrefixReactiveRocksIterator(RocksDB db, BufferAllocator alloc, ColumnFamilyHandle cfh,
+	public LLLocalKeyPrefixReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
@@ -37,8 +35,6 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 			String debugName) {
 		try (range) {
 			this.db = db;
-			this.alloc = alloc;
-			this.cfh = cfh;
 			this.prefixLength = prefixLength;
 			this.range = range.receive();
 			this.allowNettyDirect = allowNettyDirect;
@@ -62,7 +58,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 							if (logger.isTraceEnabled()) {
 								logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 							}
-							return LLLocalDictionary.getRocksIterator(alloc, allowNettyDirect, readOptions, rangeSend, db, cfh);
+							return LLLocalDictionary.getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, rangeSend, db);
 						}, (tuple, sink) -> {
 							try {
 								var rocksIterator = tuple.getT1();
@@ -72,9 +68,9 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 									while (rocksIterator.isValid()) {
 										Buffer key;
 										if (allowNettyDirect) {
-											key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+											key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key);
 										} else {
-											key = LLUtils.fromByteArray(alloc, rocksIterator.key());
+											key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
 										}
 										try (key) {
 											if (firstGroupKey == null) {

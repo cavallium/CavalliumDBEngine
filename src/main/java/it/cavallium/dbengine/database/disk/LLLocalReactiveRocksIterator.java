@@ -23,24 +23,18 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalReactiveRocksIterator.class);
 	private final AtomicBoolean released = new AtomicBoolean(false);
-	private final RocksDB db;
-	private final BufferAllocator alloc;
-	private final ColumnFamilyHandle cfh;
+	private final RocksDBColumn db;
 	private final LLRange range;
 	private final boolean allowNettyDirect;
 	private final ReadOptions readOptions;
 	private final boolean readValues;
 
-	public LLLocalReactiveRocksIterator(RocksDB db,
-			BufferAllocator alloc,
-			ColumnFamilyHandle cfh,
+	public LLLocalReactiveRocksIterator(RocksDBColumn db,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean readValues) {
 		this.db = db;
-		this.alloc = alloc;
-		this.cfh = cfh;
 		this.range = range.receive();
 		this.allowNettyDirect = allowNettyDirect;
 		this.readOptions = readOptions;
@@ -58,7 +52,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 					}
-					return getRocksIterator(alloc, allowNettyDirect, readOptions, range.copy().send(), db, cfh);
+					return getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range.copy().send(), db);
 				}, (tuple, sink) -> {
 					try {
 						var rocksIterator = tuple.getT1();
@@ -66,17 +60,17 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 						if (rocksIterator.isValid()) {
 							Buffer key;
 							if (allowNettyDirect) {
-								key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+								key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key);
 							} else {
-								key = LLUtils.fromByteArray(alloc, rocksIterator.key());
+								key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
 							}
 							try (key) {
 								Buffer value;
 								if (readValues) {
 									if (allowNettyDirect) {
-										value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+										value = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::value);
 									} else {
-										value = LLUtils.fromByteArray(alloc, rocksIterator.value());
+										value = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.value());
 									}
 								} else {
 									value = null;

@@ -4,6 +4,7 @@ import static io.net5.buffer.Unpooled.wrappedBuffer;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
 import static java.util.Objects.requireNonNull;
+import static java.util.Objects.requireNonNullElse;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
@@ -23,26 +24,20 @@ import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.unimi.dsi.fastutil.ints.IntArrayList;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.locks.LockSupport;
-import java.util.concurrent.locks.StampedLock;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -55,23 +50,16 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.DirectSlice;
 import org.rocksdb.FlushOptions;
-import org.rocksdb.Holder;
-import org.rocksdb.OptimisticTransactionDB;
-import org.rocksdb.OptimisticTransactionOptions;
 import org.rocksdb.ReadOptions;
-import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
-import org.rocksdb.Status;
-import org.rocksdb.Status.Code;
-import org.rocksdb.Transaction;
 import org.rocksdb.TransactionDB;
+import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-import org.warp.commonutils.locks.Striped;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -95,7 +83,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
 	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
-	static final OptimisticTransactionOptions DEFAULT_OPTIMISTIC_TX_OPTIONS = new OptimisticTransactionOptions();
+	static final TransactionOptions DEFAULT_TX_OPTIONS = new TransactionOptions();
 	static final boolean PREFER_SEEK_TO_FIRST = false;
 	/**
 	 * It used to be false,
@@ -127,28 +115,16 @@ public class LLLocalDictionary implements LLDictionary {
 	private static final byte[] FIRST_KEY = new byte[]{};
 	private static final byte[] NO_DATA = new byte[0];
 
-	private static final boolean ASSERTIONS_ENABLED;
 	/**
 	 * Default: true
 	 */
 	private static final boolean USE_DIRECT_BUFFER_BOUNDS = true;
-	private static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
-
 	/**
 	 * 1KiB dummy buffer, write only, used for debugging purposes
 	 */
 	private static final ByteBuffer DUMMY_WRITE_ONLY_BYTE_BUFFER = ByteBuffer.allocateDirect(1024);
-	private static final BufferAllocator BYTE_ARRAY_BUFFERS = BufferAllocator.onHeapPooled();
 
-	static {
-		boolean assertionsEnabled = false;
-		//noinspection AssertWithSideEffects
-		assert (assertionsEnabled = true);
-		//noinspection ConstantConditions
-		ASSERTIONS_ENABLED = assertionsEnabled;
-	}
-
-	private final OptimisticTransactionDB db;
+	private final RocksDBColumn db;
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;
 	private final String columnName;
@@ -165,8 +141,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	public LLLocalDictionary(
 			BufferAllocator allocator,
-			@NotNull OptimisticTransactionDB db,
-			@NotNull ColumnFamilyHandle columnFamilyHandle,
+			@NotNull RocksDBColumn db,
 			String databaseName,
 			String columnName,
 			Scheduler dbScheduler,
@@ -175,8 +150,7 @@ public class LLLocalDictionary implements LLDictionary {
 			DatabaseOptions databaseOptions) {
 		requireNonNull(db);
 		this.db = db;
-		requireNonNull(columnFamilyHandle);
-		this.cfh = columnFamilyHandle;
+		this.cfh = db.getColumnFamilyHandle();
 		this.databaseName = databaseName;
 		this.columnName = columnName;
 		this.dbScheduler = dbScheduler;
@@ -247,7 +221,8 @@ public class LLLocalDictionary implements LLDictionary {
 								logKey = null;
 							}
 							try (logKey) {
-								var result = dbGet(cfh, resolveSnapshot(snapshot), key.send(), existsAlmostCertainly);
+								var readOptions = requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
+								var result = db.get(readOptions, key.send(), existsAlmostCertainly);
 								if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
 									try (var result2 = result == null ? null : result.receive()) {
 										logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(logKey),
@@ -265,163 +240,6 @@ public class LLLocalDictionary implements LLDictionary {
 				}).onErrorMap(cause -> new IOException("Failed to read", cause)),
 				keySend -> Mono.fromRunnable(keySend::close)
 		);
-	}
-
-	@Nullable
-	private Send<Buffer> dbGet(ColumnFamilyHandle cfh,
-			@Nullable ReadOptions readOptions,
-			Send<Buffer> keySend,
-			boolean existsAlmostCertainly) throws RocksDBException {
-		try (var key = keySend.receive()) {
-			if (Schedulers.isInNonBlockingThread()) {
-				throw new UnsupportedOperationException("Called dbGet in a nonblocking thread");
-			}
-			if (databaseOptions.allowNettyDirect()) {
-
-				//todo: implement keyMayExist if existsAlmostCertainly is false.
-				// Unfortunately it's not feasible until RocksDB implements keyMayExist with buffers
-
-				// Create the key nio buffer to pass to RocksDB
-				var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
-				// Create a direct result buffer because RocksDB works only with direct buffers
-				try (Buffer resultBuf = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES)) {
-					int valueSize;
-					int assertionReadData = -1;
-					ByteBuffer resultNioBuf;
-					do {
-						// Create the result nio buffer to pass to RocksDB
-						resultNioBuf = LLUtils.obtainDirect(resultBuf, true);
-						assert keyNioBuffer.byteBuffer().isDirect();
-						assert resultNioBuf.isDirect();
-						valueSize = db.get(cfh,
-								Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS),
-								keyNioBuffer.byteBuffer().position(0),
-								resultNioBuf
-						);
-						if (valueSize != RocksDB.NOT_FOUND) {
-							if (ASSERTIONS_ENABLED) {
-								// todo: check if position is equal to data that have been read
-								// todo: check if limit is equal to value size or data that have been read
-								assert valueSize <= 0 || resultNioBuf.limit() > 0;
-
-								// If the locking is enabled the data is safe, so since we are appending data
-								// to the end, we need to check if it has been appended correctly or it
-								// has been overwritten.
-								// We must not do this check otherwise because if there is no locking the data
-								// can be overwritten with a smaller value the next time.
-								if (updateMode == UpdateMode.ALLOW) {
-									// Check if read data is larger than previously read data.
-									// If it's smaller or equals it means that RocksDB is overwriting
-									// the beginning of the result buffer.
-									assert resultNioBuf.limit() > assertionReadData;
-									//noinspection ConstantConditions
-									if (ASSERTIONS_ENABLED) {
-										assertionReadData = resultNioBuf.limit();
-									}
-								}
-
-								// Check if read data is not bigger than the total value size.
-								// If it's bigger it means that RocksDB is writing the start
-								// of the result into the result buffer more than once.
-								assert resultNioBuf.limit() <= valueSize;
-							}
-
-							if (valueSize <= resultNioBuf.limit()) {
-								// Return the result ready to be read
-								return resultBuf.readerOffset(0).writerOffset(valueSize).send();
-							} else {
-								// If the locking is enabled the data is safe, so we can append the next read data.
-								// Otherwise we need to re-read everything.
-								if (updateMode == UpdateMode.ALLOW) {
-									// Update the resultBuf writerIndex with the new position
-									resultBuf.writerOffset(resultNioBuf.limit());
-								}
-								//noinspection UnusedAssignment
-								resultNioBuf = null;
-							}
-							// Rewind the keyNioBuf position, making it readable again for the next loop iteration
-							keyNioBuffer.byteBuffer().rewind();
-							if (resultBuf.capacity() < valueSize) {
-								// Expand the resultBuf size if the result is bigger than the current result
-								// buffer size
-								resultBuf.ensureWritable(valueSize);
-							}
-						}
-						// Repeat if the result has been found but it's still not finished
-					} while (valueSize != RocksDB.NOT_FOUND);
-					// If the value is not found return null
-					return null;
-				} finally {
-					keyNioBuffer.buffer().close();
-					PlatformDependent.freeDirectBuffer(keyNioBuffer.byteBuffer());
-				}
-			} else {
-				ReadOptions validReadOptions = Objects.requireNonNullElse(readOptions, EMPTY_READ_OPTIONS);
-				try {
-					byte[] keyArray = LLUtils.toArray(key);
-					requireNonNull(keyArray);
-					Holder<byte[]> data = existsAlmostCertainly ? null : new Holder<>();
-					if (existsAlmostCertainly || db.keyMayExist(cfh, validReadOptions, keyArray, data)) {
-						if (!existsAlmostCertainly && data.getValue() != null) {
-							return LLUtils.fromByteArray(alloc, data.getValue()).send();
-						} else {
-							byte[] result = db.get(cfh, validReadOptions, keyArray);
-							if (result == null) {
-								return null;
-							} else {
-								return LLUtils.fromByteArray(alloc, result).send();
-							}
-						}
-					} else {
-						return null;
-					}
-				} finally {
-					if (!(validReadOptions instanceof UnreleasableReadOptions)) {
-						validReadOptions.close();
-					}
-				}
-			}
-		}
-	}
-
-	@SuppressWarnings("SameParameterValue")
-	private void dbPut(ColumnFamilyHandle cfh,
-			@Nullable WriteOptions writeOptions,
-			Send<Buffer> keyToReceive,
-			Send<Buffer> valueToReceive) throws RocksDBException {
-		WriteOptions validWriteOptions = Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS);
-		try {
-			try (var key = keyToReceive.receive()) {
-				try (var value = valueToReceive.receive()) {
-					if (Schedulers.isInNonBlockingThread()) {
-						throw new UnsupportedOperationException("Called dbPut in a nonblocking thread");
-					}
-					assert key.isAccessible();
-					assert value.isAccessible();
-					if (databaseOptions.allowNettyDirect()) {
-						var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
-						try (var ignored1 = keyNioBuffer.buffer().receive()) {
-							assert keyNioBuffer.byteBuffer().isDirect();
-							var valueNioBuffer = LLUtils.convertToReadableDirect(alloc, value.send());
-							try (var ignored2 = valueNioBuffer.buffer().receive()) {
-								assert valueNioBuffer.byteBuffer().isDirect();
-								db.put(cfh, validWriteOptions, keyNioBuffer.byteBuffer(), valueNioBuffer.byteBuffer());
-							} finally {
-								PlatformDependent.freeDirectBuffer(valueNioBuffer.byteBuffer());
-							}
-						} finally {
-							PlatformDependent.freeDirectBuffer(keyNioBuffer.byteBuffer());
-						}
-					} else {
-						db.put(cfh, validWriteOptions, LLUtils.toArray(key), LLUtils.toArray(value));
-					}
-				}
-			}
-		} finally {
-			if (writeOptions != null && !(writeOptions instanceof UnreleasableWriteOptions)) {
-				writeOptions.close();
-			}
-		}
 	}
 
 	@Override
@@ -484,7 +302,7 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 									}
 								}
-								try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
+								try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 										try (var rangeMin = range.getMin().receive()) {
 											if (databaseOptions.allowNettyDirect()) {
@@ -521,29 +339,8 @@ public class LLLocalDictionary implements LLDictionary {
 	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return Mono.usingWhen(keyMono,
 				keySend -> runOnDb(() -> {
-					try (var key = keySend.receive()) {
-						if (Schedulers.isInNonBlockingThread()) {
-							throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
-						}
-						int size = RocksDB.NOT_FOUND;
-						byte[] keyBytes = LLUtils.toArray(key);
-						Holder<byte[]> data = new Holder<>();
-						var unmodifiableReadOpts = resolveSnapshot(snapshot);
-						try {
-							if (db.keyMayExist(cfh, unmodifiableReadOpts, keyBytes, data)) {
-								if (data.getValue() != null) {
-									size = data.getValue().length;
-								} else {
-									size = db.get(cfh, unmodifiableReadOpts, keyBytes, NO_DATA);
-								}
-							}
-						} finally {
-							if (unmodifiableReadOpts != null && !(unmodifiableReadOpts instanceof UnreleasableReadOptions)) {
-								unmodifiableReadOpts.close();
-							}
-						}
-						return size != RocksDB.NOT_FOUND;
-					}
+					var unmodifiableReadOpts = resolveSnapshot(snapshot);
+					return db.exists(unmodifiableReadOpts, keySend);
 				}).onErrorMap(cause -> new IOException("Failed to read", cause)),
 				keySend -> Mono.fromRunnable(keySend::close)
 		);
@@ -555,7 +352,7 @@ public class LLLocalDictionary implements LLDictionary {
 			LLDictionaryResultType resultType) {
 		return Mono.usingWhen(keyMono,
 				keySend -> this
-						.getPreviousData(keyMono, resultType)
+						.getPreviousData(keyMono, resultType, false)
 						.concatWith(Mono.usingWhen(valueMono,
 								valueSend -> this.<Send<Buffer>>runOnDb(() -> {
 									try (var key = keySend.receive()) {
@@ -566,7 +363,7 @@ public class LLLocalDictionary implements LLDictionary {
 												logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
 														LLUtils.toStringSafe(key), LLUtils.toStringSafe(value));
 											}
-											dbPut(cfh, null, key.send(), value.send());
+											db.put(EMPTY_WRITE_OPTIONS, key.send(), value.send());
 											return null;
 										}
 									}
@@ -583,24 +380,6 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.fromSupplier(() -> updateMode);
 	}
 
-	/**
-	 *
-	 * @return true if not committed successfully
-	 */
-	private boolean commitOptimistically(Transaction tx) throws RocksDBException {
-		try {
-			tx.commit();
-			return true;
-		} catch (RocksDBException ex) {
-			var status = ex.getStatus() != null ? ex.getStatus().getCode() : Code.Ok;
-			if (status == Code.Busy || status == Code.TryAgain) {
-				return false;
-			}
-			throw ex;
-		}
-	}
-
-	// Remember to change also updateAndGetDelta() if you are modifying this function
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<Buffer>> update(Mono<Send<Buffer>> keyMono,
@@ -608,270 +387,71 @@ public class LLLocalDictionary implements LLDictionary {
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono, keySend -> runOnDb(() -> {
-			try (Buffer key = keySend.receive()) {
-				var keyArray = LLUtils.toArray(key);
-				if (Schedulers.isInNonBlockingThread()) {
-					throw new UnsupportedOperationException("Called update in a nonblocking thread");
-				}
-				if (updateMode == UpdateMode.DISALLOW) {
-					throw new UnsupportedOperationException("update() is disallowed");
-				}
-				try (var tx = db.beginTransaction(EMPTY_WRITE_OPTIONS, DEFAULT_OPTIMISTIC_TX_OPTIONS)) {
-					boolean committedSuccessfully;
-					Send<Buffer> sentPrevData;
-					Send<Buffer> sentCurData;
-					do {
-						var prevDataArray = tx.getForUpdate(EMPTY_READ_OPTIONS, cfh, keyArray, true);
-						if (logger.isTraceEnabled()) {
-							logger.trace(MARKER_ROCKSDB,
-									"Reading {}: {} (before update)",
-									LLUtils.toStringSafe(key),
-									LLUtils.toStringSafe(prevDataArray)
-							);
-						}
-						Buffer prevData;
-						if (prevDataArray != null) {
-							prevData = BYTE_ARRAY_BUFFERS.allocate(prevDataArray.length);
-							prevData.writeBytes(prevDataArray);
-						} else {
-							prevData = null;
-						}
-						try (prevData) {
-							Buffer prevDataToSendToUpdater;
-							if (prevData != null) {
-								prevDataToSendToUpdater = prevData.copy();
-							} else {
-								prevDataToSendToUpdater = null;
-							}
-
-							@Nullable Buffer newData;
-							try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-								try (var newDataToReceive = updater.apply(sentData)) {
-									if (newDataToReceive != null) {
-										newData = newDataToReceive.receive();
-									} else {
-										newData = null;
-									}
-								}
-							}
-							try (newData) {
-								var newDataArray = newData == null ? null : LLUtils.toArray(newData);
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB,
-											"Updating {}. previous data: {}, updated data: {}",
-											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(prevDataArray),
-											LLUtils.toStringSafe(newDataArray)
-									);
-								}
-								if (prevData != null && newData == null) {
-									if (logger.isTraceEnabled()) {
-										logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-									}
-									tx.delete(cfh, keyArray, true);
-									committedSuccessfully = commitOptimistically(tx);
-								} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
-									if (logger.isTraceEnabled()) {
-										logger.trace(MARKER_ROCKSDB,
-												"Writing {}: {} (after update)",
-												LLUtils.toStringSafe(key),
-												LLUtils.toStringSafe(newData)
-										);
-									}
-									tx.put(cfh, keyArray, newDataArray);
-									committedSuccessfully = commitOptimistically(tx);
-								} else {
-									committedSuccessfully = true;
-									tx.rollback();
-								}
-								sentPrevData = prevData == null ? null : prevData.send();
-								sentCurData = newData == null ? null : newData.send();
-								if (!committedSuccessfully) {
-									if (sentPrevData != null) {
-										sentPrevData.close();
-									}
-									if (sentCurData != null) {
-										sentCurData.close();
-									}
-									logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting 5ms before retrying", LLUtils.toStringSafe(key));
-									// Wait for 5ms
-									LockSupport.parkNanos(5000000);
-								}
-							}
-						}
-					} while (!committedSuccessfully);
-					return switch (updateReturnMode) {
-						case GET_NEW_VALUE -> {
-							if (sentPrevData != null) {
-								sentPrevData.close();
-							}
-							yield sentCurData;
-						}
-						case GET_OLD_VALUE -> {
-							if (sentCurData != null) {
-								sentCurData.close();
-							}
-							yield sentPrevData;
-						}
-						case NOTHING -> {
-							if (sentPrevData != null) {
-								sentPrevData.close();
-							}
-							if (sentCurData != null) {
-								sentCurData.close();
-							}
-							yield null;
-						}
-						//noinspection UnnecessaryDefault
-						default -> throw new IllegalArgumentException();
+					if (Schedulers.isInNonBlockingThread()) {
+						throw new UnsupportedOperationException("Called update in a nonblocking thread");
+					}
+					if (updateMode == UpdateMode.DISALLOW) {
+						throw new UnsupportedOperationException("update() is disallowed");
+					}
+					UpdateAtomicResultMode returnMode = switch (updateReturnMode) {
+						case NOTHING -> UpdateAtomicResultMode.NOTHING;
+						case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
+						case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 					};
-				}
-			}
-		}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
+					UpdateAtomicResult result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater,
+							existsAlmostCertainly, returnMode);
+					return switch (updateReturnMode) {
+						case NOTHING -> null;
+						case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
+						case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
+					};
+				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
 				keySend -> Mono.fromRunnable(keySend::close));
 	}
 
-	// Remember to change also update() if you are modifying this function
+	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono, keySend -> runOnDb(() -> {
-					try (Buffer key = keySend.receive()) {
-						var keyArray = LLUtils.toArray(key);
-						if (Schedulers.isInNonBlockingThread()) {
-							throw new UnsupportedOperationException("Called update in a nonblocking thread");
-						}
-						if (updateMode == UpdateMode.DISALLOW) {
-							throw new UnsupportedOperationException("update() is disallowed");
-						}
-						try (var tx = db.beginTransaction(EMPTY_WRITE_OPTIONS, DEFAULT_OPTIMISTIC_TX_OPTIONS)) {
-							boolean committedSuccessfully;
-							Send<Buffer> sentPrevData;
-							Send<Buffer> sentCurData;
-							do {
-								var prevDataArray = tx.getForUpdate(EMPTY_READ_OPTIONS, cfh, keyArray, true);
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB,
-											"Reading {}: {} (before update)",
-											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(prevDataArray)
-									);
-								}
-								Buffer prevData;
-								if (prevDataArray != null) {
-									prevData = BYTE_ARRAY_BUFFERS.allocate(prevDataArray.length);
-									prevData.writeBytes(prevDataArray);
-								} else {
-									prevData = null;
-								}
-								try (prevData) {
-									Buffer prevDataToSendToUpdater;
-									if (prevData != null) {
-										prevDataToSendToUpdater = prevData.copy();
-									} else {
-										prevDataToSendToUpdater = null;
-									}
-
-									@Nullable Buffer newData;
-									try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-										try (var newDataToReceive = updater.apply(sentData)) {
-											if (newDataToReceive != null) {
-												newData = newDataToReceive.receive();
-											} else {
-												newData = null;
-											}
-										}
-									}
-									try (newData) {
-										var newDataArray = newData == null ? null : LLUtils.toArray(newData);
-										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB,
-													"Updating {}. previous data: {}, updated data: {}",
-													LLUtils.toStringSafe(key),
-													LLUtils.toStringSafe(prevDataArray),
-													LLUtils.toStringSafe(newDataArray)
-											);
-										}
-										if (prevData != null && newData == null) {
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-											}
-											tx.delete(cfh, keyArray, true);
-											committedSuccessfully = commitOptimistically(tx);
-										} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
-											if (logger.isTraceEnabled()) {
-												logger.trace(MARKER_ROCKSDB,
-														"Writing {}: {} (after update)",
-														LLUtils.toStringSafe(key),
-														LLUtils.toStringSafe(newData)
-												);
-											}
-											tx.put(cfh, keyArray, newDataArray);
-											committedSuccessfully = commitOptimistically(tx);
-										} else {
-											tx.rollback();
-											committedSuccessfully = true;
-										}
-										sentPrevData = prevData == null ? null : prevData.send();
-										sentCurData = newData == null ? null : newData.send();
-										if (!committedSuccessfully) {
-											if (sentPrevData != null) {
-												sentPrevData.close();
-											}
-											if (sentCurData != null) {
-												sentCurData.close();
-											}
-											logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-													+ " waiting 5ms before retrying", LLUtils.toStringSafe(key));
-											// Wait for 5ms
-											LockSupport.parkNanos(5000000);
-										}
-									}
-								}
-							} while (!committedSuccessfully);
-							return LLDelta.of(sentPrevData, sentCurData).send();
-						}
+					if (Schedulers.isInNonBlockingThread()) {
+						keySend.close();
+						throw new UnsupportedOperationException("Called update in a nonblocking thread");
 					}
+					if (updateMode == UpdateMode.DISALLOW) {
+						keySend.close();
+						throw new UnsupportedOperationException("update() is disallowed");
+					}
+					if (updateMode == UpdateMode.ALLOW && !db.supportsTransactions()) {
+						throw new UnsupportedOperationException("update() is disallowed because the database doesn't support"
+								+ "safe atomic operations");
+					}
+					UpdateAtomicResult result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater,
+							existsAlmostCertainly, UpdateAtomicResultMode.DELTA);
+					return ((UpdateAtomicResultDelta) result).delta();
 				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
 				keySend -> Mono.fromRunnable(keySend::close));
-	}
-
-	private void dbDelete(ColumnFamilyHandle cfh, @Nullable WriteOptions writeOptions, Send<Buffer> keyToReceive)
-			throws RocksDBException {
-		try (var key = keyToReceive.receive()) {
-			if (Schedulers.isInNonBlockingThread()) {
-				throw new UnsupportedOperationException("Called dbDelete in a nonblocking thread");
-			}
-			var validWriteOptions = Objects.requireNonNullElse(writeOptions, EMPTY_WRITE_OPTIONS);
-			if (databaseOptions.allowNettyDirect()) {
-				var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
-				try {
-					db.delete(cfh, validWriteOptions, keyNioBuffer.byteBuffer());
-				} finally {
-					keyNioBuffer.buffer().close();
-					PlatformDependent.freeDirectBuffer(keyNioBuffer.byteBuffer());
-				}
-			} else {
-				db.delete(cfh, validWriteOptions, LLUtils.toArray(key));
-			}
-		}
 	}
 
 	@Override
 	public Mono<Send<Buffer>> remove(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType) {
 		return Mono.usingWhen(keyMono,
 				keySend -> this
-						.getPreviousData(keyMono, resultType)
+						.getPreviousData(keyMono, resultType, true)
 						.concatWith(this
 								.<Send<Buffer>>runOnDb(() -> {
-									try (var key = keySend.receive()) {
+									try (keySend) {
 										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
+											try (var key = keySend.receive()) {
+												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
+												db.delete(EMPTY_WRITE_OPTIONS, key.send());
+											}
+											return null;
+										} else {
+											db.delete(EMPTY_WRITE_OPTIONS, keySend);
+											return null;
 										}
-										dbDelete(cfh, null, key.send());
-										return null;
 									}
 								})
 								.onErrorMap(cause -> new IOException("Failed to delete", cause))
@@ -881,7 +461,8 @@ public class LLLocalDictionary implements LLDictionary {
 		);
 	}
 
-	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType) {
+	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType,
+			boolean existsAlmostCertainly) {
 		return switch (resultType) {
 			case PREVIOUS_VALUE_EXISTENCE -> this
 					.containsKey(null, keyMono)
@@ -891,28 +472,22 @@ public class LLLocalDictionary implements LLDictionary {
 					keyMono,
 					keySend -> this
 							.runOnDb(() -> {
-								try (var key = keySend.receive()) {
+								try (keySend) {
 									if (Schedulers.isInNonBlockingThread()) {
 										throw new UnsupportedOperationException("Called getPreviousData in a nonblocking thread");
 									}
-									var data = new Holder<byte[]>();
-									Buffer bufferResult;
-									if (db.keyMayExist(cfh, LLUtils.toArray(key), data)) {
-										if (data.getValue() != null) {
-											bufferResult = LLUtils.fromByteArray(alloc, data.getValue());
-										} else {
-											try (var bufferResultToReceive = dbGet(cfh, null, key.send(), true)) {
-												bufferResult = bufferResultToReceive == null ? null : bufferResultToReceive.receive();
+
+									if (logger.isTraceEnabled()) {
+										try (var key = keySend.receive()) {
+											var keyString = LLUtils.toStringSafe(key);
+											var result = db.get(EMPTY_READ_OPTIONS, key.send(), existsAlmostCertainly);
+											try (var bufferResult = result == null ? null : result.receive()) {
+												logger.trace(MARKER_ROCKSDB, "Reading {}: {}", keyString, LLUtils.toStringSafe(bufferResult));
+												return bufferResult == null ? null : bufferResult.send();
 											}
 										}
 									} else {
-										bufferResult = null;
-									}
-									try (bufferResult) {
-										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(key), LLUtils.toStringSafe(bufferResult));
-										}
-										return bufferResult == null ? null : bufferResult.send();
+										return db.get(EMPTY_READ_OPTIONS, keySend, existsAlmostCertainly);
 									}
 								}
 							})
@@ -955,9 +530,8 @@ public class LLLocalDictionary implements LLDictionary {
 							if (Schedulers.isInNonBlockingThread()) {
 								throw new UnsupportedOperationException("Called getMulti in a nonblocking thread");
 							}
-							var columnFamilyHandles = new RepeatedElementList<>(cfh, keysWindow.size());
-							List<byte[]> results = db.multiGetAsList(resolveSnapshot(snapshot),
-									columnFamilyHandles, LLUtils.toArray(keyBufsWindow));
+							var readOptions = Objects.requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
+							List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
 							var mappedResults = new ArrayList<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>>(results.size());
 							for (int i = 0; i < results.size(); i++) {
 								byte[] val = results.get(i);
@@ -1017,7 +591,7 @@ public class LLLocalDictionary implements LLDictionary {
 									try (var readOptions = resolveSnapshot(null)) {
 										for (LLEntry entry : entriesWindow) {
 											try (var key = entry.getKey().receive()) {
-												Send<Buffer> oldValue = dbGet(cfh, readOptions, key.copy().send(), false);
+												Send<Buffer> oldValue = db.get(readOptions, key.copy().send(), false);
 												if (oldValue != null) {
 													oldValues.add(LLEntry.of(key.send(), oldValue).send());
 												}
@@ -1052,19 +626,7 @@ public class LLLocalDictionary implements LLDictionary {
 									batch.close();
 								} else {
 									for (LLEntry entry : entriesWindow) {
-										var k = LLUtils.convertToReadableDirect(alloc, entry.getKey());
-										try {
-											var v = LLUtils.convertToReadableDirect(alloc, entry.getValue());
-											try {
-												db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
-											} finally {
-												v.buffer().close();
-												PlatformDependent.freeDirectBuffer(v.byteBuffer());
-											}
-										} finally {
-											k.buffer().close();
-											PlatformDependent.freeDirectBuffer(k.byteBuffer());
-										}
+										db.put(EMPTY_WRITE_OPTIONS, entry.getKey(), entry.getValue());
 									}
 								}
 								return oldValues;
@@ -1096,11 +658,10 @@ public class LLLocalDictionary implements LLDictionary {
 						for (Tuple2<Buffer, X> objects : entriesWindow) {
 							keyBufsWindow.add(objects.getT1());
 						}
-						var columnFamilyHandles = new RepeatedElementList<>(cfh, entriesWindow.size());
 						ArrayList<Tuple3<Send<Buffer>, X, Optional<Send<Buffer>>>> mappedInputs;
 						{
-							var inputs = db.multiGetAsList(resolveSnapshot(null), columnFamilyHandles,
-									LLUtils.toArray(keyBufsWindow));
+							var readOptions = Objects.requireNonNullElse(resolveSnapshot(null), EMPTY_READ_OPTIONS);
+							var inputs = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
 							mappedInputs = new ArrayList<>(inputs.size());
 							for (int i = 0; i < inputs.size(); i++) {
 								var val = inputs.get(i);
@@ -1162,19 +723,7 @@ public class LLLocalDictionary implements LLDictionary {
 						} else {
 							int i = 0;
 							for (Tuple2<Buffer, X> entry : entriesWindow) {
-								var k = LLUtils.convertToReadableDirect(alloc, entry.getT1().send());
-								try {
-									var v = LLUtils.convertToReadableDirect(alloc, updatedValuesToWrite.get(i));
-									try {
-										db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
-									} finally {
-										v.buffer().close();
-										PlatformDependent.freeDirectBuffer(v.byteBuffer());
-									}
-								} finally {
-									k.buffer().close();
-									PlatformDependent.freeDirectBuffer(k.byteBuffer());
-								}
+								db.put(EMPTY_WRITE_OPTIONS, entry.getT1().send(), updatedValuesToWrite.get(i));
 								i++;
 							}
 						}
@@ -1268,7 +817,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
 		return Flux.usingWhen(rangeMono,
 				rangeSend -> Flux.using(
-						() -> new LLLocalEntryReactiveRocksIterator(db, alloc, cfh, rangeSend,
+						() -> new LLLocalEntryReactiveRocksIterator(db, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeMultiDebugName),
 						llLocalEntryReactiveRocksIterator -> llLocalEntryReactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalReactiveRocksIterator::release
@@ -1281,7 +830,7 @@ public class LLLocalDictionary implements LLDictionary {
 			int prefixLength) {
 		return Flux.usingWhen(rangeMono,
 				rangeSend -> Flux.using(
-						() -> new LLLocalGroupedEntryReactiveRocksIterator(db, alloc, cfh, prefixLength, rangeSend,
+						() -> new LLLocalGroupedEntryReactiveRocksIterator(db, prefixLength, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeMultiGroupedDebugName),
 						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalGroupedReactiveRocksIterator::release
@@ -1312,7 +861,7 @@ public class LLLocalDictionary implements LLDictionary {
 			int prefixLength) {
 		return Flux.usingWhen(rangeMono,
 				rangeSend -> Flux.using(
-						() -> new LLLocalGroupedKeyReactiveRocksIterator(db, alloc, cfh, prefixLength, rangeSend,
+						() -> new LLLocalGroupedKeyReactiveRocksIterator(db, prefixLength, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot), getRangeKeysDebugName),
 						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
 						LLLocalGroupedReactiveRocksIterator::release
@@ -1335,7 +884,8 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								ro.setVerifyChecksums(true);
 								var rocksIteratorTuple = getRocksIterator(alloc,
-										databaseOptions.allowNettyDirect(), ro, range.send(), db, cfh);
+										databaseOptions.allowNettyDirect(), ro, range.send(), db
+								);
 								try {
 									try (var rocksIterator = rocksIteratorTuple.getT1()) {
 										rocksIterator.seekToFirst();
@@ -1375,8 +925,6 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux
 						.using(
 								() -> new LLLocalKeyPrefixReactiveRocksIterator(db,
-										alloc,
-										cfh,
 										prefixLength,
 										rangeSend,
 										databaseOptions.allowNettyDirect(),
@@ -1412,7 +960,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private Flux<Send<Buffer>> getRangeKeysMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
 		return Flux.usingWhen(rangeMono,
 				rangeSend -> Flux.using(
-						() -> new LLLocalKeyReactiveRocksIterator(db, alloc, cfh, rangeSend,
+						() -> new LLLocalKeyReactiveRocksIterator(db, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot)
 						),
 						llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux().subscribeOn(dbScheduler),
@@ -1460,7 +1008,7 @@ public class LLLocalDictionary implements LLDictionary {
 													assert cfh.isOwningHandle();
 													assert opts.isOwningHandle();
 													SafeCloseable seekTo;
-													try (RocksIterator it = db.newIterator(cfh, opts)) {
+													try (RocksIterator it = db.newIterator(opts)) {
 														if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
 															seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(), it, range.getMin());
 														} else {
@@ -1470,7 +1018,7 @@ public class LLLocalDictionary implements LLDictionary {
 														try {
 															it.status();
 															while (it.isValid()) {
-																db.delete(cfh, it.key());
+																db.delete(EMPTY_WRITE_OPTIONS, it.key());
 																it.next();
 																it.status();
 															}
@@ -1528,19 +1076,7 @@ public class LLLocalDictionary implements LLDictionary {
 														if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
 															for (LLEntry entry : entriesList) {
 																assert entry.isAccessible();
-																var k = LLUtils.convertToReadableDirect(alloc, entry.getKey());
-																try {
-																	var v = LLUtils.convertToReadableDirect(alloc, entry.getValue());
-																	try {
-																		db.put(cfh, EMPTY_WRITE_OPTIONS, k.byteBuffer(), v.byteBuffer());
-																	} finally {
-																		v.buffer().close();
-																		PlatformDependent.freeDirectBuffer(v.byteBuffer());
-																	}
-																} finally {
-																	k.buffer().close();
-																	PlatformDependent.freeDirectBuffer(k.byteBuffer());
-																}
+																db.put(EMPTY_WRITE_OPTIONS, entry.getKey(), entry.getValue());
 															}
 														} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
 															try (var batch = new CappedWriteBatch(db,
@@ -1597,7 +1133,7 @@ public class LLLocalDictionary implements LLDictionary {
 								.getRange(null, rangeMono, false)
 								.flatMap(oldValueSend -> this.<Void>runOnDb(() -> {
 									try (var oldValue = oldValueSend.receive()) {
-										dbDelete(cfh, EMPTY_WRITE_OPTIONS, oldValue.getKey());
+										db.delete(EMPTY_WRITE_OPTIONS, oldValue.getKey());
 										return null;
 									}
 								}))
@@ -1640,7 +1176,7 @@ public class LLLocalDictionary implements LLDictionary {
 				} else {
 					maxBound = emptyReleasableSlice();
 				}
-				try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+				try (var rocksIterator = db.newIterator(readOpts)) {
 					SafeCloseable seekTo;
 					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 						seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(), rocksIterator, range.getMin());
@@ -1692,7 +1228,7 @@ public class LLLocalDictionary implements LLDictionary {
 					} else {
 						maxBound = emptyReleasableSlice();
 					}
-					try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+					try (var rocksIterator = db.newIterator(readOpts)) {
 						SafeCloseable seekTo;
 						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 							seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(), rocksIterator, range.getMin());
@@ -1827,9 +1363,9 @@ public class LLLocalDictionary implements LLDictionary {
 
 							byte[] firstDeletedKey = null;
 							byte[] lastDeletedKey = null;
-							try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
-								//noinspection ConstantConditions
-								if (db instanceof OptimisticTransactionDB) {
+							try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
+								// If the database supports transactions, delete each key one by one
+								if (db.supportsTransactions()) {
 									rocksIterator.seekToFirst();
 									rocksIterator.status();
 									while (rocksIterator.isValid()) {
@@ -1853,23 +1389,19 @@ public class LLLocalDictionary implements LLDictionary {
 
 							writeBatch.writeToDbAndClose();
 
-							//noinspection ConstantConditions
 							if (shouldCompactLater) {
 								// Compact range
-								db.suggestCompactRange(cfh);
-								if (firstDeletedKey != null && lastDeletedKey != null) {
-									db.compactRange(cfh,
-											firstDeletedKey,
-											lastDeletedKey,
-											new CompactRangeOptions()
-													.setAllowWriteStall(false)
-													.setExclusiveManualCompaction(false)
-													.setChangeLevel(false)
+								db.suggestCompactRange();
+								if (lastDeletedKey != null) {
+									db.compactRange(firstDeletedKey, lastDeletedKey, new CompactRangeOptions()
+											.setAllowWriteStall(false)
+											.setExclusiveManualCompaction(false)
+											.setChangeLevel(false)
 									);
 								}
 							}
 
-							db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true), cfh);
+							db.flush(new FlushOptions().setWaitForFlush(true).setAllowWriteStall(true));
 							db.flushWal(true);
 						}
 						return null;
@@ -1913,7 +1445,7 @@ public class LLLocalDictionary implements LLDictionary {
 									readOpts.setIgnoreRangeDeletions(true);
 
 								}
-								try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 										seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(),
@@ -1974,7 +1506,7 @@ public class LLLocalDictionary implements LLDictionary {
 								} else {
 									maxBound = emptyReleasableSlice();
 								}
-								try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 										seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(),
@@ -2036,7 +1568,7 @@ public class LLLocalDictionary implements LLDictionary {
 								} else {
 									maxBound = emptyReleasableSlice();
 								}
-								try (var rocksIterator = db.newIterator(cfh, readOpts)) {
+								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 										seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(),
@@ -2074,7 +1606,7 @@ public class LLLocalDictionary implements LLDictionary {
 		try (var rocksdbSnapshot = new ReadOptions(resolveSnapshot(snapshot))) {
 			if (USE_CURRENT_FASTSIZE_FOR_OLD_SNAPSHOTS || rocksdbSnapshot.snapshot() == null) {
 				try {
-					return db.getLongProperty(cfh, "rocksdb.estimate-num-keys");
+					return db.getLongProperty("rocksdb.estimate-num-keys");
 				} catch (RocksDBException e) {
 					logger.error(MARKER_ROCKSDB, "Failed to get RocksDB estimated keys count property", e);
 					return 0;
@@ -2086,7 +1618,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rocksdbSnapshot.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 				rocksdbSnapshot.setIgnoreRangeDeletions(true);
 				long count = 0;
-				try (RocksIterator rocksIterator = db.newIterator(cfh, rocksdbSnapshot)) {
+				try (RocksIterator rocksIterator = db.newIterator(rocksdbSnapshot)) {
 					rocksIterator.seekToFirst();
 					rocksIterator.status();
 					// If it's a fast size of a snapshot, count only up to 100'000 elements
@@ -2140,7 +1672,7 @@ public class LLLocalDictionary implements LLDictionary {
 									if (sliceBegin != null) {
 										rangeReadOpts.setIterateUpperBound(sliceEnd);
 									}
-									try (RocksIterator rocksIterator = db.newIterator(cfh, rangeReadOpts)) {
+									try (RocksIterator rocksIterator = db.newIterator(rangeReadOpts)) {
 										rocksIterator.seekToFirst();
 										rocksIterator.status();
 										while (rocksIterator.isValid()) {
@@ -2169,7 +1701,7 @@ public class LLLocalDictionary implements LLDictionary {
 				return count;
 			} else {
 				long count = 0;
-				try (RocksIterator iter = db.newIterator(cfh, readOpts)) {
+				try (RocksIterator iter = db.newIterator(readOpts)) {
 					iter.seekToFirst();
 					while (iter.isValid()) {
 						count++;
@@ -2205,7 +1737,7 @@ public class LLLocalDictionary implements LLDictionary {
 								} else {
 									maxBound = emptyReleasableSlice();
 								}
-								try (RocksIterator rocksIterator = db.newIterator(cfh, readOpts)) {
+								try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
 										seekTo = rocksIterSeekTo(alloc, databaseOptions.allowNettyDirect(),
@@ -2221,7 +1753,7 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
 											try (Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value)) {
-												dbDelete(cfh, null, key.copy().send());
+												db.delete(EMPTY_WRITE_OPTIONS, key.copy().send());
 												return LLEntry.of(key.send(), value.send()).send();
 											}
 										}
@@ -2244,13 +1776,11 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@NotNull
-	public static Tuple4<RocksIterator, ReleasableSlice, ReleasableSlice, SafeCloseable> getRocksIterator(
-			BufferAllocator alloc,
+	public static Tuple4<RocksIterator, ReleasableSlice, ReleasableSlice, SafeCloseable> getRocksIterator(BufferAllocator alloc,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			Send<LLRange> rangeToReceive,
-			RocksDB db,
-			ColumnFamilyHandle cfh) {
+			RocksDBColumn db) {
 		try (var range = rangeToReceive.receive()) {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called getRocksIterator in a nonblocking thread");
@@ -2267,7 +1797,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} else {
 				sliceMax = emptyReleasableSlice();
 			}
-			var rocksIterator = db.newIterator(cfh, readOptions);
+			var rocksIterator = db.newIterator(readOptions);
 			SafeCloseable seekTo;
 			if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
 				seekTo = Objects.requireNonNullElseGet(rocksIterSeekTo(alloc, allowNettyDirect,

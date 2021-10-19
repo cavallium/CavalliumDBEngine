@@ -7,6 +7,7 @@ import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.RocksDBColumn;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,7 +20,7 @@ public class CappedWriteBatch extends WriteBatch {
 	 * Default: true, Use false to debug problems with direct buffers
 	 */
 	private static final boolean USE_FAST_DIRECT_BUFFERS = true;
-	private final RocksDB db;
+	private final RocksDBColumn db;
 	private final BufferAllocator alloc;
 	private final int cap;
 	private final WriteOptions writeOptions;
@@ -28,9 +29,10 @@ public class CappedWriteBatch extends WriteBatch {
 	private final List<ByteBuffer> byteBuffersToRelease;
 
 	/**
+	 * @param db
 	 * @param cap The limit of operations
 	 */
-	public CappedWriteBatch(RocksDB db,
+	public CappedWriteBatch(RocksDBColumn db,
 			BufferAllocator alloc,
 			int cap,
 			int reservedWriteBatchSize,

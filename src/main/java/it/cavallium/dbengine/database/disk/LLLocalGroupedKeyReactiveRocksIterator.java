@@ -10,15 +10,13 @@ import org.rocksdb.RocksDB;
 
 public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReactiveRocksIterator<Send<Buffer>> {
 
-	public LLLocalGroupedKeyReactiveRocksIterator(RocksDB db,
-			BufferAllocator alloc,
-			ColumnFamilyHandle cfh,
+	public LLLocalGroupedKeyReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			String debugName) {
-		super(db, alloc, cfh, prefixLength, range, allowNettyDirect, readOptions, true, false);
+		super(db, prefixLength, range, allowNettyDirect, readOptions, true, false);
 	}
 
 	@Override

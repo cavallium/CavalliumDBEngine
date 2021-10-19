@@ -44,14 +44,15 @@ import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
-import org.rocksdb.MergeOperator;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.Options;
 import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
+import org.rocksdb.Transaction;
 import org.rocksdb.TransactionDB;
+import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.warp.commonutils.log.Logger;
@@ -80,7 +81,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final DatabaseOptions databaseOptions;
 
 	private final boolean enableColumnsBug;
-	private OptimisticTransactionDB db;
+	private RocksDB db;
 	private final Map<Column, ColumnFamilyHandle> handles;
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
@@ -149,11 +150,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
-					this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions),
-							dbPathString,
-							descriptors,
-							handles
-					);
+					this.db = TransactionDB.open(new DBOptions(rocksdbOptions), new TransactionDBOptions(), dbPathString, descriptors, handles);
 					break;
 				} catch (RocksDBException ex) {
 					switch (ex.getMessage()) {
@@ -197,7 +194,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return name;
 	}
 
-	private void flushAndCloseDb(OptimisticTransactionDB db, List<ColumnFamilyHandle> handles)
+	private void flushAndCloseDb(RocksDB db, List<ColumnFamilyHandle> handles)
 			throws RocksDBException {
 		flushDb(db, handles);
 
@@ -226,7 +223,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 	}
 
-	private void flushDb(OptimisticTransactionDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
+	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
 		if (Schedulers.isInNonBlockingThread()) {
 			logger.error("Called flushDb in a nonblocking thread");
 		}
@@ -243,7 +240,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@SuppressWarnings("unused")
-	private void compactDb(OptimisticTransactionDB db, List<ColumnFamilyHandle> handles) {
+	private void compactDb(TransactionDB db, List<ColumnFamilyHandle> handles) {
 		if (Schedulers.isInNonBlockingThread()) {
 			logger.error("Called compactDb in a nonblocking thread");
 		}
@@ -455,7 +452,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			LinkedList<ColumnFamilyHandle> handles = new LinkedList<>();
 
-			this.db = OptimisticTransactionDB.open(options, dbPathString);
+			this.db = TransactionDB.open(options, new TransactionDBOptions(), dbPathString);
 			for (ColumnFamilyDescriptor columnFamilyDescriptor : descriptorsToCreate) {
 				handles.add(db.createColumnFamily(columnFamilyDescriptor));
 			}
@@ -484,8 +481,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return Mono
 				.fromCallable(() -> new LLLocalDictionary(
 						allocator,
-						db,
-						getCfh(columnName),
+						getRocksDBColumn(db, getCfh(columnName)),
 						name,
 						Column.toString(columnName),
 						dbScheduler,
@@ -494,6 +490,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						databaseOptions
 				))
 				.subscribeOn(dbScheduler);
+	}
+
+	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
+		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
+			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, cfh);
+		} else if (db instanceof TransactionDB) {
+			return new PessimisticRocksDBColumn((TransactionDB) db, databaseOptions, allocator, cfh);
+		} else {
+			return new StandardRocksDBColumn(db, databaseOptions, allocator, cfh);
+		}
 	}
 
 	private ColumnFamilyHandle getCfh(byte[] columnName) throws RocksDBException {

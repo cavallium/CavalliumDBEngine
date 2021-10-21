@@ -148,6 +148,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 							sentCurData = newData == null ? null : newData.send();
 							if (!committedSuccessfully) {
 								tx.undoGetForUpdate(cfh, keyArray);
+								tx.rollback();
 								if (sentPrevData != null) {
 									sentPrevData.close();
 								}

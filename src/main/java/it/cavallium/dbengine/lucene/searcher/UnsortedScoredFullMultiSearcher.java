@@ -69,6 +69,9 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
 		return Mono
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
+					if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
+						throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
+					}
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
 					return LMDBFullScoreDocCollector.createSharedManager(env, queryParams.limitLong(), totalHitsThreshold);
 				})

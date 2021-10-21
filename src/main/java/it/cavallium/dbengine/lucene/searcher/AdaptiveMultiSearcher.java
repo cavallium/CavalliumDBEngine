@@ -53,12 +53,14 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 			LLSearchTransformer transformer) {
 		// offset + limit
 		long realLimit = queryParams.offsetLong() + queryParams.limitLong();
+		long maxAllowedInMemoryLimit
+				= Math.max(MultiSearcher.MAX_IN_MEMORY_SIZE, (long) queryParams.pageLimits().getPageLimit(0));
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 			if (queryParams.limitLong() == 0) {
 				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else if (queryParams.isSorted() || queryParams.needsScores()) {
-				if (realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
+				if (realLimit <= maxAllowedInMemoryLimit) {
 					return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 				} else {
 					if ((queryParams.isSorted() && !queryParams.isSortedByScore())) {
@@ -67,7 +69,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 						return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 					}
 				}
-			} else if (realLimit <= (long) queryParams.pageLimits().getPageLimit(0)) {
+			} else if (realLimit <= maxAllowedInMemoryLimit) {
 				// Run single-page searches using the paged multi searcher
 				return unsortedUnscoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else {

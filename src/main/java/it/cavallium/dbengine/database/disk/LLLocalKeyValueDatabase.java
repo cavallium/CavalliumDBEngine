@@ -45,6 +45,7 @@ import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.OptimisticTransactionDB;
+import org.rocksdb.OptimisticTransactionOptions;
 import org.rocksdb.Options;
 import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
@@ -150,7 +151,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
-					this.db = TransactionDB.open(new DBOptions(rocksdbOptions), new TransactionDBOptions(), dbPathString, descriptors, handles);
+					this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
 					break;
 				} catch (RocksDBException ex) {
 					switch (ex.getMessage()) {
@@ -452,12 +453,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			LinkedList<ColumnFamilyHandle> handles = new LinkedList<>();
 
-			this.db = TransactionDB.open(options, new TransactionDBOptions(), dbPathString);
+			this.db = RocksDB.open(options, dbPathString);
 			for (ColumnFamilyDescriptor columnFamilyDescriptor : descriptorsToCreate) {
 				handles.add(db.createColumnFamily(columnFamilyDescriptor));
 			}
 
 			flushAndCloseDb(db, handles);
+			this.db = null;
 		}
 	}
 

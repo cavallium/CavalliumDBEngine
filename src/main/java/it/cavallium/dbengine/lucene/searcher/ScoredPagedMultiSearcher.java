@@ -177,7 +177,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						var after = (FieldDoc) s.last();
 						var totalHitsThreshold = queryParams.getTotalHitsThresholdInt();
 						return new ScoringShardsCollectorManager(query, sort, pageLimit, after, totalHitsThreshold,
-								resultsOffset);
+								resultsOffset, pageLimit);
 					} else {
 						return null;
 					}

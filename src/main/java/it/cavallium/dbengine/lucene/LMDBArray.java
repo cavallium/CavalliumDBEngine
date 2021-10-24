@@ -244,6 +244,14 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	public void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			ensureThread();
+			for (ByteBuf toWriteKey : toWriteKeys) {
+				toWriteKey.release();
+			}
+			for (ByteBuf toWriteValue : toWriteValues) {
+				toWriteValue.release();
+			}
+			toWriteKeys.clear();
+			toWriteValues.clear();
 			if (rwTxn != null) {
 				rwTxn.close();
 			}

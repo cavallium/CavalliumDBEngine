@@ -498,6 +498,14 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	public void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			ensureThread();
+			for (ByteBuf toWriteKey : toWriteKeys) {
+				toWriteKey.release();
+			}
+			for (ByteBuf toWriteValue : toWriteValues) {
+				toWriteValue.release();
+			}
+			toWriteKeys.clear();
+			toWriteValues.clear();
 			if (cur != null) {
 				cur.close();
 			}

@@ -8,6 +8,8 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.Closeable;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
@@ -28,6 +30,11 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	private boolean writing;
 	private Txn<ByteBuf> readTxn;
 	private Txn<ByteBuf> rwTxn;
+
+	// Cache
+	private static final int WRITE_QUEUE_MAX_BOUND = 10_000;
+	private final Deque<ByteBuf> toWriteKeys = new ArrayDeque<>();
+	private final Deque<ByteBuf> toWriteValues = new ArrayDeque<>();
 
 	private long allocatedSize = 0;
 	private final long virtualSize;
@@ -54,6 +61,35 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	}
 
 	private void switchToMode(boolean write) {
+		if (toWriteKeys.size() > 0) {
+			switchToModeUncached(true);
+			try {
+				var ki = toWriteKeys.iterator();
+				var vi = toWriteValues.iterator();
+				while (ki.hasNext()) {
+					var k = ki.next();
+					var v = vi.next();
+					if (lmdb.put(rwTxn, k, v)) {
+						allocatedSize++;
+					}
+				}
+			} finally {
+				endMode();
+				for (ByteBuf toWriteKey : toWriteKeys) {
+					toWriteKey.release();
+				}
+				for (ByteBuf toWriteValue : toWriteValues) {
+					toWriteValue.release();
+				}
+				toWriteKeys.clear();
+				toWriteValues.clear();
+			}
+		}
+
+		switchToModeUncached(write);
+	}
+
+	private void switchToModeUncached(boolean write) {
 		if (write) {
 			if (!writing) {
 				writing = true;
@@ -109,19 +145,24 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	public void set(long index, @Nullable V value) {
 		ensureBounds(index);
 		ensureThread();
-		switchToMode(true);
 		var keyBuf = allocate(Long.BYTES);
 		var valueBuf = valueCodec.serialize(this::allocate, value);
 		keyBuf.writeLong(index);
-		try {
-			if (lmdb.put(rwTxn, keyBuf, valueBuf)) {
-				allocatedSize++;
-			}
-		} finally {
-			endMode();
+		if (toWriteKeys.size() < WRITE_QUEUE_MAX_BOUND) {
+			toWriteKeys.add(keyBuf);
+			toWriteValues.add(valueBuf);
+		} else {
+			switchToMode(true);
+			try {
+				if (lmdb.put(rwTxn, keyBuf, valueBuf)) {
+					allocatedSize++;
+				}
+			} finally {
+				endMode();
 
-			keyBuf.release();
-			valueBuf.release();
+				keyBuf.release();
+				valueBuf.release();
+			}
 		}
 	}
 
@@ -146,10 +187,33 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	public @Nullable V get(long index) {
 		ensureBounds(index);
 		ensureThread();
-		switchToMode(false);
+
+		if (!toWriteKeys.isEmpty()) {
+			var ki = toWriteKeys.iterator();
+			var vi = toWriteValues.iterator();
+			while (ki.hasNext()) {
+				var k = ki.next();
+				var v = vi.next();
+				var readIndex = k.getLong(0);
+				if (readIndex == index) {
+					var ri = v.readerIndex();
+					var wi = v.writerIndex();
+					var c = v.capacity();
+					try {
+						return valueCodec.deserialize(v);
+					} finally {
+						v.readerIndex(ri);
+						v.writerIndex(wi);
+						v.capacity(c);
+					}
+				}
+			}
+		}
+
 		var keyBuf = allocate(Long.BYTES);
 		keyBuf.writeLong(index);
 		try {
+			switchToModeUncached(false);
 			var value = lmdb.get(readTxn, keyBuf);
 			if (value != null) {
 				return valueCodec.deserialize(value);

@@ -7,8 +7,11 @@ import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.IOException;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Iterator;
 import java.util.Objects;
+import java.util.Queue;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -41,6 +44,11 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	private Txn<ByteBuf> rwTxn;
 	private Cursor<ByteBuf> cur;
 
+	// Cache
+	private static final int WRITE_QUEUE_MAX_BOUND = 10_000;
+	private final Deque<ByteBuf> toWriteKeys = new ArrayDeque<>();
+	private final Deque<ByteBuf> toWriteValues = new ArrayDeque<>();
+
 	private boolean topValid = true;
 	private T top = null;
 	private long size = 0;
@@ -67,6 +75,36 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	}
 
 	private void switchToMode(boolean write, boolean wantCursor) {
+		if (iterating) {
+			throw new IllegalStateException("Tried to " + (write ? "write" : "read") + " while still iterating");
+		}
+		if (toWriteKeys.size() > 0) {
+			switchToModeUncached(true, false);
+			try {
+				var ki = toWriteKeys.iterator();
+				var vi = toWriteValues.iterator();
+				while (ki.hasNext()) {
+					var k = ki.next();
+					var v = vi.next();
+					lmdb.put(rwTxn, k, v);
+				}
+			} finally {
+				endMode();
+				for (ByteBuf toWriteKey : toWriteKeys) {
+					toWriteKey.release();
+				}
+				for (ByteBuf toWriteValue : toWriteValues) {
+					toWriteValue.release();
+				}
+				toWriteKeys.clear();
+				toWriteValues.clear();
+			}
+		}
+
+		switchToModeUncached(write, wantCursor);
+	}
+
+	private void switchToModeUncached(boolean write, boolean wantCursor) {
 		if (iterating) {
 			throw new IllegalStateException("Tried to " + (write ? "write" : "read") + " while still iterating");
 		}
@@ -151,23 +189,35 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	@Override
 	public void add(T element) {
 		ensureThread();
-		switchToMode(true, false);
+
 		var buf = codec.serialize(this::allocate, element);
 		var uid = allocate(Long.BYTES);
 		uid.writeLong(NEXT_ITEM_UID.getAndIncrement());
-		try {
-			if (lmdb.put(rwTxn, buf, uid)) {
-				if (++size == 1) {
-					topValid = true;
-					top = element;
-				} else {
-					topValid = false;
-				}
+		if (toWriteKeys.size() < WRITE_QUEUE_MAX_BOUND) {
+			toWriteKeys.add(buf);
+			toWriteValues.add(uid);
+			if (++size == 1) {
+				topValid = true;
+				top = element;
+			} else {
+				topValid = false;
 			}
-		} finally {
-			endMode();
-			buf.release();
-			uid.release();
+		} else {
+			switchToMode(true, false);
+			try {
+				if (lmdb.put(rwTxn, buf, uid)) {
+					if (++size == 1) {
+						topValid = true;
+						top = element;
+					} else {
+						topValid = false;
+					}
+				}
+			} finally {
+				endMode();
+				buf.release();
+				uid.release();
+			}
 		}
 
 		assert topSingleValid(element);

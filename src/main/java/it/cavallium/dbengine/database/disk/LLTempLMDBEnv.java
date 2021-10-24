@@ -30,7 +30,7 @@ public class LLTempLMDBEnv implements Closeable {
 				.setMapSize(TWENTY_GIBIBYTES)
 				.setMaxDbs(MAX_DATABASES);
 		//env = envBuilder.open(tempDirectory.toFile(), MDB_NOLOCK, MDB_NOSYNC, MDB_NOTLS, MDB_NORDAHEAD, MDB_WRITEMAP);
-		env = envBuilder.open(tempDirectory.toFile(), MDB_NOTLS, MDB_WRITEMAP, MDB_NORDAHEAD);
+		env = envBuilder.open(tempDirectory.toFile(), MDB_NOTLS, MDB_NOSYNC, MDB_NORDAHEAD, MDB_NOMETASYNC);
 	}
 
 	public Env<ByteBuf> getEnv() {

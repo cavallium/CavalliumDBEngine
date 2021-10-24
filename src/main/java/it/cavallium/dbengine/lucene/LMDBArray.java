@@ -18,7 +18,7 @@ import org.lmdbjava.Txn;
 public class LMDBArray<V> implements IArray<V>, Closeable {
 
 	private static final boolean FORCE_SYNC = false;
-	private static final boolean FORCE_THREAD_LOCAL = true;
+	private static final boolean DONT_MERGE_TXNS = true;
 
 	private static final AtomicLong NEXT_LMDB_ARRAY_ID = new AtomicLong(0);
 
@@ -43,7 +43,7 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 		this.defaultValue = defaultValue;
 		
 		this.writing = true;
-		if (FORCE_THREAD_LOCAL) {
+		if (DONT_MERGE_TXNS) {
 			this.rwTxn = null;
 		} else {
 			this.rwTxn = this.env.txnWrite();
@@ -91,7 +91,7 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	}
 
 	private void endMode() {
-		if (FORCE_THREAD_LOCAL) {
+		if (DONT_MERGE_TXNS) {
 			writing = true;
 			if (readTxn != null) {
 				readTxn.commit();

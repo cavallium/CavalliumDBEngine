@@ -28,7 +28,7 @@ import reactor.util.function.Tuples;
 public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<ReversableResourceIterable<T>>, ReversableResourceIterable<T> {
 
 	private static final boolean FORCE_SYNC = false;
-	private static final boolean FORCE_THREAD_LOCAL = true;
+	private static final boolean DONT_MERGE_TXNS = true;
 
 	private static final AtomicLong NEXT_LMDB_QUEUE_ID = new AtomicLong(0);
 	private static final AtomicLong NEXT_ITEM_UID = new AtomicLong(0);
@@ -56,7 +56,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 		
 		this.writing = true;
 		this.iterating = false;
-		if (FORCE_THREAD_LOCAL) {
+		if (DONT_MERGE_TXNS) {
 			this.rwTxn = null;
 		} else {
 			this.rwTxn = this.env.txnWrite();
@@ -129,7 +129,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	}
 
 	private void endMode() {
-		if (FORCE_THREAD_LOCAL) {
+		if (DONT_MERGE_TXNS) {
 			if (cur != null) {
 				cur.close();
 				cur = null;

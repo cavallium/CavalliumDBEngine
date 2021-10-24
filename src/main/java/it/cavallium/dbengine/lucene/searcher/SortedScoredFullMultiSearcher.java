@@ -65,9 +65,6 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
-					if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
-						throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
-					}
 					return LMDBFullFieldDocCollector.createSharedManager(env, queryParams.sort(), queryParams.limitInt(),
 							totalHitsThreshold);
 				})

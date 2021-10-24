@@ -17,9 +17,6 @@ import org.lmdbjava.Txn;
 
 public class LMDBArray<V> implements IArray<V>, Closeable {
 
-	private static final boolean FORCE_SYNC = false;
-	private static final boolean DONT_MERGE_TXNS = true;
-
 	private static final AtomicLong NEXT_LMDB_ARRAY_ID = new AtomicLong(0);
 
 	private final AtomicBoolean closed = new AtomicBoolean();
@@ -43,11 +40,7 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 		this.defaultValue = defaultValue;
 		
 		this.writing = true;
-		if (DONT_MERGE_TXNS) {
-			this.rwTxn = null;
-		} else {
-			this.rwTxn = this.env.txnWrite();
-		}
+		this.rwTxn = null;
 		this.readTxn = null;
 		this.virtualSize = size;
 	}
@@ -80,10 +73,6 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 					rwTxn.close();
 					rwTxn = null;
 				}
-				if (FORCE_SYNC) {
-					env.sync(true);
-				}
-				assert rwTxn == null;
 				assert readTxn == null;
 				readTxn = env.txnRead();
 			}
@@ -91,20 +80,17 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	}
 
 	private void endMode() {
-		if (DONT_MERGE_TXNS) {
-			writing = true;
-			if (readTxn != null) {
-				readTxn.commit();
-				readTxn.close();
-				readTxn = null;
-			}
-			if (rwTxn != null) {
-				rwTxn.commit();
-				rwTxn.close();
-				rwTxn = null;
-			}
+		writing = true;
+		if (readTxn != null) {
+			readTxn.commit();
+			readTxn.close();
+			readTxn = null;
 		}
-		assert rwTxn == null;
+		if (rwTxn != null) {
+			rwTxn.commit();
+			rwTxn.close();
+			rwTxn = null;
+		}
 		assert readTxn == null;
 	}
 

@@ -6,6 +6,10 @@ import io.net5.buffer.ByteBuf;
 import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -33,8 +37,7 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 
 	// Cache
 	private static final int WRITE_QUEUE_MAX_BOUND = 10_000;
-	private final Deque<ByteBuf> toWriteKeys = new ArrayDeque<>();
-	private final Deque<ByteBuf> toWriteValues = new ArrayDeque<>();
+	private final Long2ObjectMap<ByteBuf> toWrite = new Long2ObjectOpenHashMap<>();
 
 	private long allocatedSize = 0;
 	private final long virtualSize;
@@ -61,28 +64,22 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	}
 
 	private void switchToMode(boolean write) {
-		if (toWriteKeys.size() > 0) {
+		if (toWrite.size() > 0) {
 			switchToModeUncached(true);
 			try {
-				var ki = toWriteKeys.iterator();
-				var vi = toWriteValues.iterator();
-				while (ki.hasNext()) {
-					var k = ki.next();
-					var v = vi.next();
-					if (lmdb.put(rwTxn, k, v)) {
+				toWrite.forEach((ki, v) -> {
+					var keyBuf = allocate(Long.BYTES);
+					keyBuf.writeLong(ki);
+					if (lmdb.put(rwTxn, keyBuf, v)) {
 						allocatedSize++;
 					}
-				}
+				});
 			} finally {
 				endMode();
-				for (ByteBuf toWriteKey : toWriteKeys) {
-					toWriteKey.release();
+				for (ByteBuf value : toWrite.values()) {
+					value.release();
 				}
-				for (ByteBuf toWriteValue : toWriteValues) {
-					toWriteValue.release();
-				}
-				toWriteKeys.clear();
-				toWriteValues.clear();
+				toWrite.clear();
 			}
 		}
 
@@ -145,13 +142,15 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	public void set(long index, @Nullable V value) {
 		ensureBounds(index);
 		ensureThread();
-		var keyBuf = allocate(Long.BYTES);
 		var valueBuf = valueCodec.serialize(this::allocate, value);
-		keyBuf.writeLong(index);
-		if (toWriteKeys.size() < WRITE_QUEUE_MAX_BOUND) {
-			toWriteKeys.add(keyBuf);
-			toWriteValues.add(valueBuf);
+		if (toWrite.size() < WRITE_QUEUE_MAX_BOUND) {
+			var prev = toWrite.put(index, valueBuf);
+			if (prev != null) {
+				prev.release();
+			}
 		} else {
+			var keyBuf = allocate(Long.BYTES);
+			keyBuf.writeLong(index);
 			switchToMode(true);
 			try {
 				if (lmdb.put(rwTxn, keyBuf, valueBuf)) {
@@ -188,24 +187,18 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 		ensureBounds(index);
 		ensureThread();
 
-		if (!toWriteKeys.isEmpty()) {
-			var ki = toWriteKeys.iterator();
-			var vi = toWriteValues.iterator();
-			while (ki.hasNext()) {
-				var k = ki.next();
-				var v = vi.next();
-				var readIndex = k.getLong(0);
-				if (readIndex == index) {
-					var ri = v.readerIndex();
-					var wi = v.writerIndex();
-					var c = v.capacity();
-					try {
-						return valueCodec.deserialize(v);
-					} finally {
-						v.readerIndex(ri);
-						v.writerIndex(wi);
-						v.capacity(c);
-					}
+		if (!toWrite.isEmpty()) {
+			var v = toWrite.get(index);
+			if (v != null) {
+				var ri = v.readerIndex();
+				var wi = v.writerIndex();
+				var c = v.capacity();
+				try {
+					return valueCodec.deserialize(v);
+				} finally {
+					v.readerIndex(ri);
+					v.writerIndex(wi);
+					v.capacity(c);
 				}
 			}
 		}
@@ -244,14 +237,10 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	public void close() throws IOException {
 		if (closed.compareAndSet(false, true)) {
 			ensureThread();
-			for (ByteBuf toWriteKey : toWriteKeys) {
-				toWriteKey.release();
+			for (ByteBuf value : toWrite.values()) {
+				value.release();
 			}
-			for (ByteBuf toWriteValue : toWriteValues) {
-				toWriteValue.release();
-			}
-			toWriteKeys.clear();
-			toWriteValues.clear();
+			toWrite.clear();
 			if (rwTxn != null) {
 				rwTxn.close();
 			}

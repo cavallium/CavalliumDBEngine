@@ -98,6 +98,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 						resultNioBuf = LLUtils.obtainDirect(resultBuf, true);
 						assert keyNioBuffer.byteBuffer().isDirect();
 						assert resultNioBuf.isDirect();
+						// todo: use keyMayExist when rocksdb will implement keyMayExist with buffers
 						valueSize = db.get(cfh,
 								readOptions,
 								keyNioBuffer.byteBuffer().position(0),

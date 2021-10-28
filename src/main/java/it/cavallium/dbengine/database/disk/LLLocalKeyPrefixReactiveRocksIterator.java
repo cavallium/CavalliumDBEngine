@@ -4,9 +4,13 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Drop;
+import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -15,24 +19,54 @@ import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
-public class LLLocalKeyPrefixReactiveRocksIterator {
+public class LLLocalKeyPrefixReactiveRocksIterator extends
+		ResourceSupport<LLLocalKeyPrefixReactiveRocksIterator, LLLocalKeyPrefixReactiveRocksIterator> {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyPrefixReactiveRocksIterator.class);
+	private static final Drop<LLLocalKeyPrefixReactiveRocksIterator> DROP = new Drop<>() {
+		@Override
+		public void drop(LLLocalKeyPrefixReactiveRocksIterator obj) {
+			try {
+				if (obj.range != null) {
+					obj.range.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close range", ex);
+			}
+			try {
+				if (obj.readOptions != null) {
+					obj.readOptions.close();
+				}
+			} catch (Throwable ex) {
+				logger.error("Failed to close readOptions", ex);
+			}
+		}
+
+		@Override
+		public Drop<LLLocalKeyPrefixReactiveRocksIterator> fork() {
+			return this;
+		}
+
+		@Override
+		public void attach(LLLocalKeyPrefixReactiveRocksIterator obj) {
+
+		}
+	};
+
 	private final RocksDBColumn db;
 	private final int prefixLength;
-	private final LLRange range;
+	private LLRange range;
 	private final boolean allowNettyDirect;
-	private final ReadOptions readOptions;
+	private ReadOptions readOptions;
 	private final boolean canFillCache;
-	private final String debugName;
 
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
-			boolean canFillCache,
-			String debugName) {
+			boolean canFillCache) {
+		super(DROP);
 		try (range) {
 			this.db = db;
 			this.prefixLength = prefixLength;
@@ -40,7 +74,6 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 			this.allowNettyDirect = allowNettyDirect;
 			this.readOptions = readOptions;
 			this.canFillCache = canFillCache;
-			this.debugName = debugName;
 		}
 	}
 
@@ -127,7 +160,26 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 		);
 	}
 
-	public void release() {
-		range.close();
+	@Override
+	protected final RuntimeException createResourceClosedException() {
+		return new IllegalStateException("Closed");
+	}
+
+	@Override
+	protected Owned<LLLocalKeyPrefixReactiveRocksIterator> prepareSend() {
+		var range = this.range.send();
+		var readOptions = new ReadOptions(this.readOptions);
+		return drop -> new LLLocalKeyPrefixReactiveRocksIterator(db,
+				prefixLength,
+				range,
+				allowNettyDirect,
+				readOptions,
+				canFillCache
+		);
+	}
+
+	protected void makeInaccessible() {
+		this.range = null;
+		this.readOptions = null;
 	}
 }

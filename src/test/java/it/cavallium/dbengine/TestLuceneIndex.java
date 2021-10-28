@@ -10,8 +10,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.LuceneIndex;
-import it.cavallium.dbengine.client.MultiSort;
-import it.cavallium.dbengine.client.SearchResultKey;
+import it.cavallium.dbengine.client.Sort;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
@@ -23,10 +22,7 @@ import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
@@ -81,12 +77,12 @@ public class TestLuceneIndex {
 			LLScoreMode.COMPLETE_NO_SCORES,
 			LLScoreMode.COMPLETE
 	);
-	private static final Flux<MultiSort<SearchResultKey<String>>> multiSort = Flux.just(MultiSort.topScore(),
-			MultiSort.randomSortField(),
-			MultiSort.noSort(),
-			MultiSort.docSort(),
-			MultiSort.numericSort("longsort", false),
-			MultiSort.numericSort("longsort", true)
+	private static final Flux<Sort> multiSort = Flux.just(Sort.score(),
+			Sort.random(),
+			Sort.no(),
+			Sort.doc(),
+			Sort.numeric("longsort", false),
+			Sort.numeric("longsort", true)
 	);
 
 	public static Stream<Arguments> provideQueryArgumentsScoreMode() {

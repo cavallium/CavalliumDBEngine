@@ -11,28 +11,22 @@ import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.LuceneIndex;
-import it.cavallium.dbengine.client.MultiSort;
+import it.cavallium.dbengine.client.Sort;
 import it.cavallium.dbengine.client.SearchResultKey;
 import it.cavallium.dbengine.client.SearchResultKeys;
-import it.cavallium.dbengine.client.query.BasicType;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.ClientQueryParamsBuilder;
-import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.BooleanQuery;
 import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
 import it.cavallium.dbengine.client.query.current.data.BoostQuery;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.client.query.current.data.MatchNoDocsQuery;
-import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.OccurMust;
 import it.cavallium.dbengine.client.query.current.data.OccurShould;
-import it.cavallium.dbengine.client.query.current.data.ScoreSort;
 import it.cavallium.dbengine.client.query.current.data.Term;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.LLScoreMode;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
@@ -47,17 +41,12 @@ import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher
 import it.cavallium.dbengine.lucene.searcher.UnsortedScoredFullMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredStreamingMultiSearcher;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.Callable;
-import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.function.FailableConsumer;
@@ -149,16 +138,16 @@ public class TestLuceneSearches {
 	}
 
 	private static final Flux<Boolean> multi = Flux.just(false, true);
-	private static final Flux<MultiSort<SearchResultKey<String>>> multiSort = Flux.just(
-			MultiSort.topScore(),
+	private static final Flux<Sort> multiSort = Flux.just(
+			Sort.score(),
 			//todo: fix random sort field
-			//MultiSort.randomSortField(),
-			MultiSort.noSort(),
-			MultiSort.docSort(),
-			MultiSort.numericSort("longsort", false),
-			MultiSort.numericSort("longsort", true),
-			MultiSort.numericSort("intsort", false),
-			MultiSort.numericSort("intsort", true)
+			//Sort.randomSortField(),
+			Sort.no(),
+			Sort.doc(),
+			Sort.numeric("longsort", false),
+			Sort.numeric("longsort", true),
+			Sort.numeric("intsort", false),
+			Sort.numeric("intsort", true)
 	);
 
 	private static Flux<LocalSearcher> getSearchers(ExpectedQueryType info) {
@@ -300,7 +289,7 @@ public class TestLuceneSearches {
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchNoDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
+	public void testSearchNoDocs(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
 				.<SearchResultKey<String>>builder()
 				.query(new MatchNoDocsQuery())
@@ -314,7 +303,7 @@ public class TestLuceneSearches {
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchAllDocs(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
+	public void testSearchAllDocs(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
 				.<SearchResultKey<String>>builder()
 				.query(new MatchAllDocsQuery())
@@ -328,7 +317,7 @@ public class TestLuceneSearches {
 
 	@ParameterizedTest
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
-	public void testSearchAdvancedText(boolean shards, MultiSort<SearchResultKey<String>> multiSort) throws Throwable {
+	public void testSearchAdvancedText(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
 				.<SearchResultKey<String>>builder()
 				.query(new BooleanQuery(List.of(

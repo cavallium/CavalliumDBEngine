@@ -33,7 +33,9 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			}
 			try {
 				if (obj.readOptions != null) {
-					obj.readOptions.close();
+					if (!(obj.readOptions instanceof UnreleasableReadOptions)) {
+						obj.readOptions.close();
+					}
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close readOptions", ex);

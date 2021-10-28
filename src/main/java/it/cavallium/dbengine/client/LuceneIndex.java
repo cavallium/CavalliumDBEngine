@@ -9,16 +9,11 @@ import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
 import java.util.Map.Entry;
-import java.util.Optional;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
-import reactor.util.function.Tuples;
 
-@SuppressWarnings("unused")
 public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> addDocument(T key, U value);
@@ -53,32 +48,10 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> deleteAll();
 
-	Mono<Send<SearchResultKeys<T>>> moreLikeThis(ClientQueryParams<SearchResultKey<T>> queryParams, T key, U mltDocumentValue);
+	Mono<Send<Hits<HitKey<T>>>> moreLikeThis(ClientQueryParams queryParams, T key,
+			U mltDocumentValue);
 
-	default Mono<Send<SearchResult<T, U>>> moreLikeThisWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
-			T key,
-			U mltDocumentValue,
-			ValueGetter<T, U> valueGetter) {
-		return this.moreLikeThisWithTransformer(queryParams,
-				key,
-				mltDocumentValue,
-				getValueGetterTransformer(valueGetter));
-	}
-
-	Mono<Send<SearchResult<T, U>>> moreLikeThisWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
-			T key,
-			U mltDocumentValue,
-			ValueTransformer<T, U> valueTransformer);
-
-	Mono<Send<SearchResultKeys<T>>> search(ClientQueryParams<SearchResultKey<T>> queryParams);
-
-	default Mono<Send<SearchResult<T, U>>> searchWithValues(ClientQueryParams<SearchResultItem<T, U>> queryParams,
-			ValueGetter<T, U> valueGetter) {
-		return this.searchWithTransformer(queryParams, getValueGetterTransformer(valueGetter));
-	}
-
-	Mono<Send<SearchResult<T, U>>> searchWithTransformer(ClientQueryParams<SearchResultItem<T, U>> queryParams,
-			ValueTransformer<T, U> valueTransformer);
+	Mono<Send<Hits<HitKey<T>>>> search(ClientQueryParams queryParams);
 
 	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);
 
@@ -89,17 +62,4 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 	Mono<Void> flush();
 
 	Mono<Void> refresh(boolean force);
-
-	private static <T, U> ValueTransformer<T, U> getValueGetterTransformer(ValueGetter<T, U> valueGetter) {
-		return new ValueTransformer<T, U>() {
-			@Override
-			public <X> Flux<Tuple3<X, T, Optional<U>>> transform(Flux<Tuple2<X, T>> keys) {
-				return keys.flatMapSequential(key -> valueGetter
-						.get(key.getT2())
-						.map(result -> Tuples.of(key.getT1(), key.getT2(), Optional.of(result)))
-						.switchIfEmpty(Mono.fromSupplier(() -> Tuples.of(key.getT1(), key.getT2(), Optional.empty())))
-				);
-			}
-		};
-	}
 }

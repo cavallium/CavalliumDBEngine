@@ -10,10 +10,11 @@ import static org.junit.jupiter.api.Assertions.fail;
 import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
+import it.cavallium.dbengine.client.HitKey;
+import it.cavallium.dbengine.client.Hits;
 import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.Sort;
-import it.cavallium.dbengine.client.SearchResultKey;
-import it.cavallium.dbengine.client.SearchResultKeys;
+import it.cavallium.dbengine.client.LazyHitKey;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.ClientQueryParamsBuilder;
 import it.cavallium.dbengine.client.query.current.data.BooleanQuery;
@@ -237,7 +238,7 @@ public class TestLuceneSearches {
 	}
 
 	private boolean supportsPreciseHitsCount(LocalSearcher searcher,
-			ClientQueryParams<SearchResultKey<String>> query) {
+			ClientQueryParams query) {
 		var sorted = query.isSorted();
 		if (searcher instanceof UnsortedUnscoredStreamingMultiSearcher) {
 			return false;
@@ -248,7 +249,7 @@ public class TestLuceneSearches {
 		}
 	}
 
-	public void testSearch(ClientQueryParamsBuilder<SearchResultKey<String>> queryParamsBuilder,
+	public void testSearch(ClientQueryParamsBuilder queryParamsBuilder,
 			ExpectedQueryType expectedQueryType) throws Throwable {
 
 		runSearchers(expectedQueryType, searcher -> {
@@ -291,7 +292,7 @@ public class TestLuceneSearches {
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchNoDocs(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
-				.<SearchResultKey<String>>builder()
+				.<LazyHitKey<String>>builder()
 				.query(new MatchNoDocsQuery())
 				.snapshot(null)
 				.complete(true)
@@ -305,7 +306,7 @@ public class TestLuceneSearches {
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAllDocs(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
-				.<SearchResultKey<String>>builder()
+				.<LazyHitKey<String>>builder()
 				.query(new MatchAllDocsQuery())
 				.snapshot(null)
 				.complete(true)
@@ -319,7 +320,7 @@ public class TestLuceneSearches {
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAdvancedText(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
-				.<SearchResultKey<String>>builder()
+				.<LazyHitKey<String>>builder()
 				.query(new BooleanQuery(List.of(
 						new BooleanQueryPart(new BoostQuery(new TermQuery(new Term("text", "hello")), 3), new OccurShould()),
 						new BooleanQueryPart(new TermQuery(new Term("text", "world")), new OccurShould()),
@@ -357,14 +358,10 @@ public class TestLuceneSearches {
 		assertEquals(new TotalHitsCount(expectedCount, true), hits);
 	}
 
-	private List<Scored> getResults(SearchResultKeys<String> results) {
+	private List<Scored> getResults(Hits<HitKey<String>> results) {
 		return run(results
 				.results()
-				.flatMapSequential(searchResultKey -> searchResultKey
-						.key()
-						.single()
-						.map(key -> new Scored(key, searchResultKey.score()))
-				)
+				.map(key -> new Scored(key.key(), key.score()))
 				.collectList());
 	}
 

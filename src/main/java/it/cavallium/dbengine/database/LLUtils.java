@@ -456,6 +456,7 @@ public class LLUtils {
 		}
 	}
 
+	// todo: remove this ugly method
 	/**
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
@@ -473,6 +474,7 @@ public class LLUtils {
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
+	// todo: remove this ugly method
 	/**
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
@@ -491,6 +493,7 @@ public class LLUtils {
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
+	// todo: remove this ugly method
 	/**
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
@@ -510,6 +513,7 @@ public class LLUtils {
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
+	// todo: remove this ugly method
 	/**
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
@@ -528,6 +532,7 @@ public class LLUtils {
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
+	// todo: remove this ugly method
 	/**
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful

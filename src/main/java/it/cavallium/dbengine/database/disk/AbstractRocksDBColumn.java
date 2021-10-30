@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.StandardAllocationTypes;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLUtils;
@@ -43,6 +44,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 
 	private final T db;
 	private final DatabaseOptions opts;
+	private final boolean nettyDirect;
 	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 
@@ -56,6 +58,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			MeterRegistry meterRegistry) {
 		this.db = db;
 		this.opts = databaseOptions;
+		this.nettyDirect = opts.allowNettyDirect() && alloc.getAllocationType() == StandardAllocationTypes.OFF_HEAP;
 		this.alloc = alloc;
 		this.cfh = cfh;
 
@@ -95,7 +98,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			if (!cfh.isOwningHandle()) {
 				throw new IllegalStateException("Column family is closed");
 			}
-			if (opts.allowNettyDirect()) {
+			if (nettyDirect) {
 
 				//todo: implement keyMayExist if existsAlmostCertainly is false.
 				// Unfortunately it's not feasible until RocksDB implements keyMayExist with buffers
@@ -202,7 +205,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					}
 					assert key.isAccessible();
 					assert value.isAccessible();
-					if (opts.allowNettyDirect()) {
+					if (nettyDirect) {
 						var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
 						try (var ignored1 = keyNioBuffer.buffer().receive()) {
 							assert keyNioBuffer.byteBuffer().isDirect();
@@ -275,7 +278,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			if (!cfh.isOwningHandle()) {
 				throw new IllegalStateException("Column family is closed");
 			}
-			if (opts.allowNettyDirect()) {
+			if (nettyDirect) {
 				DirectBuffer keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
 				try {
 					db.delete(cfh, writeOptions, keyNioBuffer.byteBuffer());

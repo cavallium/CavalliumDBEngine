@@ -13,12 +13,5 @@ public record DatabaseOptions(Map<String, String> extraFlags,
 															boolean useDirectIO,
 															boolean allowMemoryMapping,
 															boolean allowNettyDirect,
-															boolean useNettyDirect,
 															int maxOpenFiles) {
-
-	public DatabaseOptions {
-		if (useNettyDirect && !allowNettyDirect) {
-			throw new IllegalArgumentException("If allowNettyDirect is false, you must also set useNettyDirect to false");
-		}
-	}
 }

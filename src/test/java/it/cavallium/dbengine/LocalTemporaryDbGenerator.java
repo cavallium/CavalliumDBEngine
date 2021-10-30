@@ -65,7 +65,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 										conn.getDatabase("testdb",
 												List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
 												new DatabaseOptions(Map.of(), true, false, true, false,
-														true, canUseNettyDirect, canUseNettyDirect, -1)
+														true, canUseNettyDirect, -1)
 										),
 										conn.getLuceneIndex("testluceneindex1",
 												1,

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -82,6 +83,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final Path dbPath;
 	private final String name;
 	private final DatabaseOptions databaseOptions;
+	private final boolean nettyDirect;
 
 	private final boolean enableColumnsBug;
 	private RocksDB db;
@@ -99,9 +101,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			DatabaseOptions databaseOptions) throws IOException {
 		this.name = name;
 		this.allocator = allocator;
+		this.nettyDirect = databaseOptions.allowNettyDirect() && allocator.getAllocationType() == OFF_HEAP;
 		this.meterRegistry = meterRegistry;
 
-		if (databaseOptions.allowNettyDirect()) {
+		if (nettyDirect) {
 			if (!PlatformDependent.hasUnsafe()) {
 				throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
 						PlatformDependent.getUnsafeUnavailabilityCause()

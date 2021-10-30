@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -31,17 +32,23 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
 	private final AtomicBoolean connected = new AtomicBoolean();
 	private final BufferAllocator allocator;
+	private final MeterRegistry meterRegistry;
 	private final Path basePath;
 	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
 
-	public LLLocalDatabaseConnection(BufferAllocator allocator, Path basePath) {
+	public LLLocalDatabaseConnection(BufferAllocator allocator, MeterRegistry meterRegistry, Path basePath) {
 		this.allocator = allocator;
+		this.meterRegistry = meterRegistry;
 		this.basePath = basePath;
 	}
 
 	@Override
 	public BufferAllocator getAllocator() {
 		return allocator;
+	}
+
+	public MeterRegistry getMeterRegistry() {
+		return meterRegistry;
 	}
 
 	@Override
@@ -70,6 +77,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		return Mono
 				.fromCallable(() -> new LLLocalKeyValueDatabase(
 						allocator,
+						meterRegistry,
 						name,
 						basePath.resolve("database_" + name),
 						columns,
@@ -93,6 +101,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						Objects.requireNonNull(env, "Environment not set");
 						return new LLLocalMultiLuceneIndex(env,
 								luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
+								meterRegistry,
 								name,
 								instancesCount,
 								indicizerAnalyzers,
@@ -102,6 +111,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						);
 					} else {
 						return new LLLocalLuceneIndex(luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
+								meterRegistry,
 								name,
 								indicizerAnalyzers,
 								indicizerSimilarities,

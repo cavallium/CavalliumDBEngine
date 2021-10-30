@@ -1,5 +1,6 @@
 package it.cavallium.dbengine;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
@@ -28,7 +29,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 	public Mono<TempDb> openTempDb(TestAllocator allocator) {
 		boolean canUseNettyDirect = DbTestUtils.computeCanUseNettyDirect();
 		return Mono
-				.fromCallable(() -> new LLMemoryDatabaseConnection(allocator.allocator()))
+				.fromCallable(() -> new LLMemoryDatabaseConnection(allocator.allocator(), new SimpleMeterRegistry()))
 				.flatMap(conn -> {
 					SwappableLuceneSearcher searcher = new SwappableLuceneSearcher();
 					var luceneHacks = new LuceneHacks(() -> searcher, () -> searcher);

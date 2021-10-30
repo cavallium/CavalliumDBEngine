@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.MemoryManager;
@@ -27,11 +28,14 @@ import reactor.core.scheduler.Schedulers;
 
 public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<OptimisticTransactionDB> {
 
+	private static final boolean ALWAYS_PRINT_OPTIMISTIC_RETRIES = false;
+
 	public OptimisticRocksDBColumn(OptimisticTransactionDB db,
 			DatabaseOptions databaseOptions,
 			BufferAllocator alloc,
-			ColumnFamilyHandle cfh) {
-		super(db, databaseOptions, alloc, cfh);
+			ColumnFamilyHandle cfh,
+			MeterRegistry meterRegistry) {
+		super(db, databaseOptions, alloc, cfh, meterRegistry);
 	}
 
 	@Override
@@ -156,20 +160,23 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 									sentCurData.close();
 								}
 								retries++;
-								if (retries >= 100 && retries % 100 == 0) {
-									logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting 5ms before retrying for the {} time", LLUtils.toStringSafe(key), retries);
-								} else if (logger.isDebugEnabled(MARKER_ROCKSDB)) {
-									logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting 5ms before retrying", LLUtils.toStringSafe(key));
-								}
+
 								if (retries == 1) {
 									retryTime = new ExponentialPageLimits(0, 5, 2000);
 								}
 								long retryMs = retryTime.getPageLimit(retries);
+
 								// +- 20%
 								retryMs = retryMs + (long) (retryMs * 0.2d * ThreadLocalRandom.current().nextDouble(-1.0d, 1.0d));
-								// Wait for 5ms
+
+								if (retries >= 5 && retries % 5 == 0 || ALWAYS_PRINT_OPTIMISTIC_RETRIES) {
+									logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
+											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryMs, retries);
+								} else if (logger.isDebugEnabled(MARKER_ROCKSDB)) {
+									logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
+											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryMs, retries);
+								}
+								// Wait for n milliseconds
 								try {
 									Thread.sleep(retryMs);
 								} catch (InterruptedException e) {

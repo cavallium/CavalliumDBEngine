@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
@@ -46,6 +47,8 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 	Mono<Void> verifyChecksum();
 
 	BufferAllocator getAllocator();
+
+	MeterRegistry getMeterRegistry();
 
 	Mono<Void> close();
 }

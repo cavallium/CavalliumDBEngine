@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.memory;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -18,6 +19,7 @@ import reactor.core.publisher.Mono;
 public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 
 	private final BufferAllocator allocator;
+	private final MeterRegistry meterRegistry;
 	private final String name;
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 
@@ -25,8 +27,12 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	private final ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>> mainDb;
 	private final ConcurrentHashMap<String, LLMemoryDictionary> singletons = new ConcurrentHashMap<>();
 
-	public LLMemoryKeyValueDatabase(BufferAllocator allocator, String name, List<Column> columns) {
+	public LLMemoryKeyValueDatabase(BufferAllocator allocator,
+			MeterRegistry meterRegistry,
+			String name,
+			List<Column> columns) {
 		this.allocator = allocator;
+		this.meterRegistry = meterRegistry;
 		this.name = name;
 		this.mainDb = new ConcurrentHashMap<>();
 		for (Column column : columns) {
@@ -78,6 +84,11 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public BufferAllocator getAllocator() {
 		return allocator;
+	}
+
+	@Override
+	public MeterRegistry getMeterRegistry() {
+		return meterRegistry;
 	}
 
 	@Override

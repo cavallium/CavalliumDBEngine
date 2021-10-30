@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
@@ -14,6 +15,8 @@ import reactor.core.publisher.Mono;
 public interface LLDatabaseConnection {
 
 	BufferAllocator getAllocator();
+
+	MeterRegistry getMeterRegistry();
 
 	Mono<? extends LLDatabaseConnection> connect();
 

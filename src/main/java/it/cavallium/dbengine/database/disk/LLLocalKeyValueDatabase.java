@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.Column;
@@ -73,6 +74,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 
 	private final BufferAllocator allocator;
+	private final MeterRegistry meterRegistry;
 	private final Scheduler dbScheduler;
 
 	// Configurations
@@ -89,6 +91,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
 	public LLLocalKeyValueDatabase(BufferAllocator allocator,
+			MeterRegistry meterRegistry,
 			String name,
 			@Nullable Path path,
 			List<Column> columns,
@@ -96,6 +99,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			DatabaseOptions databaseOptions) throws IOException {
 		this.name = name;
 		this.allocator = allocator;
+		this.meterRegistry = meterRegistry;
 
 		if (databaseOptions.allowNettyDirect()) {
 			if (!PlatformDependent.hasUnsafe()) {
@@ -496,11 +500,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
-			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, cfh);
+			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, cfh, meterRegistry);
 		} else if (db instanceof TransactionDB) {
-			return new PessimisticRocksDBColumn((TransactionDB) db, databaseOptions, allocator, cfh);
+			return new PessimisticRocksDBColumn((TransactionDB) db, databaseOptions, allocator, cfh, meterRegistry);
 		} else {
-			return new StandardRocksDBColumn(db, databaseOptions, allocator, cfh);
+			return new StandardRocksDBColumn(db, databaseOptions, allocator, cfh, meterRegistry);
 		}
 	}
 
@@ -545,6 +549,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public BufferAllocator getAllocator() {
 		return allocator;
+	}
+
+	@Override
+	public MeterRegistry getMeterRegistry() {
+		return meterRegistry;
 	}
 
 	@Override

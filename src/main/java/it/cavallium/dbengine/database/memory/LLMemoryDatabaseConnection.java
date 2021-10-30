@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.memory;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
@@ -24,14 +25,21 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	private final BufferAllocator allocator;
+	private final MeterRegistry meterRegistry;
 
-	public LLMemoryDatabaseConnection(BufferAllocator allocator) {
+	public LLMemoryDatabaseConnection(BufferAllocator allocator, MeterRegistry meterRegistry) {
 		this.allocator = allocator;
+		this.meterRegistry = meterRegistry;
 	}
 
 	@Override
 	public BufferAllocator getAllocator() {
 		return allocator;
+	}
+
+	@Override
+	public MeterRegistry getMeterRegistry() {
+		return meterRegistry;
 	}
 
 	@Override
@@ -46,6 +54,7 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 		return Mono
 				.<LLKeyValueDatabase>fromCallable(() -> new LLMemoryKeyValueDatabase(
 						allocator,
+						meterRegistry,
 						name,
 						columns
 				))
@@ -61,6 +70,7 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 			@Nullable LuceneHacks luceneHacks) {
 		return Mono
 				.<LLLuceneIndex>fromCallable(() -> new LLLocalLuceneIndex(null,
+						meterRegistry,
 						name,
 						indicizerAnalyzers,
 						indicizerSimilarities,

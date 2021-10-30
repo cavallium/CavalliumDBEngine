@@ -1,27 +1,20 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static java.util.Objects.requireNonNull;
-import static java.util.Objects.requireNonNullElse;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.MemoryManager;
 import io.net5.buffer.api.Send;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.DatabaseOptions;
-import it.cavallium.dbengine.database.LLDelta;
-import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.LLUtils.DirectBuffer;
 import it.cavallium.dbengine.database.RepeatedElementList;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.lucene.ExponentialPageLimits;
-import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
-import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -37,7 +30,6 @@ import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
-import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements RocksDBColumn
@@ -54,11 +46,24 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 
-	public AbstractRocksDBColumn(T db, DatabaseOptions databaseOptions, BufferAllocator alloc, ColumnFamilyHandle cfh) {
+	private final MeterRegistry meterRegistry;
+	private final AtomicInteger lastDataSizeMetric = new AtomicInteger(0);
+
+	public AbstractRocksDBColumn(T db,
+			DatabaseOptions databaseOptions,
+			BufferAllocator alloc,
+			ColumnFamilyHandle cfh,
+			MeterRegistry meterRegistry) {
 		this.db = db;
 		this.opts = databaseOptions;
 		this.alloc = alloc;
 		this.cfh = cfh;
+
+		this.meterRegistry = meterRegistry;
+		Gauge
+				.builder("it.cavallium.dbengine.database.disk.column.lastdatasize", lastDataSizeMetric::get)
+				.description("Last data size read using get()")
+				.register(meterRegistry);
 	}
 
 	protected T getDb() {
@@ -81,6 +86,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called dbGet in a nonblocking thread");
 			}
+			if (!db.isOwningHandle()) {
+				throw new IllegalStateException("Database is closed");
+			}
+			if (!readOptions.isOwningHandle()) {
+				throw new IllegalStateException("ReadOptions is closed");
+			}
+			if (!cfh.isOwningHandle()) {
+				throw new IllegalStateException("Column family is closed");
+			}
 			if (opts.allowNettyDirect()) {
 
 				//todo: implement keyMayExist if existsAlmostCertainly is false.
@@ -91,7 +105,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				// Create a direct result buffer because RocksDB works only with direct buffers
 				try (Buffer resultBuf = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES)) {
 					int valueSize;
-					int assertionReadData = -1;
 					ByteBuffer resultNioBuf;
 					do {
 						// Create the result nio buffer to pass to RocksDB
@@ -114,6 +127,9 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 							// If it's bigger it means that RocksDB is writing the start
 							// of the result into the result buffer more than once.
 							assert resultNioBuf.limit() <= valueSize;
+
+							// Update data size metrics
+							this.lastDataSizeMetric.set(valueSize);
 
 							if (valueSize <= resultNioBuf.limit()) {
 								// Return the result ready to be read
@@ -175,6 +191,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					if (Schedulers.isInNonBlockingThread()) {
 						throw new UnsupportedOperationException("Called dbPut in a nonblocking thread");
 					}
+					if (!db.isOwningHandle()) {
+						throw new IllegalStateException("Database is closed");
+					}
+					if (!writeOptions.isOwningHandle()) {
+						throw new IllegalStateException("WriteOptions is closed");
+					}
+					if (!cfh.isOwningHandle()) {
+						throw new IllegalStateException("Column family is closed");
+					}
 					assert key.isAccessible();
 					assert value.isAccessible();
 					if (opts.allowNettyDirect()) {
@@ -197,7 +222,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				}
 			}
 		} finally {
-			if (writeOptions != null && !(writeOptions instanceof UnreleasableWriteOptions)) {
+			if (!(writeOptions instanceof UnreleasableWriteOptions)) {
 				writeOptions.close();
 			}
 		}
@@ -208,6 +233,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try (var key = keySend.receive()) {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
+			}
+			if (!db.isOwningHandle()) {
+				throw new IllegalStateException("Database is closed");
+			}
+			if (!readOptions.isOwningHandle()) {
+				throw new IllegalStateException("ReadOptions is closed");
+			}
+			if (!cfh.isOwningHandle()) {
+				throw new IllegalStateException("Column family is closed");
 			}
 			int size = RocksDB.NOT_FOUND;
 			byte[] keyBytes = LLUtils.toArray(key);
@@ -221,7 +255,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					}
 				}
 			} finally {
-				if (readOptions != null && !(readOptions instanceof UnreleasableReadOptions)) {
+				if (!(readOptions instanceof UnreleasableReadOptions)) {
 					readOptions.close();
 				}
 			}
@@ -232,6 +266,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	public void delete(WriteOptions writeOptions, Send<Buffer> keySend) throws RocksDBException {
 		try (var key = keySend.receive()) {
+			if (!db.isOwningHandle()) {
+				throw new IllegalStateException("Database is closed");
+			}
+			if (!writeOptions.isOwningHandle()) {
+				throw new IllegalStateException("WriteOptions is closed");
+			}
+			if (!cfh.isOwningHandle()) {
+				throw new IllegalStateException("Column family is closed");
+			}
 			if (opts.allowNettyDirect()) {
 				DirectBuffer keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
 				try {
@@ -248,43 +291,106 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 
 	@Override
 	public void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!writeOptions.isOwningHandle()) {
+			throw new IllegalStateException("WriteOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		db.delete(cfh, writeOptions, key);
 	}
 
 	@Override
 	public List<byte[]> multiGetAsList(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!readOptions.isOwningHandle()) {
+			throw new IllegalStateException("ReadOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		var columnFamilyHandles = new RepeatedElementList<>(cfh, keys.size());
 		return db.multiGetAsList(readOptions, columnFamilyHandles, keys);
 	}
 
 	@Override
 	public void suggestCompactRange() throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		db.suggestCompactRange(cfh);
 	}
 
 	@Override
 	public void compactRange(byte[] begin, byte[] end, CompactRangeOptions options)
 			throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!options.isOwningHandle()) {
+			throw new IllegalStateException("CompactRangeOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		db.compactRange(cfh, begin, end, options);
 	}
 
 	@Override
 	public void flush(FlushOptions options) throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!options.isOwningHandle()) {
+			throw new IllegalStateException("FlushOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		db.flush(options, cfh);
 	}
 
 	@Override
 	public void flushWal(boolean sync) throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		db.flushWal(sync);
 	}
 
 	@Override
 	public long getLongProperty(String property) throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		return db.getLongProperty(cfh, property);
 	}
 
 	@Override
 	public void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!writeOptions.isOwningHandle()) {
+			throw new IllegalStateException("WriteOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		db.write(writeOptions, writeBatch);
 	}
 
@@ -298,6 +404,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	@NotNull
 	public RocksIterator newIterator(@NotNull ReadOptions readOptions) {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!readOptions.isOwningHandle()) {
+			throw new IllegalStateException("ReadOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		return db.newIterator(cfh, readOptions);
 	}
 
@@ -309,5 +424,9 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	public BufferAllocator getAllocator() {
 		return alloc;
+	}
+
+	public MeterRegistry getMeterRegistry() {
+		return meterRegistry;
 	}
 }

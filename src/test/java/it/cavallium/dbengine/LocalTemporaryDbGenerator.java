@@ -2,6 +2,7 @@ package it.cavallium.dbengine;
 
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
@@ -56,7 +57,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 						return null;
 					})
 					.subscribeOn(Schedulers.boundedElastic())
-					.then(new LLLocalDatabaseConnection(allocator.allocator(), wrkspcPath).connect())
+					.then(new LLLocalDatabaseConnection(allocator.allocator(), new SimpleMeterRegistry(), wrkspcPath).connect())
 					.flatMap(conn -> {
 						SwappableLuceneSearcher searcher = new SwappableLuceneSearcher();
 						var luceneHacks = new LuceneHacks(() -> searcher, () -> searcher);

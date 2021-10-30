@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
@@ -25,8 +26,8 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 	public StandardRocksDBColumn(RocksDB db,
 			DatabaseOptions databaseOptions,
 			BufferAllocator alloc,
-			ColumnFamilyHandle cfh) {
-		super(db, databaseOptions, alloc, cfh);
+			ColumnFamilyHandle cfh, MeterRegistry meterRegistry) {
+		super(db, databaseOptions, alloc, cfh, meterRegistry);
 	}
 
 	@Override

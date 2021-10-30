@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
@@ -61,6 +62,8 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	ColumnFamilyHandle getColumnFamilyHandle();
 
 	BufferAllocator getAllocator();
+
+	MeterRegistry getMeterRegistry();
 
 	boolean supportsTransactions();
 }

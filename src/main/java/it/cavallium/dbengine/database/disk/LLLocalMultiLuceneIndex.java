@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -39,6 +40,7 @@ import reactor.util.function.Tuple2;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
+	private final MeterRegistry meterRegistry;
 	private final ConcurrentHashMap<Long, LLSnapshot[]> registeredSnapshots = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 	private final LLLocalLuceneIndex[] luceneIndices;
@@ -49,6 +51,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	public LLLocalMultiLuceneIndex(LLTempLMDBEnv env,
 			Path lucene,
+			MeterRegistry meterRegistry,
 			String name,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
@@ -60,6 +63,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			throw new IOException("Unsupported instances count: " + instancesCount);
 		}
 
+		this.meterRegistry = meterRegistry;
 		LLLocalLuceneIndex[] luceneIndices = new LLLocalLuceneIndex[instancesCount];
 		for (int i = 0; i < instancesCount; i++) {
 			String instanceName;
@@ -69,6 +73,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				instanceName = name + "_" + String.format("%03d", i);
 			}
 			luceneIndices[i] = new LLLocalLuceneIndex(lucene,
+					meterRegistry,
 					instanceName,
 					indicizerAnalyzers,
 					indicizerSimilarities,

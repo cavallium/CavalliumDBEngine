@@ -3,6 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANSFORMATION;
 
+import com.google.common.util.concurrent.Uninterruptibles;
+import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
@@ -28,6 +30,9 @@ import java.nio.file.Path;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -49,8 +54,10 @@ import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NRTCachingDirectory;
 import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.functional.IORunnable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
+import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -67,7 +74,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 * concurrent commits or concurrent refreshes.
 	 */
 	private static final Scheduler luceneHeavyTasksScheduler = Schedulers.single(Schedulers.boundedElastic());
+	private static final ExecutorService SAFE_EXECUTOR = Executors.newCachedThreadPool(new ShortNamedThreadFactory("lucene-index-impl"));
 
+	private final MeterRegistry meterRegistry;
 	private final String luceneIndexName;
 	private final IndexWriter indexWriter;
 	private final SnapshotsManager snapshotsManager;
@@ -81,11 +90,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final AtomicBoolean closeRequested = new AtomicBoolean();
 
 	public LLLocalLuceneIndex(@Nullable Path luceneBasePath,
+			MeterRegistry meterRegistry,
 			String name,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
 			@Nullable LuceneHacks luceneHacks) throws IOException {
+		this.meterRegistry = meterRegistry;
 		Path directoryPath;
 		if (luceneOptions.inMemory() != (luceneBasePath == null)) {
 			throw new IllegalArgumentException();
@@ -234,13 +245,45 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private <V> Mono<V> ensureOpen(Mono<V> mono) {
-		return Mono.defer(() -> {
+		return Mono.<Void>fromCallable(() -> {
 			if (closeRequested.get()) {
-				return Mono.error(new IllegalStateException("Lucene index is closed"));
+				throw new IllegalStateException("Lucene index is closed");
 			} else {
-				return mono;
+				return null;
 			}
-		}).doFirst(activeTasks::register).doFinally(s -> activeTasks.arriveAndDeregister());
+		}).then(mono).doFirst(activeTasks::register).doFinally(s -> activeTasks.arriveAndDeregister());
+	}
+
+	private <V> Mono<V> runSafe(Callable<V> callable) {
+		return Mono.<V>create(sink -> {
+			var future = SAFE_EXECUTOR.submit(() -> {
+				try {
+					var result = callable.call();
+					if (result != null) {
+						sink.success(result);
+					} else {
+						sink.success();
+					}
+				} catch (Throwable e) {
+					sink.error(e);
+				}
+			});
+			sink.onDispose(() -> future.cancel(false));
+		});
+	}
+
+	private <V> Mono<V> runSafe(IORunnable runnable) {
+		return Mono.create(sink -> {
+			var future = SAFE_EXECUTOR.submit(() -> {
+				try {
+					runnable.run();
+					sink.success();
+				} catch (Throwable e) {
+					sink.error(e);
+				}
+			});
+			sink.onDispose(() -> future.cancel(false));
+		});
 	}
 
 	@Override
@@ -250,40 +293,29 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
-		return Mono.<Void>fromCallable(() -> {
-				indexWriter.addDocument(LLUtils.toDocument(doc));
-				return null;
-		}).subscribeOn(Schedulers.boundedElastic()).transform(this::ensureOpen);
+		return this.<Void>runSafe(() -> indexWriter.addDocument(LLUtils.toDocument(doc))).transform(this::ensureOpen);
 	}
 
 	@Override
 	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
 		return documents
 				.collectList()
-				.flatMap(documentsList -> Mono
-						.<Void>fromCallable(() -> {
-							indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
-							return null;
-						}).subscribeOn(Schedulers.boundedElastic())
-				)
+				.flatMap(documentsList -> this.<Void>runSafe(() -> indexWriter.addDocuments(LLUtils
+						.toDocumentsFromEntries(documentsList))))
 				.transform(this::ensureOpen);
 	}
 
 
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
-		return Mono.<Void>fromCallable(() -> {
-			indexWriter.deleteDocuments(LLUtils.toTerm(id));
-			return null;
-		}).subscribeOn(Schedulers.boundedElastic()).transform(this::ensureOpen);
+		return this.<Void>runSafe(() -> indexWriter.deleteDocuments(LLUtils.toTerm(id))).transform(this::ensureOpen);
 	}
 
 	@Override
 	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
-		return Mono.<Void>fromCallable(() -> {
-			indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document));
-			return null;
-		}).subscribeOn(Schedulers.boundedElastic()).transform(this::ensureOpen);
+		return this
+				.<Void>runSafe(() -> indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document)))
+				.transform(this::ensureOpen);
 	}
 
 	@Override
@@ -292,29 +324,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private Mono<Void> updateDocuments(Map<LLTerm, LLDocument> documentsMap) {
-		return Mono
-				.<Void>fromCallable(() -> {
-					for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
-						LLTerm key = entry.getKey();
-						LLDocument value = entry.getValue();
-						indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
-					}
-					return null;
-				})
-				.subscribeOn(Schedulers.boundedElastic())
-				.transform(this::ensureOpen);
+		return this.<Void>runSafe(() -> {
+			for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
+				LLTerm key = entry.getKey();
+				LLDocument value = entry.getValue();
+				indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
+			}
+		}).transform(this::ensureOpen);
 	}
 
 	@Override
 	public Mono<Void> deleteAll() {
-		return Mono.<Void>fromCallable(() -> {
-			//noinspection BlockingMethodInNonBlockingContext
+		return this.<Void>runSafe(() -> {
 			indexWriter.deleteAll();
-			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.forceMergeDeletes(true);
-			//noinspection BlockingMethodInNonBlockingContext
 			indexWriter.commit();
-			return null;
 		}).subscribeOn(luceneHeavyTasksScheduler).transform(this::ensureOpen);
 	}
 

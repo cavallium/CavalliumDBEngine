@@ -808,7 +808,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalEntryReactiveRocksIterator(db, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot)),
-						llLocalEntryReactiveRocksIterator -> llLocalEntryReactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalReactiveRocksIterator::close
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -821,7 +821,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalGroupedEntryReactiveRocksIterator(db, prefixLength, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot)),
-						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalGroupedReactiveRocksIterator::close
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -852,7 +852,7 @@ public class LLLocalDictionary implements LLDictionary {
 				rangeSend -> Flux.using(
 						() -> new LLLocalGroupedKeyReactiveRocksIterator(db, prefixLength, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot)),
-						reactiveRocksIterator -> reactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalGroupedReactiveRocksIterator::close
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
@@ -951,7 +951,7 @@ public class LLLocalDictionary implements LLDictionary {
 						() -> new LLLocalKeyReactiveRocksIterator(db, rangeSend,
 								databaseOptions.allowNettyDirect(), resolveSnapshot(snapshot)
 						),
-						llLocalKeyReactiveRocksIterator -> llLocalKeyReactiveRocksIterator.flux().subscribeOn(dbScheduler),
+						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalReactiveRocksIterator::close
 				).transform(LLUtils::handleDiscard),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)

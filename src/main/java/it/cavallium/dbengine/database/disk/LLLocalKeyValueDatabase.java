@@ -318,16 +318,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setPreserveDeletes(false);
 		options.setKeepLogFileNum(10);
 		options.setAllowFAllocate(true);
-		options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
+		//options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
 
 		Objects.requireNonNull(databasesDirPath);
 		Objects.requireNonNull(path.getFileName());
 		List<DbPath> paths = List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-						10L * 1024L * 1024L * 1024L), // 10GiB
-				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 						100L * 1024L * 1024L * 1024L), // 100GiB
+				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
+						500L * 1024L * 1024L * 1024L), // 500GiB
 				new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
-						600L * 1024L * 1024L * 1024L)); // 600GiB
+						500L * 1024L * 1024L * 1024L)); // 500GiB
 		options.setDbPaths(paths);
 		options.setCfPaths(paths);
 		options.setMaxOpenFiles(databaseOptions.maxOpenFiles());
@@ -377,10 +377,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setAllowConcurrentMemtableWrite(true)
 					.setEnableWriteThreadAdaptiveYield(true)
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
-					.setBytesPerSync(1 * 1024 * 1024) // 1MiB
-					.setWalBytesPerSync(10 * 1024 * 1024)
+					.setBytesPerSync(64 * 1024 * 1024) // 1MiB
+					.setWalBytesPerSync(128 * 1024 * 1024)
 					.optimizeLevelStyleCompaction(
-							128 * 1024 * 1024) // 128MiB of ram will be used for level style compaction
+							2048L * 1024L * 1024L) // 2GiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
 					.setWalTtlSeconds(30) // flush wal after 30 seconds
 					.setWalSizeLimitMB(1024) // 1024MB

@@ -279,7 +279,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force compact
 	}
 
-	@SuppressWarnings({"CommentedOutCode", "PointlessArithmeticExpression"})
+	@SuppressWarnings({"CommentedOutCode"})
 	private static Options openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions) throws IOException {
 		// Get databases directory path
 		Path databasesDirPath;

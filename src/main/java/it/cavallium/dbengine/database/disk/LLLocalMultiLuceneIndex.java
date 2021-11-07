@@ -6,7 +6,9 @@ import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import it.cavallium.dbengine.database.LLDocument;
+import it.cavallium.dbengine.database.LLIndexRequest;
+import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -119,17 +121,17 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocument(LLTerm id, LLDocument doc) {
+	public Mono<Void> addDocument(LLTerm id, LLUpdateDocument doc) {
 		return getLuceneIndex(id).addDocument(id, doc);
 	}
 
 	@SuppressWarnings({"unchecked"})
 	@Override
-	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
+	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
 				.buffer(512)
 				.flatMap(inputEntries -> {
-					List<Entry<LLTerm, LLDocument>>[] sortedEntries = new List[luceneIndices.length];
+					List<Entry<LLTerm, LLUpdateDocument>>[] sortedEntries = new List[luceneIndices.length];
 					Mono<Void>[] results = new Mono[luceneIndices.length];
 
 					// Sort entries
@@ -143,7 +145,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 					// Add documents
 					int luceneIndexId = 0;
-					for (List<Entry<LLTerm, LLDocument>> docs : sortedEntries) {
+					for (List<Entry<LLTerm, LLUpdateDocument>> docs : sortedEntries) {
 						if (docs != null && !docs.isEmpty()) {
 							LLLocalLuceneIndex luceneIndex = luceneIndices[luceneIndexId];
 							results[luceneIndexId] = luceneIndex.addDocuments(Flux.fromIterable(docs));
@@ -164,15 +166,15 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
-		return getLuceneIndex(id).updateDocument(id, document);
+	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
+		return getLuceneIndex(id).update(id, request);
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
+	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLUpdateDocument>> documents) {
 		return documents
 				.flatMapMany(map -> {
-					var sortedMap = new HashMap<LLLocalLuceneIndex, Map<LLTerm, LLDocument>>();
+					var sortedMap = new HashMap<LLLocalLuceneIndex, Map<LLTerm, LLUpdateDocument>>();
 					map.forEach((key, value) -> sortedMap
 							.computeIfAbsent(getLuceneIndex(key), _unused -> new HashMap<>())
 							.put(key, value)

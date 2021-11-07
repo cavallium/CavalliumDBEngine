@@ -11,24 +11,20 @@ import it.cavallium.dbengine.client.IndexAction.ReleaseSnapshot;
 import it.cavallium.dbengine.client.IndexAction.Flush;
 import it.cavallium.dbengine.client.IndexAction.Refresh;
 import it.cavallium.dbengine.client.IndexAction.Close;
-import it.cavallium.dbengine.database.LLDocument;
+import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.MonoSink;
-import reactor.core.publisher.Sinks.Empty;
-import reactor.core.publisher.Sinks.One;
 
 sealed interface IndexAction permits Add, AddMulti, Update, UpdateMulti, Delete, DeleteAll, TakeSnapshot,
 		ReleaseSnapshot, Flush, Refresh, Close {
 
 	IndexActionType getType();
 
-	final record Add(LLTerm key, LLDocument doc, MonoSink<Void> addedFuture) implements IndexAction {
+	final record Add(LLTerm key, LLUpdateDocument doc, MonoSink<Void> addedFuture) implements IndexAction {
 
 		@Override
 		public IndexActionType getType() {
@@ -36,7 +32,7 @@ sealed interface IndexAction permits Add, AddMulti, Update, UpdateMulti, Delete,
 		}
 	}
 
-	final record AddMulti(Flux<Entry<LLTerm, LLDocument>> docsFlux, MonoSink<Void> addedMultiFuture) implements IndexAction {
+	final record AddMulti(Flux<Entry<LLTerm, LLUpdateDocument>> docsFlux, MonoSink<Void> addedMultiFuture) implements IndexAction {
 
 		@Override
 		public IndexActionType getType() {
@@ -44,7 +40,7 @@ sealed interface IndexAction permits Add, AddMulti, Update, UpdateMulti, Delete,
 		}
 	}
 
-	final record Update(LLTerm key, LLDocument doc, MonoSink<Void> updatedFuture) implements IndexAction {
+	final record Update(LLTerm key, LLUpdateDocument doc, MonoSink<Void> updatedFuture) implements IndexAction {
 
 		@Override
 		public IndexActionType getType() {
@@ -52,7 +48,7 @@ sealed interface IndexAction permits Add, AddMulti, Update, UpdateMulti, Delete,
 		}
 	}
 
-	final record UpdateMulti(Map<LLTerm, LLDocument> docs, MonoSink<Void> updatedMultiFuture) implements IndexAction {
+	final record UpdateMulti(Map<LLTerm, LLUpdateDocument> docs, MonoSink<Void> updatedMultiFuture) implements IndexAction {
 
 		@Override
 		public IndexActionType getType() {

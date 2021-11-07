@@ -5,13 +5,12 @@ import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.client.Indicizer;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.database.LLDocument;
+import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.util.LinkedList;
-import java.util.Map;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Store;
 import org.jetbrains.annotations.NotNull;
@@ -20,7 +19,7 @@ import reactor.core.publisher.Mono;
 public class StringIndicizer extends Indicizer<String, String> {
 
 	@Override
-	public @NotNull Mono<LLDocument> toDocument(@NotNull String key, @NotNull String value) {
+	public @NotNull Mono<LLUpdateDocument> toIndexRequest(@NotNull String key, @NotNull String value) {
 		return Mono.fromCallable(() -> {
 			var fields = new LinkedList<LLItem>();
 			fields.add(LLItem.newStringField("uid", key, Field.Store.YES));
@@ -37,7 +36,7 @@ public class StringIndicizer extends Indicizer<String, String> {
 				fields.add(LLItem.newLongPoint("longpoint", numLong));
 				fields.add(LLItem.newSortedNumericDocValuesField("longsort", numLong));
 			}
-			return new LLDocument(fields.toArray(LLItem[]::new));
+			return new LLUpdateDocument(fields.toArray(LLItem[]::new));
 		});
 	}
 

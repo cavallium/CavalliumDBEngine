@@ -6,14 +6,11 @@ import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.lucene.LuceneUtils;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.GroupedFlux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
@@ -21,15 +18,15 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	String getLuceneIndexName();
 
-	Mono<Void> addDocument(LLTerm id, LLDocument doc);
+	Mono<Void> addDocument(LLTerm id, LLUpdateDocument doc);
 
-	Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents);
+	Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents);
 
 	Mono<Void> deleteDocument(LLTerm id);
 
-	Mono<Void> updateDocument(LLTerm id, LLDocument document);
+	Mono<Void> update(LLTerm id, LLIndexRequest request);
 
-	Mono<Void> updateDocuments(Mono<Map<LLTerm, LLDocument>> documents);
+	Mono<Void> updateDocuments(Mono<Map<LLTerm, LLUpdateDocument>> documents);
 
 	Mono<Void> deleteAll();
 

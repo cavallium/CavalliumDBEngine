@@ -3,7 +3,6 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANSFORMATION;
 
-import com.google.common.util.concurrent.Uninterruptibles;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.DirectIOOptions;
@@ -12,11 +11,14 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
-import it.cavallium.dbengine.database.LLDocument;
+import it.cavallium.dbengine.database.LLIndexRequest;
+import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
@@ -292,12 +294,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocument(LLTerm key, LLDocument doc) {
+	public Mono<Void> addDocument(LLTerm key, LLUpdateDocument doc) {
 		return this.<Void>runSafe(() -> indexWriter.addDocument(LLUtils.toDocument(doc))).transform(this::ensureOpen);
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLDocument>> documents) {
+	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
 				.collectList()
 				.flatMap(documentsList -> this.<Void>runSafe(() -> indexWriter.addDocuments(LLUtils
@@ -312,22 +314,30 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocument(LLTerm id, LLDocument document) {
+	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
 		return this
-				.<Void>runSafe(() -> indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(document)))
+				.<Void>runSafe(() -> {
+					if (request instanceof LLUpdateDocument updateDocument) {
+						indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(updateDocument));
+					} else if (request instanceof LLUpdateFields updateFields) {
+						indexWriter.updateDocValues(LLUtils.toTerm(id), LLUtils.toFields(updateFields.items()));
+					} else {
+						throw new UnsupportedOperationException("Unexpected request type: " + request);
+					}
+				})
 				.transform(this::ensureOpen);
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLDocument>> documents) {
+	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLUpdateDocument>> documents) {
 		return documents.flatMap(this::updateDocuments).then();
 	}
 
-	private Mono<Void> updateDocuments(Map<LLTerm, LLDocument> documentsMap) {
+	private Mono<Void> updateDocuments(Map<LLTerm, LLUpdateDocument> documentsMap) {
 		return this.<Void>runSafe(() -> {
-			for (Entry<LLTerm, LLDocument> entry : documentsMap.entrySet()) {
+			for (Entry<LLTerm, LLUpdateDocument> entry : documentsMap.entrySet()) {
 				LLTerm key = entry.getKey();
-				LLDocument value = entry.getValue();
+				LLUpdateDocument value = entry.getValue();
 				indexWriter.updateDocument(LLUtils.toTerm(key), LLUtils.toDocument(value));
 			}
 		}).transform(this::ensureOpen);

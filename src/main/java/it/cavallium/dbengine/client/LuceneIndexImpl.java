@@ -1,18 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import com.google.common.util.concurrent.Uninterruptibles;
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.client.IndexAction.Add;
-import it.cavallium.dbengine.client.IndexAction.AddMulti;
-import it.cavallium.dbengine.client.IndexAction.Close;
-import it.cavallium.dbengine.client.IndexAction.Delete;
-import it.cavallium.dbengine.client.IndexAction.DeleteAll;
-import it.cavallium.dbengine.client.IndexAction.Flush;
-import it.cavallium.dbengine.client.IndexAction.Refresh;
-import it.cavallium.dbengine.client.IndexAction.ReleaseSnapshot;
-import it.cavallium.dbengine.client.IndexAction.TakeSnapshot;
-import it.cavallium.dbengine.client.IndexAction.Update;
-import it.cavallium.dbengine.client.IndexAction.UpdateMulti;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -20,28 +8,15 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.collections.ValueTransformer;
-import java.lang.ref.Cleaner;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.locks.LockSupport;
-import java.util.logging.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
-import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.EmitResult;
-import reactor.core.publisher.Sinks.Empty;
-import reactor.core.publisher.Sinks.Many;
-import reactor.core.scheduler.Schedulers;
-import reactor.util.concurrent.Queues;
 import reactor.util.function.Tuple2;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
@@ -66,7 +41,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<Void> addDocument(T key, U value) {
 		return indicizer
-				.toDocument(key, value)
+				.toIndexRequest(key, value)
 				.flatMap(doc -> luceneIndex.addDocument(indicizer.toIndex(key), doc));
 	}
 
@@ -75,7 +50,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex
 				.addDocuments(entries
 						.flatMap(entry -> indicizer
-								.toDocument(entry.getKey(), entry.getValue())
+								.toIndexRequest(entry.getKey(), entry.getValue())
 								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
 				);
 	}
@@ -89,8 +64,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<Void> updateDocument(T key, @NotNull U value) {
 		return indicizer
-				.toDocument(key, value)
-				.flatMap(doc -> luceneIndex.updateDocument(indicizer.toIndex(key), doc));
+				.toIndexRequest(key, value)
+				.flatMap(doc -> luceneIndex.update(indicizer.toIndex(key), doc));
 	}
 
 	@Override
@@ -98,7 +73,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex
 				.updateDocuments(entries
 						.flatMap(entry -> indicizer
-								.toDocument(entry.getKey(), entry.getValue())
+								.toIndexRequest(entry.getKey(), entry.getValue())
 								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
 						.collectMap(Entry::getKey, Entry::getValue)
 				);

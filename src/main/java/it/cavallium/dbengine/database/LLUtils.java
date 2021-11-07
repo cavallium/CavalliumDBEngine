@@ -18,8 +18,6 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.nio.charset.CharsetEncoder;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -39,7 +37,6 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
-import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
@@ -129,25 +126,33 @@ public class LLUtils {
 		return new Term(term.getKey(), term.getValue());
 	}
 
-	public static Document toDocument(LLDocument document) {
+	public static Document toDocument(LLUpdateDocument document) {
 		Document d = new Document();
-		for (LLItem item : document.getItems()) {
+		for (LLItem item : document.items()) {
 			d.add(LLUtils.toField(item));
 		}
 		return d;
 	}
 
-	public static Collection<Document> toDocuments(Collection<LLDocument> document) {
+	public static Field[] toFields(LLItem... fields) {
+		Field[] d = new Field[fields.length];
+		for (int i = 0; i < fields.length; i++) {
+			d[i] = LLUtils.toField(fields[i]);
+		}
+		return d;
+	}
+
+	public static Collection<Document> toDocuments(Collection<LLUpdateDocument> document) {
 		List<Document> d = new ArrayList<>(document.size());
-		for (LLDocument doc : document) {
+		for (LLUpdateDocument doc : document) {
 			d.add(LLUtils.toDocument(doc));
 		}
 		return d;
 	}
 
-	public static Collection<Document> toDocumentsFromEntries(Collection<Entry<LLTerm, LLDocument>> documentsList) {
+	public static Collection<Document> toDocumentsFromEntries(Collection<Entry<LLTerm, LLUpdateDocument>> documentsList) {
 		ArrayList<Document> results = new ArrayList<>(documentsList.size());
-		for (Entry<LLTerm, LLDocument> entry : documentsList) {
+		for (Entry<LLTerm, LLUpdateDocument> entry : documentsList) {
 			results.add(LLUtils.toDocument(entry.getValue()));
 		}
 		return results;
@@ -161,7 +166,7 @@ public class LLUtils {
 		return d;
 	}
 
-	private static IndexableField toField(LLItem item) {
+	private static Field toField(LLItem item) {
 		return switch (item.getType()) {
 			case IntPoint -> new IntPoint(item.getName(), Ints.fromByteArray(item.getData()));
 			case LongPoint -> new LongPoint(item.getName(), Longs.fromByteArray(item.getData()));

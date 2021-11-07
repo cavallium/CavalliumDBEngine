@@ -13,15 +13,12 @@ import java.util.Map.Entry;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
-	private static final Logger log = LoggerFactory.getLogger(LuceneIndex.class);
 	private final LLLuceneIndex luceneIndex;
 	private final Indicizer<T,U> indicizer;
 
@@ -41,7 +38,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<Void> addDocument(T key, U value) {
 		return indicizer
-				.toIndexRequest(key, value)
+				.toDocument(key, value)
 				.flatMap(doc -> luceneIndex.addDocument(indicizer.toIndex(key), doc));
 	}
 
@@ -50,7 +47,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex
 				.addDocuments(entries
 						.flatMap(entry -> indicizer
-								.toIndexRequest(entry.getKey(), entry.getValue())
+								.toDocument(entry.getKey(), entry.getValue())
 								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
 				);
 	}
@@ -73,7 +70,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex
 				.updateDocuments(entries
 						.flatMap(entry -> indicizer
-								.toIndexRequest(entry.getKey(), entry.getValue())
+								.toDocument(entry.getKey(), entry.getValue())
 								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
 						.collectMap(Entry::getKey, Entry::getValue)
 				);
@@ -124,7 +121,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this
-				.search(ClientQueryParams.<LazyHitKey<T>>builder().snapshot(snapshot).query(query).limit(0).build())
+				.search(ClientQueryParams.builder().snapshot(snapshot).query(query).limit(0).build())
 				.single()
 				.map(searchResultKeysSend -> {
 					try (var searchResultKeys = searchResultKeysSend.receive()) {

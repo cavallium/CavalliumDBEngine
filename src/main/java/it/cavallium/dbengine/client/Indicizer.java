@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.database.LLIndexRequest;
+import it.cavallium.dbengine.database.LLSoftUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateFields;
@@ -24,6 +25,8 @@ public abstract class Indicizer<T, U> {
 				return new LLUpdateDocument(updateFields.items());
 			} else if (req instanceof LLUpdateDocument updateDocument) {
 				return updateDocument;
+			} else if (req instanceof LLSoftUpdateDocument softUpdateDocument) {
+				return new LLUpdateDocument(softUpdateDocument.items());
 			} else {
 				throw new UnsupportedOperationException("Unexpected request type: " + req);
 			}

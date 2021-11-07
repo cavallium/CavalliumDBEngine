@@ -127,8 +127,12 @@ public class LLUtils {
 	}
 
 	public static Document toDocument(LLUpdateDocument document) {
+		return toDocument(document.items());
+	}
+
+	public static Document toDocument(LLItem[] document) {
 		Document d = new Document();
-		for (LLItem item : document.items()) {
+		for (LLItem item : document) {
 			d.add(LLUtils.toField(item));
 		}
 		return d;

@@ -12,6 +12,7 @@ import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLIndexRequest;
+import it.cavallium.dbengine.database.LLSoftUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -319,6 +320,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.<Void>runSafe(() -> {
 					if (request instanceof LLUpdateDocument updateDocument) {
 						indexWriter.updateDocument(LLUtils.toTerm(id), LLUtils.toDocument(updateDocument));
+					} else if (request instanceof LLSoftUpdateDocument softUpdateDocument) {
+						indexWriter.softUpdateDocument(LLUtils.toTerm(id),
+								LLUtils.toDocument(softUpdateDocument.items()),
+								LLUtils.toFields(softUpdateDocument.softDeleteItems())
+						);
 					} else if (request instanceof LLUpdateFields updateFields) {
 						indexWriter.updateDocValues(LLUtils.toTerm(id), LLUtils.toFields(updateFields.items()));
 					} else {

@@ -33,8 +33,8 @@ public class ReactiveLeafCollector implements LeafCollector {
 		LLUtils.ensureBlocking();
 		var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
 		while (scoreDocsSink.requestedFromDownstream() < 0 && !scoreDocsSink.isCancelled()) {
-			// 100ms
-			LockSupport.parkNanos(100L * 1000000L);
+			// 10ms
+			LockSupport.parkNanos(10L * 1000000L);
 		}
 		scoreDocsSink.next(scoreDoc);
 		if (scoreDocsSink.isCancelled()) {

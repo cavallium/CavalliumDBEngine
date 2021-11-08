@@ -5,14 +5,13 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.ExtraKeyOperationResult;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -244,16 +243,16 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		};
 	}
 
-	public <X> BiSerializationFunction<@Nullable Send<Buffer>, X, @Nullable Send<Buffer>> getSerializedUpdater(
-			BiSerializationFunction<@Nullable U, X, @Nullable U> updater) {
-		return (oldSerialized, extra) -> {
+	public KVSerializationFunction<@NotNull T, @Nullable Send<Buffer>, @Nullable Send<Buffer>> getSerializedUpdater(
+			KVSerializationFunction<@NotNull T, @Nullable U, @Nullable U> updater) {
+		return (key, oldSerialized) -> {
 			try (oldSerialized) {
 				U result;
 				if (oldSerialized == null) {
-					result = updater.apply(null, extra);
+					result = updater.apply(key, null);
 				} else {
 					try (var oldSerializedReceived = oldSerialized.receive()) {
-						result = updater.apply(valueSerializer.deserialize(oldSerializedReceived), extra);
+						result = updater.apply(key, valueSerializer.deserialize(oldSerializedReceived));
 					}
 				}
 				if (result == null) {
@@ -307,34 +306,33 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Flux<Entry<T, Optional<U>>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
+	public Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
 		var mappedKeys = keys
-				.<Tuple2<T, Send<Buffer>>>handle((keySuffix, sink) -> {
+				.<Send<Buffer>>handle((keySuffix, sink) -> {
 					try {
-						Tuple2<T, Send<Buffer>> tuple = Tuples.of(keySuffix, serializeKeySuffixToKey(keySuffix));
-						sink.next(tuple);
+						var buf = serializeKeySuffixToKey(keySuffix);
+						sink.next(buf);
 					} catch (Throwable ex) {
 						sink.error(ex);
 					}
 				});
 		return dictionary
 				.getMulti(resolveSnapshot(snapshot), mappedKeys, existsAlmostCertainly)
-				.<Entry<T, Optional<U>>>handle((entry, sink) -> {
+				.<Optional<U>>handle((valueBufOpt, sink) -> {
 					try {
 						Optional<U> valueOpt;
-						if (entry.getT3().isPresent()) {
-							try (var buf = entry.getT3().get().receive()) {
+						if (valueBufOpt.isPresent()) {
+							try (var buf = valueBufOpt.get().receive()) {
 								valueOpt = Optional.of(valueSerializer.deserialize(buf));
 							}
 						} else {
 							valueOpt = Optional.empty();
 						}
-						sink.next(Map.entry(entry.getT1(), valueOpt));
+						sink.next(valueOpt);
 					} catch (Throwable ex) {
 						sink.error(ex);
 					} finally {
-						entry.getT2().close();
-						entry.getT3().ifPresent(Send::close);
+						valueBufOpt.ifPresent(Send::close);
 					}
 				})
 				.transform(LLUtils::handleDiscard);
@@ -384,13 +382,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries,
-			BiSerializationFunction<@Nullable U, X, @Nullable U> updater) {
-		var serializedEntries = entries
-				.<Tuple2<Send<Buffer>, X>>handle((entry, sink) -> {
+	public Flux<Boolean> updateMulti(Flux<T> keys,
+			KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
+		var sharedKeys = keys.publish().refCount(2);
+		var serializedKeys = sharedKeys
+				.<Send<Buffer>>handle((key, sink) -> {
 					try {
-						Send<Buffer> serializedKey = serializeKeySuffixToKey(entry.getT1());
-						sink.next(Tuples.of(serializedKey, entry.getT2()));
+						Send<Buffer> serializedKey = serializeKeySuffixToKey(key);
+						sink.next(serializedKey);
 					} catch (Throwable ex) {
 						sink.error(ex);
 					}
@@ -404,17 +403,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					}
 				});
 		var serializedUpdater = getSerializedUpdater(updater);
-		return dictionary.updateMulti(serializedEntries, serializedUpdater).handle((result, sink) -> {
-			try {
-				T keySuffix;
-				try (var keySuffixBuf = result.key().receive()) {
-					keySuffix = deserializeSuffix(keySuffixBuf);
-				}
-				sink.next(new ExtraKeyOperationResult<>(keySuffix, result.extra(), result.changed()));
-			} catch (Throwable ex) {
-				sink.error(ex);
-			}
-		});
+		return dictionary.updateMulti(sharedKeys, serializedKeys, serializedUpdater);
 	}
 
 	@Override

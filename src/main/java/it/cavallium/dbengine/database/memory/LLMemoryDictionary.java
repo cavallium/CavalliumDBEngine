@@ -4,7 +4,6 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
-import it.cavallium.dbengine.database.ExtraKeyOperationResult;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -13,7 +12,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.bytes.ByteList;
@@ -254,20 +253,18 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <K> Flux<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<K, Send<Buffer>>> keys,
+	public Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys,
 			boolean existsAlmostCertainly) {
-		return keys
-				.map(key -> {
-					try (var t2 = key.getT2().receive()) {
-						ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(t2.copy().send()));
-						if (v != null) {
-							return Tuples.of(key.getT1(), t2.send(), Optional.of(kk(v)));
-						} else {
-							return Tuples.of(key.getT1(), t2.send(), Optional.empty());
-						}
-					}
-				});
+		return keys.map(key -> {
+			try (var t2 = key.receive()) {
+				ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(t2.copy().send()));
+				if (v != null) {
+					return Optional.of(kk(v));
+				} else {
+					return Optional.empty();
+				}
+			}
+		});
 	}
 
 	@Override
@@ -287,8 +284,9 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <X> Flux<ExtraKeyOperationResult<Send<Buffer>, X>> updateMulti(Flux<Tuple2<Send<Buffer>, X>> entries,
-			BiSerializationFunction<Send<Buffer>, X, Send<Buffer>> updateFunction) {
+	public <K> Flux<Boolean> updateMulti(Flux<K> keys,
+			Flux<Send<Buffer>> serializedKeys,
+			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Send<Buffer>> updateFunction) {
 		return Flux.error(new UnsupportedOperationException("Not implemented"));
 	}
 

@@ -76,15 +76,23 @@ public final class Hits<T> extends ResourceSupport<Hits<T>, Hits<T>> {
 			ValueTransformer<T, U> valueTransformer) {
 		return resultToReceive -> {
 			var result = resultToReceive.receive();
-			var hitsToTransform = result.results().map(hit -> Tuples.of(hit.score(), hit.key()));
-			var transformed = valueTransformer
-					.transform(hitsToTransform)
-					.filter(tuple3 -> tuple3.getT3().isPresent())
-					.map(tuple3 -> new LazyHitEntry<>(Mono.just(tuple3.getT2()),
-							Mono.just(tuple3.getT3().orElseThrow()),
-							tuple3.getT1()
-					));
-			return new Hits<>(transformed, result.totalHitsCount(), result::close).send();
+
+			var sharedHitsFlux = result.results().publish().refCount(3);
+			var scoresFlux = sharedHitsFlux.map(HitKey::score);
+			var keysFlux = sharedHitsFlux.map(HitKey::key);
+
+			var valuesFlux = valueTransformer.transform(keysFlux);
+
+			var transformedFlux = Flux.zip((Object[] data) -> {
+				//noinspection unchecked
+				var keyMono = Mono.just((T) data[0]);
+				//noinspection unchecked
+				var valMono = Mono.just((U) data[1]);
+				var score = (Float) data[2];
+				return new LazyHitEntry<>(keyMono, valMono, score);
+			}, keysFlux, valuesFlux, scoresFlux);
+
+			return new Hits<>(transformedFlux, result.totalHitsCount(), result::close).send();
 		};
 	}
 

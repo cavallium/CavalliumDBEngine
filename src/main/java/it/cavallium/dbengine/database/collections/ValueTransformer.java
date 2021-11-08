@@ -12,5 +12,5 @@ public interface ValueTransformer<KEY, VALUE> {
 	/**
 	 * Can return Flux error IOException
 	 */
-	<X> Flux<Tuple3<X, KEY, Optional<VALUE>>> transform(Flux<Tuple2<X, KEY>> keys);
+	Flux<Entry<KEY, Optional<VALUE>>> transform(Flux<KEY> keys);
 }

@@ -4,7 +4,7 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
-import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.List;
 import java.util.Optional;
@@ -13,8 +13,6 @@ import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
 
 @SuppressWarnings("unused")
 @NotAtomic
@@ -62,19 +60,19 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Send<Buffer>> remove(Mono<Send<Buffer>> key, LLDictionaryResultType resultType);
 
-	<K> Flux<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<K, Send<Buffer>>> keys,
+	Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Send<Buffer>> keys,
 			boolean existsAlmostCertainly);
 
-	default <K> Flux<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<K, Send<Buffer>>> keys) {
+	default Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Send<Buffer>> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 
 	Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues);
 
-	<X> Flux<ExtraKeyOperationResult<Send<Buffer>, X>> updateMulti(Flux<Tuple2<Send<Buffer>, X>> entries,
-			BiSerializationFunction<Send<Buffer>, X, Send<Buffer>> updateFunction);
+	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
+			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Send<Buffer>> updateFunction);
 
 	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean existsAlmostCertainly);
 

@@ -9,16 +9,13 @@ import static java.util.Objects.requireNonNullElse;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.MemoryManager;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
-import io.net5.buffer.api.StandardAllocationTypes;
 import io.net5.buffer.api.internal.ResourceSupport;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.database.ExtraKeyOperationResult;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -29,7 +26,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -57,8 +54,6 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
-import org.rocksdb.TransactionDB;
-import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.warp.commonutils.concurrency.atomicity.NotAtomic;
@@ -491,8 +486,8 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <K> Flux<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Tuple2<K, Send<Buffer>>> keys,
+	public Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+			Flux<Send<Buffer>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
 				.buffer(MULTI_GET_WINDOW)
@@ -509,57 +504,45 @@ public class LLLocalDictionary implements LLDictionary {
 						resource.close();
 					}
 				})
-				.flatMapSequential(keysWindow -> {
-					List<Send<Buffer>> keyBufsWindowSend = new ArrayList<>(keysWindow.size());
-					for (Tuple2<K, Send<Buffer>> objects : keysWindow) {
-						keyBufsWindowSend.add(objects.getT2());
+				.flatMapSequential(keysWindow -> runOnDb(() -> {
+					List<Buffer> keyBufsWindow = new ArrayList<>(keysWindow.size());
+					for (Send<Buffer> bufferSend : keysWindow) {
+						keyBufsWindow.add(bufferSend.receive());
 					}
-					return runOnDb(() -> {
-						List<Buffer> keyBufsWindow = new ArrayList<>(keyBufsWindowSend.size());
-						for (Send<Buffer> bufferSend : keyBufsWindowSend) {
-							keyBufsWindow.add(bufferSend.receive());
+					try {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called getMulti in a nonblocking thread");
 						}
-						try {
-							if (Schedulers.isInNonBlockingThread()) {
-								throw new UnsupportedOperationException("Called getMulti in a nonblocking thread");
+						var readOptions = Objects.requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
+						List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
+						var mappedResults = new ArrayList<Optional<Send<Buffer>>>(results.size());
+						for (int i = 0; i < results.size(); i++) {
+							byte[] val = results.get(i);
+							Optional<Buffer> valueOpt;
+							if (val != null) {
+								// free memory
+								results.set(i, null);
+
+								valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
+							} else {
+								valueOpt = Optional.empty();
 							}
-							var readOptions = Objects.requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
-							List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
-							var mappedResults = new ArrayList<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>>(results.size());
-							for (int i = 0; i < results.size(); i++) {
-								byte[] val = results.get(i);
-								Optional<Buffer> valueOpt;
-								if (val != null) {
-									results.set(i, null);
-									valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
-								} else {
-									valueOpt = Optional.empty();
-								}
-								mappedResults.add(Tuples.of(keysWindow.get(i).getT1(),
-										keyBufsWindow.get(i).send(),
-										valueOpt.map(Resource::send)
-								));
-							}
-							return mappedResults;
-						} finally {
-							for (Buffer buffer : keyBufsWindow) {
-								buffer.close();
-							}
+							mappedResults.add(valueOpt.map(Resource::send));
 						}
-					})
-					.flatMapIterable(list -> list)
-					.onErrorMap(cause -> new IOException("Failed to read keys", cause))
-					.doAfterTerminate(() -> keyBufsWindowSend.forEach(Send::close));
-				}, 2) // Max concurrency is 2 to read data while preparing the next segment
+						return mappedResults;
+					} finally {
+						for (Buffer buffer : keyBufsWindow) {
+							buffer.close();
+						}
+					}
+				})
+				.flatMapIterable(list -> list)
+				.onErrorMap(cause -> new IOException("Failed to read keys", cause))
+				.doAfterTerminate(() -> keysWindow.forEach(Send::close)), 2) // Max concurrency is 2 to read data while preparing the next segment
 				.doOnDiscard(LLEntry.class, ResourceSupport::close)
-				.doOnDiscard(Tuple3.class, discardedEntry -> {
-					if (discardedEntry.getT2() instanceof Buffer bb) {
+				.doOnDiscard(Optional.class, opt -> {
+					if (opt.isPresent() && opt.get() instanceof Buffer bb) {
 						bb.close();
-					}
-					if (discardedEntry.getT2() instanceof Optional opt) {
-						if (opt.isPresent() && opt.get() instanceof Buffer bb) {
-							bb.close();
-						}
 					}
 				});
 	}
@@ -634,24 +617,24 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <X> Flux<ExtraKeyOperationResult<Send<Buffer>, X>> updateMulti(Flux<Tuple2<Send<Buffer>, X>> entries,
-			BiSerializationFunction<Send<Buffer>, X, Send<Buffer>> updateFunction) {
-		return entries
+	public <K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
+			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Send<Buffer>> updateFunction) {
+		return Flux.zip(keys, serializedKeys)
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.flatMapSequential(ew -> this.<List<ExtraKeyOperationResult<Send<Buffer>, X>>>runOnDb(() -> {
-					List<Tuple2<Buffer, X>> entriesWindow = new ArrayList<>(ew.size());
-					for (Tuple2<Send<Buffer>, X> tuple : ew) {
-						entriesWindow.add(tuple.mapT1(Send::receive));
+				.flatMapSequential(ew -> this.<List<Boolean>>runOnDb(() -> {
+					List<Tuple2<K, Buffer>> entriesWindow = new ArrayList<>(ew.size());
+					for (Tuple2<K, Send<Buffer>> tuple : ew) {
+						entriesWindow.add(tuple.mapT2(Send::receive));
 					}
 					try {
 						if (Schedulers.isInNonBlockingThread()) {
 							throw new UnsupportedOperationException("Called updateMulti in a nonblocking thread");
 						}
 						List<Buffer> keyBufsWindow = new ArrayList<>(entriesWindow.size());
-						for (Tuple2<Buffer, X> objects : entriesWindow) {
-							keyBufsWindow.add(objects.getT1());
+						for (Tuple2<K, Buffer> objects : entriesWindow) {
+							keyBufsWindow.add(objects.getT2());
 						}
-						ArrayList<Tuple3<Send<Buffer>, X, Optional<Send<Buffer>>>> mappedInputs;
+						ArrayList<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> mappedInputs;
 						{
 							var readOptions = Objects.requireNonNullElse(resolveSnapshot(null), EMPTY_READ_OPTIONS);
 							var inputs = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
@@ -661,30 +644,38 @@ public class LLLocalDictionary implements LLDictionary {
 								if (val != null) {
 									inputs.set(i, null);
 									mappedInputs.add(Tuples.of(
+											entriesWindow.get(i).getT1(),
 											keyBufsWindow.get(i).send(),
-											entriesWindow.get(i).getT2(),
 											Optional.of(fromByteArray(alloc, val).send())
 									));
 								} else {
 									mappedInputs.add(Tuples.of(
+											entriesWindow.get(i).getT1(),
 											keyBufsWindow.get(i).send(),
-											entriesWindow.get(i).getT2(),
 											Optional.empty()
 									));
 								}
 							}
 						}
 						var updatedValuesToWrite = new ArrayList<Send<Buffer>>(mappedInputs.size());
-						var valueChangedResult = new ArrayList<ExtraKeyOperationResult<Send<Buffer>, X>>(mappedInputs.size());
+						var valueChangedResult = new ArrayList<Boolean>(mappedInputs.size());
 						try {
 							for (var mappedInput : mappedInputs) {
-								try (var updatedValue = updateFunction
-										.apply(mappedInput.getT1(), mappedInput.getT2()).receive()) {
-									try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
-										valueChangedResult.add(new ExtraKeyOperationResult<>(mappedInput.getT1(),
-												mappedInput.getT2(), !LLUtils.equals(t3, updatedValue)));
+								try (var updatedValueToReceive = updateFunction
+										.apply(mappedInput.getT1(), mappedInput.getT2())) {
+									if (updatedValueToReceive != null) {
+										try (var updatedValue = updatedValueToReceive.receive()) {
+											try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
+												valueChangedResult.add(!LLUtils.equals(t3, updatedValue));
+											}
+											updatedValuesToWrite.add(updatedValue.send());
+										}
+									} else {
+										try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
+											valueChangedResult.add(!LLUtils.equals(t3, null));
+										}
+										updatedValuesToWrite.add(null);
 									}
-									updatedValuesToWrite.add(updatedValue.send());
 								}
 							}
 						} finally {
@@ -702,12 +693,12 @@ public class LLLocalDictionary implements LLDictionary {
 									BATCH_WRITE_OPTIONS
 							);
 							int i = 0;
-							for (Tuple2<Buffer, X> entry : entriesWindow) {
+							for (Tuple2<K, Buffer> entry : entriesWindow) {
 								var valueToWrite = updatedValuesToWrite.get(i);
 								if (valueToWrite == null) {
-									batch.delete(cfh, entry.getT1().send());
+									batch.delete(cfh, entry.getT2().send());
 								} else {
-									batch.put(cfh, entry.getT1().send(), valueToWrite);
+									batch.put(cfh, entry.getT2().send(), valueToWrite);
 								}
 								i++;
 							}
@@ -715,15 +706,15 @@ public class LLLocalDictionary implements LLDictionary {
 							batch.close();
 						} else {
 							int i = 0;
-							for (Tuple2<Buffer, X> entry : entriesWindow) {
-								db.put(EMPTY_WRITE_OPTIONS, entry.getT1().send(), updatedValuesToWrite.get(i));
+							for (Tuple2<K, Buffer> entry : entriesWindow) {
+								db.put(EMPTY_WRITE_OPTIONS, entry.getT2().send(), updatedValuesToWrite.get(i));
 								i++;
 							}
 						}
 						return valueChangedResult;
 					} finally {
-						for (Tuple2<Buffer, X> tuple : entriesWindow) {
-							tuple.getT1().close();
+						for (Tuple2<K, Buffer> tuple : entriesWindow) {
+							tuple.getT2().close();
 						}
 					}
 				}).flatMapIterable(list -> list), /* Max concurrency is 2 to update data while preparing the next segment */ 2)
@@ -733,28 +724,6 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					if (entry.getT2() instanceof Buffer bb) {
 						bb.close();
-					}
-				})
-				.doOnDiscard(ExtraKeyOperationResult.class, entry -> {
-					if (entry.key() instanceof Buffer bb) {
-						bb.close();
-					}
-					if (entry.extra() instanceof Buffer bb) {
-						bb.close();
-					}
-				})
-				.doOnDiscard(List.class, obj -> {
-					if (!obj.isEmpty() && obj.get(0) instanceof ExtraKeyOperationResult<?, ?>) {
-						//noinspection unchecked
-						var castedEntries = (List<ExtraKeyOperationResult<?, ?>>) obj;
-						for (ExtraKeyOperationResult<?, ?> entry : castedEntries) {
-							if (entry.key() instanceof Resource<?> bb) {
-								bb.close();
-							}
-							if (entry.extra() instanceof Resource<?> bb) {
-								bb.close();
-							}
-						}
 					}
 				});
 	}

@@ -390,14 +390,18 @@ public abstract class TestDictionaryMap {
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.getMulti(null, Flux.fromIterable(entries.keySet()))
-								)
-								.doFinally(s -> map.close())
-						)
-						.filter(k -> k.getValue().isPresent())
+						.flatMapMany(map -> {
+							var entriesFlux = Flux.fromIterable(entries.entrySet());
+							var keysFlux = entriesFlux.map(Entry::getKey);
+							var resultsFlux = Flux
+											.concat(
+													map.putMulti(entriesFlux).then(Mono.empty()),
+													map.getMulti(null, keysFlux)
+											);
+							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
+						})
+
+						.filter(entry -> entry.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 						.transform(LLUtils::handleDiscard)
 				));
@@ -420,11 +424,14 @@ public abstract class TestDictionaryMap {
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMapMany(map -> map
-								.setAllValues(Flux.fromIterable(entries.entrySet()))
-								.thenMany(map.getMulti(null, Flux.fromIterable(entries.keySet())))
-								.doFinally(s -> map.close())
-						)
+						.flatMapMany(map -> {
+							var entriesFlux = Flux.fromIterable(entries.entrySet());
+							var keysFlux = entriesFlux.map(Entry::getKey);
+							var resultsFlux = map
+											.setAllValues(entriesFlux)
+											.thenMany(map.getMulti(null, keysFlux));
+							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
+						})
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 						.transform(LLUtils::handleDiscard)
@@ -476,13 +483,16 @@ public abstract class TestDictionaryMap {
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.set(entries).then(Mono.empty()),
-										map.getMulti(null, Flux.fromIterable(entries.keySet()))
-								)
-								.doFinally(s -> map.close())
-						)
+						.flatMapMany(map -> {
+							var entriesFlux = Flux.fromIterable(entries.entrySet());
+							var keysFlux = entriesFlux.map(Entry::getKey);
+							var resultsFlux = Flux
+											.concat(
+													map.set(entries).then(Mono.empty()),
+													map.getMulti(null, Flux.fromIterable(entries.keySet()))
+											);
+							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
+						})
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 						.transform(LLUtils::handleDiscard)

@@ -3,12 +3,10 @@ package it.cavallium.dbengine.database.collections;
 import io.net5.buffer.api.Buffer;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.ExtraKeyOperationResult;
-import it.cavallium.dbengine.database.KeyOperationResult;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.serialization.BiSerializationFunction;
+import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.HashMap;
@@ -16,16 +14,11 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.Queue;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
 import reactor.util.function.Tuples;
 
 @SuppressWarnings("unused")
@@ -61,13 +54,8 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				stage -> stage.update(updater, updateReturnMode, existsAlmostCertainly), true);
 	}
 
-	default <X> Flux<ExtraKeyOperationResult<T, X>> updateMulti(Flux<Tuple2<T, X>> entries,
-			BiSerializationFunction<@Nullable U, X, @Nullable U> updater) {
-		return entries
-				.flatMapSequential(entry -> this
-						.updateValue(entry.getT1(), prevValue -> updater.apply(prevValue, entry.getT2()))
-						.map(changed -> new ExtraKeyOperationResult<>(entry.getT1(), entry.getT2(), changed))
-				);
+	default Flux<Boolean> updateMulti(Flux<T> keys, KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
+		return keys.flatMapSequential(key -> this.updateValue(key, prevValue -> updater.apply(key, prevValue)));
 	}
 
 	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, SerializationFunction<@Nullable U, @Nullable U> updater) {
@@ -119,13 +107,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	/**
 	 * GetMulti must return the elements in sequence!
 	 */
-	default Flux<Entry<T, Optional<U>>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
+	default Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
 		return keys
-				.flatMapSequential(key -> this
-						.getValue(snapshot, key, existsAlmostCertainly)
-						.map(value -> Map.entry(key, Optional.of(value)))
-						.switchIfEmpty(Mono.fromSupplier(() -> Map.entry(key, Optional.empty())))
-				)
+				.flatMapSequential(key -> this.getValue(snapshot, key, existsAlmostCertainly))
+				.map(Optional::of)
+				.defaultIfEmpty(Optional.empty())
 				.doOnDiscard(Entry.class, unknownEntry -> {
 					if (unknownEntry.getValue() instanceof Optional optionalBuffer
 							&& optionalBuffer.isPresent()
@@ -138,7 +124,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	/**
 	 * GetMulti must return the elements in sequence!
 	 */
-	default Flux<Entry<T, Optional<U>>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
+	default Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
 		return getMulti(snapshot, keys, false);
 	}
 
@@ -293,20 +279,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default ValueTransformer<T, U> getAsyncDbValueTransformer(@Nullable CompositeSnapshot snapshot) {
-		return new ValueTransformer<>() {
-			@Override
-			public <X> Flux<Tuple3<X, T, Optional<U>>> transform(Flux<Tuple2<X, T>> keys) {
-				return Flux.defer(() -> {
-					ConcurrentLinkedQueue<X> extraValues = new ConcurrentLinkedQueue<>();
-					return getMulti(snapshot, keys.map(key -> {
-						extraValues.add(key.getT1());
-						return key.getT2();
-					})).map(result -> {
-						var extraValue = extraValues.remove();
-						return Tuples.of(extraValue, result.getKey(), result.getValue());
-					});
-				});
-			}
+		return keys -> {
+			var sharedKeys = keys.publish().refCount(2);
+			var values = getMulti(snapshot, sharedKeys);
+			return Flux.zip(sharedKeys, values, Map::entry);
 		};
 	}
 }

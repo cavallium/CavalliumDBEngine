@@ -65,7 +65,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
-			@NotNull Send<Buffer> prefixKey,
+			@Nullable Buffer prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
@@ -105,7 +105,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 			Runnable onClose) {
 		return new DatabaseMapDictionaryHashed<>(
 				dictionary,
-				LLUtils.empty(dictionary.getAllocator()),
+				null,
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,
@@ -115,7 +115,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
+			@Nullable Buffer prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,

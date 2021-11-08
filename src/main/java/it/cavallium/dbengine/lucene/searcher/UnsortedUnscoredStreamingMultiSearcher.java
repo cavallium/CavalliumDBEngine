@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.EmitResult;
@@ -61,44 +62,42 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 						return Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
 
-							Many<ScoreDoc> scoreDocsSink = Sinks.many().unicast().onBackpressureBuffer(QUEUE_SUPPLIER.get());
-
-							var cm = new ReactiveCollectorManager(scoreDocsSink);
-
-							AtomicInteger runningTasks = new AtomicInteger(0);
 							var shards = indexSearchers.shards();
 
-							runningTasks.addAndGet(shards.size());
-							int mutableShardIndex = 0;
-							for (IndexSearcher shard : shards) {
-								int shardIndex = mutableShardIndex++;
-								UNSCORED_UNSORTED_EXECUTOR.schedule(() -> {
-									try {
-										var collector = cm.newCollector();
-										assert queryParams.complete() == collector.scoreMode().isExhaustive();
-										assert queryParams
-												.getScoreModeOptional()
-												.map(scoreMode -> scoreMode == collector.scoreMode())
-												.orElse(true);
+							Flux<ScoreDoc> scoreDocsFlux = Flux.create(scoreDocsSink -> {
+								var cm = new ReactiveCollectorManager(scoreDocsSink);
 
-										collector.setShardIndex(shardIndex);
+								AtomicInteger runningTasks = new AtomicInteger(0);
 
-										shard.search(localQueryParams.query(), collector);
-									} catch (Throwable e) {
-										while (scoreDocsSink.tryEmitError(e) == EmitResult.FAIL_NON_SERIALIZED) {
-											LockSupport.parkNanos(10);
-										}
-									} finally {
-										if (runningTasks.decrementAndGet() <= 0) {
-											while (scoreDocsSink.tryEmitComplete() == EmitResult.FAIL_NON_SERIALIZED) {
-												LockSupport.parkNanos(10);
+								runningTasks.addAndGet(shards.size());
+								int mutableShardIndex = 0;
+								for (IndexSearcher shard : shards) {
+									int shardIndex = mutableShardIndex++;
+									UNSCORED_UNSORTED_EXECUTOR.schedule(() -> {
+										try {
+											var collector = cm.newCollector();
+											assert queryParams.complete() == collector.scoreMode().isExhaustive();
+											assert queryParams
+													.getScoreModeOptional()
+													.map(scoreMode -> scoreMode == collector.scoreMode())
+													.orElse(true);
+
+											collector.setShardIndex(shardIndex);
+
+											shard.search(localQueryParams.query(), collector);
+										} catch (Throwable e) {
+											scoreDocsSink.error(e);
+										} finally {
+											if (runningTasks.decrementAndGet() <= 0) {
+												scoreDocsSink.complete();
 											}
 										}
-									}
-								});
-							}
+									});
+								}
+							}, OverflowStrategy.BUFFER);
 
-							Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsSink.asFlux(), shards, keyFieldName, false);
+
+							Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
 
 							var totalHitsCount = new TotalHitsCount(0, false);
 							Flux<LLKeyScore> mergedFluxes = resultsFlux

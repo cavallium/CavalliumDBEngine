@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.Objects;
@@ -57,6 +58,12 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 		this.value = value.receive().makeReadOnly();
 		assert isAllAccessible();
 	}
+	private LLEntry(@NotNull Buffer key, @NotNull Buffer value) {
+		super(DROP);
+		this.key = key.makeReadOnly();
+		this.value = value.makeReadOnly();
+		assert isAllAccessible();
+	}
 
 	private boolean isAllAccessible() {
 		assert key != null && key.isAccessible();
@@ -67,6 +74,10 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 	}
 
 	public static LLEntry of(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value) {
+		return new LLEntry(key, value);
+	}
+
+	public static LLEntry of(@NotNull Buffer key, @NotNull Buffer value) {
 		return new LLEntry(key, value);
 	}
 

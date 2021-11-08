@@ -106,6 +106,17 @@ public class LLMemoryDictionary implements LLDictionary {
 		}
 	}
 
+	private Buffer kkB(ByteList bytesList) {
+		var buffer = getAllocator().allocate(bytesList.size());
+		try {
+			buffer.writeBytes(bytesList.toByteArray());
+			return buffer;
+		} catch (Throwable t) {
+			buffer.close();
+			throw t;
+		}
+	}
+
 	private BLRange r(Send<LLRange> send) {
 		try(var range = send.receive()) {
 			if (range.isAll()) {
@@ -186,7 +197,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
@@ -201,8 +212,7 @@ public class LLMemoryDictionary implements LLDictionary {
 							}
 							Buffer v;
 							try (var oldToSend = old != null ? kk(old) : null) {
-								var vToReceive = updater.apply(oldToSend);
-								v = vToReceive != null ? vToReceive.receive() : null;
+								v = updater.apply(oldToSend);
 							} catch (SerializationException e) {
 								throw new IllegalStateException(e);
 							}
@@ -254,13 +264,13 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys,
+	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys,
 			boolean existsAlmostCertainly) {
 		return keys.map(key -> {
 			try (var t2 = key.receive()) {
 				ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(t2.copy().send()));
 				if (v != null) {
-					return Optional.of(kk(v));
+					return Optional.of(kkB(v));
 				} else {
 					return Optional.empty();
 				}
@@ -287,7 +297,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public <K> Flux<Boolean> updateMulti(Flux<K> keys,
 			Flux<Send<Buffer>> serializedKeys,
-			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Send<Buffer>> updateFunction) {
+			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction) {
 		return Flux.error(new UnsupportedOperationException("Not implemented"));
 	}
 

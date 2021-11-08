@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -35,9 +36,17 @@ public class SubStageGetterHashMap<T, U, TH> implements
 	public Mono<DatabaseMapDictionaryHashed<T, U, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKeyMono) {
-		return LLUtils.usingSend(prefixKeyMono, prefixKey -> Mono.just(DatabaseMapDictionaryHashed
-				.tail(dictionary, prefixKey, keySerializer, valueSerializer, keyHashFunction,
-						keyHashSerializer, null)), true);
+		return prefixKeyMono.map(prefixKeyToReceive -> {
+			var prefixKey = prefixKeyToReceive.receive();
+			return DatabaseMapDictionaryHashed.tail(dictionary,
+					prefixKey,
+					keySerializer,
+					valueSerializer,
+					keyHashFunction,
+					keyHashSerializer,
+					null
+			);
+		}).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
 	}
 
 	public int getKeyHashBinaryLength() {

@@ -18,7 +18,7 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> {
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
+			Buffer prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Runnable onClose) {
 		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()), onClose);
@@ -27,11 +27,11 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer,
 			Runnable onClose) {
-		return new DatabaseSetDictionary<>(dictionary, LLUtils.empty(dictionary.getAllocator()), keySerializer, onClose);
+		return new DatabaseSetDictionary<>(dictionary, null, keySerializer, onClose);
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
+			Buffer prefixKey,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Runnable onClose) {
 		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer, onClose);

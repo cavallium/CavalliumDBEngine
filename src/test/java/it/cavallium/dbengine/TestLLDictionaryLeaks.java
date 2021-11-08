@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Stream;
+import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -159,14 +160,18 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, old -> old, updateReturnMode, true).then().transform(LLUtils::handleDiscard)
+				dict.update(key, this::pass, updateReturnMode, true).then().transform(LLUtils::handleDiscard)
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, old -> old, updateReturnMode, false).then().transform(LLUtils::handleDiscard)
+				dict.update(key, this::pass, updateReturnMode, false).then().transform(LLUtils::handleDiscard)
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, old -> old, updateReturnMode).then().transform(LLUtils::handleDiscard)
+				dict.update(key, this::pass, updateReturnMode).then().transform(LLUtils::handleDiscard)
 		);
+	}
+
+	private Buffer pass(@Nullable Send<Buffer> old) {
+		return old == null ? null : old.receive();
 	}
 
 	@ParameterizedTest
@@ -175,13 +180,13 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, old -> old, true).then().transform(LLUtils::handleDiscard)
+				dict.updateAndGetDelta(key, this::pass, true).then().transform(LLUtils::handleDiscard)
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, old -> old, false).then().transform(LLUtils::handleDiscard)
+				dict.updateAndGetDelta(key, this::pass, false).then().transform(LLUtils::handleDiscard)
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, old -> old).then().transform(LLUtils::handleDiscard)
+				dict.updateAndGetDelta(key, this::pass).then().transform(LLUtils::handleDiscard)
 		);
 	}
 

@@ -81,11 +81,11 @@ public abstract class TestLLDictionary {
 
 	private LLDictionary getDict(UpdateMode updateMode) {
 		var dict = DbTestUtils.tempDictionary(db, updateMode).blockOptional().orElseThrow();
-		var key1 = Mono.fromCallable(() -> fromString("test-key-1"));
-		var key2 = Mono.fromCallable(() -> fromString("test-key-2"));
-		var key3 = Mono.fromCallable(() -> fromString("test-key-3"));
-		var key4 = Mono.fromCallable(() -> fromString("test-key-4"));
-		var value = Mono.fromCallable(() -> fromString("test-value"));
+		var key1 = Mono.fromCallable(() -> fromString("test-key-1").send());
+		var key2 = Mono.fromCallable(() -> fromString("test-key-2").send());
+		var key3 = Mono.fromCallable(() -> fromString("test-key-3").send());
+		var key4 = Mono.fromCallable(() -> fromString("test-key-4").send());
+		var value = Mono.fromCallable(() -> fromString("test-value").send());
 		dict.put(key1, value, LLDictionaryResultType.VOID).block();
 		dict.put(key2, value, LLDictionaryResultType.VOID).block();
 		dict.put(key3, value, LLDictionaryResultType.VOID).block();
@@ -93,7 +93,7 @@ public abstract class TestLLDictionary {
 		return dict;
 	}
 
-	private Send<Buffer> fromString(String s) {
+	private Buffer fromString(String s) {
 		var sb = s.getBytes(StandardCharsets.UTF_8);
 		try (var b = db.getAllocator().allocate(sb.length + 3 + 13)) {
 			assert b.writerOffset() == 0;
@@ -104,7 +104,7 @@ public abstract class TestLLDictionary {
 
 			var part1 = b.split();
 
-			return LLUtils.compositeBuffer(db.getAllocator(), part1.send(), b.send()).send();
+			return LLUtils.compositeBuffer(db.getAllocator(), part1.send(), b.send());
 		}
 	}
 
@@ -154,8 +154,8 @@ public abstract class TestLLDictionary {
 	@MethodSource("provideArguments")
 	public void testGet(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		var keyEx = Mono.fromCallable(() -> fromString("test-key-1"));
-		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent"));
+		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
+		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
 		Assertions.assertEquals("test-value", run(dict.get(null, keyEx).map(this::toString).transform(LLUtils::handleDiscard)));
 		Assertions.assertEquals("test-value", run(dict.get(null, keyEx, true).map(this::toString).transform(LLUtils::handleDiscard)));
 		Assertions.assertEquals("test-value", run(dict.get(null, keyEx, false).map(this::toString).transform(LLUtils::handleDiscard)));
@@ -168,8 +168,8 @@ public abstract class TestLLDictionary {
 	@MethodSource("providePutArguments")
 	public void testPutExisting(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
-		var keyEx = Mono.fromCallable(() -> fromString("test-key-1"));
-		var value = Mono.fromCallable(() -> fromString("test-value"));
+		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
+		var value = Mono.fromCallable(() -> fromString("test-value").send());
 
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 
@@ -183,8 +183,8 @@ public abstract class TestLLDictionary {
 	@MethodSource("providePutArguments")
 	public void testPutNew(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
-		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent"));
-		var value = Mono.fromCallable(() -> fromString("test-value"));
+		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
+		var value = Mono.fromCallable(() -> fromString("test-value").send());
 
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 
@@ -207,7 +207,7 @@ public abstract class TestLLDictionary {
 	@MethodSource("provideUpdateArguments")
 	public void testUpdateExisting(UpdateMode updateMode, UpdateReturnMode updateReturnMode) {
 		var dict = getDict(updateMode);
-		var keyEx = Mono.fromCallable(() -> fromString("test-key-1"));
+		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
@@ -232,7 +232,7 @@ public abstract class TestLLDictionary {
 	public void testUpdateNew(UpdateMode updateMode, UpdateReturnMode updateReturnMode) {
 		int expected = updateMode == UpdateMode.DISALLOW ? 0 : 1;
 		var dict = getDict(updateMode);
-		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent"));
+		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,

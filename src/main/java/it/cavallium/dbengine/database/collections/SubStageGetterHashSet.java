@@ -1,9 +1,11 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -32,13 +34,16 @@ public class SubStageGetterHashSet<T, TH> implements
 	public Mono<DatabaseSetDictionaryHashed<T, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKeyMono) {
-		return Mono.usingWhen(prefixKeyMono,
-				prefixKey -> Mono
-						.fromSupplier(() -> DatabaseSetDictionaryHashed.tail(dictionary, prefixKey, keySerializer,
-								keyHashFunction, keyHashSerializer, null)
-						),
-				prefixKey -> Mono.fromRunnable(prefixKey::close)
-		);
+		return prefixKeyMono.map(prefixKeyToReceive -> {
+			var prefixKey = prefixKeyToReceive.receive();
+			return DatabaseSetDictionaryHashed.tail(dictionary,
+					prefixKey,
+					keySerializer,
+					keyHashFunction,
+					keyHashSerializer,
+					null
+			);
+		}).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
 	}
 
 	public int getKeyHashBinaryLength() {

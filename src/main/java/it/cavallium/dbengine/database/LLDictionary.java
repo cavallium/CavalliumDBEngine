@@ -33,7 +33,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Mono<UpdateMode> getUpdateMode();
 
 	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return this
@@ -42,17 +42,17 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	}
 
 	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			UpdateReturnMode returnMode) {
 		return update(key, updater, returnMode, false);
 	}
 
 	Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			boolean existsAlmostCertainly);
 
 	default Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater) {
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
 		return updateAndGetDelta(key, updater, false);
 	}
 
@@ -60,11 +60,11 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Send<Buffer>> remove(Mono<Send<Buffer>> key, LLDictionaryResultType resultType);
 
-	Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+	Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Send<Buffer>> keys,
 			boolean existsAlmostCertainly);
 
-	default Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+	default Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Send<Buffer>> keys) {
 		return getMulti(snapshot, keys, false);
 	}
@@ -72,7 +72,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues);
 
 	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
-			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Send<Buffer>> updateFunction);
+			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction);
 
 	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean existsAlmostCertainly);
 

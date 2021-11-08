@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -22,11 +23,10 @@ public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, Dat
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> prefixKeyMono) {
-		return Mono.usingWhen(prefixKeyMono,
-				prefixKey -> Mono
-						.fromSupplier(() -> DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer, null)),
-				prefixKey -> Mono.fromRunnable(prefixKey::close)
-		);
+		return prefixKeyMono.map(prefixKeyToReceive -> {
+			var prefixKey = prefixKeyToReceive.receive();
+			return DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer, null);
+		}).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
 	}
 
 	public int getKeyBinaryLength() {

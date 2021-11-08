@@ -66,7 +66,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 	public @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
 			Send<Buffer> keySend,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			boolean existsAlmostCertainly,
 			UpdateAtomicResultMode returnMode) throws IOException, RocksDBException {
 		try (Buffer key = keySend.receive()) {
@@ -107,13 +107,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 
 						@Nullable Buffer newData;
 						try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-							try (var newDataToReceive = updater.apply(sentData)) {
-								if (newDataToReceive != null) {
-									newData = newDataToReceive.receive();
-								} else {
-									newData = null;
-								}
-							}
+							newData = updater.apply(sentData);
 						}
 						try (newData) {
 							var newDataArray = newData == null ? null : LLUtils.toArray(newData);

@@ -62,16 +62,14 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 	private Runnable onClose;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	public DatabaseSingle(LLDictionary dictionary, Send<Buffer> key, Serializer<U> serializer,
+	public DatabaseSingle(LLDictionary dictionary, Buffer key, Serializer<U> serializer,
 			Runnable onClose) {
 		super((Drop<DatabaseSingle<U>>) (Drop) DROP);
-		try (key) {
-			this.dictionary = dictionary;
-			this.key = key.receive();
-			this.keyMono = LLUtils.lazyRetain(this.key);
-			this.serializer = serializer;
-			this.onClose = onClose;
-		}
+		this.dictionary = dictionary;
+		this.key = key;
+		this.keyMono = LLUtils.lazyRetain(this.key);
+		this.serializer = serializer;
+		this.onClose = onClose;
 	}
 
 	private LLSnapshot resolveSnapshot(@Nullable CompositeSnapshot snapshot) {
@@ -137,7 +135,7 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 						if (result == null) {
 							return null;
 						} else {
-							return serializeValue(result);
+							return serializeValue(result).receive();
 						}
 					}
 				}, updateReturnMode, existsAlmostCertainly)
@@ -163,7 +161,7 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 						if (result == null) {
 							return null;
 						} else {
-							return serializeValue(result);
+							return serializeValue(result).receive();
 						}
 					}
 				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
@@ -205,9 +203,10 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 
 	@Override
 	protected Owned<DatabaseSingle<U>> prepareSend() {
-		var key = this.key.send();
+		var keySend = this.key.send();
 		var onClose = this.onClose;
 		return drop -> {
+			var key = keySend.receive();
 			var instance = new DatabaseSingle<>(dictionary, key, serializer, onClose);
 			drop.attach(instance);
 			return instance;

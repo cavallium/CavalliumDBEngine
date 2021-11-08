@@ -5,14 +5,15 @@ import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Sinks.Many;
 
 public class ReactiveCollector implements Collector {
 
-	private final Many<ScoreDoc> scoreDocsSink;
+	private final FluxSink<ScoreDoc> scoreDocsSink;
 	private int shardIndex;
 
-	public ReactiveCollector(Many<ScoreDoc> scoreDocsSink) {
+	public ReactiveCollector(FluxSink<ScoreDoc> scoreDocsSink) {
 		this.scoreDocsSink = scoreDocsSink;
 	}
 

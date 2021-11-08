@@ -39,7 +39,7 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Send<Buffer> key, Runnable onClose) {
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Buffer key, Runnable onClose) {
 		return new DatabaseSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()), onClose);
 	}
 

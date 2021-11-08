@@ -56,7 +56,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 		}
 	};
 
-	private static final LLRange RANGE_ALL = new LLRange(null, null, null);
+	private static final LLRange RANGE_ALL = new LLRange((Buffer) null, (Buffer) null, (Buffer) null);
 	@Nullable
 	private Buffer min;
 	@Nullable
@@ -71,6 +71,15 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 		this.min = min != null ? min.receive().makeReadOnly() : null;
 		this.max = max != null ? max.receive().makeReadOnly() : null;
 		this.single = single != null ? single.receive().makeReadOnly() : null;
+	}
+
+	private LLRange(Buffer min, Buffer max, Buffer single) {
+		super(DROP);
+		assert isAllAccessible();
+		assert single == null || (min == null && max == null);
+		this.min = min != null ? min.makeReadOnly() : null;
+		this.max = max != null ? max.makeReadOnly() : null;
+		this.single = single != null ? single.makeReadOnly() : null;
 	}
 
 	private boolean isAllAccessible() {
@@ -99,6 +108,10 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public static LLRange of(Send<Buffer> min, Send<Buffer> max) {
+		return new LLRange(min, max, null);
+	}
+
+	public static LLRange ofUnsafe(Buffer min, Buffer max) {
 		return new LLRange(min, max, null);
 	}
 

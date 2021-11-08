@@ -21,7 +21,7 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHashed<T, Nothing, TH> {
 
 	protected DatabaseSetDictionaryHashed(LLDictionary dictionary,
-			@NotNull Send<Buffer> prefixKey,
+			@Nullable Buffer prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
@@ -42,7 +42,7 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			SerializerFixedBinaryLength<TH> keyHashSerializer,
 			Runnable onClose) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
-				LLUtils.empty(dictionary.getAllocator()),
+				null,
 				keySerializer,
 				keyHashFunction,
 				keyHashSerializer,
@@ -51,7 +51,7 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
-			Send<Buffer> prefixKey,
+			@Nullable Buffer prefixKey,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH> keyHashSerializer,

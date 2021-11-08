@@ -371,7 +371,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<Buffer>> update(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			UpdateReturnMode updateReturnMode,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono, keySend -> runOnDb(() -> {
@@ -400,7 +400,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Send<Buffer>> updater,
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			boolean existsAlmostCertainly) {
 		return Mono.usingWhen(keyMono, keySend -> runOnDb(() -> {
 					if (Schedulers.isInNonBlockingThread()) {
@@ -486,7 +486,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Optional<Send<Buffer>>> getMulti(@Nullable LLSnapshot snapshot,
+	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot,
 			Flux<Send<Buffer>> keys,
 			boolean existsAlmostCertainly) {
 		return keys
@@ -515,7 +515,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						var readOptions = Objects.requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
 						List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
-						var mappedResults = new ArrayList<Optional<Send<Buffer>>>(results.size());
+						var mappedResults = new ArrayList<Optional<Buffer>>(results.size());
 						for (int i = 0; i < results.size(); i++) {
 							byte[] val = results.get(i);
 							Optional<Buffer> valueOpt;
@@ -527,7 +527,7 @@ public class LLLocalDictionary implements LLDictionary {
 							} else {
 								valueOpt = Optional.empty();
 							}
-							mappedResults.add(valueOpt.map(Resource::send));
+							mappedResults.add(valueOpt);
 						}
 						return mappedResults;
 					} finally {
@@ -618,7 +618,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public <K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
-			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Send<Buffer>> updateFunction) {
+			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction) {
 		return Flux.zip(keys, serializedKeys)
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.flatMapSequential(ew -> this.<List<Boolean>>runOnDb(() -> {
@@ -657,25 +657,28 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							}
 						}
-						var updatedValuesToWrite = new ArrayList<Send<Buffer>>(mappedInputs.size());
+						var updatedValuesToWrite = new ArrayList<Buffer>(mappedInputs.size());
 						var valueChangedResult = new ArrayList<Boolean>(mappedInputs.size());
 						try {
 							for (var mappedInput : mappedInputs) {
-								try (var updatedValueToReceive = updateFunction
-										.apply(mappedInput.getT1(), mappedInput.getT2())) {
-									if (updatedValueToReceive != null) {
-										try (var updatedValue = updatedValueToReceive.receive()) {
-											try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
-												valueChangedResult.add(!LLUtils.equals(t3, updatedValue));
-											}
-											updatedValuesToWrite.add(updatedValue.send());
+								var updatedValue = updateFunction.apply(mappedInput.getT1(), mappedInput.getT2());
+								try {
+									if (updatedValue != null) {
+										try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
+											valueChangedResult.add(!LLUtils.equals(t3, updatedValue));
 										}
+										updatedValuesToWrite.add(updatedValue);
 									} else {
 										try (var t3 = mappedInput.getT3().map(Send::receive).orElse(null)) {
 											valueChangedResult.add(!LLUtils.equals(t3, null));
 										}
 										updatedValuesToWrite.add(null);
 									}
+								} catch (Throwable t) {
+									if (updatedValue != null) {
+										updatedValue.close();
+									}
+									throw t;
 								}
 							}
 						} finally {
@@ -694,11 +697,12 @@ public class LLLocalDictionary implements LLDictionary {
 							);
 							int i = 0;
 							for (Tuple2<K, Buffer> entry : entriesWindow) {
-								var valueToWrite = updatedValuesToWrite.get(i);
-								if (valueToWrite == null) {
-									batch.delete(cfh, entry.getT2().send());
-								} else {
-									batch.put(cfh, entry.getT2().send(), valueToWrite);
+								try (var valueToWrite = updatedValuesToWrite.get(i)) {
+									if (valueToWrite == null) {
+										batch.delete(cfh, entry.getT2().send());
+									} else {
+										batch.put(cfh, entry.getT2().send(), valueToWrite.send());
+									}
 								}
 								i++;
 							}
@@ -707,7 +711,7 @@ public class LLLocalDictionary implements LLDictionary {
 						} else {
 							int i = 0;
 							for (Tuple2<K, Buffer> entry : entriesWindow) {
-								db.put(EMPTY_WRITE_OPTIONS, entry.getT2().send(), updatedValuesToWrite.get(i));
+								db.put(EMPTY_WRITE_OPTIONS, entry.getT2().send(), updatedValuesToWrite.get(i).send());
 								i++;
 							}
 						}

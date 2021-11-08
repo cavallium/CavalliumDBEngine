@@ -480,7 +480,8 @@ public class LLUtils {
 				return Mono.empty();
 			}
 		}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
-				.doOnDiscard(Send.class, send -> send.close());
+				.doOnDiscard(Send.class, send -> send.close())
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	// todo: remove this ugly method
@@ -916,6 +917,7 @@ public class LLUtils {
 				.doOnDiscard(Delta.class, LLUtils::discardDelta)
 				.doOnDiscard(LLDelta.class, LLUtils::discardLLDelta)
 				.doOnDiscard(Send.class, LLUtils::discardSend)
+				.doOnDiscard(Resource.class, LLUtils::discardResource)
 				.doOnDiscard(Map.class, LLUtils::discardMap)
 				.doOnDiscard(DatabaseStage.class, LLUtils::discardStage);
 
@@ -944,6 +946,8 @@ public class LLUtils {
 				discardLLDelta(o);
 			} else if (obj instanceof Send o) {
 				discardSend(o);
+			} else if (obj instanceof Resource o) {
+				discardResource(o);
 			} else if (obj instanceof Map o) {
 				discardMap(o);
 			} else if (obj instanceof DatabaseStage o) {
@@ -1057,6 +1061,10 @@ public class LLUtils {
 
 	private static void discardSend(Send<?> send) {
 		send.close();
+	}
+
+	private static void discardResource(Resource<?> res) {
+		res.close();
 	}
 
 	private static void discardMap(Map<?, ?> map) {

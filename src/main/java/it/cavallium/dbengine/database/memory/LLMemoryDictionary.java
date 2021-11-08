@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.memory;
 
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.LLDelta;
@@ -528,7 +529,8 @@ public class LLMemoryDictionary implements LLDictionary {
 		return getRange(snapshot, rangeMono)
 				.take(1, true)
 				.singleOrEmpty()
-				.doOnDiscard(Send.class, Send::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override
@@ -536,7 +538,8 @@ public class LLMemoryDictionary implements LLDictionary {
 		return getRangeKeys(snapshot, rangeMono)
 				.take(1, true)
 				.singleOrEmpty()
-				.doOnDiscard(Send.class, Send::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override

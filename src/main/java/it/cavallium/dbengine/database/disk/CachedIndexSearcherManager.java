@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
@@ -148,7 +149,8 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 						assert indexSearcher.getIndexReader().getRefCount() > 0;
 						return new LLIndexSearcher(indexSearcher, decRef, this::dropCachedIndexSearcher).send();
 					})
-					.doOnDiscard(Send.class, Send::close);
+					.doOnDiscard(Send.class, Send::close)
+					.doOnDiscard(Resource.class, Resource::close);
 		});
 	}
 

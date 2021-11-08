@@ -384,13 +384,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION)
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.doOnDiscard(Send.class, Send::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	public Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		return searcherManager
 				.retrieveSearcher(snapshot)
-				.doOnDiscard(Send.class, Send::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override

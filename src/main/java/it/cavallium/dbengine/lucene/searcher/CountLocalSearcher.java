@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLUtils;
@@ -39,7 +40,8 @@ public class CountLocalSearcher implements LocalSearcher {
 						is -> Mono.empty()
 				)
 				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null))
-				.doOnDiscard(Send.class, Send::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override

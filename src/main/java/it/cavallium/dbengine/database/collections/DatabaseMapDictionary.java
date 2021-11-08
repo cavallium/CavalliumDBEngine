@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -364,11 +365,13 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.error(e);
 					}
 				})
-				.doOnDiscard(Send.class, Send::close);
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 		return dictionary
 				.putMulti(serializedEntries, false)
 				.then()
 				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close)
 				.doOnDiscard(LLEntry.class, ResourceSupport::close)
 				.doOnDiscard(List.class, list -> {
 					for (Object o : list) {

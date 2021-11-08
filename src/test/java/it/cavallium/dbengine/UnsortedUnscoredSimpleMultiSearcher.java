@@ -38,8 +38,8 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 					if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
 						queryParamsMono = Mono.just(queryParams);
 					} else {
-						queryParamsMono = transformer.transform(Mono
-								.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams)));
+						var transformerInput = Mono.just(new TransformerInput(indexSearchers, queryParams));
+						queryParamsMono = transformer.transform(transformerInput);
 					}
 
 					return queryParamsMono.flatMap(queryParams2 -> {

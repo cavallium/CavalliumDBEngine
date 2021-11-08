@@ -1,19 +1,24 @@
-package it.cavallium.dbengine.lucene.searcher;
+package it.cavallium.dbengine.lucene.collector;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.ALLOW_UNSCORED_PAGINATION_MODE;
 
 import it.cavallium.dbengine.lucene.collector.UnscoredCollector;
+import java.io.IOException;
+import java.util.Collection;
+import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
 
-class TopDocsCollectorUtils {
+public class OptimizedTopDocsCollector {
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	public static TopDocsCollector<ScoreDoc> getTopDocsCollector(Sort luceneSort,
+	public static TopDocsCollector<ScoreDoc> create(Sort luceneSort,
 			int limit,
 			ScoreDoc after,
 			int totalHitsThreshold,

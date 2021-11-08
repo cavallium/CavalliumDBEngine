@@ -403,8 +403,7 @@ public class LuceneUtils {
 			@Nullable Sort sort,
 			@Nullable Integer startN,
 			@Nullable Integer topN,
-			TopDocs[] topDocs,
-			Comparator<ScoreDoc> tieBreaker) {
+			TopDocs[] topDocs) {
 		if ((startN == null) != (topN == null)) {
 			throw new IllegalArgumentException("You must pass startN and topN together or nothing");
 		}
@@ -420,14 +419,12 @@ public class LuceneUtils {
 					defaultTopN += length;
 				}
 				result = TopDocs.merge(sort, 0, defaultTopN,
-						(TopFieldDocs[]) topDocs,
-						tieBreaker
+						(TopFieldDocs[]) topDocs
 				);
 			} else {
 				result = TopDocs.merge(sort, startN,
 						topN,
-						(TopFieldDocs[]) topDocs,
-						tieBreaker
+						(TopFieldDocs[]) topDocs
 				);
 			}
 		} else {
@@ -439,14 +436,12 @@ public class LuceneUtils {
 				}
 				result = TopDocs.merge(0,
 						defaultTopN,
-						topDocs,
-						tieBreaker
+						topDocs
 				);
 			} else {
 				result = TopDocs.merge(startN,
 						topN,
-						topDocs,
-						tieBreaker
+						topDocs
 				);
 			}
 		}

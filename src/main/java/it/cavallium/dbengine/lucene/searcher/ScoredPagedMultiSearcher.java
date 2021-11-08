@@ -8,7 +8,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
-import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorManager;
+import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.Arrays;
 import java.util.List;
@@ -176,32 +176,29 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						var pageLimit = pageLimits.getPageLimit(s.pageIndex());
 						var after = (FieldDoc) s.last();
 						var totalHitsThreshold = queryParams.getTotalHitsThresholdInt();
-						return new ScoringShardsCollectorManager(query, sort, pageLimit, after, totalHitsThreshold,
+						return new ScoringShardsCollectorMultiManager(query, sort, pageLimit, after, totalHitsThreshold,
 								resultsOffset, pageLimit);
 					} else {
 						return null;
 					}
 				})
-				.flatMap(sharedManager -> Flux
+				.flatMap(cmm -> Flux
 						.fromIterable(indexSearchers)
-						.flatMap(shard -> Mono.fromCallable(() -> {
+						.index()
+						.flatMap(shardWithIndex -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
 
-							var collector = sharedManager.newCollector();
-							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							assert pageLimits.getPageLimit(s.pageIndex()) < Integer.MAX_VALUE || queryParams
-									.getScoreModeOptional()
-									.map(scoreMode -> scoreMode == collector.scoreMode())
-									.orElse(true);
+							var index = (int) (long) shardWithIndex.getT1();
+							var shard = shardWithIndex.getT2();
 
-							shard.search(queryParams.query(), collector);
-							return collector;
+							var cm = cmm.get(shard, index);
+
+							return shard.search(queryParams.query(), cm);
 						}))
 						.collectList()
-						.flatMap(collectors -> Mono.fromCallable(() -> {
+						.flatMap(results -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
-							sharedManager.setIndexSearchers(indexSearchers);
-							var pageTopDocs = sharedManager.reduce(collectors);
+							var pageTopDocs = cmm.reduce(results);
 
 							var pageLastDoc = LuceneUtils.getLastScoreDoc(pageTopDocs.scoreDocs);
 							long nextRemainingLimit;

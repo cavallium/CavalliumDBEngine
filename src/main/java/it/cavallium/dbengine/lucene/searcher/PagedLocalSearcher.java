@@ -10,15 +10,14 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.OptimizedTopDocsCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
@@ -185,7 +184,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 		} else if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
 			TopDocs pageTopDocs;
 			try {
-				TopDocsCollector<ScoreDoc> collector = TopDocsCollectorUtils.getTopDocsCollector(queryParams.sort(),
+				TopDocsCollector<ScoreDoc> collector = OptimizedTopDocsCollector.create(queryParams.sort(),
 						currentPageLimit, s.last(), queryParams.getTotalHitsThresholdInt(),
 						allowPagination, queryParams.needsScores());
 				assert queryParams.complete() == collector.scoreMode().isExhaustive();

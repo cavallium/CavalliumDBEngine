@@ -12,7 +12,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 
 	private static final LocalSearcher localSearcher = new PagedLocalSearcher();
 
-	private static final LocalSearcher countSearcher = new CountLocalSearcher();
+	private static final LocalSearcher countSearcher = new CountMultiSearcher();
 
 	@Override
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcher,

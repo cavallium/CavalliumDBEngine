@@ -5,22 +5,15 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.io.Closeable;
-import java.io.IOException;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveMultiSearcher implements MultiSearcher {
 
-	private static final MultiSearcher count
-			= new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher());
+	private static final MultiSearcher count = new CountMultiSearcher();
 
 	private static final MultiSearcher scoredPaged = new ScoredPagedMultiSearcher();
 
-	private static final MultiSearcher unsortedUnscoredPaged
-			= new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher());
-
-	private static final MultiSearcher unsortedUnscoredContinuous
-			= new UnsortedUnscoredStreamingMultiSearcher();
+	private static final MultiSearcher unsortedUnscoredContinuous = new UnsortedUnscoredStreamingMultiSearcher();
 
 	private final UnsortedScoredFullMultiSearcher unsortedScoredFull;
 
@@ -75,9 +68,6 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 						return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 					}
 				}
-			} else if (realLimit <= maxAllowedInMemoryLimit) {
-				// Run single-page searches using the paged multi searcher
-				return unsortedUnscoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else {
 				// Run large/unbounded searches using the continuous multi searcher
 				return unsortedUnscoredContinuous.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);

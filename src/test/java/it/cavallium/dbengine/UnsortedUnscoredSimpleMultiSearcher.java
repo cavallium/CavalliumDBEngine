@@ -1,4 +1,4 @@
-package it.cavallium.dbengine.lucene.searcher;
+package it.cavallium.dbengine;
 
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -7,7 +7,12 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
+import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
+import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import java.util.ArrayList;
 import java.util.List;
 import reactor.core.publisher.Flux;

@@ -31,14 +31,13 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.CountLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.CountMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.OfficialSearcher;
 import it.cavallium.dbengine.lucene.searcher.ScoredPagedMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.PagedLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.SortedScoredFullMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedScoredFullMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredStreamingMultiSearcher;
 import java.io.IOException;
@@ -124,8 +123,8 @@ public class TestLuceneSearches {
 				.flatMap(entry -> index.updateDocument(entry.getKey(), entry.getValue()))
 				.subscribeOn(Schedulers.boundedElastic())
 				.blockLast();
-		tempDb.swappableLuceneSearcher().setSingle(new CountLocalSearcher());
-		tempDb.swappableLuceneSearcher().setMulti(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
+		tempDb.swappableLuceneSearcher().setSingle(new CountMultiSearcher());
+		tempDb.swappableLuceneSearcher().setMulti(new CountMultiSearcher());
 		assertCount(index, 1000 + 15);
 		if (shards) {
 			multiIndex = index;
@@ -155,7 +154,7 @@ public class TestLuceneSearches {
 		return Flux.push(sink -> {
 			if (info.shard()) {
 				if (info.onlyCount()) {
-					sink.next(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
+					sink.next(new CountMultiSearcher());
 				} else {
 					sink.next(new ScoredPagedMultiSearcher());
 					if (info.sorted() && !info.sortedByScore()) {
@@ -171,7 +170,7 @@ public class TestLuceneSearches {
 				sink.next(new AdaptiveMultiSearcher(ENV));
 			} else {
 				if (info.onlyCount()) {
-					sink.next(new CountLocalSearcher());
+					sink.next(new CountMultiSearcher());
 				} else {
 					sink.next(new PagedLocalSearcher());
 				}

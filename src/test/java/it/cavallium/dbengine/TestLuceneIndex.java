@@ -17,10 +17,9 @@ import it.cavallium.dbengine.database.LLScoreMode;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.CountLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.CountMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredSimpleMultiSearcher;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.stream.Stream;
@@ -137,8 +136,8 @@ public class TestLuceneIndex {
 		index.updateDocument("test-key-14", "2999").block();
 		index.updateDocument("test-key-15", "3902").block();
 		Flux.range(1, 1000).concatMap(i -> index.updateDocument("test-key-" + (15 + i), "" + i)).blockLast();
-		tempDb.swappableLuceneSearcher().setSingle(new CountLocalSearcher());
-		tempDb.swappableLuceneSearcher().setMulti(new UnsortedUnscoredSimpleMultiSearcher(new CountLocalSearcher()));
+		tempDb.swappableLuceneSearcher().setSingle(new CountMultiSearcher());
+		tempDb.swappableLuceneSearcher().setMulti(new CountMultiSearcher());
 		assertCount(index, 1000 + 15);
 		if (customSearcher != null) {
 			tempDb.swappableLuceneSearcher().setSingle(customSearcher);

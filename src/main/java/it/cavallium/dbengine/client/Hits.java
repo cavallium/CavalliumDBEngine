@@ -7,6 +7,8 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
+import java.util.Map.Entry;
+import java.util.Optional;
 import java.util.function.Function;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -85,7 +87,8 @@ public final class Hits<T> extends ResourceSupport<Hits<T>, Hits<T>> {
 					//noinspection unchecked
 					var keyMono = Mono.just((T) data[0]);
 					//noinspection unchecked
-					var valMono = Mono.just((U) data[1]);
+					var val = (Entry<T, Optional<U>>) data[1];
+					var valMono = Mono.justOrEmpty(val.getValue());
 					var score = (Float) data[2];
 					return new LazyHitEntry<>(keyMono, valMono, score);
 				}, keysFlux, valuesFlux, scoresFlux);

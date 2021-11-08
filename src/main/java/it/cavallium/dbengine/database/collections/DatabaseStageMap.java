@@ -281,7 +281,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default ValueTransformer<T, U> getAsyncDbValueTransformer(@Nullable CompositeSnapshot snapshot) {
 		return keys -> {
 			var sharedKeys = keys.publish().refCount(2);
-			var values = getMulti(snapshot, sharedKeys);
+			var values = DatabaseStageMap.this.getMulti(snapshot, sharedKeys);
 			return Flux.zip(sharedKeys, values, Map::entry);
 		};
 	}

@@ -9,11 +9,16 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.ReactiveCollectorManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.Queue;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 import java.util.function.Supplier;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
+import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
@@ -26,12 +31,8 @@ import reactor.util.concurrent.Queues;
 
 public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 
-	private static final Scheduler UNSCORED_UNSORTED_EXECUTOR = Schedulers.newBoundedElastic(
-			Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE,
-			Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			"UnscoredUnsortedExecutor"
-	);
-	private static final Supplier<Queue<ScoreDoc>> QUEUE_SUPPLIER = Queues.get(1024);
+	private static final ExecutorService EXECUTOR_SERVICE
+			= Executors.newCachedThreadPool(new ShortNamedThreadFactory("StreamingExecutor"));
 
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
@@ -73,7 +74,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 								int mutableShardIndex = 0;
 								for (IndexSearcher shard : shards) {
 									int shardIndex = mutableShardIndex++;
-									UNSCORED_UNSORTED_EXECUTOR.schedule(() -> {
+									EXECUTOR_SERVICE.execute(() -> {
 										try {
 											var collector = cm.newCollector();
 											assert queryParams.complete() == collector.scoreMode().isExhaustive();
@@ -86,7 +87,9 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 
 											shard.search(localQueryParams.query(), collector);
 										} catch (Throwable e) {
-											scoreDocsSink.error(e);
+											if (!(e instanceof CancellationException)) {
+												scoreDocsSink.error(e);
+											}
 										} finally {
 											if (runningTasks.decrementAndGet() <= 0) {
 												scoreDocsSink.complete();

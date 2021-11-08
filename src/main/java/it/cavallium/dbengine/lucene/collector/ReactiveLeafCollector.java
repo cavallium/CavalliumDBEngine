@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.collector;
 
 import it.cavallium.dbengine.database.LLUtils;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.LeafCollector;
@@ -36,5 +37,8 @@ public class ReactiveLeafCollector implements LeafCollector {
 			LockSupport.parkNanos(100L * 1000000L);
 		}
 		scoreDocsSink.next(scoreDoc);
+		if (scoreDocsSink.isCancelled()) {
+			throw new CancellationException("Cancelled");
+		}
 	}
 }

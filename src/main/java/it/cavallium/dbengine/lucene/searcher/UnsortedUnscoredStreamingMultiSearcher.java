@@ -6,28 +6,18 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.collector.ReactiveCollectorManager;
+import it.cavallium.dbengine.lucene.collector.ReactiveCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.util.Queue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.locks.LockSupport;
-import java.util.function.Supplier;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.EmitResult;
-import reactor.core.publisher.Sinks.Many;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
-import reactor.util.concurrent.Queues;
 
 public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 
@@ -66,7 +56,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 							var shards = indexSearchers.shards();
 
 							Flux<ScoreDoc> scoreDocsFlux = Flux.create(scoreDocsSink -> {
-								var cm = new ReactiveCollectorManager(scoreDocsSink);
+								var cmm = new ReactiveCollectorMultiManager(scoreDocsSink);
 
 								AtomicInteger runningTasks = new AtomicInteger(0);
 
@@ -76,14 +66,12 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 									int shardIndex = mutableShardIndex++;
 									EXECUTOR_SERVICE.execute(() -> {
 										try {
-											var collector = cm.newCollector();
-											assert queryParams.complete() == collector.scoreMode().isExhaustive();
+											var collector = cmm.get(shardIndex);
+											assert queryParams.complete() == cmm.scoreMode().isExhaustive();
 											assert queryParams
 													.getScoreModeOptional()
-													.map(scoreMode -> scoreMode == collector.scoreMode())
+													.map(scoreMode -> scoreMode == cmm.scoreMode())
 													.orElse(true);
-
-											collector.setShardIndex(shardIndex);
 
 											shard.search(localQueryParams.query(), collector);
 										} catch (Throwable e) {

@@ -4,6 +4,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.search.CollectionTerminatedException;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreDoc;
@@ -38,7 +39,7 @@ public class ReactiveLeafCollector implements LeafCollector {
 		}
 		scoreDocsSink.next(scoreDoc);
 		if (scoreDocsSink.isCancelled()) {
-			throw new CancellationException("Cancelled");
+			throw new CollectionTerminatedException();
 		}
 	}
 }

@@ -36,7 +36,7 @@ public class OfficialSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -102,7 +102,7 @@ public class OfficialSearcher implements MultiSearcher {
 	/**
 	 * Compute the results, extracting useful data
 	 */
-	private Mono<Send<LuceneSearchResult>> computeResults(Mono<TopDocs> dataMono,
+	private Mono<LuceneSearchResult> computeResults(Mono<TopDocs> dataMono,
 			LLIndexSearchers indexSearchers,
 			String keyFieldName,
 			LocalQueryParams queryParams) {
@@ -115,7 +115,7 @@ public class OfficialSearcher implements MultiSearcher {
 					.skip(queryParams.offsetLong())
 					.take(queryParams.limitLong(), true);
 
-			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close).send();
+			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close);
 		});
 	}
 

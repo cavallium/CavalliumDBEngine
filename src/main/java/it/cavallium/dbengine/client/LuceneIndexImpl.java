@@ -82,7 +82,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Send<Hits<HitKey<T>>>> moreLikeThis(ClientQueryParams queryParams,
+	public Mono<Hits<HitKey<T>>> moreLikeThis(ClientQueryParams queryParams,
 			T key,
 			U mltDocumentValue) {
 		Flux<Tuple2<String, Set<String>>> mltDocumentFields
@@ -99,7 +99,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Send<Hits<HitKey<T>>>> search(ClientQueryParams queryParams) {
+	public Mono<Hits<HitKey<T>>> search(ClientQueryParams queryParams) {
 		return luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
@@ -109,13 +109,12 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.single();
 	}
 
-	private Send<Hits<HitKey<T>>> mapResults(Send<LLSearchResultShard> llSearchResultToReceive) {
-		var llSearchResult = llSearchResultToReceive.receive();
+	private Hits<HitKey<T>> mapResults(LLSearchResultShard llSearchResult) {
 		var scoresWithKeysFlux = llSearchResult
 				.results()
 				.map(hit -> new HitKey<>(indicizer.getKey(hit.key()), hit.score()));
 
-		return new Hits<>(scoresWithKeysFlux, llSearchResult.totalHitsCount(), llSearchResult::close).send();
+		return new Hits<>(scoresWithKeysFlux, llSearchResult.totalHitsCount(), llSearchResult::close);
 	}
 
 	@Override
@@ -123,8 +122,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return this
 				.search(ClientQueryParams.builder().snapshot(snapshot).query(query).limit(0).build())
 				.single()
-				.map(searchResultKeysSend -> {
-					try (var searchResultKeys = searchResultKeysSend.receive()) {
+				.map(searchResultKeys -> {
+					try (searchResultKeys) {
 						return searchResultKeys.totalHitsCount();
 					}
 				});

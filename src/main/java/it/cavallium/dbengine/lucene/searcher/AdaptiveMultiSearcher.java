@@ -32,7 +32,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -47,7 +47,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		}
 	}
 
-	public Mono<Send<LuceneSearchResult>> transformedCollectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> transformedCollectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {

@@ -22,7 +22,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -62,8 +62,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 									List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
 									boolean exactTotalHitsCount = true;
 									long totalHitsCountValue = 0;
-									for (Send<LuceneSearchResult> resultToReceive : results) {
-										LuceneSearchResult result = resultToReceive.receive();
+									for (LuceneSearchResult result : results) {
 										resultsToDrop.add(result);
 										resultsFluxes.add(result.results());
 										exactTotalHitsCount &= result.totalHitsCount().exact();
@@ -81,7 +80,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 											luceneSearchResult.close();
 										}
 										indexSearchers.close();
-									}).send();
+									});
 								});
 							}
 					);

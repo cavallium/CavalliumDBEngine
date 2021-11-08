@@ -255,7 +255,7 @@ public class TestLuceneSearches {
 		runSearchers(expectedQueryType, searcher -> {
 			var luceneIndex = getLuceneIndex(expectedQueryType.shard(), searcher);
 			var query = queryParamsBuilder.build();
-			try (var results = run(luceneIndex.search(query)).receive()) {
+			try (var results = run(luceneIndex.search(query))) {
 				var hits = results.totalHitsCount();
 				var keys = getResults(results);
 				if (hits.exact()) {
@@ -267,7 +267,7 @@ public class TestLuceneSearches {
 				var officialSearcher = new OfficialSearcher(ENV);
 				luceneIndex = getLuceneIndex(expectedQueryType.shard(), officialSearcher);
 				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
-				try (var officialResults = run(luceneIndex.search(officialQuery)).receive()) {
+				try (var officialResults = run(luceneIndex.search(officialQuery))) {
 					var officialHits = officialResults.totalHitsCount();
 					var officialKeys = getResults(officialResults).stream().toList();
 					if (officialHits.exact()) {

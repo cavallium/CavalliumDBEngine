@@ -507,6 +507,25 @@ public class LLUtils {
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
 	 */
+	public static <U, T extends Resource<T>, V extends T> Flux<U> usingResources(Mono<V> resourceSupplier,
+			Function<V, Flux<U>> resourceClosure,
+			boolean cleanupOnSuccess) {
+		return Flux.usingWhen(resourceSupplier, resourceClosure, r -> {
+					if (cleanupOnSuccess) {
+						return Mono.fromRunnable(() -> r.close());
+					} else {
+						return Mono.empty();
+					}
+				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
+				.doOnDiscard(Resource.class, resource -> resource.close())
+				.doOnDiscard(Send.class, send -> send.close());
+	}
+
+	// todo: remove this ugly method
+	/**
+	 * cleanup resource
+	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
+	 */
 	public static <U, T extends Resource<T>, V extends T> Flux<U> usingEachResource(Flux<V> resourceSupplier,
 			Function<V, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {

@@ -4,6 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANSFORMATION;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
@@ -359,7 +360,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Send<LLSearchResultShard>> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
@@ -367,22 +368,23 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		var searcher = this.searcherManager.retrieveSearcher(snapshot);
 		var transformer = new MoreLikeThisTransformer(mltDocumentFieldsFlux);
 
-		return localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer).map(resultToReceive -> {
-			var result = resultToReceive.receive();
-			return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
-		}).doOnDiscard(Send.class, Send::close);
+		return localSearcher
+				.collect(searcher, localQueryParams, keyFieldName, transformer)
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override
-	public Mono<Send<LLSearchResultShard>> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
+	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
 		var searcher = searcherManager.retrieveSearcher(snapshot);
 
-		return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION).map(resultToReceive -> {
-			var result = resultToReceive.receive();
-			return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
-		}).doOnDiscard(Send.class, Send::close);
+		return localSearcher
+				.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION)
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.doOnDiscard(Send.class, Send::close);
 	}
 
 	public Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot) {

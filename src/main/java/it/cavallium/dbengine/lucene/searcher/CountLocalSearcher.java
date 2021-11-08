@@ -13,7 +13,7 @@ import reactor.core.scheduler.Schedulers;
 public class CountLocalSearcher implements LocalSearcher {
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -38,7 +38,7 @@ public class CountLocalSearcher implements LocalSearcher {
 						},
 						is -> Mono.empty()
 				)
-				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null).send())
+				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null))
 				.doOnDiscard(Send.class, Send::close);
 	}
 

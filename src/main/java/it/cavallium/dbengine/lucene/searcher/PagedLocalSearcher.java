@@ -32,7 +32,7 @@ import reactor.core.scheduler.Schedulers;
 public class PagedLocalSearcher implements LocalSearcher {
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -120,7 +120,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 		}).single();
 	}
 
-	private Mono<Send<LuceneSearchResult>> computeOtherResults(Mono<FirstPageResults> firstResultMono,
+	private Mono<LuceneSearchResult> computeOtherResults(Mono<FirstPageResults> firstResultMono,
 			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
@@ -133,7 +133,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 			Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 			Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-			return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose).send();
+			return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose);
 		}).single();
 	}
 

@@ -12,7 +12,7 @@ public interface LocalSearcher {
 	 * @param keyFieldName      the name of the key field
 	 * @param transformer       the search query transformer
 	 */
-	Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer);

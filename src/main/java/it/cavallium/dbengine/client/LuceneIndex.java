@@ -48,10 +48,10 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> deleteAll();
 
-	Mono<Send<Hits<HitKey<T>>>> moreLikeThis(ClientQueryParams queryParams, T key,
+	Mono<Hits<HitKey<T>>> moreLikeThis(ClientQueryParams queryParams, T key,
 			U mltDocumentValue);
 
-	Mono<Send<Hits<HitKey<T>>>> search(ClientQueryParams queryParams);
+	Mono<Hits<HitKey<T>>> search(ClientQueryParams queryParams);
 
 	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);
 

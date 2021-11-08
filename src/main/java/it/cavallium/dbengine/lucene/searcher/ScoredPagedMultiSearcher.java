@@ -32,7 +32,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -114,7 +114,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 		});
 	}
 
-	private Send<LuceneSearchResult> computeOtherResults(FirstPageResults firstResult,
+	private LuceneSearchResult computeOtherResults(FirstPageResults firstResult,
 			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
@@ -126,7 +126,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 		Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 		Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-		return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose).send();
+		return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose);
 	}
 
 	/**

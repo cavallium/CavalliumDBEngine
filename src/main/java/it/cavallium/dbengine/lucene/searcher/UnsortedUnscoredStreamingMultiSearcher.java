@@ -33,7 +33,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 	private static final Supplier<Queue<ScoreDoc>> QUEUE_SUPPLIER = Queues.get(1024);
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -105,7 +105,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 									.skip(queryParams2.offsetLong())
 									.take(queryParams2.limitLong(), true);
 
-							return new LuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers::close).send();
+							return new LuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers::close);
 						});
 					});
 		}, false);

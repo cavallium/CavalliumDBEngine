@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.data.generator.nativedata.Nullablefloat;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
@@ -42,7 +43,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 *                    The additional query will be used with the moreLikeThis query: "mltQuery AND additionalQuery"
 	 * @return the collection has one or more flux
 	 */
-	Mono<Send<LLSearchResultShard>> moreLikeThis(@Nullable LLSnapshot snapshot,
+	Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields);
@@ -52,18 +53,18 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 *                    returned can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	Mono<Send<LLSearchResultShard>> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
+	Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
 
 	default Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query) {
 		QueryParams params = QueryParams.of(query, 0, 0, Nullablefloat.empty(), NoSort.of(), false);
 		return Mono.from(this.search(snapshot, params, null)
-				.map(llSearchResultShardToReceive -> {
-					try (var llSearchResultShard = llSearchResultShardToReceive.receive()) {
+				.map(llSearchResultShard -> {
+					try (llSearchResultShard) {
 						return llSearchResultShard.totalHitsCount();
 					}
 				})
 				.defaultIfEmpty(TotalHitsCount.of(0, true))
-		).doOnDiscard(Send.class, Send::close);
+		).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
 	}
 
 	boolean isLowMemoryMode();

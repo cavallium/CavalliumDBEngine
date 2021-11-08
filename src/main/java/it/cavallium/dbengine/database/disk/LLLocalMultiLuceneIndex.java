@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -210,7 +211,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Send<LLSearchResultShard>> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
@@ -222,15 +223,13 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return multiSearcher
 				.collectMulti(searchers, localQueryParams, keyFieldName, transformer)
 				// Transform the result type
-				.map(resultToReceive -> {
-					var result = resultToReceive.receive();
-					return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
-				})
-				.doOnDiscard(Send.class, Send::close);
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override
-	public Mono<Send<LLSearchResultShard>> search(@Nullable LLSnapshot snapshot,
+	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
@@ -240,11 +239,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return multiSearcher
 				.collectMulti(searchers, localQueryParams, keyFieldName, LLSearchTransformer.NO_TRANSFORMATION)
 				// Transform the result type
-				.map(resultToReceive -> {
-					var result = resultToReceive.receive();
-					return new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close).send();
-				})
-				.doOnDiscard(Send.class, Send::close);
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override

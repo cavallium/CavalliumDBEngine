@@ -18,7 +18,7 @@ public interface MultiSearcher extends LocalSearcher {
 	 * @param keyFieldName       the name of the key field
 	 * @param transformer        the search query transformer
 	 */
-	Mono<Send<LuceneSearchResult>> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer);
@@ -30,7 +30,7 @@ public interface MultiSearcher extends LocalSearcher {
 	 * @param transformer       the search query transformer
 	 */
 	@Override
-	default Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	default Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {

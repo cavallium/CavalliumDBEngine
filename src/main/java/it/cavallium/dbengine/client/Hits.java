@@ -62,37 +62,39 @@ public final class Hits<T> extends ResourceSupport<Hits<T>, Hits<T>> {
 		return new Hits<>(hitsEntry, hits.totalHitsCount, hits::close);
 	}
 
-	public static <T, U> Function<Send<Hits<HitKey<T>>>, Send<Hits<LazyHitEntry<T, U>>>> generateMapper(
+	public static <T, U> Function<Hits<HitKey<T>>, Hits<LazyHitEntry<T, U>>> generateMapper(
 			ValueGetter<T, U> valueGetter) {
-		return resultToReceive -> {
-			var result = resultToReceive.receive();
+		return result -> {
 			var hitsToTransform = result.results()
 					.map(hit -> new LazyHitEntry<>(Mono.just(hit.key()), valueGetter.get(hit.key()), hit.score()));
-			return new Hits<>(hitsToTransform, result.totalHitsCount(), result::close).send();
+			return new Hits<>(hitsToTransform, result.totalHitsCount(), result::close);
 		};
 	}
 
-	public static <T, U> Function<Send<Hits<HitKey<T>>>, Send<Hits<LazyHitEntry<T, U>>>> generateMapper(
+	public static <T, U> Function<Hits<HitKey<T>>, Hits<LazyHitEntry<T, U>>> generateMapper(
 			ValueTransformer<T, U> valueTransformer) {
-		return resultToReceive -> {
-			var result = resultToReceive.receive();
+		return result -> {
+			try {
+				var sharedHitsFlux = result.results().publish().refCount(3);
+				var scoresFlux = sharedHitsFlux.map(HitKey::score);
+				var keysFlux = sharedHitsFlux.map(HitKey::key);
 
-			var sharedHitsFlux = result.results().publish().refCount(3);
-			var scoresFlux = sharedHitsFlux.map(HitKey::score);
-			var keysFlux = sharedHitsFlux.map(HitKey::key);
+				var valuesFlux = valueTransformer.transform(keysFlux);
 
-			var valuesFlux = valueTransformer.transform(keysFlux);
+				var transformedFlux = Flux.zip((Object[] data) -> {
+					//noinspection unchecked
+					var keyMono = Mono.just((T) data[0]);
+					//noinspection unchecked
+					var valMono = Mono.just((U) data[1]);
+					var score = (Float) data[2];
+					return new LazyHitEntry<>(keyMono, valMono, score);
+				}, keysFlux, valuesFlux, scoresFlux);
 
-			var transformedFlux = Flux.zip((Object[] data) -> {
-				//noinspection unchecked
-				var keyMono = Mono.just((T) data[0]);
-				//noinspection unchecked
-				var valMono = Mono.just((U) data[1]);
-				var score = (Float) data[2];
-				return new LazyHitEntry<>(keyMono, valMono, score);
-			}, keysFlux, valuesFlux, scoresFlux);
-
-			return new Hits<>(transformedFlux, result.totalHitsCount(), result::close).send();
+				return new Hits<>(transformedFlux, result.totalHitsCount(), result::close);
+			} catch (Throwable t) {
+				result.close();
+				throw t;
+			}
 		};
 	}
 

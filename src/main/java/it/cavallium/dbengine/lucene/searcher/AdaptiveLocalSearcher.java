@@ -15,7 +15,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	private static final LocalSearcher countSearcher = new CountLocalSearcher();
 
 	@Override
-	public Mono<Send<LuceneSearchResult>> collect(Mono<Send<LLIndexSearcher>> indexSearcher,
+	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {
@@ -39,7 +39,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 		return "adaptivelocal";
 	}
 
-	public Mono<Send<LuceneSearchResult>> transformedCollect(Mono<Send<LLIndexSearcher>> indexSearcher,
+	public Mono<LuceneSearchResult> transformedCollect(Mono<Send<LLIndexSearcher>> indexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			LLSearchTransformer transformer) {

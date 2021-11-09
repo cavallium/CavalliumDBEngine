@@ -184,25 +184,13 @@ public class PagedLocalSearcher implements LocalSearcher {
 		} else if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
 			TopDocs pageTopDocs;
 			try {
-				TopDocsCollector<ScoreDoc> collector = OptimizedTopDocsCollector.create(queryParams.sort(),
+				var cmm = new OptimizedTopDocsCollector(queryParams.sort(),
 						currentPageLimit, s.last(), queryParams.getTotalHitsThresholdInt(),
-						allowPagination, queryParams.needsScores());
-				assert queryParams.complete() == collector.scoreMode().isExhaustive();
-				assert currentPageLimit < Integer.MAX_VALUE || queryParams
-						.getScoreModeOptional()
-						.map(scoreMode -> scoreMode == collector.scoreMode())
-						.orElse(true);
+						allowPagination, queryParams.needsScores(), resultsOffset, currentPageLimit);
 
-				indexSearchers.get(0).search(queryParams.query(), collector);
-				if (resultsOffset > 0) {
-					pageTopDocs = collector.topDocs(resultsOffset, currentPageLimit);
-				} else {
-					pageTopDocs = collector.topDocs();
-				}
-				// Populate scores of topfieldcollector. By default it doesn't popupate the scores
-				if (queryParams.needsScores() && ((Collector) collector) instanceof TopFieldCollector) {
-					TopFieldCollector.populateScores(pageTopDocs.scoreDocs, indexSearchers.get(0), queryParams.query());
-				}
+				pageTopDocs = cmm.reduce(List.of(indexSearchers
+						.get(0)
+						.search(queryParams.query(), cmm.get(queryParams.query(), indexSearchers.get(0)))));
 			} catch (IOException e) {
 				sink.error(e);
 				return EMPTY_STATUS;

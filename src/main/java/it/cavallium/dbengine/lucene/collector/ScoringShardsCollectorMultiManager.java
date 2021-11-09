@@ -32,8 +32,6 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 	private final int totalHitsThreshold;
 	private final @Nullable Integer startN;
 	private final @Nullable Integer topN;
-	private final @Nullable Integer internalStartN;
-	private final @Nullable Integer internalTopN;
 	private final CollectorManager<TopFieldCollector, TopFieldDocs> sharedCollectorManager;
 
 	public ScoringShardsCollectorMultiManager(Query query,
@@ -83,22 +81,6 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 		} else {
 			this.topN = topN;
 		}
-		if (this.topN != null && this.startN != null) {
-			if (this.topN >= 2147483630) {
-				this.internalTopN = this.topN;
-			} else {
-				this.internalTopN = this.startN + this.topN;
-			}
-		} else if (this.topN == null && this.startN != null) {
-			this.internalTopN = null;
-		} else {
-			this.internalTopN = this.topN;
-		}
-		if (this.internalTopN != null) {
-			this.internalStartN = 0;
-		} else {
-			this.internalStartN = null;
-		}
 		this.sharedCollectorManager = TopFieldCollector.createSharedManager(sort == null ? Sort.RELEVANCE : sort, numHits, after, totalHitsThreshold);
 	}
 
@@ -120,7 +102,7 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 					for (TopFieldCollector collector : collectors) {
 						topDocs[i++] = collector.topDocs();
 					}
-					var result = LuceneUtils.mergeTopDocs(sort, 0, numHits, topDocs);
+					var result = LuceneUtils.mergeTopDocs(sort, null, null, topDocs);
 
 					if (sort != null && sort.needsScores()) {
 						TopFieldCollector.populateScores(result.scoreDocs, indexSearcher, query);
@@ -128,9 +110,9 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 
 					return result;
 				} else {
-					TopDocs result;
+					TopDocs[] topDocs;
 					if (sort != null) {
-						TopFieldDocs[] topDocs = new TopFieldDocs[collectors.size()];
+						topDocs = new TopFieldDocs[collectors.size()];
 						var i = 0;
 						for (TopFieldCollector collector : collectors) {
 							topDocs[i] = collector.topDocs();
@@ -145,9 +127,8 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 							}
 							i++;
 						}
-						result = LuceneUtils.mergeTopDocs(sort, internalStartN, internalTopN, topDocs);
 					} else {
-						TopDocs[] topDocs = new TopDocs[collectors.size()];
+						topDocs = new TopDocs[collectors.size()];
 						var i = 0;
 						for (TopFieldCollector collector : collectors) {
 							topDocs[i] = collector.topDocs();
@@ -156,9 +137,8 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 							}
 							i++;
 						}
-						result = LuceneUtils.mergeTopDocs(null, internalStartN, internalTopN, topDocs);
 					}
-					return result;
+					return LuceneUtils.mergeTopDocs(sort, null, null, topDocs);
 				}
 			}
 		};

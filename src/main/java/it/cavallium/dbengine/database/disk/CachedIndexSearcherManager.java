@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -24,6 +25,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
+import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Empty;
@@ -32,8 +34,9 @@ import reactor.core.scheduler.Schedulers;
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
-	private static final Executor SEARCH_EXECUTOR = ForkJoinPool.commonPool();
-	private static final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
+	private final Executor SEARCH_EXECUTOR = Executors
+			.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), new ShortNamedThreadFactory("lucene-search"));
+	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
 
 	private final SnapshotsManager snapshotsManager;
 	private final Similarity similarity;

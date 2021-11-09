@@ -8,7 +8,6 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.ReactiveCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -20,9 +19,6 @@ import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
 
 public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
-
-	private static final ExecutorService EXECUTOR_SERVICE
-			= Executors.newCachedThreadPool(new ShortNamedThreadFactory("StreamingExecutor"));
 
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
@@ -64,26 +60,22 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 								int mutableShardIndex = 0;
 								for (IndexSearcher shard : shards) {
 									int shardIndex = mutableShardIndex++;
-									EXECUTOR_SERVICE.execute(() -> {
-										try {
-											var collector = cmm.get(shardIndex);
-											assert queryParams.complete() == cmm.scoreMode().isExhaustive();
-											assert queryParams
-													.getScoreModeOptional()
-													.map(scoreMode -> scoreMode == cmm.scoreMode())
-													.orElse(true);
+									try {
+										var collector = cmm.get(shardIndex);
+										assert queryParams.complete() == cmm.scoreMode().isExhaustive();
+										assert queryParams
+												.getScoreModeOptional()
+												.map(scoreMode -> scoreMode == cmm.scoreMode())
+												.orElse(true);
 
-											shard.search(localQueryParams.query(), collector);
-										} catch (Throwable e) {
-											if (!(e instanceof CancellationException)) {
-												scoreDocsSink.error(e);
-											}
-										} finally {
-											if (runningTasks.decrementAndGet() <= 0) {
-												scoreDocsSink.complete();
-											}
+										shard.search(localQueryParams.query(), collector);
+									} catch (Throwable e) {
+										scoreDocsSink.error(e);
+									} finally {
+										if (runningTasks.decrementAndGet() <= 0) {
+											scoreDocsSink.complete();
 										}
-									});
+									}
 								}
 							}, OverflowStrategy.BUFFER);
 

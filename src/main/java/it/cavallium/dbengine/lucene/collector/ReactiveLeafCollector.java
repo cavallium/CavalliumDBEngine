@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.collector;
 
 import it.cavallium.dbengine.database.LLUtils;
-import java.util.concurrent.CancellationException;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.CollectionTerminatedException;

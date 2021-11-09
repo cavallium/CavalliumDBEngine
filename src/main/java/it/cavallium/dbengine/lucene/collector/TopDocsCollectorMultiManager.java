@@ -23,7 +23,7 @@ import org.apache.lucene.search.TopFieldDocs;
 import org.apache.lucene.search.TopScoreDocCollector;
 import org.jetbrains.annotations.NotNull;
 
-public class OptimizedTopDocsCollector implements CollectorMultiManager<TopDocs, TopDocs> {
+public class TopDocsCollectorMultiManager implements CollectorMultiManager<TopDocs, TopDocs> {
 
 	private final Sort luceneSort;
 	private final int limit;
@@ -35,7 +35,7 @@ public class OptimizedTopDocsCollector implements CollectorMultiManager<TopDocs,
 	private final int topDocsOffset;
 	private final int topDocsCount;
 
-	public OptimizedTopDocsCollector(Sort luceneSort,
+	public TopDocsCollectorMultiManager(Sort luceneSort,
 			int limit,
 			ScoreDoc after,
 			int totalHitsThreshold,

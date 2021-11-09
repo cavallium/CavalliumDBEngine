@@ -10,17 +10,14 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.collector.OptimizedTopDocsCollector;
+import it.cavallium.dbengine.lucene.collector.TopDocsCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.TopDocsCollector;
-import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.TotalHits.Relation;
 import reactor.core.publisher.Flux;
@@ -184,7 +181,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 		} else if (s.pageIndex() == 0 || (s.last() != null && s.remainingLimit() > 0)) {
 			TopDocs pageTopDocs;
 			try {
-				var cmm = new OptimizedTopDocsCollector(queryParams.sort(),
+				var cmm = new TopDocsCollectorMultiManager(queryParams.sort(),
 						currentPageLimit, s.last(), queryParams.getTotalHitsThresholdInt(),
 						allowPagination, queryParams.needsScores(), resultsOffset, currentPageLimit);
 

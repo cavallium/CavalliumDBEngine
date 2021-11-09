@@ -9,6 +9,7 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
+import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.Closeable;
 import java.io.IOException;
@@ -70,27 +71,25 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
-					return LMDBFullScoreDocCollector.createSharedManager(env, queryParams.limitLong(), totalHitsThreshold);
+					return new LMDBFullScoreDocCollectorMultiManager(env, queryParams.limitLong(), totalHitsThreshold);
 				})
-				.flatMap(sharedManager -> Flux
+				.flatMap(cmm -> Flux
 						.fromIterable(indexSearchers)
-						.flatMap(shard -> Mono.fromCallable(() -> {
+						.index()
+						.flatMap(shardWithIndex -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
 
-							var collector = sharedManager.newCollector();
-							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							assert queryParams
-									.getScoreModeOptional()
-									.map(scoreMode -> scoreMode == collector.scoreMode())
-									.orElse(true);
+							var index = (int) (long) shardWithIndex.getT1();
+							var shard = shardWithIndex.getT2();
 
-							shard.search(queryParams.query(), collector);
-							return collector;
+							var cm = cmm.get(index);
+
+							return shard.search(queryParams.query(), cm);
 						}))
 						.collectList()
-						.flatMap(collectors -> Mono.fromCallable(() -> {
+						.flatMap(results -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
-							return sharedManager.reduce(collectors);
+							return cmm.reduce(results);
 						}))
 				);
 	}

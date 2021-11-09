@@ -9,12 +9,15 @@ import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLFieldDoc;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.FullFieldDocs;
 import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
+import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollectorMultiManager;
 import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ServiceLoader;
+import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.TopFieldCollector;
 import org.warp.commonutils.log.Logger;
@@ -65,28 +68,26 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
-					return LMDBFullFieldDocCollector.createSharedManager(env, queryParams.sort(), queryParams.limitInt(),
+					return new LMDBFullFieldDocCollectorMultiManager(env, queryParams.sort(), queryParams.limitInt(),
 							totalHitsThreshold);
 				})
-				.flatMap(sharedManager -> Flux
+				.flatMap(cmm -> Flux
 						.fromIterable(indexSearchers)
-						.flatMap(shard -> Mono.fromCallable(() -> {
+						.index()
+						.flatMap(shardWithIndex -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
 
-							var collector = sharedManager.newCollector();
-							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							assert queryParams
-									.getScoreModeOptional()
-									.map(scoreMode -> scoreMode == collector.scoreMode())
-									.orElse(true);
+							var index = (int) (long) shardWithIndex.getT1();
+							var shard = shardWithIndex.getT2();
 
-							shard.search(queryParams.query(), collector);
-							return collector;
+							var cm = cmm.get(index);
+
+							return shard.search(queryParams.query(), cm);
 						}))
 						.collectList()
-						.flatMap(collectors -> Mono.fromCallable(() -> {
+						.flatMap(results -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
-							return sharedManager.reduce(collectors);
+							return cmm.reduce(results);
 						}))
 				);
 	}

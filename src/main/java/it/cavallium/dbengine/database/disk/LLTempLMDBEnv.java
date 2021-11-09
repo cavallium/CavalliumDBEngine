@@ -18,7 +18,7 @@ import static org.lmdbjava.EnvFlags.*;
 public class LLTempLMDBEnv implements Closeable {
 
 	private static final long TWENTY_GIBIBYTES = 20L * 1024L * 1024L * 1024L;
-	private static final int MAX_DATABASES = 1024;
+	private static final int MAX_DATABASES = 16384;
 
 	private final Path tempDirectory;
 	private final Env<ByteBuf> env;

@@ -6,6 +6,7 @@ import static org.apache.lucene.search.TotalHits.Relation.*;
 import it.cavallium.dbengine.lucene.collector.FullFieldDocs;
 import java.util.Comparator;
 import org.apache.lucene.search.FieldComparator;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TotalHits;
@@ -15,9 +16,17 @@ import reactor.core.publisher.Flux;
 
 public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 
-	Comparator<LLDoc> SHARD_INDEX_TIE_BREAKER = Comparator.comparingInt(LLDoc::shardIndex);
-	Comparator<LLDoc> DOC_ID_TIE_BREAKER = Comparator.comparingInt(LLDoc::doc);
-	Comparator<LLDoc> DEFAULT_TIE_BREAKER = SHARD_INDEX_TIE_BREAKER.thenComparing(DOC_ID_TIE_BREAKER);
+	/** Internal comparator with shardIndex */
+	Comparator<LLDoc> SHARD_INDEX_TIE_BREAKER =
+			Comparator.comparingInt(LLDoc::shardIndex);
+
+	/** Internal comparator with docID */
+	Comparator<LLDoc> DOC_ID_TIE_BREAKER =
+			Comparator.comparingInt(LLDoc::doc);
+
+	/** Default comparator */
+	Comparator<LLDoc> DEFAULT_TIE_BREAKER =
+			SHARD_INDEX_TIE_BREAKER.thenComparing(DOC_ID_TIE_BREAKER);
 
 	@Override
 	Flux<T> iterate();

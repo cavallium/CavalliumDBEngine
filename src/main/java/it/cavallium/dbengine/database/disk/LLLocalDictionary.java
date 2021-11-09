@@ -419,7 +419,15 @@ public class LLLocalDictionary implements LLDictionary {
 							existsAlmostCertainly, UpdateAtomicResultMode.DELTA);
 					return ((UpdateAtomicResultDelta) result).delta();
 				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-				keySend -> Mono.fromRunnable(keySend::close));
+				keySend -> Mono.fromRunnable(keySend::close)).doOnDiscard(UpdateAtomicResult.class, uar -> {
+					if (uar instanceof UpdateAtomicResultDelta delta) {
+						delta.delta().close();
+					} else if (uar instanceof UpdateAtomicResultCurrent cur) {
+						cur.current().close();
+					} else if (uar instanceof UpdateAtomicResultPrevious cur) {
+						cur.previous().close();
+					}
+		});
 	}
 
 	@Override

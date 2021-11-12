@@ -5,6 +5,7 @@ import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.UpdateReturnMode;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
@@ -24,6 +25,39 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 				return Longs.fromByteArray(array);
 			}
 		});
+	}
+
+	public Mono<Long> incrementAndGet() {
+		return incrementAnd(UpdateReturnMode.GET_NEW_VALUE);
+	}
+
+	public Mono<Long> getAndIncrement() {
+		return incrementAnd(UpdateReturnMode.GET_OLD_VALUE);
+	}
+
+	private Mono<Long> incrementAnd(UpdateReturnMode updateReturnMode) {
+		return singleton.update(prev -> {
+			if (prev != null) {
+				try (var prevBuf = prev.receive()) {
+					var prevLong = prevBuf.readLong();
+					var alloc = singleton.getAllocator();
+					try (var buf = alloc.allocate(Long.BYTES)) {
+						buf.writeLong(prevLong + 1);
+						return buf;
+					}
+				}
+			} else {
+				var alloc = singleton.getAllocator();
+				try (var buf = alloc.allocate(Long.BYTES)) {
+					buf.writeLong(1);
+					return buf;
+				}
+			}
+		}, updateReturnMode).map(send -> {
+			try (var buf = send.receive()) {
+				return buf.readLong();
+			}
+		}).single();
 	}
 
 	public Mono<Void> set(long value) {

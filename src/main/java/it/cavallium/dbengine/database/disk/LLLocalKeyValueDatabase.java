@@ -473,8 +473,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<LLLocalSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue) {
 		return Mono
-				.fromCallable(() -> new LLLocalSingleton(db,
-						getCfh(singletonListColumnName),
+				.fromCallable(() -> new LLLocalSingleton(
+						getRocksDBColumn(db, getCfh(singletonListColumnName)),
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						LLLocalKeyValueDatabase.this.name,
 						name,

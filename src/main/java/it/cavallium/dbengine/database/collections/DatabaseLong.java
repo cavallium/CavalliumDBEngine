@@ -41,17 +41,15 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 				try (var prevBuf = prev.receive()) {
 					var prevLong = prevBuf.readLong();
 					var alloc = singleton.getAllocator();
-					try (var buf = alloc.allocate(Long.BYTES)) {
-						buf.writeLong(prevLong + 1);
-						return buf;
-					}
+					var buf = alloc.allocate(Long.BYTES);
+					buf.writeLong(prevLong + 1);
+					return buf;
 				}
 			} else {
 				var alloc = singleton.getAllocator();
-				try (var buf = alloc.allocate(Long.BYTES)) {
-					buf.writeLong(1);
-					return buf;
-				}
+				var buf = alloc.allocate(Long.BYTES);
+				buf.writeLong(1);
+				return buf;
 			}
 		}, updateReturnMode).map(send -> {
 			try (var buf = send.receive()) {

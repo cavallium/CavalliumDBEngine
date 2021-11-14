@@ -28,27 +28,43 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	}
 
 	public Mono<Long> incrementAndGet() {
-		return incrementAnd(UpdateReturnMode.GET_NEW_VALUE);
+		return addAnd(1, UpdateReturnMode.GET_NEW_VALUE);
 	}
 
 	public Mono<Long> getAndIncrement() {
-		return incrementAnd(UpdateReturnMode.GET_OLD_VALUE);
+		return addAnd(1, UpdateReturnMode.GET_OLD_VALUE);
 	}
 
-	private Mono<Long> incrementAnd(UpdateReturnMode updateReturnMode) {
+	public Mono<Long> decrementAndGet() {
+		return addAnd(-1, UpdateReturnMode.GET_NEW_VALUE);
+	}
+
+	public Mono<Long> getAndDecrement() {
+		return addAnd(-1, UpdateReturnMode.GET_OLD_VALUE);
+	}
+
+	public Mono<Long> addAndGet(long count) {
+		return addAnd(count, UpdateReturnMode.GET_NEW_VALUE);
+	}
+
+	public Mono<Long> getAndAdd(long count) {
+		return addAnd(count, UpdateReturnMode.GET_OLD_VALUE);
+	}
+
+	private Mono<Long> addAnd(long count, UpdateReturnMode updateReturnMode) {
 		return singleton.update(prev -> {
 			if (prev != null) {
 				try (var prevBuf = prev.receive()) {
 					var prevLong = prevBuf.readLong();
 					var alloc = singleton.getAllocator();
 					var buf = alloc.allocate(Long.BYTES);
-					buf.writeLong(prevLong + 1);
+					buf.writeLong(prevLong + count);
 					return buf;
 				}
 			} else {
 				var alloc = singleton.getAllocator();
 				var buf = alloc.allocate(Long.BYTES);
-				buf.writeLong(1);
+				buf.writeLong(count);
 				return buf;
 			}
 		}, updateReturnMode).map(send -> {

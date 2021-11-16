@@ -340,8 +340,8 @@ public class LuceneUtils {
 		return scoreDocs[scoreDocs.length - 1];
 	}
 
-	public static LocalQueryParams toLocalQueryParams(QueryParams queryParams) {
-		return new LocalQueryParams(QueryParser.toQuery(queryParams.query()),
+	public static LocalQueryParams toLocalQueryParams(QueryParams queryParams, Analyzer analyzer) {
+		return new LocalQueryParams(QueryParser.toQuery(queryParams.query(), analyzer),
 				queryParams.offset(),
 				queryParams.limit(),
 				DEFAULT_PAGE_LIMITS,

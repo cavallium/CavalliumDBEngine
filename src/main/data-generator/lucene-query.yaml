@@ -12,7 +12,7 @@ versions:
           BoxedQuery, TermQuery, PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery,
           MatchNoDocsQuery, BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
           ConstantScoreQuery, BoostQuery, IntPointRangeQuery, LongPointRangeQuery, IntPointExactQuery,
-          LongPointExactQuery
+          LongPointExactQuery, StandardQuery
       ]
       Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
       Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
@@ -50,6 +50,16 @@ versions:
         data: { }
       OccurFilter:
         data: { }
+
+      # Special queries
+      # ===============
+
+      # Raw lucene string query, parsable by lucene StandardQueryParser
+      StandardQuery:
+        data:
+          query: String
+          # Should be at least one field!
+          defaultFields: String[]
 
       # Text queries
       # ============

@@ -215,7 +215,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			String keyFieldName,
 			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
-		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
+		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searchers = this.getIndexSearchers(snapshot);
 		var transformer = new MultiMoreLikeThisTransformer(mltDocumentFields);
 
@@ -232,7 +232,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName) {
-		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams);
+		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searchers = getIndexSearchers(snapshot);
 
 		// Collect all the shards results into a single global result

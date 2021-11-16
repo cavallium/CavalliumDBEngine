@@ -10,19 +10,24 @@ import it.cavallium.dbengine.client.query.current.data.LongPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.LongPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.PhraseQuery;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.SortedDocFieldExistsQuery;
 import it.cavallium.dbengine.client.query.current.data.SortedNumericDocValuesFieldSlowRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.StandardQuery;
 import it.cavallium.dbengine.client.query.current.data.SynonymQuery;
 import it.cavallium.dbengine.client.query.current.data.TermAndBoost;
 import it.cavallium.dbengine.client.query.current.data.TermPosition;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
+import org.apache.lucene.queryparser.flexible.standard.QueryParserUtil;
+import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.DocValuesFieldExistsQuery;
@@ -30,16 +35,31 @@ import org.apache.lucene.search.FuzzyQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortField.Type;
 import org.apache.lucene.search.SortedNumericSortField;
 
 public class QueryParser {
-	public static Query toQuery(it.cavallium.dbengine.client.query.current.data.Query query) {
+	public static Query toQuery(it.cavallium.dbengine.client.query.current.data.Query query, Analyzer analyzer) {
 		if (query == null) return null;
 		switch (query.getBasicType$()) {
+			case StandardQuery:
+				var standardQuery = (it.cavallium.dbengine.client.query.current.data.StandardQuery) query;
+				var standardQueryParser = new StandardQueryParser(analyzer);
+				var defaultFields = standardQuery.defaultFields();
+				try {
+					if (defaultFields.size() > 1) {
+						standardQueryParser.setMultiFields(defaultFields.toArray(String[]::new));
+						return standardQueryParser.parse(standardQuery.query(), null);
+					} else if (defaultFields.size() == 1) {
+						return standardQueryParser.parse(standardQuery.query(), defaultFields.get(0));
+					} else {
+						throw new IllegalStateException("Can't parse a standard query expression that has 0 default fields");
+					}
+				} catch (QueryNodeException e) {
+					throw new IllegalStateException("Can't parse query expression \"" + standardQuery.query() + "\"", e);
+				}
 			case BooleanQuery:
 				var booleanQuery = (it.cavallium.dbengine.client.query.current.data.BooleanQuery) query;
 				var bq = new Builder();
@@ -51,7 +71,7 @@ public class QueryParser {
 						case OccurMustNot -> Occur.MUST_NOT;
 						default -> throw new IllegalStateException("Unexpected value: " + part.occur().getBasicType$());
 					};
-					bq.add(toQuery(part.query()), occur);
+					bq.add(toQuery(part.query(), analyzer), occur);
 				}
 				bq.setMinimumNumberShouldMatch(booleanQuery.minShouldMatch());
 				return bq.build();
@@ -66,12 +86,12 @@ public class QueryParser {
 				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.term()));
 			case BoostQuery:
 				var boostQuery = (BoostQuery) query;
-				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.query()), boostQuery.scoreBoost());
+				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.query(), analyzer), boostQuery.scoreBoost());
 			case ConstantScoreQuery:
 				var constantScoreQuery = (ConstantScoreQuery) query;
-				return new org.apache.lucene.search.ConstantScoreQuery(toQuery(constantScoreQuery.query()));
+				return new org.apache.lucene.search.ConstantScoreQuery(toQuery(constantScoreQuery.query(), analyzer));
 			case BoxedQuery:
-				return toQuery(((BoxedQuery) query).query());
+				return toQuery(((BoxedQuery) query).query(), analyzer);
 			case FuzzyQuery:
 				var fuzzyQuery = (it.cavallium.dbengine.client.query.current.data.FuzzyQuery) query;
 				return new FuzzyQuery(toTerm(fuzzyQuery.term()),

@@ -18,7 +18,7 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 																			long limit,
 																			@Nullable Float minCompetitiveScore,
 																			@Nullable Sort sort,
-																			boolean complete) {
+																			boolean computePreciseHitsCount) {
 
 	public static ClientQueryParamsBuilder builder() {
 		return ClientQueryParamsBuilder
@@ -28,7 +28,7 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.limit(Long.MAX_VALUE)
 				.minCompetitiveScore(null)
 				.sort(null)
-				.complete(true);
+				.computePreciseHitsCount(true);
 	}
 
 	public boolean isSorted() {
@@ -43,7 +43,7 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.minCompetitiveScore(Nullablefloat.ofNullable(minCompetitiveScore()))
 				.offset(offset())
 				.limit(limit())
-				.complete(complete())
+				.computePreciseHitsCount(computePreciseHitsCount())
 				.build();
 	}
 }

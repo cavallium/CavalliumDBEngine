@@ -92,7 +92,7 @@ public class CountMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.complete()
+				queryParams.computePreciseHitsCount()
 		);
 	}
 

@@ -189,7 +189,7 @@ versions:
           limit: long
           minCompetitiveScore: -float
           sort: Sort
-          complete: boolean
+          computePreciseHitsCount: boolean
       NoSort:
         data: { }
       NumericSort:

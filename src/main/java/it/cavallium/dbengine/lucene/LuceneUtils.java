@@ -26,7 +26,6 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -347,7 +346,7 @@ public class LuceneUtils {
 				DEFAULT_PAGE_LIMITS,
 				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
-				queryParams.complete()
+				queryParams.computePreciseHitsCount()
 		);
 	}
 
@@ -502,7 +501,7 @@ public class LuceneUtils {
 								DEFAULT_PAGE_LIMITS,
 								localQueryParams.minCompetitiveScore(),
 								localQueryParams.sort(),
-								localQueryParams.complete()
+								localQueryParams.computePreciseHitsCount()
 						);
 					}
 					MultiMoreLikeThis mlt;
@@ -547,7 +546,7 @@ public class LuceneUtils {
 							DEFAULT_PAGE_LIMITS,
 							localQueryParams.minCompetitiveScore(),
 							localQueryParams.sort(),
-							localQueryParams.complete()
+							localQueryParams.computePreciseHitsCount()
 					);
 				}).subscribeOn(Schedulers.boundedElastic()));
 	}

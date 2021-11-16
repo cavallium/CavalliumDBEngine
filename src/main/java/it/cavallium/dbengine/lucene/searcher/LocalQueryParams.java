@@ -5,16 +5,14 @@ import static it.cavallium.dbengine.lucene.LuceneUtils.safeLongToInt;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
 import java.util.Objects;
-import java.util.Optional;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetLong, int limitInt, long limitLong,
 															 @NotNull PageLimits pageLimits,
-															 @Nullable Float minCompetitiveScore, @Nullable Sort sort, boolean complete) {
+															 @Nullable Float minCompetitiveScore, @Nullable Sort sort, boolean computePreciseHitsCount) {
 
 	public LocalQueryParams(@NotNull Query query,
 			long offsetLong,
@@ -22,9 +20,9 @@ public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetL
 			@NotNull PageLimits pageLimits,
 			@Nullable Float minCompetitiveScore,
 			@Nullable Sort sort,
-			boolean complete) {
+			boolean computePreciseHitsCount) {
 		this(query, safeLongToInt(offsetLong), offsetLong, safeLongToInt(limitLong), limitLong, pageLimits,
-				minCompetitiveScore, sort, complete);
+				minCompetitiveScore, sort, computePreciseHitsCount);
 	}
 
 	public LocalQueryParams(@NotNull Query query,
@@ -33,8 +31,17 @@ public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetL
 			@NotNull PageLimits pageLimits,
 			@Nullable Float minCompetitiveScore,
 			@Nullable Sort sort,
-			boolean complete) {
-		this(query, offsetInt, offsetInt, limitInt, limitInt, pageLimits, minCompetitiveScore, sort, complete);
+			boolean computePreciseHitsCount) {
+		this(query,
+				offsetInt,
+				offsetInt,
+				limitInt,
+				limitInt,
+				pageLimits,
+				minCompetitiveScore,
+				sort,
+				computePreciseHitsCount
+		);
 	}
 
 	public boolean isSorted() {
@@ -49,32 +56,11 @@ public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetL
 		return sort != null && sort.needsScores();
 	}
 
-	public Optional<Boolean> needsScoresOptional() {
-		if (sort == null) return Optional.empty();
-		return Optional.of(sort.needsScores());
-	}
-
-	public ScoreMode getScoreMode() {
-		if (complete) {
-			return needsScores() ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES;
-		} else {
-			return needsScores() ? ScoreMode.TOP_DOCS_WITH_SCORES : ScoreMode.TOP_DOCS;
-		}
-	}
-
-	public Optional<ScoreMode> getScoreModeOptional() {
-		if (complete) {
-			return needsScoresOptional().map(needsScores -> needsScores ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES);
-		} else {
-			return needsScoresOptional().map(needsScores -> needsScores ? ScoreMode.TOP_DOCS_WITH_SCORES : ScoreMode.TOP_DOCS);
-		}
-	}
-
 	public int getTotalHitsThresholdInt() {
-		return LuceneUtils.totalHitsThreshold(this.complete);
+		return LuceneUtils.totalHitsThreshold(this.computePreciseHitsCount);
 	}
 
 	public long getTotalHitsThresholdLong() {
-		return LuceneUtils.totalHitsThresholdLong(this.complete);
+		return LuceneUtils.totalHitsThresholdLong(this.computePreciseHitsCount);
 	}
 }

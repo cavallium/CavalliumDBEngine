@@ -8,12 +8,9 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.ReactiveCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
-import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
@@ -62,11 +59,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 									int shardIndex = mutableShardIndex++;
 									try {
 										var collector = cmm.get(shardIndex);
-										assert queryParams.complete() == cmm.scoreMode().isExhaustive();
-										assert queryParams
-												.getScoreModeOptional()
-												.map(scoreMode -> scoreMode == cmm.scoreMode())
-												.orElse(true);
+										assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
 
 										shard.search(localQueryParams.query(), collector);
 									} catch (Throwable e) {
@@ -100,7 +93,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.complete()
+				queryParams.computePreciseHitsCount()
 		);
 	}
 

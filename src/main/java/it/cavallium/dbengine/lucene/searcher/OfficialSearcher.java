@@ -5,19 +5,11 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.FullDocs;
-import it.cavallium.dbengine.lucene.LLFieldDoc;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.io.Closeable;
-import java.io.IOException;
 import java.util.List;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
 import org.warp.commonutils.log.Logger;
@@ -82,11 +74,7 @@ public class OfficialSearcher implements MultiSearcher {
 							LLUtils.ensureBlocking();
 
 							var collector = sharedManager.newCollector();
-							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							assert queryParams
-									.getScoreModeOptional()
-									.map(scoreMode -> scoreMode == collector.scoreMode())
-									.orElse(true);
+							assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
 
 							shard.search(queryParams.query(), collector);
 							return collector;

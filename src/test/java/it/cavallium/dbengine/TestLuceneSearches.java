@@ -294,7 +294,7 @@ public class TestLuceneSearches {
 				.<LazyHitKey<String>>builder()
 				.query(new MatchNoDocsQuery())
 				.snapshot(null)
-				.complete(true)
+				.computePreciseHitsCount(true)
 				.sort(multiSort);
 
 		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
@@ -308,7 +308,7 @@ public class TestLuceneSearches {
 				.<LazyHitKey<String>>builder()
 				.query(new MatchAllDocsQuery())
 				.snapshot(null)
-				.complete(true)
+				.computePreciseHitsCount(true)
 				.sort(multiSort);
 
 		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);
@@ -328,7 +328,7 @@ public class TestLuceneSearches {
 						new BooleanQueryPart(new TermQuery(new Term("text", "hello")), new OccurMust())
 				), 1))
 				.snapshot(null)
-				.complete(true)
+				.computePreciseHitsCount(true)
 				.sort(multiSort);
 
 		ExpectedQueryType expectedQueryType = new ExpectedQueryType(shards, multiSort, true, false);

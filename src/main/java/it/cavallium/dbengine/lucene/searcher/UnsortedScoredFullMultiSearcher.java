@@ -10,11 +10,7 @@ import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.io.Closeable;
-import java.io.IOException;
-import java.util.Objects;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.Sort;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -78,11 +74,7 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
 							LLUtils.ensureBlocking();
 
 							var collector = sharedManager.newCollector();
-							assert queryParams.complete() == collector.scoreMode().isExhaustive();
-							assert queryParams
-									.getScoreModeOptional()
-									.map(scoreMode -> scoreMode == collector.scoreMode())
-									.orElse(true);
+							assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
 
 							shard.search(queryParams.query(), collector);
 							return collector;

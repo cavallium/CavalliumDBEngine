@@ -6,7 +6,6 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
@@ -101,7 +100,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.complete()
+				queryParams.computePreciseHitsCount()
 		);
 	}
 

@@ -20,13 +20,19 @@ package it.cavallium.dbengine.lucene;
 import java.util.Objects;
 import java.util.concurrent.atomic.LongAccumulator;
 
-/** Maintains the maximum score and its corresponding document id concurrently */
+/**
+ * Maintains the maximum score and its corresponding document id concurrently
+ *
+ * This class must mirror this changes:
+ * <a href="https://github.com/apache/lucene/commits/94b66c0ed279fe23656d451fecd56fdfd106e1ea/lucene/core/src/java/org/apache/lucene/search/MaxScoreAccumulator.java">
+ *   Lucene MaxScoreAccumulator changes on GitHub</a>
+ */
 public final class MaxScoreAccumulator {
 	// we use 2^10-1 to check the remainder with a bitwise operation
 	static final int DEFAULT_INTERVAL = 0x3ff;
 
 	// scores are always positive
-	final LongAccumulator acc = new LongAccumulator(Long::max, Long.MIN_VALUE);
+	final LongAccumulator acc = new LongAccumulator(MaxScoreAccumulator::maxEncode, Long.MIN_VALUE);
 
 	// non-final and visible for tests
 	public long modInterval;
@@ -35,9 +41,26 @@ public final class MaxScoreAccumulator {
 		this.modInterval = DEFAULT_INTERVAL;
 	}
 
-	public void accumulate(int docID, float score) {
-		assert docID >= 0 && score >= 0;
-		long encode = (((long) Float.floatToIntBits(score)) << 32) | docID;
+	/**
+	 * Return the max encoded DocAndScore in a way that is consistent with {@link
+	 * DocAndScore#compareTo}.
+	 */
+	private static long maxEncode(long v1, long v2) {
+		float score1 = Float.intBitsToFloat((int) (v1 >> 32));
+		float score2 = Float.intBitsToFloat((int) (v2 >> 32));
+		int cmp = Float.compare(score1, score2);
+		if (cmp == 0) {
+			// tie-break on the minimum doc base
+			return (int) v1 < (int) v2 ? v1 : v2;
+		} else if (cmp > 0) {
+			return v1;
+		}
+		return v2;
+	}
+
+	public void accumulate(int docBase, float score) {
+		assert docBase >= 0 && score >= 0;
+		long encode = (((long) Float.floatToIntBits(score)) << 32) | docBase;
 		acc.accumulate(encode);
 	}
 
@@ -47,16 +70,16 @@ public final class MaxScoreAccumulator {
 			return null;
 		}
 		float score = Float.intBitsToFloat((int) (value >> 32));
-		int docID = (int) value;
-		return new DocAndScore(docID, score);
+		int docBase = (int) value;
+		return new DocAndScore(docBase, score);
 	}
 
 	public static class DocAndScore implements Comparable<DocAndScore> {
-		public final int docID;
+		public final int docBase;
 		public final float score;
 
-		public DocAndScore(int docID, float score) {
-			this.docID = docID;
+		public DocAndScore(int docBase, float score) {
+			this.docBase = docBase;
 			this.score = score;
 		}
 
@@ -64,7 +87,14 @@ public final class MaxScoreAccumulator {
 		public int compareTo(DocAndScore o) {
 			int cmp = Float.compare(score, o.score);
 			if (cmp == 0) {
-				return Integer.compare(docID, o.docID);
+				// tie-break on the minimum doc base
+				// For a given minimum competitive score, we want to know the first segment
+				// where this score occurred, hence the reverse order here.
+				// On segments with a lower docBase, any document whose score is greater
+				// than or equal to this score would be competitive, while on segments with a
+				// higher docBase, documents need to have a strictly greater score to be
+				// competitive since we tie break on doc ID.
+				return Integer.compare(o.docBase, docBase);
 			}
 			return cmp;
 		}
@@ -74,17 +104,17 @@ public final class MaxScoreAccumulator {
 			if (this == o) return true;
 			if (o == null || getClass() != o.getClass()) return false;
 			DocAndScore result = (DocAndScore) o;
-			return docID == result.docID && Float.compare(result.score, score) == 0;
+			return docBase == result.docBase && Float.compare(result.score, score) == 0;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(docID, score);
+			return Objects.hash(docBase, score);
 		}
 
 		@Override
 		public String toString() {
-			return "DocAndScore{" + "docID=" + docID + ", score=" + score + '}';
+			return "DocAndScore{" + "docBase=" + docBase + ", score=" + score + '}';
 		}
 	}
 }

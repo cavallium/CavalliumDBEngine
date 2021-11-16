@@ -38,6 +38,7 @@ import org.apache.lucene.util.BytesRefBuilder;
  * Sorts by descending relevance. NOTE: if you are sorting only by descending relevance and then secondarily by
  * ascending docID, performance is faster using {@link org.apache.lucene.search.TopScoreDocCollector} directly (which {@link
  * org.apache.lucene.search.IndexSearcher#search(Query, int)} uses when no {@link org.apache.lucene.search.Sort} is specified).
+ * Based on {@link org.apache.lucene.search.FieldComparator.RelevanceComparator}
  */
 public final class RelevanceComparator extends FieldComparator<Float> implements LeafFieldComparator {
 

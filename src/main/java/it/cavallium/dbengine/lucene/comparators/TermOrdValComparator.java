@@ -26,6 +26,7 @@ import org.apache.lucene.util.BytesRefBuilder;
  * using the ordinals. For medium to large results, this comparator will be much faster than
  * {@link org.apache.lucene.search.FieldComparator.TermValComparator}. For very small result sets
  * it may be slower.
+ * Based on {@link org.apache.lucene.search.FieldComparator.TermOrdValComparator}
  */
 public class TermOrdValComparator extends FieldComparator<BytesRef> implements LeafFieldComparator {
 	/* Ords for each slot.

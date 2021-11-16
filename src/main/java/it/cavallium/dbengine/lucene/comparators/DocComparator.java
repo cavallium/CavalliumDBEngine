@@ -30,7 +30,10 @@ import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Scorable;
 
-/** Comparator that sorts by asc _doc */
+/**
+ * Comparator that sorts by asc _doc
+ * Based on {@link org.apache.lucene.search.comparators.DocComparator}
+ * */
 public class DocComparator extends FieldComparator<Integer> {
   private final IArray<Integer> docIDs;
   private final boolean enableSkipping; // if skipping functionality should be enabled
@@ -55,9 +58,9 @@ public class DocComparator extends FieldComparator<Integer> {
 
   @Override
   public LeafFieldComparator getLeafComparator(LeafReaderContext context) {
-    // TODO: can we "map" our docIDs to the current
-    // reader? saves having to then subtract on every
-    // compare call
+		// TODO: can we "map" our docIDs to the current
+		// reader? saves having to then subtract on every
+		// compare call
     return new DocLeafComparator(context);
   }
 

@@ -21,6 +21,9 @@ import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Scorable;
 
+/**
+ * Based on {@link org.apache.lucene.search.comparators.MinDocIterator}
+ */
 public final class MultiLeafFieldComparator implements LeafFieldComparator {
 
 	private final LeafFieldComparator[] comparators;

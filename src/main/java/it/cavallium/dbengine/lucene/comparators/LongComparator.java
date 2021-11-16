@@ -30,6 +30,7 @@ import org.apache.lucene.search.LeafFieldComparator;
 /**
  * Comparator based on {@link Long#compare} for {@code numHits}. This comparator provides a skipping
  * functionality – an iterator that can skip over non-competitive documents.
+ * Based on {@link org.apache.lucene.search.comparators.LongComparator}
  */
 public class LongComparator extends NumericComparator<Long> {
   private final IArray<Long> values;

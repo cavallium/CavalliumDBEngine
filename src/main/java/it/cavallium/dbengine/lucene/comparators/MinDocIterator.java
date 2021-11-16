@@ -20,7 +20,10 @@ package it.cavallium.dbengine.lucene.comparators;
 import java.io.IOException;
 import org.apache.lucene.search.DocIdSetIterator;
 
-/** Docs iterator that starts iterating from a configurable minimum document */
+/**
+ * Docs iterator that starts iterating from a configurable minimum document
+ * Based on {@link org.apache.lucene.search.comparators.MinDocIterator}
+ * */
 public class MinDocIterator extends DocIdSetIterator {
   final int segmentMinDoc;
   final int maxDoc;

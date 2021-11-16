@@ -48,6 +48,10 @@ import org.jetbrains.annotations.Nullable;
  *
  * <p><b>NOTE</b>: The values {@link Float#NaN} and {@link Float#NEGATIVE_INFINITY} are not valid
  * scores. This collector will not properly collect hits with such scores.
+ *
+ * This class must mirror this changes:
+ * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/TopScoreDocCollector.java">
+ *   Lucene TopScoreDocCollector changes on GitHub</a>
  */
 public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPriorityQueue<LLScoreDoc>, LLScoreDoc, LLScoreDoc> {
 
@@ -73,14 +77,15 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 		public LeafCollector getLeafCollector(LeafReaderContext context) {
 			// reset the minimum competitive score
 			docBase = context.docBase;
+			minCompetitiveScore = 0f;
 			return new ScorerLeafCollector() {
 
 				@Override
 				public void setScorer(Scorable scorer) throws IOException {
 					super.setScorer(scorer);
-					minCompetitiveScore = 0f;
-					updateMinCompetitiveScore(scorer);
-					if (minScoreAcc != null) {
+					if (minScoreAcc == null) {
+						updateMinCompetitiveScore(scorer);
+					} else {
 						updateGlobalMinCompetitiveScore(scorer);
 					}
 				}
@@ -280,7 +285,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 			// the next float if the global minimum score is set on a document id that is
 			// smaller than the ids in the current leaf
 			float score =
-					docBase > maxMinScore.docID ? Math.nextUp(maxMinScore.score) : maxMinScore.score;
+					docBase >= maxMinScore.docBase ? Math.nextUp(maxMinScore.score) : maxMinScore.score;
 			if (score > minCompetitiveScore) {
 				assert hitsThresholdChecker.isThresholdReached(true);
 				scorer.setMinCompetitiveScore(score);
@@ -306,7 +311,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 					// we don't use the next float but we register the document
 					// id so that other leaves can require it if they are after
 					// the current maximum
-					minScoreAcc.accumulate(pqTop.doc(), pqTop.score());
+					minScoreAcc.accumulate(docBase, pqTop.score());
 				}
 			}
 		}

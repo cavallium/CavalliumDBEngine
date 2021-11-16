@@ -51,6 +51,9 @@ import reactor.core.publisher.Flux;
  * <p>See the {@link #create(LLTempLMDBEnv, Sort, int, int)} (org.apache.lucene.search.Sort, int, int)} method for instantiating a
  * TopFieldCollector.
  *
+ * This class must mirror this changes:
+ * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/TopFieldCollector.java">
+ *   Lucene TopFieldCollector changes on GitHub</a>
  */
 public abstract class LMDBFullFieldDocCollector
 		extends FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {

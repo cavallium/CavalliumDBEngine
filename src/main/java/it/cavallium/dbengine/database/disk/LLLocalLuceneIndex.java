@@ -6,6 +6,7 @@ import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANS
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -26,11 +27,15 @@ import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
+import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -72,6 +77,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
 	private final LocalSearcher localSearcher;
+	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with
@@ -384,6 +390,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION)
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
+	}
+
+	@Override
+	public Mono<DoubleArrayList> computeBuckets(@Nullable LLSnapshot snapshot,
+			QueryParams queryParams,
+			BucketParams bucketParams) {
+		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
+		var searchers = searcherManager
+				.retrieveSearcher(snapshot)
+				.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher).send());
+
+		return decimalBucketMultiSearcher
+				.collectMulti(searchers, bucketParams, localQueryParams, NO_TRANSFORMATION)
 				.doOnDiscard(Send.class, Send::close)
 				.doOnDiscard(Resource.class, Resource::close);
 	}

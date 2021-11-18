@@ -7,6 +7,8 @@ import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -54,6 +56,11 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 * @return the collection has one or more flux
 	 */
 	Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams, String keyFieldName);
+
+	/**
+	 * @return buckets with each value collected into one of the buckets
+	 */
+	Mono<DoubleArrayList> computeBuckets(@Nullable LLSnapshot snapshot, QueryParams queryParams, BucketParams bucketParams);
 
 	default Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query) {
 		QueryParams params = QueryParams.of(query, 0, 0, Nullablefloat.empty(), NoSort.of(), false);

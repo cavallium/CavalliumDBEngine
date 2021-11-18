@@ -17,9 +17,12 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
+import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -51,6 +54,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final PerFieldSimilarityWrapper luceneSimilarity;
 
 	private final MultiSearcher multiSearcher;
+	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 
 	public LLLocalMultiLuceneIndex(LLTempLMDBEnv env,
 			Path lucene,
@@ -240,6 +244,19 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				.collectMulti(searchers, localQueryParams, keyFieldName, LLSearchTransformer.NO_TRANSFORMATION)
 				// Transform the result type
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
+	}
+
+	@Override
+	public Mono<DoubleArrayList> computeBuckets(@Nullable LLSnapshot snapshot,
+			QueryParams queryParams,
+			BucketParams bucketParams) {
+		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
+		var searchers = getIndexSearchers(snapshot);
+
+		// Collect all the shards results into a single global result
+		return decimalBucketMultiSearcher
+				.collectMulti(searchers, bucketParams, localQueryParams, LLSearchTransformer.NO_TRANSFORMATION)
 				.doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
 	}
 

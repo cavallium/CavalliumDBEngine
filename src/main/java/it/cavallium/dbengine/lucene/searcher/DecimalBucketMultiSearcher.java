@@ -45,7 +45,8 @@ public class DecimalBucketMultiSearcher {
 							bucketParams.bucketFieldName(),
 							bucketParams.valueSource(),
 							queries,
-							normalizationQuery
+							normalizationQuery,
+							bucketParams.sampleSize()
 					);
 				})
 				.flatMap(cmm -> Flux

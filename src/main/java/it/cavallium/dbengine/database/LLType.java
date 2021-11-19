@@ -5,6 +5,7 @@ public enum LLType {
 	StringFieldStored,
 	IntPoint,
 	LongPoint,
+	LongStoredField,
 	FloatPoint,
 	SortedNumericDocValuesField,
 	TextField,

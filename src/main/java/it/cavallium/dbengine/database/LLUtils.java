@@ -35,6 +35,7 @@ import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
+import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.Term;
@@ -174,6 +175,7 @@ public class LLUtils {
 		return switch (item.getType()) {
 			case IntPoint -> new IntPoint(item.getName(), Ints.fromByteArray(item.getData()));
 			case LongPoint -> new LongPoint(item.getName(), Longs.fromByteArray(item.getData()));
+			case LongStoredField -> new StoredField(item.getName(), Longs.fromByteArray(item.getData()));
 			case FloatPoint -> new FloatPoint(item.getName(), ByteBuffer.wrap(item.getData()).getFloat());
 			case TextField -> new TextField(item.getName(), item.stringValue(), Field.Store.NO);
 			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Field.Store.YES);

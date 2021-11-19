@@ -9,8 +9,10 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -113,10 +115,14 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<DoubleArrayList> computeBuckets(ClientQueryParams queryParams, BucketParams bucketParams) {
+	public Mono<Buckets> computeBuckets(@Nullable CompositeSnapshot snapshot,
+			@NotNull List<Query> query,
+			@Nullable Query normalizaitonQuery,
+			BucketParams bucketParams) {
 		return luceneIndex
-				.computeBuckets(resolveSnapshot(queryParams.snapshot()),
-						queryParams.toQueryParams(),
+				.computeBuckets(resolveSnapshot(snapshot),
+						query,
+						normalizaitonQuery,
 						bucketParams
 				)
 				.single();

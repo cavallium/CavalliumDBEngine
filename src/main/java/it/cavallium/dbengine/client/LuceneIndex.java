@@ -8,8 +8,10 @@ import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
+import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
+import java.util.List;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -55,7 +57,10 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Hits<HitKey<T>>> search(ClientQueryParams queryParams);
 
-	Mono<DoubleArrayList> computeBuckets(ClientQueryParams queryParams, BucketParams bucketParams);
+	Mono<Buckets> computeBuckets(@Nullable CompositeSnapshot snapshot,
+			@NotNull List<Query> queries,
+			@Nullable Query normalizaitonQuery,
+			BucketParams bucketParams);
 
 	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);
 

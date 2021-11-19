@@ -12,6 +12,8 @@ import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.NRTCachingOptions;
+import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLSoftUpdateDocument;
@@ -26,6 +28,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
@@ -35,6 +38,7 @@ import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -62,6 +66,7 @@ import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NRTCachingDirectory;
 import org.apache.lucene.util.Constants;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.functional.IORunnable;
 import org.warp.commonutils.log.Logger;
@@ -395,16 +400,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<DoubleArrayList> computeBuckets(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
+	public Mono<Buckets> computeBuckets(@Nullable LLSnapshot snapshot,
+			@NotNull List<Query> queries,
+			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
-		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
+		List<org.apache.lucene.search.Query> localQueries = new ArrayList<>(queries.size());
+		for (Query query : queries) {
+			localQueries.add(QueryParser.toQuery(query, luceneAnalyzer));
+		}
+		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
 		var searchers = searcherManager
 				.retrieveSearcher(snapshot)
 				.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher).send());
 
 		return decimalBucketMultiSearcher
-				.collectMulti(searchers, bucketParams, localQueryParams, NO_TRANSFORMATION)
+				.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery)
 				.doOnDiscard(Send.class, Send::close)
 				.doOnDiscard(Resource.class, Resource::close);
 	}

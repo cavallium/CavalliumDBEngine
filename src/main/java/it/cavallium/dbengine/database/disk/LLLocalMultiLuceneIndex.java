@@ -6,6 +6,8 @@ import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
+import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLUpdateDocument;
@@ -16,6 +18,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
@@ -38,6 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -248,16 +252,22 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<DoubleArrayList> computeBuckets(@Nullable LLSnapshot snapshot,
-			QueryParams queryParams,
+	public Mono<Buckets> computeBuckets(@Nullable LLSnapshot snapshot,
+			@NotNull List<Query> queries,
+			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
-		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
+		List<org.apache.lucene.search.Query> localQueries = new ArrayList<>(queries.size());
+		for (Query query : queries) {
+			localQueries.add(QueryParser.toQuery(query, luceneAnalyzer));
+		}
+		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
 		var searchers = getIndexSearchers(snapshot);
 
 		// Collect all the shards results into a single global result
 		return decimalBucketMultiSearcher
-				.collectMulti(searchers, bucketParams, localQueryParams, LLSearchTransformer.NO_TRANSFORMATION)
-				.doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
+				.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery)
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	@Override

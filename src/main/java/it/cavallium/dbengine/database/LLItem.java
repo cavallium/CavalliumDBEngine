@@ -53,6 +53,10 @@ public class LLItem {
 		return new LLItem(LLType.LongPoint, name, data);
 	}
 
+	public static LLItem newLongStoredField(String name, long data) {
+		return new LLItem(LLType.LongStoredField, name, data);
+	}
+
 	public static LLItem newFloatPoint(String name, float data) {
 		return new LLItem(LLType.FloatPoint, name, data);
 	}

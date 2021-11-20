@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene.collector;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
@@ -19,6 +20,8 @@ import org.apache.lucene.facet.range.DoubleRangeFacetCounts;
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.facet.range.LongRangeFacetCounts;
 import org.apache.lucene.facet.range.Range;
+import org.apache.lucene.search.BooleanClause.Occur;
+import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.DoubleValuesSource;
@@ -37,7 +40,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 	private final Range[] bucketRanges;
 
 	private final List<Query> queries;
-	private final Query normalizationQuery;
+	private final @Nullable Query normalizationQuery;
 	private final @Nullable Integer sampleSize;
 
 	private final String bucketField;
@@ -58,7 +61,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			String bucketField,
 			BucketValueSource bucketValueSource,
 			List<Query> queries,
-			Query normalizationQuery,
+			@Nullable Query normalizationQuery,
 			@Nullable Integer sampleSize) {
 		this.queries = queries;
 		this.normalizationQuery = normalizationQuery;
@@ -114,9 +117,18 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 	}
 
 	public Buckets search(IndexSearcher indexSearcher) throws IOException {
-		//var facetsCollector = facetsCollectorManager.newCollector();
-		//FacetsCollector.search(indexSearcher, normalizationQuery, 10, facetsCollector);
-		var facetsCollector = indexSearcher.search(normalizationQuery, facetsCollectorManager);
+		Query globalQuery;
+		if (normalizationQuery != null) {
+			globalQuery = normalizationQuery;
+		} else {
+			var booleanQueryBuilder = new BooleanQuery.Builder();
+			for (Query query : queries) {
+				booleanQueryBuilder.add(query, Occur.SHOULD);
+			}
+			booleanQueryBuilder.setMinimumNumberShouldMatch(1);
+			globalQuery = booleanQueryBuilder.build();
+		}
+		var facetsCollector = indexSearcher.search(globalQuery, facetsCollectorManager);
 		double[] reducedNormalizationBuckets = newBuckets();
 		List<DoubleArrayList> seriesReducedBuckets = new ArrayList<>(queries.size());
 		for (int i = 0; i < queries.size(); i++) {
@@ -172,45 +184,49 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 		}
 
 		Facets normalizationFacets;
-		if (USE_LONGS) {
-			LongValuesSource valuesSource;
-			if (bucketValueSource instanceof NullValueSource) {
-				valuesSource = null;
-			} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
-				valuesSource = LongValuesSource.constant(constantValueSource.constant().longValue());
-			} else if (bucketValueSource instanceof LongBucketValueSource longBucketValueSource) {
-				valuesSource = longBucketValueSource.source();
+		if (normalizationQuery != null) {
+			if (USE_LONGS) {
+				LongValuesSource valuesSource;
+				if (bucketValueSource instanceof NullValueSource) {
+					valuesSource = null;
+				} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
+					valuesSource = LongValuesSource.constant(constantValueSource.constant().longValue());
+				} else if (bucketValueSource instanceof LongBucketValueSource longBucketValueSource) {
+					valuesSource = longBucketValueSource.source();
+				} else {
+					throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
+				}
+				normalizationFacets = new LongRangeFacetCounts(bucketField,
+						valuesSource,
+						facetsCollector,
+						null,
+						(LongRange[]) bucketRanges
+				);
 			} else {
-				throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
+				DoubleValuesSource valuesSource;
+				if (bucketValueSource instanceof NullValueSource) {
+					valuesSource = null;
+				} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
+					valuesSource = DoubleValuesSource.constant(constantValueSource.constant().longValue());
+				} else if (bucketValueSource instanceof DoubleBucketValueSource doubleBucketValueSource) {
+					valuesSource = doubleBucketValueSource.source();
+				} else {
+					throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
+				}
+				normalizationFacets = new DoubleRangeFacetCounts(bucketField,
+						valuesSource,
+						facetsCollector,
+						null,
+						(DoubleRange[]) bucketRanges
+				);
 			}
-			normalizationFacets = new LongRangeFacetCounts(bucketField,
-					valuesSource,
-					facetsCollector,
-					normalizationQuery,
-					(LongRange[]) bucketRanges
-			);
+			var normalizationChildren = normalizationFacets.getTopChildren(0, bucketField);
+			for (LabelAndValue labelAndValue : normalizationChildren.labelValues) {
+				var index = Integer.parseInt(labelAndValue.label);
+				reducedNormalizationBuckets[index] += labelAndValue.value.doubleValue();
+			}
 		} else {
-			DoubleValuesSource valuesSource;
-			if (bucketValueSource instanceof NullValueSource) {
-				valuesSource = null;
-			} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
-				valuesSource = DoubleValuesSource.constant(constantValueSource.constant().longValue());
-			} else if (bucketValueSource instanceof DoubleBucketValueSource doubleBucketValueSource) {
-				valuesSource = doubleBucketValueSource.source();
-			} else {
-				throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
-			}
-			normalizationFacets = new DoubleRangeFacetCounts(bucketField,
-					valuesSource,
-					facetsCollector,
-					normalizationQuery,
-					(DoubleRange[]) bucketRanges
-			);
-		}
-		var normalizationChildren = normalizationFacets.getTopChildren(0, bucketField);
-		for (LabelAndValue labelAndValue : normalizationChildren.labelValues) {
-			var index = Integer.parseInt(labelAndValue.label);
-			reducedNormalizationBuckets[index] += labelAndValue.value.doubleValue();
+			Arrays.fill(reducedNormalizationBuckets, 1);
 		}
 		return new Buckets(seriesReducedBuckets,  DoubleArrayList.wrap(reducedNormalizationBuckets));
 	}

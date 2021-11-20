@@ -54,9 +54,11 @@ import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
+import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
+import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
@@ -465,7 +467,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.<Void>fromCallable(() -> {
 					if (activeTasks.isTerminated()) return null;
 					//noinspection BlockingMethodInNonBlockingContext
-					indexWriter.commit();
+					indexWriter.flush();
 					return null;
 				})
 				.subscribeOn(luceneHeavyTasksScheduler)
@@ -496,9 +498,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	private void scheduledCommit() {
 		try {
-			if (indexWriter.hasUncommittedChanges()) {
-				indexWriter.commit();
-			}
+			indexWriter.commit();
 		} catch (IOException ex) {
 			logger.error(MARKER_LUCENE, "Failed to execute a scheduled commit", ex);
 		}

@@ -85,7 +85,8 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<Void> close();
 
 	/**
-	 * Flush writes to disk
+	 * Flush writes to disk.
+	 * This does not commit, it syncs the data to the disk
 	 */
 	Mono<Void> flush();
 

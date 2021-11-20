@@ -81,6 +81,10 @@ public class LLItem {
 		return new LLItem(LLType.SortedNumericDocValuesField, name, data);
 	}
 
+	public static LLItem newNumericDocValuesField(String name, long data) {
+		return new LLItem(LLType.NumericDocValuesField, name, data);
+	}
+
 	public String getName() {
 		return name;
 	}

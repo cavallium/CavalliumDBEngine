@@ -34,6 +34,7 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.LongPoint;
+import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
@@ -179,9 +180,9 @@ public class LLUtils {
 			case FloatPoint -> new FloatPoint(item.getName(), ByteBuffer.wrap(item.getData()).getFloat());
 			case TextField -> new TextField(item.getName(), item.stringValue(), Field.Store.NO);
 			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Field.Store.YES);
-			case SortedNumericDocValuesField -> new SortedNumericDocValuesField(item.getName(),
-					Longs.fromByteArray(item.getData())
-			);
+			case SortedNumericDocValuesField ->
+					new SortedNumericDocValuesField(item.getName(), Longs.fromByteArray(item.getData()));
+			case NumericDocValuesField -> new NumericDocValuesField(item.getName(), Longs.fromByteArray(item.getData()));
 			case StringField -> new StringField(item.getName(), item.stringValue(), Field.Store.NO);
 			case StringFieldStored -> new StringField(item.getName(), item.stringValue(), Field.Store.YES);
 		};
@@ -491,7 +492,7 @@ public class LLUtils {
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
 	 */
-	public static <U, T extends Resource<T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
+	public static <U, T extends Resource<? extends T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
 			Function<V, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
 		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {

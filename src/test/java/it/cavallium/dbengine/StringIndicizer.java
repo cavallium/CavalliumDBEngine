@@ -28,13 +28,13 @@ public class StringIndicizer extends Indicizer<String, String> {
 			var numInt = Ints.tryParse(value);
 			if (numInt != null) {
 				fields.add(LLItem.newIntPoint("intpoint", numInt));
-				fields.add(LLItem.newSortedNumericDocValuesField("intsort", numInt));
+				fields.add(LLItem.newNumericDocValuesField("intsort", numInt));
 			}
 			@SuppressWarnings("UnstableApiUsage")
 			var numLong = Longs.tryParse(value);
 			if (numLong != null) {
 				fields.add(LLItem.newLongPoint("longpoint", numLong));
-				fields.add(LLItem.newSortedNumericDocValuesField("longsort", numLong));
+				fields.add(LLItem.newNumericDocValuesField("longsort", numLong));
 			}
 			return new LLUpdateDocument(fields.toArray(LLItem[]::new));
 		});

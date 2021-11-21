@@ -174,7 +174,7 @@ public class TestLuceneSearches {
 				} else {
 					sink.next(new PagedLocalSearcher());
 				}
-				sink.next(new AdaptiveLocalSearcher());
+				sink.next(new AdaptiveLocalSearcher(ENV));
 			}
 			sink.complete();
 		}, OverflowStrategy.BUFFER);
@@ -219,7 +219,7 @@ public class TestLuceneSearches {
 				}
 			}
 		} else {
-			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV));
 			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV));
 		}
 		return shards ? multiIndex : localIndex;

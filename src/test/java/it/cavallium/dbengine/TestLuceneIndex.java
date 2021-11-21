@@ -149,7 +149,7 @@ public class TestLuceneIndex {
 				}
 			}
 		} else {
-			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher());
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV));
 			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV));
 		}
 		return index;

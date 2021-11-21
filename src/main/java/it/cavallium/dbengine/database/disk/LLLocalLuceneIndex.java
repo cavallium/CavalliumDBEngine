@@ -106,7 +106,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final Phaser activeTasks = new Phaser(1);
 	private final AtomicBoolean closeRequested = new AtomicBoolean();
 
-	public LLLocalLuceneIndex(@Nullable Path luceneBasePath,
+	public LLLocalLuceneIndex(LLTempLMDBEnv env,
+			@Nullable Path luceneBasePath,
 			MeterRegistry meterRegistry,
 			String name,
 			IndicizerAnalyzers indicizerAnalyzers,
@@ -196,7 +197,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		if (luceneHacks != null && luceneHacks.customLocalSearcher() != null) {
 			localSearcher = luceneHacks.customLocalSearcher().get();
 		} else {
-			localSearcher = new AdaptiveLocalSearcher();
+			localSearcher = new AdaptiveLocalSearcher(env);
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);

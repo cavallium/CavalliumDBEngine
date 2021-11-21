@@ -40,6 +40,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		}
 	}
 
+	// Remember to change also AdaptiveLocalSearcher
 	public Mono<LuceneSearchResult> transformedCollectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,

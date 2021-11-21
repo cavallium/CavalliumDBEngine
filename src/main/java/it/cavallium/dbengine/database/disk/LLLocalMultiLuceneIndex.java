@@ -83,7 +83,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 			} else {
 				instanceName = name + "_" + String.format("%03d", i);
 			}
-			luceneIndices[i] = new LLLocalLuceneIndex(lucene,
+			luceneIndices[i] = new LLLocalLuceneIndex(env,
+					lucene,
 					meterRegistry,
 					instanceName,
 					indicizerAnalyzers,

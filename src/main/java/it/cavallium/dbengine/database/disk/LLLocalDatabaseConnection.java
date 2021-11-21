@@ -96,8 +96,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 			@Nullable LuceneHacks luceneHacks) {
 		return Mono
 				.fromCallable(() -> {
+					var env = this.env.get();
 					if (instancesCount != 1) {
-						var env = this.env.get();
 						Objects.requireNonNull(env, "Environment not set");
 						return new LLLocalMultiLuceneIndex(env,
 								luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
@@ -110,7 +110,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								luceneHacks
 						);
 					} else {
-						return new LLLocalLuceneIndex(luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
+						return new LLLocalLuceneIndex(env, luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
 								meterRegistry,
 								name,
 								indicizerAnalyzers,

@@ -11,9 +11,13 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
+import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
+import java.nio.file.Files;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -24,8 +28,10 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 		JMXNettyMonitoringManager.initialize();
 	}
 
+	private final AtomicBoolean connected = new AtomicBoolean();
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
+	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
 
 	public LLMemoryDatabaseConnection(BufferAllocator allocator, MeterRegistry meterRegistry) {
 		this.allocator = allocator;
@@ -44,7 +50,18 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public Mono<LLDatabaseConnection> connect() {
-		return Mono.empty();
+		return Mono
+				.<LLDatabaseConnection>fromCallable(() -> {
+					if (!connected.compareAndSet(false, true)) {
+						throw new IllegalStateException("Already connected");
+					}
+					var prev = env.getAndSet(new LLTempLMDBEnv());
+					if (prev != null) {
+						throw new IllegalStateException("Env was already set");
+					}
+					return this;
+				})
+				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
@@ -69,19 +86,31 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 			LuceneOptions luceneOptions,
 			@Nullable LuceneHacks luceneHacks) {
 		return Mono
-				.<LLLuceneIndex>fromCallable(() -> new LLLocalLuceneIndex(null,
-						meterRegistry,
-						name,
-						indicizerAnalyzers,
-						indicizerSimilarities,
-						luceneOptions,
-						luceneHacks
-				))
+				.<LLLuceneIndex>fromCallable(() -> {
+					var env = this.env.get();
+					return new LLLocalLuceneIndex(env,
+							null,
+							meterRegistry,
+							name,
+							indicizerAnalyzers,
+							indicizerSimilarities,
+							luceneOptions,
+							luceneHacks
+					);
+				})
 				.subscribeOn(Schedulers.boundedElastic());
 	}
 
 	@Override
 	public Mono<Void> disconnect() {
-		return Mono.empty();
+		return Mono.<Void>fromCallable(() -> {
+			if (connected.compareAndSet(true, false)) {
+				var env = this.env.get();
+				if (env != null) {
+					env.close();
+				}
+			}
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic());
 	}
 }

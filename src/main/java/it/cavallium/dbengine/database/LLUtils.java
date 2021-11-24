@@ -135,7 +135,9 @@ public class LLUtils {
 	public static Document toDocument(LLItem[] document) {
 		Document d = new Document();
 		for (LLItem item : document) {
-			d.add(LLUtils.toField(item));
+			if (item != null) {
+				d.add(LLUtils.toField(item));
+			}
 		}
 		return d;
 	}

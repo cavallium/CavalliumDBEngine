@@ -15,9 +15,11 @@ import reactor.core.publisher.Sinks.Many;
 public class ReactiveCollectorMultiManager implements CollectorMultiManager<Void, Void> {
 
 	private final FluxSink<ScoreDoc> scoreDocsSink;
+	private final Thread requestThread;
 
-	public ReactiveCollectorMultiManager(FluxSink<ScoreDoc> scoreDocsSink) {
+	public ReactiveCollectorMultiManager(FluxSink<ScoreDoc> scoreDocsSink, Thread requestThread) {
 		this.scoreDocsSink = scoreDocsSink;
+		this.requestThread = requestThread;
 	}
 
 	public CollectorManager<Collector, Void> get(int shardIndex) {
@@ -29,7 +31,7 @@ public class ReactiveCollectorMultiManager implements CollectorMultiManager<Void
 
 					@Override
 					public LeafCollector getLeafCollector(LeafReaderContext leafReaderContext) {
-						return new ReactiveLeafCollector(leafReaderContext, scoreDocsSink, shardIndex);
+						return new ReactiveLeafCollector(leafReaderContext, scoreDocsSink, shardIndex, requestThread);
 					}
 
 					@Override

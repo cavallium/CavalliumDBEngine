@@ -10,17 +10,23 @@ import org.apache.lucene.search.ScoreDoc;
 import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Sinks.EmitResult;
 import reactor.core.publisher.Sinks.Many;
+import reactor.core.scheduler.Schedulers;
 
 public class ReactiveLeafCollector implements LeafCollector {
 
 	private final LeafReaderContext leafReaderContext;
 	private final FluxSink<ScoreDoc> scoreDocsSink;
 	private final int shardIndex;
+	private final Thread requestThread;
 
-	public ReactiveLeafCollector(LeafReaderContext leafReaderContext, FluxSink<ScoreDoc> scoreDocsSink, int shardIndex) {
+	public ReactiveLeafCollector(LeafReaderContext leafReaderContext,
+			FluxSink<ScoreDoc> scoreDocsSink,
+			int shardIndex,
+			Thread requestThread) {
 		this.leafReaderContext = leafReaderContext;
 		this.scoreDocsSink = scoreDocsSink;
 		this.shardIndex = shardIndex;
+		this.requestThread = requestThread;
 	}
 
 	@Override
@@ -30,15 +36,25 @@ public class ReactiveLeafCollector implements LeafCollector {
 
 	@Override
 	public void collect(int i) {
-		LLUtils.ensureBlocking();
-		var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
-		while (scoreDocsSink.requestedFromDownstream() < 0 && !scoreDocsSink.isCancelled()) {
-			// 10ms
-			LockSupport.parkNanos(10L * 1000000L);
+		// Assert that we are running on the request thread
+		assert Thread.currentThread() == requestThread;
+		// Assert that this is a non-blocking context
+		assert !Schedulers.isInNonBlockingThread();
+
+		// Wait if no requests from downstream are found
+		boolean cancelled;
+		while (!(cancelled = scoreDocsSink.isCancelled()) && scoreDocsSink.requestedFromDownstream() <= 0) {
+			// 1000ms
+			LockSupport.parkNanos(1000L * 1000000L);
 		}
-		scoreDocsSink.next(scoreDoc);
-		if (scoreDocsSink.isCancelled()) {
+		// Cancel execution throwing this specific lucene error
+		if (cancelled) {
 			throw new CollectionTerminatedException();
 		}
+
+		// Send the response
+		var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
+		scoreDocsSink.next(scoreDoc);
+
 	}
 }

@@ -9,11 +9,13 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.ReactiveCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 
@@ -32,57 +34,60 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 						.fromCallable(() -> new TransformerInput(indexSearchers, queryParams)));
 			}
 
-			return queryParamsMono
-					.flatMap(queryParams2 -> {
-						var localQueryParams = getLocalQueryParams(queryParams2);
-						if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
-							return Mono.error(new UnsupportedOperationException("Sorted queries are not supported"
-									+ " by UnsortedUnscoredContinuousLuceneMultiSearcher"));
+			return queryParamsMono.map(queryParams2 -> {
+				var localQueryParams = getLocalQueryParams(queryParams2);
+				if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
+					throw new UnsupportedOperationException("Sorted queries are not supported"
+							+ " by UnsortedUnscoredContinuousLuceneMultiSearcher");
+				}
+				if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
+					throw new UnsupportedOperationException("Scored queries are not supported"
+							+ " by UnsortedUnscoredContinuousLuceneMultiSearcher");
+				}
+				var shards = indexSearchers.shards();
+
+				Flux<ScoreDoc> scoreDocsFlux = Flux.<ScoreDoc>create(scoreDocsSink -> {
+					LLUtils.ensureBlocking();
+					var currentThread = Thread.currentThread();
+					var cmm = new ReactiveCollectorMultiManager(scoreDocsSink, currentThread);
+
+					// Unpark the paused request thread
+					scoreDocsSink.onRequest(n -> LockSupport.unpark(currentThread));
+
+					int mutableShardIndex = 0;
+					for (IndexSearcher shard : shards) {
+						int shardIndex = mutableShardIndex++;
+						try {
+							var collectorManager = cmm.get(shardIndex);
+							assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
+
+							var executor = shard.getExecutor();
+							if (executor == null) {
+								shard.search(localQueryParams.query(), collectorManager);
+							} else {
+								// Avoid using the index searcher executor to avoid blocking on its threads
+								shard.search(localQueryParams.query(), collectorManager.newCollector());
+							}
+						} catch (Throwable e) {
+							scoreDocsSink.error(e);
+						} finally {
+							scoreDocsSink.complete();
 						}
-						if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
-							return Mono.error(new UnsupportedOperationException("Scored queries are not supported"
-									+ " by UnsortedUnscoredContinuousLuceneMultiSearcher"));
-						}
-						return Mono.fromCallable(() -> {
-							LLUtils.ensureBlocking();
-
-							var shards = indexSearchers.shards();
-
-							Flux<ScoreDoc> scoreDocsFlux = Flux.create(scoreDocsSink -> {
-								var cmm = new ReactiveCollectorMultiManager(scoreDocsSink);
-
-								AtomicInteger runningTasks = new AtomicInteger(0);
-
-								runningTasks.addAndGet(shards.size());
-								int mutableShardIndex = 0;
-								for (IndexSearcher shard : shards) {
-									int shardIndex = mutableShardIndex++;
-									try {
-										var collector = cmm.get(shardIndex);
-										assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
-
-										shard.search(localQueryParams.query(), collector);
-									} catch (Throwable e) {
-										scoreDocsSink.error(e);
-									} finally {
-										if (runningTasks.decrementAndGet() <= 0) {
-											scoreDocsSink.complete();
-										}
-									}
-								}
-							}, OverflowStrategy.BUFFER);
+					}
+				}, OverflowStrategy.ERROR)
+						.subscribeOn(Schedulers.boundedElastic(), false)
+						.limitRate(1024);
 
 
-							Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
+				Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
 
-							var totalHitsCount = new TotalHitsCount(0, false);
-							Flux<LLKeyScore> mergedFluxes = resultsFlux
-									.skip(queryParams2.offsetLong())
-									.take(queryParams2.limitLong(), true);
+				var totalHitsCount = new TotalHitsCount(0, false);
+				Flux<LLKeyScore> mergedFluxes = resultsFlux
+						.skip(queryParams2.offsetLong())
+						.take(queryParams2.limitLong(), true);
 
-							return new LuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers::close);
-						});
-					});
+				return new LuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers::close);
+			});
 		}, false);
 	}
 

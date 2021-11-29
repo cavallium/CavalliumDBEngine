@@ -74,9 +74,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 							scoreDocsSink.complete();
 						}
 					}
-				}, OverflowStrategy.ERROR)
-						.subscribeOn(Schedulers.boundedElastic(), false)
-						.limitRate(1024);
+				}, OverflowStrategy.ERROR).subscribeOn(Schedulers.boundedElastic());
 
 
 				Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);

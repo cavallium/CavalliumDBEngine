@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.collector;
 
+import it.cavallium.dbengine.lucene.searcher.LongSemaphore;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
@@ -15,11 +16,11 @@ import reactor.core.publisher.Sinks.Many;
 public class ReactiveCollectorMultiManager implements CollectorMultiManager<Void, Void> {
 
 	private final FluxSink<ScoreDoc> scoreDocsSink;
-	private final Thread requestThread;
+	private final LongSemaphore requested;
 
-	public ReactiveCollectorMultiManager(FluxSink<ScoreDoc> scoreDocsSink, Thread requestThread) {
+	public ReactiveCollectorMultiManager(FluxSink<ScoreDoc> scoreDocsSink, LongSemaphore requested) {
 		this.scoreDocsSink = scoreDocsSink;
-		this.requestThread = requestThread;
+		this.requested = requested;
 	}
 
 	public CollectorManager<Collector, Void> get(int shardIndex) {
@@ -31,7 +32,7 @@ public class ReactiveCollectorMultiManager implements CollectorMultiManager<Void
 
 					@Override
 					public LeafCollector getLeafCollector(LeafReaderContext leafReaderContext) {
-						return new ReactiveLeafCollector(leafReaderContext, scoreDocsSink, shardIndex, requestThread);
+						return new ReactiveLeafCollector(leafReaderContext, scoreDocsSink, shardIndex, requested);
 					}
 
 					@Override

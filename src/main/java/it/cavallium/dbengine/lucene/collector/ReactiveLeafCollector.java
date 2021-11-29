@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.collector;
 
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.lucene.searcher.LongSemaphore;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.CollectionTerminatedException;
@@ -17,16 +18,16 @@ public class ReactiveLeafCollector implements LeafCollector {
 	private final LeafReaderContext leafReaderContext;
 	private final FluxSink<ScoreDoc> scoreDocsSink;
 	private final int shardIndex;
-	private final Thread requestThread;
+	private final LongSemaphore requested;
 
 	public ReactiveLeafCollector(LeafReaderContext leafReaderContext,
 			FluxSink<ScoreDoc> scoreDocsSink,
 			int shardIndex,
-			Thread requestThread) {
+			LongSemaphore requested) {
 		this.leafReaderContext = leafReaderContext;
 		this.scoreDocsSink = scoreDocsSink;
 		this.shardIndex = shardIndex;
-		this.requestThread = requestThread;
+		this.requested = requested;
 	}
 
 	@Override
@@ -36,19 +37,13 @@ public class ReactiveLeafCollector implements LeafCollector {
 
 	@Override
 	public void collect(int i) {
-		// Assert that we are running on the request thread
-		assert Thread.currentThread() == requestThread;
 		// Assert that this is a non-blocking context
 		assert !Schedulers.isInNonBlockingThread();
 
 		// Wait if no requests from downstream are found
-		boolean cancelled;
-		while (!(cancelled = scoreDocsSink.isCancelled()) && scoreDocsSink.requestedFromDownstream() <= 0) {
-			// 1000ms
-			LockSupport.parkNanos(1000L * 1000000L);
-		}
-		// Cancel execution throwing this specific lucene error
-		if (cancelled) {
+		try {
+			requested.acquire();
+		} catch (InterruptedException e) {
 			throw new CollectionTerminatedException();
 		}
 

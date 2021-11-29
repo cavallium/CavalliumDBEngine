@@ -358,10 +358,17 @@ public class LuceneUtils {
 			return hitsFlux
 					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
 		} else {
+			// Compute parallelism
+			var availableProcessors = Runtime.getRuntime().availableProcessors();
+			var min = Queues.XS_BUFFER_SIZE;
+			var maxParallelGroups = Math.max(availableProcessors, min);
+
 			return hitsFlux
-					.flatMap(hit -> Mono
-							.fromCallable(() -> mapHitBlocking(hit, indexSearchers, keyFieldName))
-							.subscribeOn(Schedulers.boundedElastic()));
+					.groupBy(hit -> hit.shardIndex % maxParallelGroups) // Max n groups
+					.flatMap(shardHits -> shardHits
+									.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName)),
+							maxParallelGroups // Max n concurrency. Concurrency must be >= total groups count
+					);
 		}
 	}
 

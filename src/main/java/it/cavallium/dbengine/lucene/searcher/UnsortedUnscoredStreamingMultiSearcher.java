@@ -8,10 +8,18 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.ReactiveCollectorMultiManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
+import org.apache.commons.lang3.concurrent.TimedSemaphore;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
@@ -23,8 +31,8 @@ import reactor.core.scheduler.Schedulers;
 
 public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 
-  private static final Scheduler SCHEDULER = Schedulers.fromExecutorService(Executors.newCachedThreadPool(
-			new ShortNamedThreadFactory("UnscoredStreamingSearcher")), "UnscoredStreamingSearcher");
+  private static final ExecutorService SCHEDULER = Executors.newCachedThreadPool(new ShortNamedThreadFactory(
+			"UnscoredStreamingSearcher"));
 
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
@@ -54,38 +62,43 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 				var shards = indexSearchers.shards();
 
 				Flux<ScoreDoc> scoreDocsFlux = Flux.<ScoreDoc>create(scoreDocsSink -> {
-					LLUtils.ensureBlocking();
-					var currentThread = Thread.currentThread();
-					var cmm = new ReactiveCollectorMultiManager(scoreDocsSink, currentThread);
+					var requested = new LongSemaphore(0);
+					var cmm = new ReactiveCollectorMultiManager(scoreDocsSink, requested);
 
-					//// Unpark the paused request thread
-					scoreDocsSink.onRequest(n -> LockSupport.unpark(currentThread));
+					scoreDocsSink.onRequest(requested::release);
 
 					int mutableShardIndex = 0;
+					CompletableFuture<?>[] futures = new CompletableFuture<?>[shards.size()];
 					for (IndexSearcher shard : shards) {
 						int shardIndex = mutableShardIndex++;
-						try {
-							var collectorManager = cmm.get(shardIndex);
-							assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
+						assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
 
-							var executor = shard.getExecutor();
-							if (executor == null) {
-								//noinspection BlockingMethodInNonBlockingContext
+						var future = CompletableFuture.runAsync(() -> {
+							try {
+								LLUtils.ensureBlocking();
+								var collectorManager = cmm.get(shardIndex);
 								shard.search(localQueryParams.query(), collectorManager);
-							} else {
-								// Avoid using the index searcher executor to avoid blocking on its threads
-								//noinspection BlockingMethodInNonBlockingContext
-								shard.search(localQueryParams.query(), collectorManager.newCollector());
+							} catch (IOException e) {
+								throw new CompletionException(e);
 							}
-						} catch (Throwable e) {
-							scoreDocsSink.error(e);
-						} finally {
+						}, SCHEDULER);
+
+						futures[shardIndex] = future;
+					}
+					var combinedFuture = CompletableFuture.allOf(futures).whenCompleteAsync((result, ex) -> {
+						if (ex != null) {
+							scoreDocsSink.error(ex);
+						} else {
 							scoreDocsSink.complete();
 						}
-					}
-				}, OverflowStrategy.ERROR)
-						.limitRate(2048, 256)
-						.subscribeOn(SCHEDULER, true);
+					});
+					scoreDocsSink.onCancel(() -> {
+						for (CompletableFuture<?> future : futures) {
+							future.cancel(true);
+						}
+						combinedFuture.cancel(true);
+					});
+				}, OverflowStrategy.ERROR);
 
 
 				Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);

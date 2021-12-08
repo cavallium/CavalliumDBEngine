@@ -77,7 +77,7 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 							try {
 								LLUtils.ensureBlocking();
 								var collectorManager = cmm.get(shardIndex);
-								shard.search(localQueryParams.query(), collectorManager);
+								shard.search(localQueryParams.query(), collectorManager.newCollector());
 							} catch (IOException e) {
 								throw new CompletionException(e);
 							}
@@ -92,13 +92,13 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 							scoreDocsSink.complete();
 						}
 					});
-					scoreDocsSink.onCancel(() -> {
+					scoreDocsSink.onDispose(() -> {
 						for (CompletableFuture<?> future : futures) {
 							future.cancel(true);
 						}
 						combinedFuture.cancel(true);
 					});
-				}, OverflowStrategy.ERROR);
+				}, OverflowStrategy.BUFFER).subscribeOn(Schedulers.boundedElastic()).publishOn(Schedulers.boundedElastic());
 
 
 				Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);

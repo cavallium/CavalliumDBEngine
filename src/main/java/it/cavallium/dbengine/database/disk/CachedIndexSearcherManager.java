@@ -35,7 +35,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
 	private final Executor SEARCH_EXECUTOR = Executors
-			.newFixedThreadPool(Runtime.getRuntime().availableProcessors(), new ShortNamedThreadFactory("lucene-search"));
+			.newCachedThreadPool(new ShortNamedThreadFactory("lucene-search"));
 	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
 
 	private final SnapshotsManager snapshotsManager;

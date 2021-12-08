@@ -2,6 +2,8 @@ package it.cavallium.dbengine.lucene.collector;
 
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.searcher.LongSemaphore;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.CollectionTerminatedException;
@@ -42,14 +44,17 @@ public class ReactiveLeafCollector implements LeafCollector {
 
 		// Wait if no requests from downstream are found
 		try {
-			requested.acquire();
+			while (!requested.tryAcquire(1, TimeUnit.SECONDS)) {
+				if (scoreDocsSink.isCancelled()) {
+					throw new CollectionTerminatedException();
+				}
+			}
+			// Send the response
+			var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
+			scoreDocsSink.next(scoreDoc);
 		} catch (InterruptedException e) {
-			throw new CollectionTerminatedException();
+			throw new CompletionException(e);
 		}
-
-		// Send the response
-		var scoreDoc = new ScoreDoc(leafReaderContext.docBase + i, 0, shardIndex);
-		scoreDocsSink.next(scoreDoc);
 
 	}
 }

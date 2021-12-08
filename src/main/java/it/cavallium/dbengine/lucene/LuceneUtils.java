@@ -350,6 +350,9 @@ public class LuceneUtils {
 		);
 	}
 
+	/**
+	 * HitsFlux must run on a blocking scheduler
+	 */
 	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
 			List<IndexSearcher> indexSearchers,
 			String keyFieldName,

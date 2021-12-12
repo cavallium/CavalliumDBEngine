@@ -10,6 +10,7 @@ import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 import static it.cavallium.dbengine.SyncUtils.*;
+import static org.assertj.core.api.Assertions.*;
 
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
@@ -765,9 +766,7 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiGetMulti(UpdateMode updateMode, Map<String, Map<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
+		var flux = tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> {
 							var entriesFlux = Flux.fromIterable(entries.entrySet());
@@ -782,16 +781,13 @@ public abstract class TestDictionaryMapDeep {
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
 						.transform(LLUtils::handleDiscard)
-				));
+				);
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
+			StepVerifier.create(flux).verifyError();
 		} else {
-			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Map<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			var elements = flux.collect(Collectors.toList()).block();
+			assertThat(elements).containsExactlyInAnyOrderElementsOf(entries.entrySet());
 		}
 	}
 

@@ -100,7 +100,8 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.computePreciseHitsCount()
+				queryParams.computePreciseHitsCount(),
+				queryParams.timeout()
 		);
 	}
 

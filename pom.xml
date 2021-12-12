@@ -161,6 +161,12 @@
       <artifactId>junit-jupiter-params</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-core</artifactId>
+      <version>3.18.0</version>
+      <scope>test</scope>
+    </dependency>
     <!-- This will get hamcrest-core automatically -->
     <dependency>
       <groupId>org.hamcrest</groupId>

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
@@ -167,14 +168,14 @@ public class TestLuceneSearches {
 						sink.next(new UnsortedUnscoredStreamingMultiSearcher());
 					}
 				}
-				sink.next(new AdaptiveMultiSearcher(ENV, true));
+				sink.next(new AdaptiveMultiSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
 			} else {
 				if (info.onlyCount()) {
 					sink.next(new CountMultiSearcher());
 				} else {
 					sink.next(new PagedLocalSearcher());
 				}
-				sink.next(new AdaptiveLocalSearcher(ENV, true));
+				sink.next(new AdaptiveLocalSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
 			}
 			sink.complete();
 		}, OverflowStrategy.BUFFER);
@@ -219,8 +220,8 @@ public class TestLuceneSearches {
 				}
 			}
 		} else {
-			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV, true));
-			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV, true));
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
+			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
 		}
 		return shards ? multiIndex : localIndex;
 	}

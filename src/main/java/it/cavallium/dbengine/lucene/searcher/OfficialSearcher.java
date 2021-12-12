@@ -9,6 +9,7 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.List;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.TimeLimitingCollector;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
@@ -73,7 +74,7 @@ public class OfficialSearcher implements MultiSearcher {
 							var collector = sharedManager.newCollector();
 							assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
 
-							shard.search(queryParams.query(), collector);
+							shard.search(queryParams.query(), LuceneUtils.withTimeout(collector, queryParams.timeout()));
 							return collector;
 						}))
 						.collectList()

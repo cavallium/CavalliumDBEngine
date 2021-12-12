@@ -1,5 +1,6 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
@@ -149,8 +150,8 @@ public class TestLuceneIndex {
 				}
 			}
 		} else {
-			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV, true));
-			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV, true));
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
+			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
 		}
 		return index;
 	}

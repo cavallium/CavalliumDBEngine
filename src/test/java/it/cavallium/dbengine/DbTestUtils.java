@@ -40,6 +40,7 @@ import reactor.core.publisher.Mono;
 public class DbTestUtils {
 
 	public static final String BIG_STRING = generateBigString();
+	public static final int MAX_IN_MEMORY_RESULT_ENTRIES = 8192;
 
 	private static String generateBigString() {
 		return "0123456789".repeat(1024);

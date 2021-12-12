@@ -196,10 +196,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 
 		var useLMDB = luceneOptions.allowNonVolatileCollection();
+		var maxInMemoryResultEntries = luceneOptions.maxInMemoryResultEntries();
 		if (luceneHacks != null && luceneHacks.customLocalSearcher() != null) {
 			localSearcher = luceneHacks.customLocalSearcher().get();
 		} else {
-			localSearcher = new AdaptiveLocalSearcher(env, useLMDB);
+			localSearcher = new AdaptiveLocalSearcher(env, useLMDB, maxInMemoryResultEntries);
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);

@@ -1,5 +1,7 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
+
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
@@ -23,7 +25,17 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 
 	private static final Optional<NRTCachingOptions> NRT = Optional.empty();
 	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(), Duration.ofSeconds(5), Duration.ofSeconds(5),
-			false, true, Optional.empty(), true, NRT, 16 * 1024 * 1024, true, false, false);
+			false,
+			true,
+			Optional.empty(),
+			true,
+			NRT,
+			16 * 1024 * 1024,
+			true,
+			false,
+			false,
+			MAX_IN_MEMORY_RESULT_ENTRIES
+	);
 
 	@Override
 	public Mono<TempDb> openTempDb(TestAllocator allocator) {

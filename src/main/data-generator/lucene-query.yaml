@@ -190,6 +190,7 @@ versions:
           minCompetitiveScore: -float
           sort: Sort
           computePreciseHitsCount: boolean
+          timeoutMilliseconds: long
       NoSort:
         data: { }
       NumericSort:

@@ -8,11 +8,6 @@ import reactor.core.publisher.Mono;
 public interface MultiSearcher extends LocalSearcher {
 
 	/**
-	 * Use in-memory collectors if the expected results count is lower or equal than this limit
-	 */
-	int MAX_IN_MEMORY_SIZE = 8192;
-
-	/**
 	 * @param indexSearchersMono Lucene index searcher
 	 * @param queryParams        the query parameters
 	 * @param keyFieldName       the name of the key field

@@ -18,4 +18,5 @@ public record LuceneOptions(Map<String, String> extraFlags,
 														int indexWriterBufferSize,
 														boolean applyAllDeletes,
 														boolean writeAllDeletes,
-														boolean allowNonVolatileCollection) {}
+														boolean allowNonVolatileCollection,
+														int maxInMemoryResultEntries) {}

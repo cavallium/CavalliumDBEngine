@@ -92,7 +92,8 @@ public class CountMultiSearcher implements MultiSearcher {
 				queryParams.pageLimits(),
 				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
-				queryParams.computePreciseHitsCount()
+				queryParams.computePreciseHitsCount(),
+				queryParams.timeout()
 		);
 	}
 
@@ -113,12 +114,14 @@ public class CountMultiSearcher implements MultiSearcher {
 										.fromSupplier(() -> new TransformerInput(LLIndexSearchers.unsharded(indexSearcher), queryParams)));
 							}
 
-							return queryParamsMono.flatMap(queryParams2 -> Mono.fromCallable(() -> {
-								try (var is = indexSearcher.receive()) {
-									LLUtils.ensureBlocking();
-									return is.getIndexSearcher().count(queryParams2.query());
-								}
-							}).subscribeOn(Schedulers.boundedElastic()));
+							return queryParamsMono
+									.flatMap(queryParams2 -> Mono.fromCallable(() -> {
+										try (var is = indexSearcher.receive()) {
+											LLUtils.ensureBlocking();
+											return is.getIndexSearcher().count(queryParams2.query());
+										}
+									}).subscribeOn(Schedulers.boundedElastic()))
+									.timeout(queryParams.timeout());
 						},
 						is -> Mono.empty()
 				)

@@ -26,6 +26,7 @@ import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +47,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
+import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.ConstantScoreQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.MatchAllDocsQuery;
@@ -53,7 +55,9 @@ import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.TimeLimitingCollector;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldDocs;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
@@ -346,7 +350,8 @@ public class LuceneUtils {
 				DEFAULT_PAGE_LIMITS,
 				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
-				queryParams.computePreciseHitsCount()
+				queryParams.computePreciseHitsCount(),
+				Duration.ofMillis(queryParams.timeoutMilliseconds())
 		);
 	}
 
@@ -504,7 +509,8 @@ public class LuceneUtils {
 								DEFAULT_PAGE_LIMITS,
 								localQueryParams.minCompetitiveScore(),
 								localQueryParams.sort(),
-								localQueryParams.computePreciseHitsCount()
+								localQueryParams.computePreciseHitsCount(),
+								localQueryParams.timeout()
 						);
 					}
 					MultiMoreLikeThis mlt;
@@ -549,8 +555,13 @@ public class LuceneUtils {
 							DEFAULT_PAGE_LIMITS,
 							localQueryParams.minCompetitiveScore(),
 							localQueryParams.sort(),
-							localQueryParams.computePreciseHitsCount()
+							localQueryParams.computePreciseHitsCount(),
+							localQueryParams.timeout()
 					);
 				}).subscribeOn(Schedulers.boundedElastic()));
+	}
+
+	public static Collector withTimeout(TopDocsCollector<?> collector, Duration timeout) {
+		return new TimeLimitingCollector(collector, TimeLimitingCollector.getGlobalCounter(), timeout.toMillis());
 	}
 }

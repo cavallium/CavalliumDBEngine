@@ -1,5 +1,6 @@
 package it.cavallium.dbengine;
 
+import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -34,8 +35,20 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 	private static final AtomicInteger dbId = new AtomicInteger(0);
 
 	private static final Optional<NRTCachingOptions> NRT = Optional.empty();
-	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(), Duration.ofSeconds(5), Duration.ofSeconds(5),
-			false, true, Optional.empty(), true, NRT, 16 * 1024 * 1024, true, false, true);
+	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(),
+			Duration.ofSeconds(5),
+			Duration.ofSeconds(5),
+			false,
+			true,
+			Optional.empty(),
+			true,
+			NRT,
+			16 * 1024 * 1024,
+			true,
+			false,
+			true,
+			MAX_IN_MEMORY_RESULT_ENTRIES
+	);
 
 	@Override
 	public Mono<TempDb> openTempDb(TestAllocator allocator) {

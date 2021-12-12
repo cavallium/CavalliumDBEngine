@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.lucene.searcher.MultiSearcher.MAX_IN_MEMORY_SIZE;
-
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLUtils;
@@ -22,15 +20,21 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 
 	private static final MultiSearcher unsortedUnscoredContinuous = new UnsortedUnscoredStreamingMultiSearcher();
 
+	/**
+	 * Use in-memory collectors if the expected results count is lower or equal than this limit
+	 */
+	private final int maxInMemoryResultEntries;
+
 	@Nullable
 	private final UnsortedScoredFullMultiSearcher unsortedScoredFull;
 
 	@Nullable
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
-	public AdaptiveLocalSearcher(LLTempLMDBEnv env, boolean useLMDB) {
+	public AdaptiveLocalSearcher(LLTempLMDBEnv env, boolean useLMDB, int maxInMemoryResultEntries) {
 		unsortedScoredFull = useLMDB ? new UnsortedScoredFullMultiSearcher(env) : null;
 		sortedScoredFull = useLMDB ? new SortedScoredFullMultiSearcher(env) : null;
+		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 
 	@Override
@@ -66,7 +70,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 		// offset + limit
 		long realLimit = queryParams.offsetLong() + queryParams.limitLong();
 		long maxAllowedInMemoryLimit
-				= Math.max(MAX_IN_MEMORY_SIZE, (long) queryParams.pageLimits().getPageLimit(0));
+				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
 		if (queryParams.limitLong() == 0) {
 			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
@@ -75,8 +79,8 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 				return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
 			} else {
 				if ((queryParams.isSorted() && !queryParams.isSortedByScore())) {
-					if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
-						throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
+					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedScoredFull != null) {
 						return sortedScoredFull.collect(indexSearcher, queryParams, keyFieldName, transformer);
@@ -84,8 +88,8 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 						return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
 					}
 				} else {
-					if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
-						throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
+					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (unsortedScoredFull != null) {
 						return unsortedScoredFull.collect(indexSearcher, queryParams, keyFieldName, transformer);

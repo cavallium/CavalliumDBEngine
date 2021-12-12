@@ -18,15 +18,21 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 
 	private static final MultiSearcher unsortedUnscoredContinuous = new UnsortedUnscoredStreamingMultiSearcher();
 
+	/**
+	 * Use in-memory collectors if the expected results count is lower or equal than this limit
+	 */
+	private final int maxInMemoryResultEntries;
+
 	@Nullable
 	private final UnsortedScoredFullMultiSearcher unsortedScoredFull;
 
 	@Nullable
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
-	public AdaptiveMultiSearcher(LLTempLMDBEnv env, boolean useLMDB) {
+	public AdaptiveMultiSearcher(LLTempLMDBEnv env, boolean useLMDB, int maxInMemoryResultEntries) {
 		unsortedScoredFull = useLMDB ? new UnsortedScoredFullMultiSearcher(env) : null;
 		sortedScoredFull = useLMDB ?  new SortedScoredFullMultiSearcher(env) : null;
+		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 
 	@Override
@@ -53,7 +59,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		// offset + limit
 		long realLimit = queryParams.offsetLong() + queryParams.limitLong();
 		long maxAllowedInMemoryLimit
-				= Math.max(MultiSearcher.MAX_IN_MEMORY_SIZE, (long) queryParams.pageLimits().getPageLimit(0));
+				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 			if (queryParams.limitLong() == 0) {
@@ -63,8 +69,8 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 					return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 				} else {
 					if ((queryParams.isSorted() && !queryParams.isSortedByScore())) {
-						if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
-							throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
+						if (queryParams.limitLong() < maxInMemoryResultEntries) {
+							throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 						}
 						if (sortedScoredFull != null) {
 							return sortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
@@ -72,8 +78,8 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 							return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 						}
 					} else {
-						if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
-							throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
+						if (queryParams.limitLong() < maxInMemoryResultEntries) {
+							throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 						}
 						if (unsortedScoredFull != null) {
 							return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);

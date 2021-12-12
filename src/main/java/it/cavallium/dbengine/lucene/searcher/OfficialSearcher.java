@@ -21,10 +21,7 @@ public class OfficialSearcher implements MultiSearcher {
 
 	protected static final Logger logger = LoggerFactory.getLogger(OfficialSearcher.class);
 
-	private final LLTempLMDBEnv env;
-
-	public OfficialSearcher(LLTempLMDBEnv env) {
-		this.env = env;
+	public OfficialSearcher() {
 	}
 
 	@Override

@@ -5,9 +5,12 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public class AdaptiveMultiSearcher implements MultiSearcher {
+
+	private static final OfficialSearcher officialSearcher = new OfficialSearcher();
 
 	private static final MultiSearcher count = new CountMultiSearcher();
 
@@ -15,13 +18,15 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 
 	private static final MultiSearcher unsortedUnscoredContinuous = new UnsortedUnscoredStreamingMultiSearcher();
 
+	@Nullable
 	private final UnsortedScoredFullMultiSearcher unsortedScoredFull;
 
+	@Nullable
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
-	public AdaptiveMultiSearcher(LLTempLMDBEnv env) {
-		unsortedScoredFull = new UnsortedScoredFullMultiSearcher(env);
-		sortedScoredFull = new SortedScoredFullMultiSearcher(env);
+	public AdaptiveMultiSearcher(LLTempLMDBEnv env, boolean useLMDB) {
+		unsortedScoredFull = useLMDB ? new UnsortedScoredFullMultiSearcher(env) : null;
+		sortedScoredFull = useLMDB ?  new SortedScoredFullMultiSearcher(env) : null;
 	}
 
 	@Override
@@ -61,12 +66,20 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 						if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
 							throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
 						}
-						return sortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+						if (sortedScoredFull != null) {
+							return sortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+						} else {
+							return officialSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+						}
 					} else {
 						if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
 							throw new UnsupportedOperationException("Allowed limit is " + MAX_IN_MEMORY_SIZE + " or greater");
 						}
-						return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+						if (unsortedScoredFull != null) {
+							return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+						} else {
+							return officialSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+						}
 					}
 				}
 			} else {

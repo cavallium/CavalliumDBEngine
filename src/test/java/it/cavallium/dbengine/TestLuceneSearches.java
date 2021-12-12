@@ -167,14 +167,14 @@ public class TestLuceneSearches {
 						sink.next(new UnsortedUnscoredStreamingMultiSearcher());
 					}
 				}
-				sink.next(new AdaptiveMultiSearcher(ENV));
+				sink.next(new AdaptiveMultiSearcher(ENV, true));
 			} else {
 				if (info.onlyCount()) {
 					sink.next(new CountMultiSearcher());
 				} else {
 					sink.next(new PagedLocalSearcher());
 				}
-				sink.next(new AdaptiveLocalSearcher(ENV));
+				sink.next(new AdaptiveLocalSearcher(ENV, true));
 			}
 			sink.complete();
 		}, OverflowStrategy.BUFFER);
@@ -219,8 +219,8 @@ public class TestLuceneSearches {
 				}
 			}
 		} else {
-			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV));
-			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV));
+			tempDb.swappableLuceneSearcher().setSingle(new AdaptiveLocalSearcher(ENV, true));
+			tempDb.swappableLuceneSearcher().setMulti(new AdaptiveMultiSearcher(ENV, true));
 		}
 		return shards ? multiIndex : localIndex;
 	}
@@ -263,7 +263,7 @@ public class TestLuceneSearches {
 					Assertions.assertTrue(keys.size() >= hits.value());
 				}
 
-				var officialSearcher = new OfficialSearcher(ENV);
+				var officialSearcher = new OfficialSearcher();
 				luceneIndex = getLuceneIndex(expectedQueryType.shard(), officialSearcher);
 				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
 				try (var officialResults = run(luceneIndex.search(officialQuery))) {

@@ -97,10 +97,11 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 
+		var useLMDB = luceneOptions.allowNonVolatileCollection();
 		if (luceneHacks != null && luceneHacks.customMultiSearcher() != null) {
 			multiSearcher = luceneHacks.customMultiSearcher().get();
 		} else {
-			multiSearcher = new AdaptiveMultiSearcher(env);
+			multiSearcher = new AdaptiveMultiSearcher(env, useLMDB);
 		}
 	}
 

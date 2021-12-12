@@ -23,7 +23,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 
 	private static final Optional<NRTCachingOptions> NRT = Optional.empty();
 	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(), Duration.ofSeconds(5), Duration.ofSeconds(5),
-			false, true, Optional.empty(), true, NRT, 16 * 1024 * 1024, true, false);
+			false, true, Optional.empty(), true, NRT, 16 * 1024 * 1024, true, false, false);
 
 	@Override
 	public Mono<TempDb> openTempDb(TestAllocator allocator) {

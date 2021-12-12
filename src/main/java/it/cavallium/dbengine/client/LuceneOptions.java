@@ -17,4 +17,5 @@ public record LuceneOptions(Map<String, String> extraFlags,
 														Optional<NRTCachingOptions> nrtCachingOptions,
 														int indexWriterBufferSize,
 														boolean applyAllDeletes,
-														boolean writeAllDeletes) {}
+														boolean writeAllDeletes,
+														boolean allowNonVolatileCollection) {}

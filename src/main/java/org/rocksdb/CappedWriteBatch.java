@@ -108,21 +108,15 @@ public class CappedWriteBatch extends WriteBatch {
 			Send<Buffer> valueToReceive) throws RocksDBException {
 		var key = keyToReceive.receive();
 		var value = valueToReceive.receive();
-		if (USE_FAST_DIRECT_BUFFERS && isDirect(key) && isDirect(value)) {
+		ByteBuffer keyNioBuffer;
+		ByteBuffer valueNioBuffer;
+		if (USE_FAST_DIRECT_BUFFERS
+				&& (keyNioBuffer = LLUtils.asReadOnlyDirect(key)) != null
+				&& (valueNioBuffer = LLUtils.asReadOnlyDirect(value)) != null) {
 			buffersToRelease.add(value);
-			var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
-			key = keyNioBuffer.buffer().receive();
 			buffersToRelease.add(key);
-			byteBuffersToRelease.add(keyNioBuffer.byteBuffer());
-			assert keyNioBuffer.byteBuffer().isDirect();
 
-			var valueNioBuffer = LLUtils.convertToReadableDirect(alloc, value.send());
-			value = valueNioBuffer.buffer().receive();
-			buffersToRelease.add(value);
-			byteBuffersToRelease.add(valueNioBuffer.byteBuffer());
-			assert valueNioBuffer.byteBuffer().isDirect();
-
-			super.put(columnFamilyHandle, keyNioBuffer.byteBuffer(), valueNioBuffer.byteBuffer());
+			super.put(columnFamilyHandle, keyNioBuffer, valueNioBuffer);
 		} else {
 			try {
 				byte[] keyArray = LLUtils.toArray(key);
@@ -176,19 +170,16 @@ public class CappedWriteBatch extends WriteBatch {
 
 	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
 		var key = keyToReceive.receive();
-		if (USE_FAST_DIRECT_BUFFERS) {
-			var keyNioBuffer = LLUtils.convertToReadableDirect(alloc, key.send());
-			key = keyNioBuffer.buffer().receive();
+		ByteBuffer keyNioBuffer;
+		if (USE_FAST_DIRECT_BUFFERS && (keyNioBuffer = LLUtils.asReadOnlyDirect(key)) != null) {
 			buffersToRelease.add(key);
-			byteBuffersToRelease.add(keyNioBuffer.byteBuffer());
-			assert keyNioBuffer.byteBuffer().isDirect();
 			removeDirect(nativeHandle_,
-					keyNioBuffer.byteBuffer(),
-					keyNioBuffer.byteBuffer().position(),
-					keyNioBuffer.byteBuffer().remaining(),
+					keyNioBuffer,
+					keyNioBuffer.position(),
+					keyNioBuffer.remaining(),
 					columnFamilyHandle.nativeHandle_
 			);
-			keyNioBuffer.byteBuffer().position(keyNioBuffer.byteBuffer().limit());
+			keyNioBuffer.position(keyNioBuffer.limit());
 		} else {
 			try {
 				super.delete(columnFamilyHandle, LLUtils.toArray(key));

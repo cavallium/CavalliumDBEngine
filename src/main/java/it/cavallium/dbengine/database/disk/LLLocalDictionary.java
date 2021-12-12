@@ -210,15 +210,13 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 							try (logKey) {
 								var readOptions = requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
-								var result = db.get(readOptions, key.send(), existsAlmostCertainly);
+								var result = db.get(readOptions, key, existsAlmostCertainly);
 								if (logger.isTraceEnabled(MARKER_ROCKSDB)) {
-									try (var result2 = result == null ? null : result.receive()) {
 										logger.trace(MARKER_ROCKSDB, "Reading {}: {}", LLUtils.toStringSafe(logKey),
-												LLUtils.toString(result2));
-										return result2 == null ? null : result2.send();
-									}
+												LLUtils.toString(result));
+										return result == null ? null : result.send();
 								} else {
-									return result;
+									return result == null ? null : result.send();
 								}
 							}
 						} catch (Exception ex) {
@@ -250,73 +248,49 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> runOnDb(() -> {
 					// Temporary resources to release after finished
-					Buffer cloned1 = null;
-					Buffer cloned2 = null;
-					Buffer cloned3 = null;
-					ByteBuffer direct1 = null;
-					ByteBuffer direct2 = null;
-					ByteBuffer direct3 = null;
 					AbstractSlice<?> slice1 = null;
 					AbstractSlice<?> slice2 = null;
-					try {
-						try (var range = rangeSend.receive()) {
-							if (Schedulers.isInNonBlockingThread()) {
-								throw new UnsupportedOperationException("Called containsRange in a nonblocking thread");
+					try (var range = rangeSend.receive()) {
+						if (Schedulers.isInNonBlockingThread()) {
+							throw new UnsupportedOperationException("Called containsRange in a nonblocking thread");
+						}
+						try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
+							readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
+							readOpts.setFillCache(false);
+							if (range.hasMin()) {
+								var rangeMinInternalByteBuffer = LLUtils.asReadOnlyDirect(range.getMinUnsafe());
+								if (nettyDirect && rangeMinInternalByteBuffer != null) {
+									readOpts.setIterateLowerBound(slice1 = new DirectSlice(rangeMinInternalByteBuffer,
+											range.getMinUnsafe().readableBytes()));
+								} else {
+									readOpts.setIterateLowerBound(slice1 = new Slice(LLUtils.toArray(range.getMinUnsafe())));
+								}
 							}
-							try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
-								readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
-								readOpts.setFillCache(false);
-								if (range.hasMin()) {
-									try (var rangeMin = range.getMin().receive()) {
-										if (nettyDirect) {
-											var directBuf = LLUtils.convertToReadableDirect(alloc, rangeMin.send());
-											cloned1 = directBuf.buffer().receive();
-											direct1 = directBuf.byteBuffer();
-											readOpts.setIterateLowerBound(slice1 = new DirectSlice(directBuf.byteBuffer()));
-										} else {
-											readOpts.setIterateLowerBound(slice1 = new Slice(LLUtils.toArray(rangeMin)));
-										}
-									}
+							if (range.hasMax()) {
+								var rangeMaxInternalByteBuffer = LLUtils.asReadOnlyDirect(range.getMaxUnsafe());
+								if (nettyDirect && rangeMaxInternalByteBuffer != null) {
+									readOpts.setIterateUpperBound(slice2 = new DirectSlice(rangeMaxInternalByteBuffer,
+											range.getMaxUnsafe().readableBytes()));
+								} else {
+									readOpts.setIterateUpperBound(slice2 = new Slice(LLUtils.toArray(range.getMaxUnsafe())));
 								}
-								if (range.hasMax()) {
-									try (var rangeMax = range.getMax().receive()) {
-										if (nettyDirect) {
-											var directBuf = LLUtils.convertToReadableDirect(alloc, rangeMax.send());
-											cloned2 = directBuf.buffer().receive();
-											direct2 = directBuf.byteBuffer();
-											readOpts.setIterateUpperBound(slice2 = new DirectSlice(directBuf.byteBuffer()));
-										} else {
-											readOpts.setIterateUpperBound(slice2 = new Slice(LLUtils.toArray(rangeMax)));
-										}
-									}
-								}
-								try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
-									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-										try (var rangeMin = range.getMin().receive()) {
-											if (nettyDirect) {
-												var directBuf = LLUtils.convertToReadableDirect(alloc, rangeMin.send());
-												cloned3 = directBuf.buffer().receive();
-												direct3 = directBuf.byteBuffer();
-												rocksIterator.seek(directBuf.byteBuffer());
-											} else {
-												rocksIterator.seek(LLUtils.toArray(rangeMin));
-											}
-										}
+							}
+							try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
+								if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+									var rangeMinInternalByteBuffer = LLUtils.asReadOnlyDirect(range.getMinUnsafe());
+									if (nettyDirect && rangeMinInternalByteBuffer != null) {
+										rocksIterator.seek(rangeMinInternalByteBuffer);
 									} else {
-										rocksIterator.seekToFirst();
+										rocksIterator.seek(LLUtils.toArray(range.getMinUnsafe()));
 									}
-									rocksIterator.status();
-									return rocksIterator.isValid();
+								} else {
+									rocksIterator.seekToFirst();
 								}
+								rocksIterator.status();
+								return rocksIterator.isValid();
 							}
 						}
 					} finally {
-						if (cloned1 != null) cloned1.close();
-						if (cloned2 != null) cloned2.close();
-						if (cloned3 != null) cloned3.close();
-						if (direct1 != null) PlatformDependent.freeDirectBuffer(direct1);
-						if (direct2 != null) PlatformDependent.freeDirectBuffer(direct2);
-						if (direct3 != null) PlatformDependent.freeDirectBuffer(direct3);
 						if (slice1 != null) slice1.close();
 						if (slice2 != null) slice2.close();
 					}
@@ -328,7 +302,9 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono.usingWhen(keyMono,
 				keySend -> runOnDb(() -> {
 					var unmodifiableReadOpts = resolveSnapshot(snapshot);
-					return db.exists(unmodifiableReadOpts, keySend);
+					try (var key = keySend.receive()) {
+						return db.exists(unmodifiableReadOpts, key);
+					}
 				}).onErrorMap(cause -> new IOException("Failed to read", cause)),
 				keySend -> Mono.fromRunnable(keySend::close)
 		);
@@ -351,7 +327,7 @@ public class LLLocalDictionary implements LLDictionary {
 												logger.trace(MARKER_ROCKSDB, "Writing {}: {}",
 														LLUtils.toStringSafe(key), LLUtils.toStringSafe(value));
 											}
-											db.put(EMPTY_WRITE_OPTIONS, key.send(), value.send());
+											db.put(EMPTY_WRITE_OPTIONS, key, value);
 											return null;
 										}
 									}
@@ -437,18 +413,15 @@ public class LLLocalDictionary implements LLDictionary {
 						.getPreviousData(keyMono, resultType, true)
 						.concatWith(this
 								.<Send<Buffer>>runOnDb(() -> {
-									try (keySend) {
+									try (var key = keySend.receive()) {
 										if (logger.isTraceEnabled()) {
-											try (var key = keySend.receive()) {
-												logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
-												db.delete(EMPTY_WRITE_OPTIONS, key.send());
-											}
-											return null;
+											logger.trace(MARKER_ROCKSDB, "Deleting {}", LLUtils.toStringSafe(key));
+											db.delete(EMPTY_WRITE_OPTIONS, key);
 										} else {
-											db.delete(EMPTY_WRITE_OPTIONS, keySend);
-											return null;
+											db.delete(EMPTY_WRITE_OPTIONS, key);
 										}
 									}
+									return null;
 								})
 								.onErrorMap(cause -> new IOException("Failed to delete", cause))
 						)
@@ -468,22 +441,19 @@ public class LLLocalDictionary implements LLDictionary {
 					keyMono,
 					keySend -> this
 							.runOnDb(() -> {
-								try (keySend) {
+								try (var key = keySend.receive()) {
 									if (Schedulers.isInNonBlockingThread()) {
 										throw new UnsupportedOperationException("Called getPreviousData in a nonblocking thread");
 									}
 
 									if (logger.isTraceEnabled()) {
-										try (var key = keySend.receive()) {
-											var keyString = LLUtils.toStringSafe(key);
-											var result = db.get(EMPTY_READ_OPTIONS, key.send(), existsAlmostCertainly);
-											try (var bufferResult = result == null ? null : result.receive()) {
-												logger.trace(MARKER_ROCKSDB, "Reading {}: {}", keyString, LLUtils.toStringSafe(bufferResult));
-												return bufferResult == null ? null : bufferResult.send();
-											}
-										}
+										var keyString = LLUtils.toStringSafe(key);
+										var result = db.get(EMPTY_READ_OPTIONS, key, existsAlmostCertainly);
+										logger.trace(MARKER_ROCKSDB, "Reading {}: {}", keyString, LLUtils.toStringSafe(result));
+										return result == null ? null : result.send();
 									} else {
-										return db.get(EMPTY_READ_OPTIONS, keySend, existsAlmostCertainly);
+										var result = db.get(EMPTY_READ_OPTIONS, key, existsAlmostCertainly);
+										return result == null ? null : result.send();
 									}
 								}
 							})
@@ -575,9 +545,9 @@ public class LLLocalDictionary implements LLDictionary {
 									try (var readOptions = resolveSnapshot(null)) {
 										for (LLEntry entry : entriesWindow) {
 											try (var key = entry.getKey().receive()) {
-												Send<Buffer> oldValue = db.get(readOptions, key.copy().send(), false);
+												Buffer oldValue = db.get(readOptions, key, false);
 												if (oldValue != null) {
-													oldValues.add(LLEntry.of(key.send(), oldValue).send());
+													oldValues.add(LLEntry.of(key, oldValue).send());
 												}
 											}
 										}
@@ -610,7 +580,7 @@ public class LLLocalDictionary implements LLDictionary {
 									batch.close();
 								} else {
 									for (LLEntry entry : entriesWindow) {
-										db.put(EMPTY_WRITE_OPTIONS, entry.getKey(), entry.getValue());
+										db.put(EMPTY_WRITE_OPTIONS, entry.getKeyUnsafe(), entry.getValueUnsafe());
 									}
 								}
 								return oldValues;
@@ -719,7 +689,7 @@ public class LLLocalDictionary implements LLDictionary {
 						} else {
 							int i = 0;
 							for (Tuple2<K, Buffer> entry : entriesWindow) {
-								db.put(EMPTY_WRITE_OPTIONS, entry.getT2().send(), updatedValuesToWrite.get(i).send());
+								db.put(EMPTY_WRITE_OPTIONS, entry.getT2(), updatedValuesToWrite.get(i));
 								i++;
 							}
 						}
@@ -959,22 +929,14 @@ public class LLLocalDictionary implements LLDictionary {
 											try (var opts = new ReadOptions(EMPTY_READ_OPTIONS)) {
 												ReleasableSlice minBound;
 												if (range.hasMin()) {
-													minBound = setIterateBound(alloc, nettyDirect,
-															opts,
-															IterateBound.LOWER,
-															range.getMin()
-													);
+													minBound = setIterateBound(nettyDirect, opts, IterateBound.LOWER, range.getMinUnsafe());
 												} else {
 													minBound = emptyReleasableSlice();
 												}
 												try {
 													ReleasableSlice maxBound;
 													if (range.hasMax()) {
-														maxBound = setIterateBound(alloc, nettyDirect,
-																opts,
-																IterateBound.UPPER,
-																range.getMax()
-														);
+														maxBound = setIterateBound(nettyDirect, opts, IterateBound.UPPER, range.getMaxUnsafe());
 													} else {
 														maxBound = emptyReleasableSlice();
 													}
@@ -983,7 +945,7 @@ public class LLLocalDictionary implements LLDictionary {
 													SafeCloseable seekTo;
 													try (RocksIterator it = db.newIterator(opts)) {
 														if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
-															seekTo = rocksIterSeekTo(alloc, nettyDirect, it, range.getMin());
+															seekTo = rocksIterSeekTo(nettyDirect, it, range.getMinUnsafe());
 														} else {
 															seekTo = null;
 															it.seekToFirst();
@@ -1049,7 +1011,7 @@ public class LLLocalDictionary implements LLDictionary {
 														if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
 															for (LLEntry entry : entriesList) {
 																assert entry.isAccessible();
-																db.put(EMPTY_WRITE_OPTIONS, entry.getKey(), entry.getValue());
+																db.put(EMPTY_WRITE_OPTIONS, entry.getKeyUnsafe(), entry.getValueUnsafe());
 															}
 														} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
 															try (var batch = new CappedWriteBatch(db,
@@ -1106,7 +1068,7 @@ public class LLLocalDictionary implements LLDictionary {
 								.getRange(null, rangeMono, false)
 								.flatMap(oldValueSend -> this.<Void>runOnDb(() -> {
 									try (var oldValue = oldValueSend.receive()) {
-										db.delete(EMPTY_WRITE_OPTIONS, oldValue.getKey());
+										db.delete(EMPTY_WRITE_OPTIONS, oldValue.getKeyUnsafe());
 										return null;
 									}
 								}))
@@ -1136,23 +1098,21 @@ public class LLLocalDictionary implements LLDictionary {
 			readOpts.setFillCache(false);
 			ReleasableSlice minBound;
 			if (range.hasMin()) {
-				minBound = setIterateBound(alloc, nettyDirect, readOpts,
-						IterateBound.LOWER, range.getMin());
+				minBound = setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
 			} else {
 				minBound = emptyReleasableSlice();
 			}
 			try {
 				ReleasableSlice maxBound;
 				if (range.hasMax()) {
-					maxBound = setIterateBound(alloc, nettyDirect, readOpts,
-							IterateBound.UPPER, range.getMax());
+					maxBound = setIterateBound(nettyDirect, readOpts, IterateBound.UPPER, range.getMaxUnsafe());
 				} else {
 					maxBound = emptyReleasableSlice();
 				}
 				try (var rocksIterator = db.newIterator(readOpts)) {
 					SafeCloseable seekTo;
 					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-						seekTo = rocksIterSeekTo(alloc, nettyDirect, rocksIterator, range.getMin());
+						seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 					} else {
 						seekTo = null;
 						rocksIterator.seekToFirst();
@@ -1188,23 +1148,21 @@ public class LLLocalDictionary implements LLDictionary {
 				readOpts.setFillCache(false);
 				ReleasableSlice minBound;
 				if (range.hasMin()) {
-					minBound = setIterateBound(alloc, nettyDirect, readOpts,
-							IterateBound.LOWER, range.getMin());
+					minBound = setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
 				} else {
 					minBound = emptyReleasableSlice();
 				}
 				try {
 					ReleasableSlice maxBound;
 					if (range.hasMax()) {
-						maxBound = setIterateBound(alloc, nettyDirect, readOpts, IterateBound.UPPER,
-								range.getMax());
+						maxBound = setIterateBound(nettyDirect, readOpts, IterateBound.UPPER, range.getMaxUnsafe());
 					} else {
 						maxBound = emptyReleasableSlice();
 					}
 					try (var rocksIterator = db.newIterator(readOpts)) {
 						SafeCloseable seekTo;
 						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-							seekTo = rocksIterSeekTo(alloc, nettyDirect, rocksIterator, range.getMin());
+							seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 						} else {
 							seekTo = null;
 							rocksIterator.seekToFirst();
@@ -1232,59 +1190,42 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Nullable
-	private static SafeCloseable rocksIterSeekTo(BufferAllocator alloc, boolean allowNettyDirect,
-			RocksIterator rocksIterator, Send<Buffer> bufferToReceive) {
-		try (var buffer = bufferToReceive.receive()) {
-			if (allowNettyDirect) {
-				var direct = LLUtils.convertToReadableDirect(alloc, buffer.send());
-				assert direct.byteBuffer().isDirect();
-				rocksIterator.seek(direct.byteBuffer());
-				return () -> {
-					direct.buffer().close();
-					PlatformDependent.freeDirectBuffer(direct.byteBuffer());
-				};
-			} else {
-				rocksIterator.seek(LLUtils.toArray(buffer));
-				return null;
-			}
+	private static SafeCloseable rocksIterSeekTo(boolean allowNettyDirect,
+			RocksIterator rocksIterator, Buffer key) {
+		ByteBuffer keyInternalByteBuffer;
+		if (allowNettyDirect && (keyInternalByteBuffer = LLUtils.asReadOnlyDirect(key)) != null) {
+			rocksIterator.seek(keyInternalByteBuffer);
+			return null;
+		} else {
+			rocksIterator.seek(LLUtils.toArray(key));
+			return null;
 		}
 	}
 
-	private static ReleasableSlice setIterateBound(BufferAllocator alloc, boolean allowNettyDirect,
-			ReadOptions readOpts, IterateBound boundType, Send<Buffer> bufferToReceive) {
-		var buffer = bufferToReceive.receive();
-		try {
-			requireNonNull(buffer);
-			AbstractSlice<?> slice;
-			if (allowNettyDirect && LLLocalDictionary.USE_DIRECT_BUFFER_BOUNDS) {
-				var direct = LLUtils.convertToReadableDirect(alloc, buffer.send());
-				buffer = direct.buffer().receive();
-				assert direct.byteBuffer().isDirect();
-				slice = new DirectSlice(direct.byteBuffer(), buffer.readableBytes());
-				assert slice.size() == buffer.readableBytes();
-				assert slice.compare(new Slice(LLUtils.toArray(buffer))) == 0;
-				if (boundType == IterateBound.LOWER) {
-					readOpts.setIterateLowerBound(slice);
-				} else {
-					readOpts.setIterateUpperBound(slice);
-				}
-				return new ReleasableSliceImpl(slice, buffer, direct.byteBuffer());
+	private static ReleasableSlice setIterateBound(boolean allowNettyDirect,
+			ReadOptions readOpts, IterateBound boundType, Buffer key) {
+		requireNonNull(key);
+		AbstractSlice<?> slice;
+		ByteBuffer keyInternalByteBuffer;
+		if (allowNettyDirect && LLLocalDictionary.USE_DIRECT_BUFFER_BOUNDS
+				&& (keyInternalByteBuffer = LLUtils.asReadOnlyDirect(key)) != null) {
+			slice = new DirectSlice(keyInternalByteBuffer, key.readableBytes());
+			assert slice.size() == key.readableBytes();
+			assert slice.compare(new Slice(LLUtils.toArray(key))) == 0;
+			if (boundType == IterateBound.LOWER) {
+				readOpts.setIterateLowerBound(slice);
 			} else {
-				try {
-					slice = new Slice(requireNonNull(LLUtils.toArray(buffer)));
-					if (boundType == IterateBound.LOWER) {
-						readOpts.setIterateLowerBound(slice);
-					} else {
-						readOpts.setIterateUpperBound(slice);
-					}
-					return new ReleasableSliceImpl(slice, null, null);
-				} finally {
-					buffer.close();
-				}
+				readOpts.setIterateUpperBound(slice);
 			}
-		} catch (Throwable e) {
-			buffer.close();
-			throw e;
+			return new ReleasableSliceImpl(slice, null, null);
+		} else {
+			slice = new Slice(requireNonNull(LLUtils.toArray(key)));
+			if (boundType == IterateBound.LOWER) {
+				readOpts.setIterateLowerBound(slice);
+			} else {
+				readOpts.setIterateUpperBound(slice);
+			}
+			return new ReleasableSliceImpl(slice, null, null);
 		}
 	}
 
@@ -1400,16 +1341,14 @@ public class LLLocalDictionary implements LLDictionary {
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 						ReleasableSlice minBound;
 						if (range.hasMin()) {
-							minBound = setIterateBound(alloc, nettyDirect, readOpts,
-									IterateBound.LOWER, range.getMin());
+							minBound = setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
 						} else {
 							minBound = emptyReleasableSlice();
 						}
 						try {
 							ReleasableSlice maxBound;
 							if (range.hasMax()) {
-								maxBound = setIterateBound(alloc, nettyDirect, readOpts,
-										IterateBound.UPPER, range.getMax());
+								maxBound = setIterateBound(nettyDirect, readOpts, IterateBound.UPPER, range.getMaxUnsafe());
 							} else {
 								maxBound = emptyReleasableSlice();
 							}
@@ -1421,8 +1360,7 @@ public class LLLocalDictionary implements LLDictionary {
 								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-										seekTo = rocksIterSeekTo(alloc, nettyDirect,
-												rocksIterator, range.getMin());
+										seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 									} else {
 										seekTo = null;
 										rocksIterator.seekToFirst();
@@ -1466,24 +1404,21 @@ public class LLLocalDictionary implements LLDictionary {
 						try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
-								minBound = setIterateBound(alloc, nettyDirect, readOpts,
-										IterateBound.LOWER, range.getMin());
+								minBound = setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
 							} else {
 								minBound = emptyReleasableSlice();
 							}
 							try {
 								ReleasableSlice maxBound;
 								if (range.hasMax()) {
-									maxBound = setIterateBound(alloc, nettyDirect, readOpts,
-											IterateBound.UPPER, range.getMax());
+									maxBound = setIterateBound(nettyDirect, readOpts, IterateBound.UPPER, range.getMaxUnsafe());
 								} else {
 									maxBound = emptyReleasableSlice();
 								}
 								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-										seekTo = rocksIterSeekTo(alloc, nettyDirect,
-												rocksIterator, range.getMin());
+										seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 									} else {
 										seekTo = null;
 										rocksIterator.seekToFirst();
@@ -1528,24 +1463,21 @@ public class LLLocalDictionary implements LLDictionary {
 						try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
-								minBound = setIterateBound(alloc, nettyDirect, readOpts,
-										IterateBound.LOWER, range.getMin());
+								minBound = setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
 							} else {
 								minBound = emptyReleasableSlice();
 							}
 							try {
 								ReleasableSlice maxBound;
 								if (range.hasMax()) {
-									maxBound = setIterateBound(alloc, nettyDirect, readOpts,
-											IterateBound.UPPER, range.getMax());
+									maxBound = setIterateBound(nettyDirect, readOpts, IterateBound.UPPER, range.getMaxUnsafe());
 								} else {
 									maxBound = emptyReleasableSlice();
 								}
 								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-										seekTo = rocksIterSeekTo(alloc, nettyDirect,
-												rocksIterator, range.getMin());
+										seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 									} else {
 										seekTo = null;
 										rocksIterator.seekToFirst();
@@ -1697,24 +1629,21 @@ public class LLLocalDictionary implements LLDictionary {
 						try (var readOpts = new ReadOptions(getReadOptions(null))) {
 							ReleasableSlice minBound;
 							if (range.hasMin()) {
-								minBound = setIterateBound(alloc, nettyDirect, readOpts,
-										IterateBound.LOWER, range.getMin());
+								minBound = setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
 							} else {
 								minBound = emptyReleasableSlice();
 							}
 							try {
 								ReleasableSlice maxBound;
 								if (range.hasMax()) {
-									maxBound = setIterateBound(alloc, nettyDirect, readOpts,
-											IterateBound.UPPER, range.getMax());
+									maxBound = setIterateBound(nettyDirect, readOpts, IterateBound.UPPER, range.getMaxUnsafe());
 								} else {
 									maxBound = emptyReleasableSlice();
 								}
 								try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-										seekTo = rocksIterSeekTo(alloc, nettyDirect,
-												rocksIterator, range.getMin());
+										seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 									} else {
 										seekTo = null;
 										rocksIterator.seekToFirst();
@@ -1724,12 +1653,10 @@ public class LLLocalDictionary implements LLDictionary {
 										if (!rocksIterator.isValid()) {
 											return null;
 										}
-										try (Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
-											try (Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value)) {
-												db.delete(EMPTY_WRITE_OPTIONS, key.copy().send());
-												return LLEntry.of(key.send(), value.send()).send();
-											}
-										}
+										Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+										Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+										db.delete(EMPTY_WRITE_OPTIONS, key);
+										return LLEntry.of(key, value).send();
 									} finally {
 										if (seekTo != null) {
 											seekTo.close();
@@ -1761,21 +1688,20 @@ public class LLLocalDictionary implements LLDictionary {
 			ReleasableSlice sliceMin;
 			ReleasableSlice sliceMax;
 			if (range.hasMin()) {
-				sliceMin = setIterateBound(alloc, allowNettyDirect, readOptions, IterateBound.LOWER, range.getMin());
+				sliceMin = setIterateBound(allowNettyDirect, readOptions, IterateBound.LOWER, range.getMinUnsafe());
 			} else {
 				sliceMin = emptyReleasableSlice();
 			}
 			if (range.hasMax()) {
-				sliceMax = setIterateBound(alloc, allowNettyDirect, readOptions, IterateBound.UPPER, range.getMax());
+				sliceMax = setIterateBound(allowNettyDirect, readOptions, IterateBound.UPPER, range.getMaxUnsafe());
 			} else {
 				sliceMax = emptyReleasableSlice();
 			}
 			var rocksIterator = db.newIterator(readOptions);
 			SafeCloseable seekTo;
 			if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
-				seekTo = Objects.requireNonNullElseGet(rocksIterSeekTo(alloc, allowNettyDirect,
-						rocksIterator, range.getMin()), () -> ((SafeCloseable) () -> {})
-				);
+				seekTo = Objects.requireNonNullElseGet(rocksIterSeekTo(allowNettyDirect, rocksIterator, range.getMinUnsafe()),
+						() -> ((SafeCloseable) () -> {}));
 			} else {
 				seekTo = () -> {};
 				rocksIterator.seekToFirst();

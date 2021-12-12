@@ -62,12 +62,7 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 						prevData = null;
 					}
 				} else {
-					var obtainedPrevData = this.get(readOptions, key.copy().send(), existsAlmostCertainly);
-					if (obtainedPrevData == null) {
-						prevData = null;
-					} else {
-						prevData = obtainedPrevData.receive();
-					}
+					prevData = this.get(readOptions, key, existsAlmostCertainly);
 				}
 			} else {
 				prevData = null;
@@ -101,7 +96,7 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 						if (logger.isTraceEnabled()) {
 							logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
 						}
-						this.delete(writeOptions, key.send());
+						this.delete(writeOptions, key);
 						changed = true;
 					} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 						if (logger.isTraceEnabled()) {
@@ -115,7 +110,7 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 							dataToPut = newData;
 						}
 						try {
-							this.put(writeOptions, key.send(), dataToPut.send());
+							this.put(writeOptions, key, dataToPut);
 							changed = true;
 						} finally {
 							if (dataToPut != newData) {

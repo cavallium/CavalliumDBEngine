@@ -34,24 +34,22 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 		var allocator = getAllocator();
 		try (var keyBuf = allocator.allocate(key.length)) {
 			keyBuf.writeBytes(key);
-			var result = this.get(readOptions, keyBuf.send(), existsAlmostCertainly);
+			var result = this.get(readOptions, keyBuf, existsAlmostCertainly);
 			if (result == null) {
 				return null;
 			}
-			try (var resultBuf = result.receive()) {
-				return LLUtils.toArray(resultBuf);
-			}
+			return LLUtils.toArray(result);
 		}
 	}
 
 	@Nullable
-	Send<Buffer> get(@NotNull ReadOptions readOptions, Send<Buffer> keySend,
+	Buffer get(@NotNull ReadOptions readOptions, Buffer key,
 			boolean existsAlmostCertainly) throws RocksDBException;
 
-	boolean exists(@NotNull ReadOptions readOptions, Send<Buffer> keySend) throws RocksDBException;
+	boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
 
-	void put(@NotNull WriteOptions writeOptions, Send<Buffer> keyToReceive,
-			Send<Buffer> valueToReceive) throws RocksDBException;
+	void put(@NotNull WriteOptions writeOptions, Buffer key,
+			Buffer value) throws RocksDBException;
 
 	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value)
 			throws RocksDBException {
@@ -61,7 +59,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 			try (var valBuf = allocator.allocate(value.length)) {
 				valBuf.writeBytes(value);
 
-				this.put(writeOptions, keyBuf.send(), valBuf.send());
+				this.put(writeOptions, keyBuf, valBuf);
 			}
 		}
 	}
@@ -72,7 +70,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 			Send<Buffer> keySend, SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			boolean existsAlmostCertainly, UpdateAtomicResultMode returnMode) throws RocksDBException, IOException;
 
-	void delete(WriteOptions writeOptions, Send<Buffer> keySend) throws RocksDBException;
+	void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException;
 
 	void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException;
 

@@ -1,14 +1,22 @@
 package it.cavallium.dbengine.database;
 
+import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import io.net5.buffer.api.AllocatorControl;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.CompositeBuffer;
+import io.net5.buffer.api.MemoryManager;
+import io.net5.buffer.api.ReadableComponent;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.WritableComponent;
+import io.net5.buffer.api.bytebuffer.ByteBufferMemoryManager;
+import io.net5.buffer.api.internal.Statics;
+import io.net5.buffer.api.unsafe.UnsafeMemoryManager;
 import io.net5.util.IllegalReferenceCountException;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.collections.DatabaseStage;
@@ -27,6 +35,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.lucene.document.Document;
@@ -65,7 +74,11 @@ public class LLUtils {
 	public static final Marker MARKER_ROCKSDB = MarkerFactory.getMarker("ROCKSDB");
 	public static final Marker MARKER_LUCENE = MarkerFactory.getMarker("LUCENE");
 
-	private static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0);
+	public static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
+	public static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0).asReadOnlyBuffer();
+	@Nullable
+	private static final MemoryManager UNSAFE_MEMORY_MANAGER;
+	private static final AllocatorControl NO_OP_ALLOCATION_CONTROL = (AllocatorControl) BufferAllocator.offHeapUnpooled();
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE = new byte[]{0};
 	private static final byte[] RESPONSE_TRUE_BUF = new byte[]{1};
@@ -73,6 +86,13 @@ public class LLUtils {
 	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
 
 	static {
+		MemoryManager unsafeMemoryManager;
+		try {
+			unsafeMemoryManager = new UnsafeMemoryManager();
+		} catch (UnsupportedOperationException ignored) {
+			unsafeMemoryManager = new ByteBufferMemoryManager();
+		}
+		UNSAFE_MEMORY_MANAGER = unsafeMemoryManager;
 		for (int i1 = 0; i1 < 256; i1++) {
 			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
 			b[0] = (byte) i1;
@@ -420,47 +440,36 @@ public class LLUtils {
 	@SuppressWarnings("ConstantConditions")
 	@Nullable
 	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		ByteBuffer directBuffer;
-		Buffer buffer;
-		{
-			var direct = LLUtils.newDirect(alloc, 4096);
-			directBuffer = direct.byteBuffer();
-			buffer = direct.buffer().receive();
-		}
+		var directBuffer = LLUtils.allocateShared(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
+		assert directBuffer.readerOffset() == 0;
+		assert directBuffer.writerOffset() == 0;
+		var directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
+		assert directBufferWriter.position() == 0;
+		assert directBufferWriter.isDirect();
 		try {
-			int size;
-			do {
-				directBuffer.limit(directBuffer.capacity());
-				assert directBuffer.isDirect();
-				size = reader.applyAsInt(directBuffer);
-				if (size != RocksDB.NOT_FOUND) {
-					if (size == directBuffer.limit()) {
-						buffer.readerOffset(0).writerOffset(size);
-						return buffer;
-					} else {
-						assert size > directBuffer.limit();
-						assert directBuffer.limit() > 0;
-						// Free the buffer
-						if (directBuffer != null) {
-							// todo: check if free is needed
-							PlatformDependent.freeDirectBuffer(directBuffer);
-							directBuffer = null;
-						}
-						directBuffer = LLUtils.obtainDirect(buffer, true);
-						buffer.ensureWritable(size);
-					}
-				}
-			} while (size != RocksDB.NOT_FOUND);
-
-			// Return null if size is equal to RocksDB.NOT_FOUND
-			return null;
-		} finally {
-			// Free the buffer
-			if (directBuffer != null) {
-				// todo: check if free is needed
-				PlatformDependent.freeDirectBuffer(directBuffer);
-				directBuffer = null;
+			int trueSize = reader.applyAsInt(directBufferWriter);
+			if (trueSize == RocksDB.NOT_FOUND) {
+				directBuffer.close();
+				return null;
 			}
+			int readSize = directBufferWriter.limit();
+			if (trueSize < readSize) {
+				throw new IllegalStateException();
+			} else if (trueSize == readSize) {
+				return directBuffer.writerOffset(directBufferWriter.limit());
+			} else {
+				assert directBuffer.readerOffset() == 0;
+				directBuffer.ensureWritable(trueSize);
+				assert directBuffer.writerOffset() == 0;
+				directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
+				assert directBufferWriter.position() == 0;
+				assert directBufferWriter.isDirect();
+				reader.applyAsInt(directBufferWriter);
+				return directBuffer.writerOffset(trueSize);
+			}
+		} catch (Throwable t) {
+			directBuffer.close();
+			throw t;
 		}
 	}
 
@@ -614,86 +623,63 @@ public class LLUtils {
 		}
 	}
 
-	public static record DirectBuffer(@NotNull Send<Buffer> buffer, @NotNull ByteBuffer byteBuffer) {}
+	@Deprecated
+	public record DirectBuffer(@NotNull Buffer buffer, @NotNull ByteBuffer byteBuffer) {}
 
 	@NotNull
-	public static DirectBuffer newDirect(BufferAllocator allocator, int size) {
-		try (var buf = allocator.allocate(size)) {
-			var direct = obtainDirect(buf, true);
-			return new DirectBuffer(buf.send(), direct);
-		}
+	public static ByteBuffer newDirect(int size) {
+		return ByteBuffer.allocateDirect(size);
 	}
 
-	@NotNull
-	public static DirectBuffer convertToReadableDirect(BufferAllocator allocator, Send<Buffer> content) {
-		try (var buf = content.receive()) {
-			DirectBuffer result;
-			if (buf.countComponents() == 1) {
-				var direct = obtainDirect(buf, false);
-				result = new DirectBuffer(buf.send(), direct);
-			} else {
-				var direct = newDirect(allocator, buf.readableBytes());
-				try (var buf2 = direct.buffer().receive()) {
-					buf.copyInto(buf.readerOffset(), buf2, buf2.writerOffset(), buf.readableBytes());
-					buf2.writerOffset(buf2.writerOffset() + buf.readableBytes());
-					assert buf2.readableBytes() == buf.readableBytes();
-					result = new DirectBuffer(buf2.send(), direct.byteBuffer());
-				}
-			}
-			return result;
-		}
+	/**
+	 * The returned object will be also of type {@link WritableComponent} {@link ReadableComponent}
+	 */
+	public static Buffer allocateShared(int size) {
+		return LLUtils.UNSAFE_MEMORY_MANAGER.allocateShared(NO_OP_ALLOCATION_CONTROL, size, Statics.NO_OP_DROP, OFF_HEAP);
 	}
 
+	/**
+	 * Get the internal byte buffer, if present
+	 */
+	@Nullable
+	public static ByteBuffer asReadOnlyDirect(Buffer inputBuffer) {
+		var bytes = inputBuffer.readableBytes();
+		if (inputBuffer instanceof ReadableComponent rc) {
+			var componentBuffer = rc.readableBuffer();
+			if (componentBuffer != null && componentBuffer.isDirect()) {
+				assert componentBuffer.isReadOnly();
+				assert componentBuffer.isDirect();
+				return componentBuffer;
+			}
+		} else if (inputBuffer.countReadableComponents() == 1) {
+			AtomicReference<ByteBuffer> bufferRef = new AtomicReference<>();
+			inputBuffer.forEachReadable(0, (index, comp) -> {
+				var compBuffer = comp.readableBuffer();
+				if (compBuffer != null && compBuffer.isDirect()) {
+					bufferRef.setPlain(compBuffer);
+				}
+				return false;
+			});
+			var buffer = bufferRef.getPlain();
+			if (buffer != null) {
+				assert buffer.isReadOnly();
+				assert buffer.isDirect();
+				return buffer;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Copy the buffer into a newly allocated direct buffer
+	 */
 	@NotNull
-	public static ByteBuffer obtainDirect(Buffer buffer, boolean writable) {
-		if (!PlatformDependent.hasUnsafe()) {
-			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
-					PlatformDependent.getUnsafeUnavailabilityCause()
-			);
-		}
-		if (!MemorySegmentUtils.isSupported()) {
-			throw new UnsupportedOperationException("Foreign Memory Access API support is disabled."
-					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"",
-					MemorySegmentUtils.getUnsupportedCause()
-			);
-		}
-		assert buffer.isAccessible();
-		if (buffer.readOnly()) {
-			throw new IllegalStateException("Buffer is read only");
-		}
-		buffer.compact();
-		assert buffer.readerOffset() == 0;
-		AtomicLong nativeAddress = new AtomicLong(0);
-		if (buffer.countComponents() == 1) {
-			if (writable) {
-				if (buffer.countWritableComponents() == 1) {
-					buffer.forEachWritable(0, (i, c) -> {
-						assert c.writableNativeAddress() != 0;
-						nativeAddress.setPlain(c.writableNativeAddress());
-						return false;
-					});
-				}
-			} else {
-				var readableComponents = buffer.countReadableComponents();
-				if (readableComponents == 1) {
-					buffer.forEachReadable(0, (i, c) -> {
-						assert c.readableNativeAddress() != 0;
-						nativeAddress.setPlain(c.readableNativeAddress());
-						return false;
-					});
-				}
-			}
-		}
-		if (nativeAddress.getPlain() == 0) {
-			if (buffer.capacity() == 0) {
-				return EMPTY_BYTE_BUFFER;
-			}
-			if (!buffer.isAccessible()) {
-				throw new IllegalStateException("Buffer is not accessible");
-			}
-			throw new IllegalStateException("Buffer is not direct");
-		}
-		return MemorySegmentUtils.directBuffer(nativeAddress.getPlain(), writable ? buffer.capacity() : buffer.writerOffset());
+	public static ByteBuffer copyToNewDirectBuffer(Buffer inputBuffer) {
+		int bytes = inputBuffer.readableBytes();
+		var directBuffer = ByteBuffer.allocateDirect(bytes);
+		inputBuffer.copyInto(inputBuffer.readerOffset(), directBuffer, 0, bytes);
+		return directBuffer.asReadOnlyBuffer();
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {

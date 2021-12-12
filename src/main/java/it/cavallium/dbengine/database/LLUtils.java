@@ -899,23 +899,6 @@ public class LLUtils {
 				discardStage(o);
 			}
 		});
-		// todo: check if the single object discard hook is more performant
-		/*
-				.doOnDiscard(SafeCloseable.class, LLUtils::discardRefCounted)
-				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry)
-				.doOnDiscard(Collection.class, LLUtils::discardCollection)
-				.doOnDiscard(Tuple2.class, LLUtils::discardTuple2)
-				.doOnDiscard(Tuple3.class, LLUtils::discardTuple3)
-				.doOnDiscard(LLEntry.class, LLUtils::discardLLEntry)
-				.doOnDiscard(LLRange.class, LLUtils::discardLLRange)
-				.doOnDiscard(Delta.class, LLUtils::discardDelta)
-				.doOnDiscard(LLDelta.class, LLUtils::discardLLDelta)
-				.doOnDiscard(Send.class, LLUtils::discardSend)
-				.doOnDiscard(Resource.class, LLUtils::discardResource)
-				.doOnDiscard(Map.class, LLUtils::discardMap)
-				.doOnDiscard(DatabaseStage.class, LLUtils::discardStage);
-
-		 */
 	}
 
 	public static <T> Flux<T> handleDiscard(Flux<T> mono) {
@@ -948,22 +931,6 @@ public class LLUtils {
 				discardStage(o);
 			}
 		});
-		// todo: check if the single object discard hook is more performant
-		/*
-				.doOnDiscard(SafeCloseable.class, LLUtils::discardRefCounted)
-				.doOnDiscard(Map.Entry.class, LLUtils::discardEntry)
-				.doOnDiscard(Collection.class, LLUtils::discardCollection)
-				.doOnDiscard(Tuple2.class, LLUtils::discardTuple2)
-				.doOnDiscard(Tuple3.class, LLUtils::discardTuple3)
-				.doOnDiscard(LLEntry.class, LLUtils::discardLLEntry)
-				.doOnDiscard(LLRange.class, LLUtils::discardLLRange)
-				.doOnDiscard(Delta.class, LLUtils::discardDelta)
-				.doOnDiscard(LLDelta.class, LLUtils::discardLLDelta)
-				.doOnDiscard(Send.class, LLUtils::discardSend)
-				.doOnDiscard(Map.class, LLUtils::discardMap)
-				.doOnDiscard(DatabaseStage.class, LLUtils::discardStage);
-
-		 */
 	}
 
 	private static void discardLLEntry(LLEntry entry) {

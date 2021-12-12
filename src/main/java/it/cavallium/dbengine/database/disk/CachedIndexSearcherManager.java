@@ -132,29 +132,26 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	}
 
 	private Mono<Send<LLIndexSearcher>> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
-		// todo: check if defer is really needed
-		return Mono.defer(() -> {
-			if (closeRequested.get()) {
-				return Mono.empty();
-			}
-			return Mono.fromCallable(() -> {
-						activeSearchers.register();
-						IndexSearcher indexSearcher;
-						boolean decRef;
-						if (snapshot == null) {
-							indexSearcher = searcherManager.acquire();
-							decRef = true;
-						} else {
-							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
-							decRef = false;
-						}
-						indexSearcher.setSimilarity(similarity);
-						assert indexSearcher.getIndexReader().getRefCount() > 0;
-						return new LLIndexSearcher(indexSearcher, decRef, this::dropCachedIndexSearcher).send();
-					})
-					.doOnDiscard(Send.class, Send::close)
-					.doOnDiscard(Resource.class, Resource::close);
-		});
+		return Mono.fromCallable(() -> {
+					if (closeRequested.get()) {
+						return null;
+					}
+					activeSearchers.register();
+					IndexSearcher indexSearcher;
+					boolean decRef;
+					if (snapshot == null) {
+						indexSearcher = searcherManager.acquire();
+						decRef = true;
+					} else {
+						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
+						decRef = false;
+					}
+					indexSearcher.setSimilarity(similarity);
+					assert indexSearcher.getIndexReader().getRefCount() > 0;
+					return new LLIndexSearcher(indexSearcher, decRef, this::dropCachedIndexSearcher).send();
+				})
+				.doOnDiscard(Send.class, Send::close)
+				.doOnDiscard(Resource.class, Resource::close);
 	}
 
 	private void dropCachedIndexSearcher() {

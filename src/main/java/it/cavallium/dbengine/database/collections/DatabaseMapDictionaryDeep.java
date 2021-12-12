@@ -388,7 +388,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				});
 	}
 
-	//todo: temporary wrapper. convert the whole class to buffers
 	protected T deserializeSuffix(@NotNull Buffer keySuffix) throws SerializationException {
 		assert suffixKeyLengthConsistency(keySuffix.readableBytes());
 		var result = keySuffixSerializer.deserialize(keySuffix);
@@ -396,7 +395,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		return result;
 	}
 
-	//todo: temporary wrapper. convert the whole class to buffers
 	protected void serializeSuffix(T keySuffix, Buffer output) throws SerializationException {
 		output.ensureWritable(keySuffixLength);
 		var beforeWriterOffset = output.writerOffset();

@@ -173,12 +173,10 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 		return this.serializedSingle.badBlocks();
 	}
 
-	//todo: temporary wrapper. convert the whole class to buffers
 	private A unMap(B bytes) throws SerializationException {
 		return mapper.unmap(bytes);
 	}
 
-	//todo: temporary wrapper. convert the whole class to buffers
 	private B map(A bytes) throws SerializationException {
 		return mapper.map(bytes);
 	}

@@ -16,7 +16,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 
 	private static final OfficialSearcher officialSearcher = new OfficialSearcher();
 
-	private static final LocalSearcher localPagedSearcher = new PagedLocalSearcher();
+	private static final LocalSearcher scoredPaged = new PagedLocalSearcher();
 
 	private static final LocalSearcher countSearcher = new CountMultiSearcher();
 
@@ -72,7 +72,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
 		} else if (queryParams.isSorted() || queryParams.needsScores()) {
 			if (realLimit <= maxAllowedInMemoryLimit) {
-				return localPagedSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
+				return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
 			} else {
 				if ((queryParams.isSorted() && !queryParams.isSortedByScore())) {
 					if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
@@ -81,7 +81,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 					if (sortedScoredFull != null) {
 						return sortedScoredFull.collect(indexSearcher, queryParams, keyFieldName, transformer);
 					} else {
-						return officialSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
+						return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
 					}
 				} else {
 					if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
@@ -90,7 +90,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 					if (unsortedScoredFull != null) {
 						return unsortedScoredFull.collect(indexSearcher, queryParams, keyFieldName, transformer);
 					} else {
-						return officialSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
+						return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
 					}
 				}
 			}

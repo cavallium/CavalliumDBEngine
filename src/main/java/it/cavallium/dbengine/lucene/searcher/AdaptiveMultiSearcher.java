@@ -69,7 +69,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 						if (sortedScoredFull != null) {
 							return sortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 						} else {
-							return officialSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+							return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 						}
 					} else {
 						if (queryParams.limitLong() < MAX_IN_MEMORY_SIZE) {
@@ -78,7 +78,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 						if (unsortedScoredFull != null) {
 							return unsortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 						} else {
-							return officialSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+							return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 						}
 					}
 				}

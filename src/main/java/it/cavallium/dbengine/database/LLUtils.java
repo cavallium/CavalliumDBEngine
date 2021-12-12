@@ -644,6 +644,9 @@ public class LLUtils {
 	@Nullable
 	public static ByteBuffer asReadOnlyDirect(Buffer inputBuffer) {
 		var bytes = inputBuffer.readableBytes();
+		if (bytes == 0) {
+			return EMPTY_BYTE_BUFFER;
+		}
 		if (inputBuffer instanceof ReadableComponent rc) {
 			var componentBuffer = rc.readableBuffer();
 			if (componentBuffer != null && componentBuffer.isDirect()) {

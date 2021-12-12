@@ -322,8 +322,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 								.subStage(dictionary, snapshot, Mono.fromCallable(() -> groupKeyWithoutExtSend.copy().send()))
 								.<Entry<T, US>>handle((us, sink) -> {
 									T deserializedSuffix;
-									try {
-										deserializedSuffix = this.deserializeSuffix(splitGroupSuffix(groupKeyWithoutExtSend));
+									try (var splittedGroupSuffix = splitGroupSuffix(groupKeyWithoutExtSend)) {
+										deserializedSuffix = this.deserializeSuffix(splittedGroupSuffix);
 										sink.next(Map.entry(deserializedSuffix, us));
 									} catch (SerializationException ex) {
 										sink.error(ex);

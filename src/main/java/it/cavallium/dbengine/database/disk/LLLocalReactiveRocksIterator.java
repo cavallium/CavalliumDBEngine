@@ -83,7 +83,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 			}
-			return getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range.copy().send(), db);
+			return getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range, db);
 		}, (tuple, sink) -> {
 			try {
 				var rocksIterator = tuple.getT1();

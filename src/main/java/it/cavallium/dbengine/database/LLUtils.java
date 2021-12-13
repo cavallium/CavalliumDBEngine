@@ -437,10 +437,9 @@ public class LLUtils {
 	/**
 	 * @return null if size is equal to RocksDB.NOT_FOUND
 	 */
-	@SuppressWarnings("ConstantConditions")
 	@Nullable
 	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		var directBuffer = LLUtils.allocateShared(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
+		var directBuffer = allocateShared(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
 		assert directBuffer.readerOffset() == 0;
 		assert directBuffer.writerOffset() == 0;
 		var directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
@@ -464,7 +463,7 @@ public class LLUtils {
 				directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
 				assert directBufferWriter.position() == 0;
 				assert directBufferWriter.isDirect();
-				reader.applyAsInt(directBufferWriter);
+				reader.applyAsInt(directBufferWriter.position(0));
 				return directBuffer.writerOffset(trueSize);
 			}
 		} catch (Throwable t) {

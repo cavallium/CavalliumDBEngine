@@ -110,13 +110,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		if (nettyDirect) {
 			// Get the key nio buffer to pass to RocksDB
 			ByteBuffer keyNioBuffer = LLUtils.asReadOnlyDirect(key);
-			assert keyNioBuffer.isDirect();
 			boolean mustCloseKey;
 			if (keyNioBuffer == null) {
 				mustCloseKey = true;
 				// If the nio buffer is not available, copy the netty buffer into a new direct buffer
 				keyNioBuffer = LLUtils.copyToNewDirectBuffer(key);
 			} else {
+				assert keyNioBuffer.isDirect();
 				mustCloseKey = false;
 			}
 			assert keyNioBuffer.limit() == key.readableBytes();
@@ -144,7 +144,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 							assert keyMayExistValueLength == 0;
 							resultWritable.clear();
 							// real data size
-							size = db.get(cfh, readOptions, keyNioBuffer, resultWritable);
+							size = db.get(cfh, readOptions, keyNioBuffer.position(0), resultWritable);
 							if (size == RocksDB.NOT_FOUND) {
 								resultBuffer.close();
 								return null;
@@ -164,7 +164,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 								assert resultBuffer.readerOffset() == 0;
 								assert resultBuffer.writerOffset() == 0;
 
-								size = db.get(cfh, readOptions, keyNioBuffer, resultWritable);
+								size = db.get(cfh, readOptions, keyNioBuffer.position(0), resultWritable);
 								if (size == RocksDB.NOT_FOUND) {
 									resultBuffer.close();
 									return null;
@@ -301,7 +301,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			}
 			try {
 				if (db.keyMayExist(cfh, keyNioBuffer)) {
-					int size = db.get(cfh, readOptions, keyNioBuffer, LLUtils.EMPTY_BYTE_BUFFER);
+					int size = db.get(cfh, readOptions, keyNioBuffer.position(0), LLUtils.EMPTY_BYTE_BUFFER);
 					return size != RocksDB.NOT_FOUND;
 				} else {
 					return false;

@@ -93,7 +93,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 							if (logger.isTraceEnabled()) {
 								logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 							}
-							return LLLocalDictionary.getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, rangeSend, db);
+							return LLLocalDictionary.getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range, db);
 						}, (tuple, sink) -> {
 							try {
 								var rocksIterator = tuple.getT1();

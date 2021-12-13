@@ -1,5 +1,6 @@
 package org.rocksdb;
 
+import static it.cavallium.dbengine.database.LLUtils.asReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.isDirect;
 
 import io.net5.buffer.api.Buffer;
@@ -111,8 +112,8 @@ public class CappedWriteBatch extends WriteBatch {
 		ByteBuffer keyNioBuffer;
 		ByteBuffer valueNioBuffer;
 		if (USE_FAST_DIRECT_BUFFERS
-				&& (keyNioBuffer = LLUtils.asReadOnlyDirect(key)) != null
-				&& (valueNioBuffer = LLUtils.asReadOnlyDirect(value)) != null) {
+				&& (keyNioBuffer = asReadOnlyDirect(key)) != null
+				&& (valueNioBuffer = asReadOnlyDirect(value)) != null) {
 			buffersToRelease.add(value);
 			buffersToRelease.add(key);
 
@@ -171,7 +172,7 @@ public class CappedWriteBatch extends WriteBatch {
 	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
 		var key = keyToReceive.receive();
 		ByteBuffer keyNioBuffer;
-		if (USE_FAST_DIRECT_BUFFERS && (keyNioBuffer = LLUtils.asReadOnlyDirect(key)) != null) {
+		if (USE_FAST_DIRECT_BUFFERS && (keyNioBuffer = asReadOnlyDirect(key)) != null) {
 			buffersToRelease.add(key);
 			removeDirect(nativeHandle_,
 					keyNioBuffer,
@@ -179,7 +180,6 @@ public class CappedWriteBatch extends WriteBatch {
 					keyNioBuffer.remaining(),
 					columnFamilyHandle.nativeHandle_
 			);
-			keyNioBuffer.position(keyNioBuffer.limit());
 		} else {
 			try {
 				super.delete(columnFamilyHandle, LLUtils.toArray(key));

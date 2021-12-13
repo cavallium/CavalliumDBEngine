@@ -8,6 +8,7 @@ import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.QueryParamsBuilder;
+import java.time.Duration;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -18,7 +19,8 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 																			long limit,
 																			@Nullable Float minCompetitiveScore,
 																			@Nullable Sort sort,
-																			boolean computePreciseHitsCount) {
+																			boolean computePreciseHitsCount,
+																			@NotNull Duration timeout) {
 
 	public static ClientQueryParamsBuilder builder() {
 		return ClientQueryParamsBuilder
@@ -28,6 +30,7 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.limit(Long.MAX_VALUE)
 				.minCompetitiveScore(null)
 				.sort(null)
+				.timeout(Duration.ofSeconds(10))
 				.computePreciseHitsCount(true);
 	}
 
@@ -44,6 +47,7 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.offset(offset())
 				.limit(limit())
 				.computePreciseHitsCount(computePreciseHitsCount())
+				.timeoutMilliseconds(timeout.toMillis())
 				.build();
 	}
 }

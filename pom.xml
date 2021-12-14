@@ -544,12 +544,7 @@
             <annotationProcessor>io.soabase.recordbuilder.processor.RecordBuilderProcessor</annotationProcessor>
           </annotationProcessors>
           <useIncrementalCompilation>false</useIncrementalCompilation>
-          <compilerArgs>
-            <arg>--enable-preview</arg>
-            <arg>--add-opens=java.base/jdk.internal.misc=ALL-UNNAMED</arg>
-            <arg>--add-opens=java.base/java.lang=ALL-UNNAMED</arg>
-            <arg>--add-opens=java.base/java.nio=ALL-UNNAMED</arg>
-          </compilerArgs>
+          <compilerArgs>--enable-preview</compilerArgs>
           <source>17</source>
           <target>17</target>
         </configuration>

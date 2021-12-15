@@ -57,29 +57,34 @@ public class SnapshotsManager {
 	 */
 	private Mono<IndexCommit> takeLuceneSnapshot() {
 		return Mono
-				.fromCallable(snapshotter::snapshot)
-				.subscribeOn(Schedulers.boundedElastic())
-				.onErrorResume(ex -> Mono
-						.defer(() -> {
-							if (ex instanceof IllegalStateException && "No index commit to snapshot".equals(ex.getMessage())) {
-								return Mono.fromCallable(() -> {
-									activeTasks.register();
-									try {
-										indexWriter.commit();
-										return snapshotter.snapshot();
-									} finally {
-										activeTasks.arriveAndDeregister();
-									}
-								});
-							} else {
-								return Mono.error(ex);
+				.<IndexCommit>create(sink -> Schedulers.boundedElastic().schedule(() -> {
+					try {
+						sink.success(snapshotter.snapshot());
+					} catch (Throwable ex) {
+						sink.error(ex);
+					}
+				}))
+				.onErrorResume(ex -> {
+					if (ex instanceof IllegalStateException && "No index commit to snapshot".equals(ex.getMessage())) {
+						return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
+							activeTasks.register();
+							try {
+								indexWriter.commit();
+								sink.success(snapshotter.snapshot());
+							} catch (Throwable e) {
+								sink.error(e);
+							} finally {
+								activeTasks.arriveAndDeregister();
 							}
-						})
-				);
+						}));
+					} else {
+						return Mono.error(ex);
+					}
+				});
 	}
 
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return Mono.<Void>fromCallable(() -> {
+		return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
 			activeTasks.register();
 			try {
 				var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
@@ -93,11 +98,13 @@ public class SnapshotsManager {
 				snapshotter.release(luceneIndexSnapshot);
 				// Delete unused files after releasing the snapshot
 				indexWriter.deleteUnusedFiles();
-				return null;
+				sink.success();
+			} catch (Throwable ex) {
+				sink.error(ex);
 			} finally {
 				activeTasks.arriveAndDeregister();
 			}
-		}).subscribeOn(Schedulers.boundedElastic());
+		}));
 	}
 
 	public void close() {

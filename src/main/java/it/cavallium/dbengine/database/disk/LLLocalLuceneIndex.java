@@ -250,6 +250,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
 		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledCommit, commitMillis, commitMillis,
 				TimeUnit.MILLISECONDS);
+		// Maybe merge every 5 commits
+		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledMerge, commitMillis * 5, commitMillis * 5,
+				TimeUnit.MILLISECONDS);
 	}
 
 	private Similarity getLuceneSimilarity() {
@@ -263,7 +266,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSnapshot> takeSnapshot() {
-		return snapshotsManager.takeSnapshot().subscribeOn(luceneHeavyTasksScheduler).transform(this::ensureOpen);
+		return snapshotsManager.takeSnapshot().transform(this::ensureOpen);
 	}
 
 	private <V> Mono<V> ensureOpen(Mono<V> mono) {
@@ -500,6 +503,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			indexWriter.commit();
 		} catch (IOException ex) {
 			logger.error(MARKER_LUCENE, "Failed to execute a scheduled commit", ex);
+		}
+	}
+
+	private void scheduledMerge() {
+		try {
+			indexWriter.maybeMerge();
+		} catch (IOException ex) {
+			logger.error(MARKER_LUCENE, "Failed to execute a scheduled merge", ex);
 		}
 	}
 

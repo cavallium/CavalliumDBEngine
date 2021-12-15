@@ -277,35 +277,29 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private <V> Mono<V> runSafe(Callable<V> callable) {
-		return Mono.<V>create(sink -> {
-			var future = SAFE_EXECUTOR.submit(() -> {
-				try {
-					var result = callable.call();
-					if (result != null) {
-						sink.success(result);
-					} else {
-						sink.success();
-					}
-				} catch (Throwable e) {
-					sink.error(e);
+		return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
+			try {
+				var result = callable.call();
+				if (result != null) {
+					sink.success(result);
+				} else {
+					sink.success();
 				}
-			});
-			sink.onDispose(() -> future.cancel(false));
-		});
+			} catch (Throwable e) {
+				sink.error(e);
+			}
+		}));
 	}
 
 	private <V> Mono<V> runSafe(IORunnable runnable) {
-		return Mono.create(sink -> {
-			var future = SAFE_EXECUTOR.submit(() -> {
-				try {
-					runnable.run();
-					sink.success();
-				} catch (Throwable e) {
-					sink.error(e);
-				}
-			});
-			sink.onDispose(() -> future.cancel(false));
-		});
+		return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
+			try {
+				runnable.run();
+				sink.success();
+			} catch (Throwable e) {
+				sink.error(e);
+			}
+		}));
 	}
 
 	@Override

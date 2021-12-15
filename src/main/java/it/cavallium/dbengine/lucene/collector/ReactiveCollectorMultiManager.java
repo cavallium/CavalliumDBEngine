@@ -15,15 +15,13 @@ import reactor.core.publisher.Sinks.Many;
 
 public class ReactiveCollectorMultiManager implements CollectorMultiManager<Void, Void> {
 
-	private final FluxSink<ScoreDoc> scoreDocsSink;
-	private final LongSemaphore requested;
 
-	public ReactiveCollectorMultiManager(FluxSink<ScoreDoc> scoreDocsSink, LongSemaphore requested) {
-		this.scoreDocsSink = scoreDocsSink;
-		this.requested = requested;
+	public ReactiveCollectorMultiManager() {
 	}
 
-	public CollectorManager<Collector, Void> get(int shardIndex) {
+	public CollectorManager<Collector, Void> get(LongSemaphore requested,
+			FluxSink<ScoreDoc> scoreDocsSink,
+			int shardIndex) {
 		return new CollectorManager<>() {
 
 			@Override

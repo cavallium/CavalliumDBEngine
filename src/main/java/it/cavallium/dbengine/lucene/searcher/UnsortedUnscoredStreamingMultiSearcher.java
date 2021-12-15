@@ -1,5 +1,8 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static java.lang.Math.toIntExact;
+import static java.util.Objects.requireNonNull;
+
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
@@ -11,8 +14,10 @@ import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInpu
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -28,11 +33,9 @@ import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuples;
 
 public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
-
-  private static final ExecutorService SCHEDULER = Executors.newCachedThreadPool(new ShortNamedThreadFactory(
-			"UnscoredStreamingSearcher"));
 
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
@@ -61,47 +64,32 @@ public class UnsortedUnscoredStreamingMultiSearcher implements MultiSearcher {
 				}
 				var shards = indexSearchers.shards();
 
-				Flux<ScoreDoc> scoreDocsFlux = Flux.<ScoreDoc>create(scoreDocsSink -> {
-					var requested = new LongSemaphore(0);
-					var cmm = new ReactiveCollectorMultiManager(scoreDocsSink, requested);
+				var cmm = new ReactiveCollectorMultiManager();
 
-					scoreDocsSink.onRequest(requested::release);
+				Flux<ScoreDoc> scoreDocsFlux = Flux.fromIterable(shards)
+						.index()
+						.flatMap(tuple -> Flux.<ScoreDoc>create(scoreDocsSink -> {
+							LLUtils.ensureBlocking();
+							var index = toIntExact(requireNonNull(tuple.getT1()));
+							var shard = tuple.getT2();
+							var requested = new LongSemaphore(0);
+							var collectorManager = cmm.get(requested, scoreDocsSink, index);
 
-					int mutableShardIndex = 0;
-					CompletableFuture<?>[] futures = new CompletableFuture<?>[shards.size()];
-					for (IndexSearcher shard : shards) {
-						int shardIndex = mutableShardIndex++;
-						assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
+							assert queryParams.computePreciseHitsCount() == cmm.scoreMode().isExhaustive();
 
-						var future = CompletableFuture.runAsync(() -> {
+							scoreDocsSink.onRequest(requested::release);
+
 							try {
-								LLUtils.ensureBlocking();
-								var collectorManager = cmm.get(shardIndex);
 								shard.search(localQueryParams.query(), collectorManager.newCollector());
+								scoreDocsSink.complete();
 							} catch (IOException e) {
-								throw new CompletionException(e);
+								scoreDocsSink.error(e);
 							}
-						}, SCHEDULER);
-
-						futures[shardIndex] = future;
-					}
-					var combinedFuture = CompletableFuture.allOf(futures).whenCompleteAsync((result, ex) -> {
-						if (ex != null) {
-							scoreDocsSink.error(ex);
-						} else {
-							scoreDocsSink.complete();
-						}
-					});
-					scoreDocsSink.onDispose(() -> {
-						for (CompletableFuture<?> future : futures) {
-							future.cancel(true);
-						}
-						combinedFuture.cancel(true);
-					});
-				}, OverflowStrategy.BUFFER).subscribeOn(Schedulers.boundedElastic()).publishOn(Schedulers.boundedElastic());
+						}, OverflowStrategy.BUFFER).subscribeOn(Schedulers.boundedElastic()));
 
 
-				Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
+				Flux<LLKeyScore> resultsFlux = LuceneUtils
+						.convertHits(scoreDocsFlux.publishOn(Schedulers.boundedElastic()), shards, keyFieldName, false);
 
 				var totalHitsCount = new TotalHitsCount(0, false);
 				Flux<LLKeyScore> mergedFluxes = resultsFlux

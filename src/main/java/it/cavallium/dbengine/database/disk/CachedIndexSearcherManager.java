@@ -34,8 +34,7 @@ import reactor.core.scheduler.Schedulers;
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
-	private final Executor SEARCH_EXECUTOR = Executors
-			.newCachedThreadPool(new ShortNamedThreadFactory("lucene-search"));
+	private final Executor SEARCH_EXECUTOR = command -> Schedulers.boundedElastic().schedule(command);
 	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
 
 	private final SnapshotsManager snapshotsManager;
@@ -128,7 +127,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					logger.info("Closed active searchers");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
-				})).cache();
+				}).subscribeOn(Schedulers.boundedElastic())).cache();
 	}
 
 	private Mono<Send<LLIndexSearcher>> generateCachedSearcher(@Nullable LLSnapshot snapshot) {

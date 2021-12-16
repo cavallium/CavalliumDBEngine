@@ -12,9 +12,7 @@ import it.cavallium.dbengine.database.disk.RocksDBColumn;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 
-@NotAtomic
 public class CappedWriteBatch extends WriteBatch {
 
 	/**

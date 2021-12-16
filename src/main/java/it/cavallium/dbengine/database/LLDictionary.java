@@ -10,12 +10,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-@NotAtomic
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	String getColumnName();

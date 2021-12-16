@@ -1,8 +1,5 @@
 package it.cavallium.dbengine.database.serialization;
 
-import org.warp.commonutils.concurrency.atomicity.NotAtomic;
-
-@NotAtomic
 public class CodecsArray<A> implements Codecs<A> {
 
 	private final Codec<A>[] codecs;

@@ -57,7 +57,6 @@ import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
-import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -69,7 +68,6 @@ import reactor.util.function.Tuple3;
 import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
 
-@NotAtomic
 public class LLLocalDictionary implements LLDictionary {
 
 	protected static final Logger logger = LoggerFactory.getLogger(LLLocalDictionary.class);

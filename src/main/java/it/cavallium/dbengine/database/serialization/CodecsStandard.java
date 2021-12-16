@@ -2,9 +2,7 @@ package it.cavallium.dbengine.database.serialization;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
-import org.warp.commonutils.concurrency.atomicity.NotAtomic;
 
-@NotAtomic
 public class CodecsStandard<A> implements Codecs<A> {
 
 	private final Int2ObjectMap<Codec<A>> codecs;

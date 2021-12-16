@@ -561,7 +561,7 @@ public class LuceneUtils {
 				}).subscribeOn(Schedulers.boundedElastic()));
 	}
 
-	public static Collector withTimeout(TopDocsCollector<?> collector, Duration timeout) {
+	public static Collector withTimeout(Collector collector, Duration timeout) {
 		return new TimeLimitingCollector(collector, TimeLimitingCollector.getGlobalCounter(), timeout.toMillis());
 	}
 }

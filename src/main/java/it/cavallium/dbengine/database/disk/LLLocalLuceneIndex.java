@@ -228,7 +228,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setMergeScheduler(mergeScheduler);
 		if (luceneOptions.indexWriterBufferSize() == -1) {
 			//todo: allow to configure maxbuffereddocs fallback
-			indexWriterConfig.setMaxBufferedDocs(1000);
+			indexWriterConfig.setMaxBufferedDocs(80000);
 			// disable ram buffer size after enabling maxBufferedDocs
 			indexWriterConfig.setRAMBufferSizeMB(-1);
 		} else {

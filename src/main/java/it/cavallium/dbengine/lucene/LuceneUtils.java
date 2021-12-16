@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -27,6 +29,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -355,28 +358,27 @@ public class LuceneUtils {
 		);
 	}
 
-	/**
-	 * HitsFlux must run on a blocking scheduler
-	 */
 	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
 			List<IndexSearcher> indexSearchers,
 			String keyFieldName,
 			boolean preserveOrder) {
 		if (preserveOrder) {
 			return hitsFlux
-					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
+					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName))
+					.publishOn(Schedulers.parallel());
 		} else {
-			// Compute parallelism
-			var availableProcessors = Runtime.getRuntime().availableProcessors();
-			var min = Queues.XS_BUFFER_SIZE;
-			var maxParallelGroups = Math.max(availableProcessors, min);
-
 			return hitsFlux
-					.groupBy(hit -> hit.shardIndex % maxParallelGroups) // Max n groups
-					.flatMap(shardHits -> shardHits
-									.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName)),
-							maxParallelGroups // Max n concurrency. Concurrency must be >= total groups count
-					);
+					.buffer(Queues.XS_BUFFER_SIZE, () -> new ArrayList<Object>(Queues.XS_BUFFER_SIZE))
+					.flatMap(shardHits -> Mono.fromCallable(() -> {
+						for (int i = 0, size = shardHits.size(); i < size; i++) {
+							shardHits.set(i, mapHitBlocking((ScoreDoc) shardHits.get(i), indexSearchers, keyFieldName));
+						}
+						//noinspection unchecked
+						return (List<LLKeyScore>) (List<?>) shardHits;
+					}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+					.flatMapIterable(a -> a)
+					.publishOn(Schedulers.parallel());
 		}
 	}
 
@@ -384,16 +386,16 @@ public class LuceneUtils {
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
 			List<IndexSearcher> indexSearchers,
 			String keyFieldName) {
-		if (Schedulers.isInNonBlockingThread()) {
-			throw new UnsupportedOperationException("Called mapHitBlocking in a nonblocking thread");
-		}
+		assert !Schedulers.isInNonBlockingThread();
 		int shardDocId = hit.doc;
 		int shardIndex = hit.shardIndex;
 		float score = hit.score;
+		IndexSearcher indexSearcher;
 		if (shardIndex == -1 && indexSearchers.size() == 1) {
-			shardIndex = 0;
+			indexSearcher = indexSearchers.get(0);
+		} else {
+			indexSearcher = indexSearchers.get(shardIndex);
 		}
-		var indexSearcher = indexSearchers.get(shardIndex);
 		try {
 			String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
 			return new LLKeyScore(shardDocId, score, collectedDoc);
@@ -556,9 +558,9 @@ public class LuceneUtils {
 							localQueryParams.minCompetitiveScore(),
 							localQueryParams.sort(),
 							localQueryParams.computePreciseHitsCount(),
-							localQueryParams.timeout()
-					);
-				}).subscribeOn(Schedulers.boundedElastic()));
+							localQueryParams.timeout());
+				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+				.publishOn(Schedulers.parallel());
 	}
 
 	public static Collector withTimeout(Collector collector, Duration timeout) {

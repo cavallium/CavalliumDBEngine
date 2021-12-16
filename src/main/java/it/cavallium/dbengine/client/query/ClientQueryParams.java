@@ -30,7 +30,8 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.limit(Long.MAX_VALUE)
 				.minCompetitiveScore(null)
 				.sort(null)
-				.timeout(Duration.ofSeconds(10))
+				// Default timeout: 2 minutes
+				.timeout(Duration.ofMinutes(2))
 				.computePreciseHitsCount(true);
 	}
 

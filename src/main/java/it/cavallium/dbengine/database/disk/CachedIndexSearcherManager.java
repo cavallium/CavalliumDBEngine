@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
@@ -34,7 +36,8 @@ import reactor.core.scheduler.Schedulers;
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
-	private final Executor SEARCH_EXECUTOR = command -> Schedulers.boundedElastic().schedule(command);
+	private final Executor SEARCH_EXECUTOR = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
+			new ShortNamedThreadFactory("lucene-search").withGroup(new ThreadGroup("lucene-search")));
 	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
 
 	private final SnapshotsManager snapshotsManager;
@@ -72,7 +75,8 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 						logger.error("Failed to refresh the searcher manager", ex);
 					}
 				})
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel())
 				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime))
 				.takeUntilOther(closeRequestedMono.asMono())
 				.doAfterTerminate(refresherClosed::tryEmitEmpty)
@@ -102,6 +106,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					logger.info("Closing refreshes...");
 					if (!activeRefreshes.isTerminated()) {
 						try {
+							//noinspection BlockingMethodInNonBlockingContext
 							activeRefreshes.awaitAdvanceInterruptibly(activeRefreshes.arrive(), 15, TimeUnit.SECONDS);
 						} catch (Exception ex) {
 							if (ex instanceof TimeoutException) {
@@ -115,6 +120,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					logger.info("Closing active searchers...");
 					if (!activeSearchers.isTerminated()) {
 						try {
+							//noinspection BlockingMethodInNonBlockingContext
 							activeSearchers.awaitAdvanceInterruptibly(activeSearchers.arrive(), 15, TimeUnit.SECONDS);
 						} catch (Exception ex) {
 							if (ex instanceof TimeoutException) {
@@ -127,7 +133,9 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					logger.info("Closed active searchers");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
-				}).subscribeOn(Schedulers.boundedElastic())).cache();
+				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+				.publishOn(Schedulers.parallel())
+				.cache();
 	}
 
 	private Mono<Send<LLIndexSearcher>> generateCachedSearcher(@Nullable LLSnapshot snapshot) {

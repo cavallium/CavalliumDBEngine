@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -120,7 +122,8 @@ public class CountMultiSearcher implements MultiSearcher {
 											LLUtils.ensureBlocking();
 											return is.getIndexSearcher().count(queryParams2.query());
 										}
-									}).subscribeOn(Schedulers.boundedElastic()))
+									}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+									.publishOn(Schedulers.parallel())
 									.timeout(queryParams.timeout());
 						},
 						is -> Mono.empty()

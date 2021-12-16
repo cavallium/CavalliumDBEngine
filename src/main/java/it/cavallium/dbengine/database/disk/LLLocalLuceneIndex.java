@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANSFORMATION;
 
@@ -90,7 +91,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 * There is only a single thread globally to not overwhelm the disk with
 	 * concurrent commits or concurrent refreshes.
 	 */
-	private static final Scheduler luceneHeavyTasksScheduler = Schedulers.single(Schedulers.boundedElastic());
+	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.single(Schedulers.boundedElastic()));
 	private static final ExecutorService SAFE_EXECUTOR = Executors.newCachedThreadPool(new ShortNamedThreadFactory("lucene-index-impl"));
 
 	private final MeterRegistry meterRegistry;
@@ -280,29 +281,17 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	private <V> Mono<V> runSafe(Callable<V> callable) {
-		return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
-			try {
-				var result = callable.call();
-				if (result != null) {
-					sink.success(result);
-				} else {
-					sink.success();
-				}
-			} catch (Throwable e) {
-				sink.error(e);
-			}
-		}));
+		return Mono
+				.fromCallable(callable)
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel());
 	}
 
 	private <V> Mono<V> runSafe(IORunnable runnable) {
-		return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
-			try {
-				runnable.run();
-				sink.success();
-			} catch (Throwable e) {
-				sink.error(e);
-			}
-		}));
+		return Mono.<V>fromCallable(() -> {
+			runnable.run();
+			return null;
+		}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())).publishOn(Schedulers.parallel());
 	}
 
 	@Override

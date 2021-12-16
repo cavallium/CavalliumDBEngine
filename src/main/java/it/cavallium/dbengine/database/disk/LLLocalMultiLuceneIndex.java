@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
@@ -280,10 +282,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				.flatMap(LLLocalLuceneIndex::close)
 				.then(Mono.fromCallable(() -> {
 					if (multiSearcher instanceof Closeable closeable) {
+						//noinspection BlockingMethodInNonBlockingContext
 						closeable.close();
 					}
 					return null;
-				}).subscribeOn(Schedulers.boundedElastic()))
+				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+				.publishOn(Schedulers.parallel())
 				.then();
 	}
 

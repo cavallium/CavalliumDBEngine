@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
@@ -146,7 +147,8 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel())
 				.map(PageData::topDocs)
 				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
 				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
@@ -194,7 +196,8 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							var cm = cmm.get(shard, index);
 
 							return shard.search(queryParams.query(), cm);
-						}))
+						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+						.publishOn(Schedulers.parallel())
 						.collectList()
 						.flatMap(results -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
@@ -210,8 +213,9 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							var nextPageIndex = s.pageIndex() + 1;
 							var nextPageInfo = new CurrentPageInfo(pageLastDoc, nextRemainingLimit, nextPageIndex);
 							return new PageData(pageTopDocs, nextPageInfo);
-						}))
-				);
+						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+				)
+				.publishOn(Schedulers.parallel());
 	}
 
 	@Override

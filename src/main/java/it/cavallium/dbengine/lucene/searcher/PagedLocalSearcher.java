@@ -1,10 +1,12 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.client.UninterruptibleScheduler;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
@@ -91,7 +93,9 @@ public class PagedLocalSearcher implements LocalSearcher {
 				.just(currentPageInfo)
 				.<PageData>handle((s, sink) -> this.searchPageSync(queryParams, indexSearchers, pagination, resultsOffset, s, sink))
 				//defaultIfEmpty(new PageData(new TopDocs(new TotalHits(0, Relation.EQUAL_TO), new ScoreDoc[0]), currentPageInfo))
-				.single();
+				.single()
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel());
 	}
 
 	/**
@@ -144,7 +148,8 @@ public class PagedLocalSearcher implements LocalSearcher {
 						(s, sink) -> searchPageSync(queryParams, indexSearchers, true, 0, s, sink),
 						s -> {}
 				)
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel())
 				.map(PageData::topDocs)
 				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
 				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,

@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.util.Objects;
@@ -57,34 +59,28 @@ public class SnapshotsManager {
 	 */
 	private Mono<IndexCommit> takeLuceneSnapshot() {
 		return Mono
-				.<IndexCommit>create(sink -> Schedulers.boundedElastic().schedule(() -> {
-					try {
-						sink.success(snapshotter.snapshot());
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				}))
+				.fromCallable(snapshotter::snapshot)
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
 				.onErrorResume(ex -> {
 					if (ex instanceof IllegalStateException && "No index commit to snapshot".equals(ex.getMessage())) {
-						return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
+						return Mono.fromCallable(() -> {
 							activeTasks.register();
 							try {
 								indexWriter.commit();
-								sink.success(snapshotter.snapshot());
-							} catch (Throwable e) {
-								sink.error(e);
+								return snapshotter.snapshot();
 							} finally {
 								activeTasks.arriveAndDeregister();
 							}
-						}));
+						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
 					} else {
 						return Mono.error(ex);
 					}
-				});
+				})
+				.publishOn(Schedulers.parallel());
 	}
 
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return Mono.create(sink -> Schedulers.boundedElastic().schedule(() -> {
+		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
 			try {
 				var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
@@ -98,13 +94,11 @@ public class SnapshotsManager {
 				snapshotter.release(luceneIndexSnapshot);
 				// Delete unused files after releasing the snapshot
 				indexWriter.deleteUnusedFiles();
-				sink.success();
-			} catch (Throwable ex) {
-				sink.error(ex);
+				return null;
 			} finally {
 				activeTasks.arriveAndDeregister();
 			}
-		}));
+		}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())).publishOn(Schedulers.parallel());
 	}
 
 	public void close() {

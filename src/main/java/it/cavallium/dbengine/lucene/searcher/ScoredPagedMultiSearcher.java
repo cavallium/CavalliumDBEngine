@@ -184,6 +184,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						return null;
 					}
 				})
+				.subscribeOn(Schedulers.boundedElastic())
 				.flatMap(cmm -> Flux
 						.fromIterable(indexSearchers)
 						.index()

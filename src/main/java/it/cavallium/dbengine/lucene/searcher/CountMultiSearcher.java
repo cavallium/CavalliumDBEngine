@@ -126,13 +126,7 @@ public class CountMultiSearcher implements MultiSearcher {
 										try (var is = indexSearcher.receive()) {
 											LLUtils.ensureBlocking();
 
-											// If the timeout is very big, use the default count without timeout, because it's faster
-											if (queryParams2.timeout().compareTo(Duration.ofHours(1)) >= 0) {
-												return (long) is.getIndexSearcher().count(queryParams2.query());
-											} else {
-												var totalHitsCountCollectorManager = new TotalHitCountCollectorManager(queryParams2.timeout());
-												return is.getIndexSearcher().search(queryParams2.query(), totalHitsCountCollectorManager);
-											}
+											return (long) is.getIndexSearcher().count(queryParams2.query());
 										}
 									}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 									.publishOn(Schedulers.parallel())

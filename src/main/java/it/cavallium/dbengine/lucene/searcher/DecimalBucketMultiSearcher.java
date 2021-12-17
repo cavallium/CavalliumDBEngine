@@ -6,18 +6,18 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.collector.DecimalBucketMultiCollectorManager;
 import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class DecimalBucketMultiSearcher {
 
-	protected static final Logger logger = LoggerFactory.getLogger(DecimalBucketMultiSearcher.class);
+	protected static final Logger logger = LogManager.getLogger(DecimalBucketMultiSearcher.class);
 
 	public Mono<Buckets> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			BucketParams bucketParams,

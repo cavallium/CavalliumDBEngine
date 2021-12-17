@@ -11,17 +11,17 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		ResourceSupport<LLLocalGroupedReactiveRocksIterator<T>, LLLocalGroupedReactiveRocksIterator<T>> {
 
-	protected static final Logger logger = LoggerFactory.getLogger(LLLocalGroupedReactiveRocksIterator.class);
+	protected static final Logger logger = LogManager.getLogger(LLLocalGroupedReactiveRocksIterator.class);
 	private static final Drop<LLLocalGroupedReactiveRocksIterator<?>> DROP = new Drop<>() {
 		@Override
 		public void drop(LLLocalGroupedReactiveRocksIterator<?> obj) {

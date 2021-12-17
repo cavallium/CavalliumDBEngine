@@ -25,6 +25,8 @@ import it.cavallium.dbengine.database.RepeatedElementList;
 import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -40,8 +42,6 @@ import org.rocksdb.RocksIterator;
 import org.rocksdb.Transaction;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.scheduler.Schedulers;
 import sun.misc.Unsafe;
 
@@ -51,7 +51,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private static final byte[] NO_DATA = new byte[0];
 	protected static final UpdateAtomicResult RESULT_NOTHING = new UpdateAtomicResultNothing();
 
-	protected final Logger logger = LoggerFactory.getLogger(this.getClass());
+	protected final Logger logger = LogManager.getLogger(this.getClass());
 
 	private final T db;
 	private final DatabaseOptions opts;

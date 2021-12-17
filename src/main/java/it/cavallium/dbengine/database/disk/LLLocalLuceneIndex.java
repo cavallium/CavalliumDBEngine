@@ -50,6 +50,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexWriter;
@@ -72,8 +74,6 @@ import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.warp.commonutils.functional.IORunnable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -83,7 +83,7 @@ import reactor.util.function.Tuple2;
 
 public class LLLocalLuceneIndex implements LLLuceneIndex {
 
-	protected static final Logger logger = LoggerFactory.getLogger(LLLocalLuceneIndex.class);
+	protected static final Logger logger = LogManager.getLogger(LLLocalLuceneIndex.class);
 	private final LocalSearcher localSearcher;
 	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 	/**

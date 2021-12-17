@@ -32,6 +32,8 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.time.StopWatch;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
@@ -58,8 +60,6 @@ import org.rocksdb.TransactionDB;
 import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -70,7 +70,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		RocksDB.loadLibrary();
 	}
 
-	protected static final Logger logger = LoggerFactory.getLogger(LLLocalKeyValueDatabase.class);
+	protected static final Logger logger = LogManager.getLogger(LLLocalKeyValueDatabase.class);
 	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
 			RocksDB.DEFAULT_COLUMN_FAMILY);
 

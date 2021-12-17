@@ -5,13 +5,13 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 
 public class NullableBuffer extends ResourceSupport<NullableBuffer, NullableBuffer> {
 
-	private static final Logger logger = LoggerFactory.getLogger(NullableBuffer.class);
+	private static final Logger logger = LogManager.getLogger(NullableBuffer.class);
 
 	private static final Drop<NullableBuffer> DROP = new Drop<>() {
 		@Override

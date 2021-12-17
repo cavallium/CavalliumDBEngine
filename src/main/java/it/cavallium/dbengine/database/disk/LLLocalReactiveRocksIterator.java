@@ -10,17 +10,17 @@ import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 
 public abstract class LLLocalReactiveRocksIterator<T> extends
 		ResourceSupport<LLLocalReactiveRocksIterator<T>, LLLocalReactiveRocksIterator<T>> {
 
-	protected static final Logger logger = LoggerFactory.getLogger(LLLocalReactiveRocksIterator.class);
+	protected static final Logger logger = LogManager.getLogger(LLLocalReactiveRocksIterator.class);
 	private static final Drop<LLLocalReactiveRocksIterator<?>> DROP = new Drop<>() {
 		@Override
 		public void drop(LLLocalReactiveRocksIterator<?> obj) {

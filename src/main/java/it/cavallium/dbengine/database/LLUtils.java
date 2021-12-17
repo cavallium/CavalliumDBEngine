@@ -38,6 +38,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.Marker;
+import org.apache.logging.log4j.MarkerManager;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.FloatPoint;
@@ -57,10 +61,6 @@ import org.apache.lucene.search.SortedNumericSortField;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
-import org.slf4j.Marker;
-import org.slf4j.MarkerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -70,9 +70,9 @@ import reactor.util.function.Tuple3;
 @SuppressWarnings("unused")
 public class LLUtils {
 
-	private static final Logger logger = LoggerFactory.getLogger(LLUtils.class);
-	public static final Marker MARKER_ROCKSDB = MarkerFactory.getMarker("ROCKSDB");
-	public static final Marker MARKER_LUCENE = MarkerFactory.getMarker("LUCENE");
+	private static final Logger logger = LogManager.getLogger(LLUtils.class);
+	public static final Marker MARKER_ROCKSDB = MarkerManager.getMarker("ROCKSDB");
+	public static final Marker MARKER_LUCENE = MarkerManager.getMarker("LUCENE");
 
 	public static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
 	public static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0).asReadOnlyBuffer();
@@ -855,11 +855,23 @@ public class LLUtils {
 	}
 
 	public static Mono<Send<Buffer>> lazyRetain(Buffer buf) {
-		return Mono.just(buf).map(b -> b.copy().send());
+		return Mono.fromSupplier(() -> {
+			if (buf != null && buf.isAccessible()) {
+				return buf.copy().send();
+			} else {
+				return null;
+			}
+		});
 	}
 
 	public static Mono<Send<LLRange>> lazyRetainRange(LLRange range) {
-		return Mono.just(range).map(r -> r.copy().send());
+		return Mono.fromSupplier(() -> {
+			if (range != null && range.isAccessible()) {
+				return range.copy().send();
+			} else {
+				return null;
+			}
+		});
 	}
 
 	public static Mono<Send<Buffer>> lazyRetain(Callable<Send<Buffer>> bufCallable) {

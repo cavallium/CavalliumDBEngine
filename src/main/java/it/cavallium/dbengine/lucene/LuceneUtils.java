@@ -37,6 +37,8 @@ import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.stream.Collectors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
@@ -75,8 +77,6 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -85,7 +85,7 @@ import reactor.util.function.Tuple2;
 
 public class LuceneUtils {
 
-	private static final Logger logger = LoggerFactory.getLogger(LuceneUtils.class);
+	private static final Logger logger = LogManager.getLogger(LuceneUtils.class);
 
 	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
 	private static final Analyzer lucene4GramStringAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(false, 4, 4);

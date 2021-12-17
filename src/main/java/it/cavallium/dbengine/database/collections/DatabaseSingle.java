@@ -18,9 +18,9 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
@@ -28,7 +28,7 @@ import reactor.core.publisher.SynchronousSink;
 public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseSingle<U>> implements
 		DatabaseStageEntry<U> {
 
-	private static final Logger logger = LoggerFactory.getLogger(DatabaseSingle.class);
+	private static final Logger logger = LogManager.getLogger(DatabaseSingle.class);
 
 	private static final Drop<DatabaseSingle<?>> DROP = new Drop<>() {
 		@Override

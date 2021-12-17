@@ -17,6 +17,8 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.SearcherFactory;
@@ -25,8 +27,6 @@ import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
@@ -35,7 +35,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
-	private static final Logger logger = LoggerFactory.getLogger(CachedIndexSearcherManager.class);
+	private static final Logger logger = LogManager.getLogger(CachedIndexSearcherManager.class);
 	private final Executor SEARCH_EXECUTOR = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
 			new ShortNamedThreadFactory("lucene-search").withGroup(new ThreadGroup("lucene-search")));
 	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);

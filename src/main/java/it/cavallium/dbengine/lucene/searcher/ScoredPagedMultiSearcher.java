@@ -14,20 +14,20 @@ import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInpu
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class ScoredPagedMultiSearcher implements MultiSearcher {
 
-	protected static final Logger logger = LoggerFactory.getLogger(ScoredPagedMultiSearcher.class);
+	protected static final Logger logger = LogManager.getLogger(ScoredPagedMultiSearcher.class);
 
 	public ScoredPagedMultiSearcher() {
 	}

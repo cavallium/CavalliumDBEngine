@@ -6,13 +6,13 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 
 public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 
-	private static final Logger logger = LoggerFactory.getLogger(LLDelta.class);
+	private static final Logger logger = LogManager.getLogger(LLDelta.class);
 
 	private static final Drop<LLDelta> DROP = new Drop<>() {
 		@Override

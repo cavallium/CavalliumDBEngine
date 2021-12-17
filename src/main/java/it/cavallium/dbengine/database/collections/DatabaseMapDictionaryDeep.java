@@ -19,10 +19,10 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Map;
 import java.util.Map.Entry;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -30,7 +30,7 @@ import reactor.core.publisher.Mono;
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends ResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryDeep<T, U, US>>
 		implements DatabaseStageMap<T, U, US> {
 
-	private static final Logger logger = LoggerFactory.getLogger(DatabaseMapDictionaryDeep.class);
+	private static final Logger logger = LogManager.getLogger(DatabaseMapDictionaryDeep.class);
 
 	private static final Drop<DatabaseMapDictionaryDeep<?, ?, ?>> DROP = new Drop<>() {
 		@Override

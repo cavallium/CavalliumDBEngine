@@ -22,10 +22,10 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -33,7 +33,7 @@ import reactor.core.publisher.Mono;
 public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryHashed<T, U, TH>>
 		implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
-	private static final Logger logger = LoggerFactory.getLogger(DatabaseMapDictionaryHashed.class);
+	private static final Logger logger = LogManager.getLogger(DatabaseMapDictionaryHashed.class);
 
 	private static final Drop<DatabaseMapDictionaryHashed<?, ?, ?>> DROP = new Drop<>() {
 		@Override

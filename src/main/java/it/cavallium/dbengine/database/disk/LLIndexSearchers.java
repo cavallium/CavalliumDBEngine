@@ -12,11 +12,11 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.search.IndexSearcher;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 
 public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 
@@ -37,7 +37,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 	class UnshardedIndexSearchers extends ResourceSupport<LLIndexSearchers, UnshardedIndexSearchers>
 			implements LLIndexSearchers {
 
-		private static final Logger logger = LoggerFactory.getLogger(UnshardedIndexSearchers.class);
+		private static final Logger logger = LogManager.getLogger(UnshardedIndexSearchers.class);
 
 		private static final Drop<UnshardedIndexSearchers> DROP = new Drop<>() {
 			@Override
@@ -128,7 +128,7 @@ public interface LLIndexSearchers extends Resource<LLIndexSearchers> {
 	class ShardedIndexSearchers extends ResourceSupport<LLIndexSearchers, ShardedIndexSearchers>
 			implements LLIndexSearchers {
 
-		private static final Logger logger = LoggerFactory.getLogger(ShardedIndexSearchers.class);
+		private static final Logger logger = LogManager.getLogger(ShardedIndexSearchers.class);
 
 		private static final Drop<ShardedIndexSearchers> DROP = new Drop<>() {
 			@Override

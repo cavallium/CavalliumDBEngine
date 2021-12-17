@@ -10,15 +10,15 @@ import it.cavallium.dbengine.lucene.LLFieldDoc;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class SortedScoredFullMultiSearcher implements MultiSearcher {
 
-	protected static final Logger logger = LoggerFactory.getLogger(SortedScoredFullMultiSearcher.class);
+	protected static final Logger logger = LogManager.getLogger(SortedScoredFullMultiSearcher.class);
 
 	private final LLTempLMDBEnv env;
 

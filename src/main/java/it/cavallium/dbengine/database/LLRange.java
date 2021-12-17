@@ -8,8 +8,9 @@ import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
 import java.util.StringJoiner;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.log.Logger;
 import org.warp.commonutils.log.LoggerFactory;
 
 /**
@@ -17,7 +18,7 @@ import org.warp.commonutils.log.LoggerFactory;
  */
 public class LLRange extends ResourceSupport<LLRange, LLRange> {
 
-	private static final Logger logger = LoggerFactory.getLogger(LLRange.class);
+	private static final Logger logger = LogManager.getLogger(LLRange.class);
 
 	private static final Drop<LLRange> DROP = new Drop<>() {
 		@Override
@@ -83,11 +84,11 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	private boolean isAllAccessible() {
-		assert min == null || min.isAccessible();
-		assert max == null || max.isAccessible();
-		assert single == null || single.isAccessible();
-		assert this.isAccessible();
-		assert this.isOwned();
+		assert min == null || min.isAccessible() : "Range min not owned";
+		assert max == null || max.isAccessible() : "Range max not owned";
+		assert single == null || single.isAccessible() : "Range single not owned";
+		assert this.isAccessible() : "Range not accessible";
+		assert this.isOwned() : "Range not owned";
 		return true;
 	}
 

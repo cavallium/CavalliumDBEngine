@@ -239,7 +239,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		} else {
 			indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterBufferSize() / 1024D / 1024D);
 		}
-		//indexWriterConfig.setReaderPooling(false);
+		indexWriterConfig.setReaderPooling(false);
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
 		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter);

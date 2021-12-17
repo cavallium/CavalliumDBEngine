@@ -30,12 +30,13 @@ import reactor.util.function.Tuples;
 
 public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<ReversableResourceIterable<T>>, ReversableResourceIterable<T> {
 
-	private static final AtomicLong NEXT_LMDB_QUEUE_ID = new AtomicLong(0);
 	private static final AtomicLong NEXT_ITEM_UID = new AtomicLong(0);
 
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final LMDBSortedCodec<T> codec;
+	private final LLTempLMDBEnv tempEnv;
 	private final Env<ByteBuf> env;
+	private final int lmdbDbId;
 	private final Dbi<ByteBuf> lmdb;
 
 	private boolean writing;
@@ -54,10 +55,11 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	private long size = 0;
 
 	public LMDBPriorityQueue(LLTempLMDBEnv env, LMDBSortedCodec<T> codec) {
-		var name = "$queue_" + NEXT_LMDB_QUEUE_ID.getAndIncrement();
 		this.codec = codec;
+		this.tempEnv = env;
 		this.env = env.getEnv();
-		this.lmdb = this.env.openDbi(name, codec::compareDirect, MDB_CREATE, MDB_DUPSORT, MDB_DUPFIXED);
+		this.lmdbDbId = env.allocateDb();
+		this.lmdb = this.env.openDbi(LLTempLMDBEnv.stringifyDbId(lmdbDbId), codec::compareDirect, MDB_CREATE, MDB_DUPSORT, MDB_DUPFIXED);
 		
 		this.writing = true;
 		this.iterating = false;
@@ -520,6 +522,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 				txn.commit();
 			}
 			lmdb.close();
+			this.tempEnv.freeDb(lmdbDbId);
 		}
 	}
 

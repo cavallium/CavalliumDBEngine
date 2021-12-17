@@ -10,6 +10,8 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import it.unimi.dsi.fastutil.longs.LongSet;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -23,11 +25,12 @@ import org.lmdbjava.Txn;
 
 public class LMDBArray<V> implements IArray<V>, Closeable {
 
-	private static final AtomicLong NEXT_LMDB_ARRAY_ID = new AtomicLong(0);
 
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final LMDBCodec<V> valueCodec;
+	private final LLTempLMDBEnv tempEnv;
 	private final Env<ByteBuf> env;
+	private final int lmdbDbId;
 	private final Dbi<ByteBuf> lmdb;
 	private final V defaultValue;
 
@@ -43,10 +46,11 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	private final long virtualSize;
 
 	public LMDBArray(LLTempLMDBEnv env, LMDBCodec<V> codec, long size, @Nullable V defaultValue) {
-		var name = "$array_" + NEXT_LMDB_ARRAY_ID.getAndIncrement();
 		this.valueCodec = codec;
+		this.tempEnv = env;
 		this.env = env.getEnv();
-		this.lmdb = this.env.openDbi(name, MDB_CREATE);
+		this.lmdbDbId = env.allocateDb();
+		this.lmdb = this.env.openDbi(LLTempLMDBEnv.stringifyDbId(lmdbDbId), MDB_CREATE);
 		this.defaultValue = defaultValue;
 		
 		this.writing = true;
@@ -252,6 +256,7 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 				txn.commit();
 			}
 			lmdb.close();
+			this.tempEnv.freeDb(lmdbDbId);
 		}
 	}
 

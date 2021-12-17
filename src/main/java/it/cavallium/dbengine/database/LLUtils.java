@@ -507,12 +507,28 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> r.close());
+						return Mono.fromRunnable(() -> {
+							if (r.isAccessible()) {
+								r.close();
+							}
+						});
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
-				.doOnDiscard(Resource.class, resource -> resource.close())
+				}, (r, ex) -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}), r -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}))
+				.doOnDiscard(Resource.class, resource -> {
+					if (resource.isAccessible()) {
+						resource.close();
+					}
+				})
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
@@ -526,12 +542,28 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Flux.usingWhen(resourceSupplier, resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> r.close());
+						return Mono.fromRunnable(() -> {
+							if (r.isAccessible()) {
+								r.close();
+							}
+						});
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
-				.doOnDiscard(Resource.class, resource -> resource.close())
+				}, (r, ex) -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}), r -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}))
+				.doOnDiscard(Resource.class, resource -> {
+					if (resource.isAccessible()) {
+						resource.close();
+					}
+				})
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
@@ -546,12 +578,28 @@ public class LLUtils {
 		return resourceSupplier
 				.concatMap(resource -> Mono.usingWhen(Mono.just(resource), resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> r.close());
+						return Mono.fromRunnable(() -> {
+							if (r.isAccessible()) {
+								r.close();
+							}
+						});
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close())))
-				.doOnDiscard(Resource.class, resource -> resource.close())
+				}, (r, ex) -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}), r -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				})))
+				.doOnDiscard(Resource.class, resource -> {
+					if (resource.isAccessible()) {
+						resource.close();
+					}
+				})
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
@@ -569,8 +617,20 @@ public class LLUtils {
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
-				.doOnDiscard(Resource.class, resource -> resource.close())
+				}, (r, ex) -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}), r -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}))
+				.doOnDiscard(Resource.class, resource -> {
+					if (resource.isAccessible()) {
+						resource.close();
+					}
+				})
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 
@@ -584,12 +644,28 @@ public class LLUtils {
 			boolean cleanupOnSuccess) {
 		return Flux.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
 					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> r.close());
+						return Mono.fromRunnable(() -> {
+							if (r.isAccessible()) {
+								r.close();
+							}
+						});
 					} else {
 						return Mono.empty();
 					}
-				}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
-				.doOnDiscard(Resource.class, resource -> resource.close())
+				}, (r, ex) -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}), r -> Mono.fromRunnable(() -> {
+					if (r.isAccessible()) {
+						r.close();
+					}
+				}))
+				.doOnDiscard(Resource.class, resource -> {
+					if (resource.isAccessible()) {
+						resource.close();
+					}
+				})
 				.doOnDiscard(Send.class, send -> send.close());
 	}
 

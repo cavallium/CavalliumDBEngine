@@ -9,9 +9,14 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.TotalHitCountCollectorManager;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.lucene.search.TimeLimitingCollector;
+import org.apache.lucene.search.TotalHitCountCollector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -120,7 +125,14 @@ public class CountMultiSearcher implements MultiSearcher {
 									.flatMap(queryParams2 -> Mono.fromCallable(() -> {
 										try (var is = indexSearcher.receive()) {
 											LLUtils.ensureBlocking();
-											return is.getIndexSearcher().count(queryParams2.query());
+
+											// If the timeout is very big, use the default count without timeout, because it's faster
+											if (queryParams2.timeout().compareTo(Duration.ofHours(1)) >= 0) {
+												return (long) is.getIndexSearcher().count(queryParams2.query());
+											} else {
+												var totalHitsCountCollectorManager = new TotalHitCountCollectorManager(queryParams2.timeout());
+												return is.getIndexSearcher().search(queryParams2.query(), totalHitsCountCollectorManager);
+											}
 										}
 									}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 									.publishOn(Schedulers.parallel())

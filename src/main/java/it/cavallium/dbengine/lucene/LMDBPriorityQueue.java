@@ -5,7 +5,9 @@ import static org.lmdbjava.DbiFlags.*;
 import io.net5.buffer.ByteBuf;
 import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -77,6 +79,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	}
 
 	private void switchToMode(boolean write, boolean wantCursor) {
+		assert !closed.get() : "Closed";
 		if (iterating) {
 			throw new IllegalStateException("Tried to " + (write ? "write" : "read") + " while still iterating");
 		}
@@ -107,6 +110,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	}
 
 	private void switchToModeUncached(boolean write, boolean wantCursor) {
+		assert !closed.get() : "Closed";
 		if (iterating) {
 			throw new IllegalStateException("Tried to " + (write ? "write" : "read") + " while still iterating");
 		}
@@ -497,7 +501,7 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		if (closed.compareAndSet(false, true)) {
 			ensureThread();
 			for (ByteBuf toWriteKey : toWriteKeys) {
@@ -523,6 +527,9 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 			}
 			lmdb.close();
 			this.tempEnv.freeDb(lmdbDbId);
+			if (this.codec instanceof SafeCloseable closeable) {
+				closeable.close();
+			}
 		}
 	}
 
@@ -536,6 +543,11 @@ public class LMDBPriorityQueue<T> implements PriorityQueue<T>, Reversable<Revers
 	@Override
 	public ReversableResourceIterable<T> reverse() {
 		return new ReversableResourceIterable<>() {
+			@Override
+			public void close() {
+				LMDBPriorityQueue.this.close();
+			}
+
 			@Override
 			public Flux<T> iterate() {
 				return reverseIterate();

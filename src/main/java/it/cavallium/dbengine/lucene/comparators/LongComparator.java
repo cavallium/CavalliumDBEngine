@@ -17,11 +17,13 @@
 
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
 import it.cavallium.dbengine.lucene.LMDBArray;
 import it.cavallium.dbengine.lucene.LongCodec;
+import java.io.Closeable;
 import java.io.IOException;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.LeafReaderContext;
@@ -32,7 +34,7 @@ import org.apache.lucene.search.LeafFieldComparator;
  * functionality – an iterator that can skip over non-competitive documents.
  * Based on {@link org.apache.lucene.search.comparators.LongComparator}
  */
-public class LongComparator extends NumericComparator<Long> {
+public class LongComparator extends NumericComparator<Long> implements SafeCloseable {
   private final IArray<Long> values;
   protected long topValue;
   protected long bottom;
@@ -64,7 +66,14 @@ public class LongComparator extends NumericComparator<Long> {
     return new LongLeafComparator(context);
   }
 
-  /** Leaf comparator for {@link LongComparator} that provides skipping functionality */
+	@Override
+	public void close() {
+		if (values instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+	}
+
+	/** Leaf comparator for {@link LongComparator} that provides skipping functionality */
   public class LongLeafComparator extends NumericLeafComparator {
 
     public LongLeafComparator(LeafReaderContext context) throws IOException {

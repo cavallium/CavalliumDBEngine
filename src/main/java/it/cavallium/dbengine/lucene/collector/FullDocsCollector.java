@@ -16,6 +16,7 @@
  */
 package it.cavallium.dbengine.lucene.collector;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLDoc;
 import it.cavallium.dbengine.lucene.LazyFullDocs;
@@ -38,7 +39,7 @@ import org.apache.lucene.search.TotalHits;
  * all methods, in order to avoid a NullPointerException.
  */
 public abstract class FullDocsCollector<PQ extends PriorityQueue<INTERNAL> & Reversable<ReversableResourceIterable<INTERNAL>>, INTERNAL extends LLDoc,
-		EXTERNAL extends LLDoc> implements Collector, AutoCloseable {
+		EXTERNAL extends LLDoc> implements Collector, SafeCloseable {
 
 	/**
 	 * The priority queue which holds the top documents. Note that different implementations of
@@ -71,7 +72,7 @@ public abstract class FullDocsCollector<PQ extends PriorityQueue<INTERNAL> & Rev
 	public abstract ResourceIterable<EXTERNAL> mapResults(ResourceIterable<INTERNAL> it);
 
 	@Override
-	public void close() throws Exception {
+	public void close() {
 		pq.close();
 	}
 }

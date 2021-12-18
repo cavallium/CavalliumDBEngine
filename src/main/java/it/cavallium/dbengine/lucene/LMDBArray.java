@@ -5,6 +5,7 @@ import static org.lmdbjava.DbiFlags.MDB_CREATE;
 import io.net5.buffer.ByteBuf;
 import io.net5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
@@ -23,7 +24,7 @@ import org.lmdbjava.Dbi;
 import org.lmdbjava.Env;
 import org.lmdbjava.Txn;
 
-public class LMDBArray<V> implements IArray<V>, Closeable {
+public class LMDBArray<V> implements IArray<V>, SafeCloseable {
 
 
 	private final AtomicBoolean closed = new AtomicBoolean();
@@ -238,7 +239,7 @@ public class LMDBArray<V> implements IArray<V>, Closeable {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		if (closed.compareAndSet(false, true)) {
 			ensureThread();
 			for (ByteBuf value : toWrite.values()) {

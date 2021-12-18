@@ -16,11 +16,13 @@
  */
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.FloatCodec;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.LMDBArray;
 import it.cavallium.dbengine.lucene.LongCodec;
+import java.io.Closeable;
 import java.io.IOException;
 import org.apache.lucene.index.BinaryDocValues;
 import org.apache.lucene.index.DocValues;
@@ -40,7 +42,7 @@ import org.apache.lucene.util.BytesRefBuilder;
  * org.apache.lucene.search.IndexSearcher#search(Query, int)} uses when no {@link org.apache.lucene.search.Sort} is specified).
  * Based on {@link org.apache.lucene.search.FieldComparator.RelevanceComparator}
  */
-public final class RelevanceComparator extends FieldComparator<Float> implements LeafFieldComparator {
+public final class RelevanceComparator extends FieldComparator<Float> implements LeafFieldComparator, SafeCloseable {
 
 	private final IArray<Float> scores;
 	private float bottom;
@@ -114,5 +116,12 @@ public final class RelevanceComparator extends FieldComparator<Float> implements
 		float docValue = scorer.score();
 		assert !Float.isNaN(docValue);
 		return Float.compare(docValue, topValue);
+	}
+
+	@Override
+	public void close() {
+		if (this.scores instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
 	}
 }

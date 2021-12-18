@@ -49,7 +49,7 @@ public class EmptyPriorityQueue<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 
 	}
 }

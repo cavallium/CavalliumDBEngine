@@ -17,12 +17,14 @@
 
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
 import it.cavallium.dbengine.lucene.LMDBArray;
 import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
 import it.cavallium.dbengine.lucene.LongCodec;
+import java.io.Closeable;
 import java.io.IOException;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
@@ -34,7 +36,7 @@ import org.apache.lucene.search.Scorable;
  * Comparator that sorts by asc _doc
  * Based on {@link org.apache.lucene.search.comparators.DocComparator}
  * */
-public class DocComparator extends FieldComparator<Integer> {
+public class DocComparator extends FieldComparator<Integer> implements SafeCloseable {
   private final IArray<Integer> docIDs;
   private final boolean enableSkipping; // if skipping functionality should be enabled
   private int bottom;
@@ -75,7 +77,14 @@ public class DocComparator extends FieldComparator<Integer> {
     return docIDs.getOrDefault(slot, 0);
   }
 
-  /**
+	@Override
+	public void close() {
+		if (docIDs instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+	}
+
+	/**
    * DocLeafComparator with skipping functionality. When sort by _doc asc, after collecting top N
    * matches and enough hits, the comparator can skip all the following documents. When sort by _doc
    * asc and "top" document is set after which search should start, the comparator provides an

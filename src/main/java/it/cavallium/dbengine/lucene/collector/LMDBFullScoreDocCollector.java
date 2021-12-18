@@ -316,4 +316,5 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 			}
 		}
 	}
+
 }

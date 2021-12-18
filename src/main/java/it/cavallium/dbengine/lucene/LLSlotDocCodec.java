@@ -1,7 +1,9 @@
 package it.cavallium.dbengine.lucene;
 
 import io.net5.buffer.ByteBuf;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,7 +16,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 
-public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHitQueue {
+public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHitQueue, SafeCloseable {
 
 	private final SortField[] fields;
 
@@ -165,5 +167,14 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 	@Override
 	public SortField[] getFields() {
 		return fields;
+	}
+
+	@Override
+	public void close() {
+		for (FieldComparator<?> comparator : this.comparators) {
+			if (comparator instanceof SafeCloseable closeable) {
+				closeable.close();
+			}
+		}
 	}
 }

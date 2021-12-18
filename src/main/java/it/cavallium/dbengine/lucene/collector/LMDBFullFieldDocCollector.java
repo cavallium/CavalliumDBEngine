@@ -16,6 +16,7 @@
  */
 package it.cavallium.dbengine.lucene.collector;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.FieldValueHitQueue;
 import it.cavallium.dbengine.lucene.FullDocs;
@@ -26,6 +27,7 @@ import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import it.cavallium.dbengine.lucene.PriorityQueue;
 import it.cavallium.dbengine.lucene.ResourceIterable;
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
@@ -55,8 +57,7 @@ import reactor.core.publisher.Flux;
  * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/TopFieldCollector.java">
  *   Lucene TopFieldCollector changes on GitHub</a>
  */
-public abstract class LMDBFullFieldDocCollector
-		extends FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
+public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
 
 	// TODO: one optimization we could do is to pre-fill
 	// the queue with sentinel value that guaranteed to
@@ -239,6 +240,11 @@ public abstract class LMDBFullFieldDocCollector
 		@Override
 		public ResourceIterable<LLFieldDoc> mapResults(ResourceIterable<LLSlotDoc> it) {
 			return new ResourceIterable<>() {
+				@Override
+				public void close() {
+					it.close();
+				}
+
 				@Override
 				public Flux<LLFieldDoc> iterate() {
 					return it.iterate().map(fieldValueHitQueue::fillFields);
@@ -468,5 +474,14 @@ public abstract class LMDBFullFieldDocCollector
 	/** Return whether collection terminated early. */
 	public boolean isEarlyTerminated() {
 		return totalHitsRelation == Relation.GREATER_THAN_OR_EQUAL_TO;
+	}
+
+	@Override
+	public void close() {
+		this.pq.close();
+		if (this.firstComparator instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+		super.close();
 	}
 }

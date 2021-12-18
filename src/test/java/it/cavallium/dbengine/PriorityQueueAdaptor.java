@@ -70,7 +70,7 @@ public class PriorityQueueAdaptor<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		hitQueue.clear();
 		hitQueue.updateTop();
 	}

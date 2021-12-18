@@ -76,4 +76,9 @@ public class LLTempLMDBEnv implements Closeable {
 				.map(Path::toFile)
 				.forEach(File::delete);
 	}
+
+	public int countUsedDbs() {
+		var freeIds = this.freeIds.cardinality();
+		return MAX_DATABASES - freeIds;
+	}
 }

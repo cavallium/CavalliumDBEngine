@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene;
 
+import java.io.Closeable;
+import java.io.IOException;
 import org.apache.lucene.search.TotalHits;
 import reactor.core.publisher.Flux;
 
@@ -26,5 +28,10 @@ public class LazyFullDocs<T extends LLDoc> implements FullDocs<T> {
 	@Override
 	public TotalHits totalHits() {
 		return totalHits;
+	}
+
+	@Override
+	public void close() {
+		pq.close();
 	}
 }

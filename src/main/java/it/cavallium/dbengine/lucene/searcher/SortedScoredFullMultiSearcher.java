@@ -3,13 +3,17 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLFieldDoc;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.collector.FullDocsCollector;
 import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
+import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
@@ -62,23 +66,55 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 					return LMDBFullFieldDocCollector.createSharedManager(env, queryParams.sort(), queryParams.limitInt(),
 							totalHitsThreshold);
 				})
-				.flatMap(sharedManager -> Flux
+				.<FullDocs<LLFieldDoc>>flatMap(sharedManager -> Flux
 						.fromIterable(indexSearchers)
 						.flatMap(shard -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
 
 							var collector = sharedManager.newCollector();
-							assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
+							try {
+								assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
 
-							shard.search(queryParams.query(), collector);
-							return collector;
+								shard.search(queryParams.query(), collector);
+								return collector;
+							} catch (Throwable ex) {
+								collector.close();
+								throw ex;
+							}
 						}))
 						.collectList()
 						.flatMap(collectors -> Mono.fromCallable(() -> {
-							LLUtils.ensureBlocking();
-							return sharedManager.reduce(collectors);
+							try {
+								LLUtils.ensureBlocking();
+								return sharedManager.reduce(collectors);
+							} catch (Throwable ex) {
+								for (LMDBFullFieldDocCollector collector : collectors) {
+									collector.close();
+								}
+								throw ex;
+							}
 						}))
-				);
+				)
+
+				.doOnDiscard(List.class, list -> {
+					try {
+						for (Object o : list) {
+							if (o instanceof LMDBFullFieldDocCollector fullDocsCollector) {
+								fullDocsCollector.close();
+							}
+						}
+					} catch (Exception ex) {
+						logger.error("Failed to discard collector", ex);
+					}
+				})
+				.doOnDiscard(LMDBFullFieldDocCollector.class, fullDocsCollector -> {
+					try {
+						fullDocsCollector.close();
+					} catch (Exception ex) {
+						logger.error("Failed to discard collector", ex);
+					}
+				})
+				.doOnDiscard(FullDocs.class, SafeCloseable::close);
 	}
 
 	/**
@@ -96,7 +132,10 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 							indexSearchers.shards(), keyFieldName, true)
 					.take(queryParams.limitLong(), true);
 
-			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close);
+			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
+				indexSearchers.close();
+				data.close();
+			});
 		});
 	}
 

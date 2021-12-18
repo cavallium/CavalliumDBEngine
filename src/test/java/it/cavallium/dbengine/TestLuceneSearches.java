@@ -53,8 +53,10 @@ import java.util.stream.Stream;
 import org.apache.commons.lang3.function.FailableConsumer;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -111,6 +113,7 @@ public class TestLuceneSearches {
 		luceneSingle = tempDb.luceneSingle();
 		luceneMulti = tempDb.luceneMulti();
 		ENV = new LLTempLMDBEnv();
+		assertEquals(0, ENV.countUsedDbs());
 
 		setUpIndex(true);
 		setUpIndex(false);
@@ -201,9 +204,20 @@ public class TestLuceneSearches {
 		}
 	}
 
+	@BeforeEach
+	public void beforeEach() {
+		assertEquals(0, ENV.countUsedDbs());
+	}
+
+	@AfterEach
+	public void afterEach() {
+		assertEquals(0, ENV.countUsedDbs());
+	}
+
 	@AfterAll
 	public static void afterAll() throws IOException {
 		TEMP_DB_GENERATOR.closeTempDb(tempDb).block();
+		assertEquals(0, ENV.countUsedDbs());
 		ENV.close();
 		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);

@@ -17,11 +17,13 @@
 
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.DoubleCodec;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.LMDBArray;
 import it.cavallium.dbengine.lucene.SortFieldCodec;
+import java.io.Closeable;
 import java.io.IOException;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.index.LeafReaderContext;
@@ -32,7 +34,7 @@ import org.apache.lucene.search.LeafFieldComparator;
  * skipping functionality - an iterator that can skip over non-competitive documents.
  * Based on {@link org.apache.lucene.search.comparators.DoubleComparator}
  */
-public class DoubleComparator extends NumericComparator<Double> {
+public class DoubleComparator extends NumericComparator<Double> implements SafeCloseable {
   private final IArray<Double> values;
   protected double topValue;
   protected double bottom;
@@ -64,7 +66,14 @@ public class DoubleComparator extends NumericComparator<Double> {
     return new DoubleLeafComparator(context);
   }
 
-  /** Leaf comparator for {@link DoubleComparator} that provides skipping functionality */
+	@Override
+	public void close() {
+		if (values instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+	}
+
+	/** Leaf comparator for {@link DoubleComparator} that provides skipping functionality */
   public class DoubleLeafComparator extends NumericLeafComparator {
 
     public DoubleLeafComparator(LeafReaderContext context) throws IOException {

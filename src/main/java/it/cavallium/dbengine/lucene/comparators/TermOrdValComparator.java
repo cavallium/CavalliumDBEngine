@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.ByteArrayCodec;
 import it.cavallium.dbengine.lucene.BytesRefCodec;
@@ -7,6 +8,7 @@ import it.cavallium.dbengine.lucene.FloatCodec;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
 import it.cavallium.dbengine.lucene.LMDBArray;
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.Arrays;
 import org.apache.lucene.index.DocValues;
@@ -28,7 +30,7 @@ import org.apache.lucene.util.BytesRefBuilder;
  * it may be slower.
  * Based on {@link org.apache.lucene.search.FieldComparator.TermOrdValComparator}
  */
-public class TermOrdValComparator extends FieldComparator<BytesRef> implements LeafFieldComparator {
+public class TermOrdValComparator extends FieldComparator<BytesRef> implements LeafFieldComparator, SafeCloseable {
 	/* Ords for each slot.
 	@lucene.internal */
 	final IArray<Integer> ords;
@@ -296,4 +298,17 @@ public class TermOrdValComparator extends FieldComparator<BytesRef> implements L
 
 	@Override
 	public void setScorer(Scorable scorer) {}
+
+	@Override
+	public void close() {
+		if (this.ords instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+		if (this.readerGen instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+		if (this.values instanceof SafeCloseable closeable) {
+			closeable.close();
+		}
+	}
 }

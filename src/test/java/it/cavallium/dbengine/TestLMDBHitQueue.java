@@ -1,7 +1,10 @@
 package it.cavallium.dbengine;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+
 import com.google.common.collect.Lists;
 import io.net5.buffer.ByteBuf;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.LMDBSortedCodec;
@@ -27,7 +30,7 @@ public class TestLMDBHitQueue {
 	public static final int NUM_HITS = 1024;
 
 	private LLTempLMDBEnv env;
-	private Closeable lmdbQueue;
+	private SafeCloseable lmdbQueue;
 
 	private TestingPriorityQueue testingPriorityQueue;
 
@@ -248,6 +251,7 @@ public class TestLMDBHitQueue {
 	@AfterEach
 	public void afterEach() throws IOException {
 		lmdbQueue.close();
+		assertEquals(0, env.countUsedDbs());
 		env.close();
 	}
 
@@ -346,8 +350,9 @@ public class TestLMDBHitQueue {
 		}
 
 		@Override
-		public void close() throws IOException {
-
+		public void close() {
+			referenceQueue.close();
+			testQueue.close();
 		}
 
 		private void ensureEquality() {

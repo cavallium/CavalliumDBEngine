@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.lucene;
 
-import java.io.Closeable;
+import it.cavallium.dbengine.database.SafeCloseable;
 
-public interface PriorityQueue<T> extends ResourceIterable<T>, Closeable {
+public interface PriorityQueue<T> extends ResourceIterable<T>, SafeCloseable {
 
 	/**
 	 * Adds an Object to a PriorityQueue in log(size) time. If one tries to add more objects than maxSize from initialize

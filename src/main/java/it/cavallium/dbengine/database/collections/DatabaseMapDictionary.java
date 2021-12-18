@@ -19,6 +19,7 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -150,7 +151,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.error(ex);
 					}
 				})
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
 				.filter(map -> !map.isEmpty());
 	}
 

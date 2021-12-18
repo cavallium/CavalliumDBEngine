@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -187,7 +188,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
 		return this
 				.setAllValuesAndGetPrevious(Flux.fromIterable(Map.copyOf(value).entrySet()))
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
 				.filter(map -> !map.isEmpty());
 	}
 
@@ -209,7 +210,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 					if (updateMode == UpdateMode.ALLOW_UNSAFE) {
 						return this
 								.getAllValues(null)
-								.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+								.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
 								.single()
 								.<Tuple2<Optional<Map<T, U>>, Optional<Map<T, U>>>>handle((v, sink) -> {
 									if (v.isEmpty()) {
@@ -255,7 +256,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	default Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return this
 				.getAllValues(snapshot)
-				.collectMap(Entry::getKey, Entry::getValue, HashMap::new)
+				.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
 				.filter(map -> !map.isEmpty());
 	}
 

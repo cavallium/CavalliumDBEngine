@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Map;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
@@ -16,7 +17,7 @@ import reactor.core.publisher.Mono;
 
 @SuppressWarnings({"unused", "ClassCanBeRecord"})
 public class SubStageGetterHashSet<T, TH> implements
-		SubStageGetter<Map<T, Nothing>, DatabaseSetDictionaryHashed<T, TH>> {
+		SubStageGetter<Object2ObjectSortedMap<T, Nothing>, DatabaseSetDictionaryHashed<T, TH>> {
 
 	private final Serializer<T> keySerializer;
 	private final Function<T, TH> keyHashFunction;

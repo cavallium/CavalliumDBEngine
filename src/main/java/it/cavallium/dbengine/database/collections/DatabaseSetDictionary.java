@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -42,7 +43,7 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 	}
 
 	public Mono<Set<T>> setAndGetPreviousKeySet(Set<T> value) {
-		var hm = new HashMap<T, Nothing>();
+		var hm = new Object2ObjectLinkedOpenHashMap<T, Nothing>();
 		for (T t : value) {
 			hm.put(t, DatabaseEmpty.NOTHING);
 		}

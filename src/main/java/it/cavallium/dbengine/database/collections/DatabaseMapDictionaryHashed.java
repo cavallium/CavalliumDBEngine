@@ -14,6 +14,8 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.Collections;
 import java.util.HashMap;
@@ -30,8 +32,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryHashed<T, U, TH>>
-		implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
+public class DatabaseMapDictionaryHashed<T, U, TH> extends
+		ResourceSupport<DatabaseStage<Object2ObjectSortedMap<T, U>>, DatabaseMapDictionaryHashed<T, U, TH>> implements
+		DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
 	private static final Logger logger = LogManager.getLogger(DatabaseMapDictionaryHashed.class);
 
@@ -88,7 +91,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	private DatabaseMapDictionaryHashed(BufferAllocator alloc,
 			Function<T, TH> keySuffixHashFunction,
-			Send<DatabaseStage<Map<TH, ObjectArraySet<Entry<T, U>>>>> subDictionary,
+			Send<DatabaseStage<Object2ObjectSortedMap<TH, ObjectArraySet<Entry<T, U>>>>> subDictionary,
 			Drop<DatabaseMapDictionaryHashed<T, U, TH>> drop) {
 		super((Drop<DatabaseMapDictionaryHashed<T, U, TH>>) (Drop) DROP);
 		this.alloc = alloc;
@@ -131,8 +134,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 		);
 	}
 
-	private Map<TH, ObjectArraySet<Entry<T, U>>> serializeMap(Map<T, U> map) {
-		var newMap = new HashMap<TH, ObjectArraySet<Entry<T, U>>>(map.size());
+	private Object2ObjectSortedMap<TH, ObjectArraySet<Entry<T, U>>> serializeMap(Object2ObjectSortedMap<T, U> map) {
+		var newMap = new Object2ObjectLinkedOpenHashMap<TH, ObjectArraySet<Entry<T, U>>>(map.size());
 		map.forEach((key, value) -> newMap.compute(keySuffixHashFunction.apply(key), (hash, prev) -> {
 			if (prev == null) {
 				prev = new ObjectArraySet<>();
@@ -143,29 +146,30 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 		return newMap;
 	}
 
-	private Map<T, U> deserializeMap(Map<TH, ObjectArraySet<Entry<T, U>>> map) {
-		var newMap = new HashMap<T, U>(map.size());
+	private Object2ObjectSortedMap<T, U> deserializeMap(Object2ObjectSortedMap<TH, ObjectArraySet<Entry<T, U>>> map) {
+		var newMap = new Object2ObjectLinkedOpenHashMap<T, U>(map.size());
 		map.forEach((hash, set) -> set.forEach(entry -> newMap.put(entry.getKey(), entry.getValue())));
 		return newMap;
 	}
 
 	@Override
-	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot) {
+	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot) {
 		return subDictionary.get(snapshot).map(this::deserializeMap);
 	}
 
 	@Override
-	public Mono<Map<T, U>> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<Map<T, U>> defaultValue) {
+	public Mono<Object2ObjectSortedMap<T, U>> getOrDefault(@Nullable CompositeSnapshot snapshot,
+			Mono<Object2ObjectSortedMap<T, U>> defaultValue) {
 		return this.get(snapshot).switchIfEmpty(defaultValue);
 	}
 
 	@Override
-	public Mono<Void> set(Map<T, U> map) {
+	public Mono<Void> set(Object2ObjectSortedMap<T, U> map) {
 		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::set);
 	}
 
 	@Override
-	public Mono<Boolean> setAndGetChanged(Map<T, U> map) {
+	public Mono<Boolean> setAndGetChanged(Object2ObjectSortedMap<T, U> map) {
 		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::setAndGetChanged).single();
 	}
 
@@ -180,7 +184,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 	}
 
 	@Override
-	public DatabaseStageEntry<Map<T, U>> entry() {
+	public DatabaseStageEntry<Object2ObjectSortedMap<T, U>> entry() {
 		return this;
 	}
 
@@ -247,7 +251,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 	}
 
 	@Override
-	public Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
+	public Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		return Mono
 				.fromSupplier(() -> this.serializeMap(value))
 				.flatMap(subDictionary::setAndGetPrevious)
@@ -255,14 +259,14 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends ResourceSupport<Datab
 	}
 
 	@Override
-	public Mono<Map<T, U>> clearAndGetPrevious() {
+	public Mono<Object2ObjectSortedMap<T, U>> clearAndGetPrevious() {
 		return subDictionary
 				.clearAndGetPrevious()
 				.map(this::deserializeMap);
 	}
 
 	@Override
-	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return subDictionary
 				.get(snapshot, existsAlmostCertainly)
 				.map(this::deserializeMap);

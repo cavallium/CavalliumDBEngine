@@ -7,11 +7,13 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Map;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
-public class SubStageGetterSet<T> implements SubStageGetter<Map<T, Nothing>, DatabaseSetDictionary<T>> {
+public class SubStageGetterSet<T> implements
+		SubStageGetter<Object2ObjectSortedMap<T, Nothing>, DatabaseSetDictionary<T>> {
 
 	private final SerializerFixedBinaryLength<T> keySerializer;
 

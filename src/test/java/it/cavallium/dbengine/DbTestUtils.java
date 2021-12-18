@@ -27,6 +27,7 @@ import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Objects;
@@ -188,7 +189,7 @@ public class DbTestUtils {
 		}
 	}
 
-	public static DatabaseMapDictionaryDeep<String, Map<String, String>,
+	public static DatabaseMapDictionaryDeep<String, Object2ObjectSortedMap<String, String>,
 			DatabaseMapDictionary<String, String>> tempDatabaseMapDictionaryDeepMap(
 			LLDictionary dictionary,
 			int key1Bytes,
@@ -203,7 +204,7 @@ public class DbTestUtils {
 		);
 	}
 
-	public static DatabaseMapDictionaryDeep<String, Map<String, String>,
+	public static DatabaseMapDictionaryDeep<String, Object2ObjectSortedMap<String, String>,
 			DatabaseMapDictionaryHashed<String, String, Integer>> tempDatabaseMapDictionaryDeepMapHashMap(
 			LLDictionary dictionary,
 			int key1Bytes) {

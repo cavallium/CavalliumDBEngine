@@ -17,6 +17,9 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -127,7 +130,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), rangeMono, existsAlmostCertainly)
 				.<Entry<T, U>>handle((entrySend, sink) -> {
@@ -151,12 +154,13 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.error(ex);
 					}
 				})
-				.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
+				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
+				.map(map -> (Object2ObjectSortedMap<T, U>) map)
 				.filter(map -> !map.isEmpty());
 	}
 
 	@Override
-	public Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
+	public Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		return this
 				.get(null, false)
 				.concatWith(dictionary.setRange(rangeMono, Flux
@@ -168,9 +172,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Map<T, U>> clearAndGetPrevious() {
+	public Mono<Object2ObjectSortedMap<T, U>> clearAndGetPrevious() {
 		return this
-				.setAndGetPrevious(Map.of());
+				.setAndGetPrevious(Object2ObjectSortedMaps.emptyMap());
 	}
 
 	@Override

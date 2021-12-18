@@ -9,8 +9,10 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -23,7 +25,8 @@ import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
 @SuppressWarnings("unused")
-public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends DatabaseStageEntry<Map<T, U>> {
+public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
+		DatabaseStageEntry<Object2ObjectSortedMap<T, U>> {
 
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
@@ -185,15 +188,16 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Map<T, U>> setAndGetPrevious(Map<T, U> value) {
+	default Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		return this
-				.setAllValuesAndGetPrevious(Flux.fromIterable(Map.copyOf(value).entrySet()))
-				.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
+				.setAllValuesAndGetPrevious(Flux.fromIterable(value.entrySet()))
+				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
+				.map(map -> (Object2ObjectSortedMap<T, U>) map)
 				.filter(map -> !map.isEmpty());
 	}
 
 	@Override
-	default Mono<Boolean> setAndGetChanged(Map<T, U> value) {
+	default Mono<Boolean> setAndGetChanged(Object2ObjectSortedMap<T, U> value) {
 		return this
 				.setAndGetPrevious(value)
 				.map(oldValue -> !Objects.equals(oldValue, value.isEmpty() ? null : value))
@@ -201,7 +205,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Delta<Map<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Map<T, U>, @Nullable Map<T, U>> updater,
+	default Mono<Delta<Object2ObjectSortedMap<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater,
 			boolean existsAlmostCertainly) {
 		return this
 				.getUpdateMode()
@@ -210,9 +214,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 					if (updateMode == UpdateMode.ALLOW_UNSAFE) {
 						return this
 								.getAllValues(null)
-								.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
+								.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
+								.map(map -> (Object2ObjectSortedMap<T, U>) map)
 								.single()
-								.<Tuple2<Optional<Map<T, U>>, Optional<Map<T, U>>>>handle((v, sink) -> {
+								.<Tuple2<Optional<Object2ObjectSortedMap<T, U>>, Optional<Object2ObjectSortedMap<T, U>>>>handle((v, sink) -> {
 									if (v.isEmpty()) {
 										v = null;
 									}
@@ -228,7 +233,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 								})
 								.flatMap(result -> Mono
 										.justOrEmpty(result.getT2())
-										.flatMap(values -> this.setAllValues(Flux.fromIterable(Map.copyOf(values).entrySet())))
+										.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
 										.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
 								);
 					} else if (updateMode == UpdateMode.ALLOW) {
@@ -248,15 +253,16 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	@Override
-	default Mono<Map<T, U>> clearAndGetPrevious() {
-		return this.setAndGetPrevious(Map.of());
+	default Mono<Object2ObjectSortedMap<T, U>> clearAndGetPrevious() {
+		return this.setAndGetPrevious(Object2ObjectSortedMaps.emptyMap());
 	}
 
 	@Override
-	default Mono<Map<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	default Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return this
 				.getAllValues(snapshot)
-				.collectMap(Entry::getKey, Entry::getValue, LinkedHashMap::new)
+				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
+				.map(map -> (Object2ObjectSortedMap<T, U>) map)
 				.filter(map -> !map.isEmpty());
 	}
 

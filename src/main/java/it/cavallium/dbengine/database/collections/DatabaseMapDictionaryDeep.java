@@ -17,6 +17,9 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.apache.logging.log4j.LogManager;
@@ -27,8 +30,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods (which?)
-public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends ResourceSupport<DatabaseStage<Map<T, U>>, DatabaseMapDictionaryDeep<T, U, US>>
-		implements DatabaseStageMap<T, U, US> {
+public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends
+		ResourceSupport<DatabaseStage<Object2ObjectSortedMap<T, U>>, DatabaseMapDictionaryDeep<T, U, US>> implements
+		DatabaseStageMap<T, U, US> {
 
 	private static final Logger logger = LogManager.getLogger(DatabaseMapDictionaryDeep.class);
 

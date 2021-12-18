@@ -24,6 +24,7 @@ import it.cavallium.dbengine.lucene.mlt.BigCompositeReader;
 import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.io.EOFException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -224,7 +225,7 @@ public class LuceneUtils {
 
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
 			CompositeSnapshot snapshot,
-			DatabaseMapDictionaryDeep<T, Map<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
+			DatabaseMapDictionaryDeep<T, Object2ObjectSortedMap<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
 		return entry -> LLUtils.usingResource(dictionaryDeep
 				.at(snapshot, entry.getKey()), sub -> sub.getValue(snapshot, entry.getValue()), true);
 	}

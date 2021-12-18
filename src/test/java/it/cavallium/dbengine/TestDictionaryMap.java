@@ -6,6 +6,9 @@ import static it.cavallium.dbengine.SyncUtils.*;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -114,7 +117,7 @@ public abstract class TestDictionaryMap {
 		Assertions.assertEquals(shouldFail ? 0 : 1, resultingMapSize);
 
 		var resultingMap = run(map.get(null));
-		Assertions.assertEquals(shouldFail ? null : Map.of(key, value), resultingMap);
+		Assertions.assertEquals(shouldFail ? null : Object2ObjectSortedMaps.singleton(key, value), resultingMap);
 
 		map.close();
 
@@ -355,17 +358,16 @@ public abstract class TestDictionaryMap {
 		} else {
 			badKeys = List.of();
 		}
-		List<Tuple2<List<String>, Boolean>> keys = Stream.concat(
-				goodKeys.stream().map(s -> Tuples.of(s, false)),
-				badKeys.stream().map(s -> Tuples.of(s, true))
-		).collect(Collectors.toList());
+		List<Tuple2<List<String>, Boolean>> keys = Stream
+				.concat(goodKeys.stream().map(s -> Tuples.of(s, false)), badKeys.stream().map(s -> Tuples.of(s, true)))
+				.toList();
 		var values = isCIMode() ? List.of("val") : List.of("", "\0", BIG_STRING);
 
 		return keys
 				.stream()
 				.map(keyTuple -> keyTuple.mapT1(ks -> Flux
 						.zip(Flux.fromIterable(ks), Flux.fromIterable(values))
-						.collectMap(Tuple2::getT1, Tuple2::getT2)
+						.collectMap(Tuple2::getT1, Tuple2::getT2, Object2ObjectLinkedOpenHashMap::new)
 						.block()
 				))
 				.flatMap(entryTuple -> Arrays.stream(UpdateMode.values()).map(updateMode -> Tuples.of(updateMode,
@@ -385,7 +387,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testPutMultiGetMulti(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testPutMultiGetMulti(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -419,7 +421,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetAllValuesGetMulti(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testSetAllValuesGetMulti(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -450,7 +452,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetAllValuesAndGetPrevious(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testSetAllValuesAndGetPrevious(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -478,7 +480,10 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetGetMulti(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testSetGetMulti(MapType mapType,
+			UpdateMode updateMode,
+			Object2ObjectSortedMap<String, String> entries,
+			boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -513,7 +518,7 @@ public abstract class TestDictionaryMap {
 	@MethodSource("provideArgumentsPutMulti")
 	public void testSetAndGetChanged(MapType mapType,
 			UpdateMode updateMode,
-			Map<String, String> entries,
+			Object2ObjectSortedMap<String, String> entries,
 			boolean shouldFail) {
 		Step<Boolean> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -545,7 +550,10 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetAndGetPrevious(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testSetAndGetPrevious(MapType mapType,
+			UpdateMode updateMode,
+			Object2ObjectSortedMap<String, String> entries,
+			boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -571,7 +579,10 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testSetClearAndGetPreviousGet(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testSetClearAndGetPreviousGet(MapType mapType,
+			UpdateMode updateMode,
+			Object2ObjectSortedMap<String, String> entries,
+			boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -597,7 +608,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testPutMultiGetAllValues(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testPutMultiGetAllValues(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -625,7 +636,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testPutMultiGet(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testPutMultiGet(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -655,7 +666,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testPutMultiGetAllStagesGet(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testPutMultiGetAllStagesGet(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -690,7 +701,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testPutMultiIsEmpty(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testPutMultiIsEmpty(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Boolean> stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
@@ -716,7 +727,7 @@ public abstract class TestDictionaryMap {
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPutMulti")
-	public void testPutMultiClear(MapType mapType, UpdateMode updateMode, Map<String, String> entries, boolean shouldFail) {
+	public void testPutMultiClear(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		List<Boolean> result;
 		try {
 			result = SyncUtils.run(DbTestUtils.tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)

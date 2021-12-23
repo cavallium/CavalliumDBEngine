@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Iterator;
@@ -62,7 +64,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 							return s;
 						}
 				)
-				.subscribeOn(Schedulers.boundedElastic());
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()), false);
 	}
 
 	@Override

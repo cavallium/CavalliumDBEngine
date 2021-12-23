@@ -39,8 +39,8 @@ import it.cavallium.dbengine.lucene.searcher.OfficialSearcher;
 import it.cavallium.dbengine.lucene.searcher.ScoredPagedMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.PagedLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.SortedScoredFullMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.UnsortedScoredFullMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.UnsortedUnscoredStreamingMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.SortedByScoreFullMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.UnsortedStreamingMultiSearcher;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
@@ -164,11 +164,11 @@ public class TestLuceneSearches {
 					if (info.sorted() && !info.sortedByScore()) {
 						sink.next(new SortedScoredFullMultiSearcher(ENV));
 					} else {
-						sink.next(new UnsortedScoredFullMultiSearcher(ENV));
+						sink.next(new SortedByScoreFullMultiSearcher(ENV));
 					}
 					if (!info.sorted()) {
 						sink.next(new UnsortedUnscoredSimpleMultiSearcher(new PagedLocalSearcher()));
-						sink.next(new UnsortedUnscoredStreamingMultiSearcher());
+						sink.next(new UnsortedStreamingMultiSearcher());
 					}
 				}
 				sink.next(new AdaptiveMultiSearcher(ENV, true, MAX_IN_MEMORY_RESULT_ENTRIES));
@@ -254,7 +254,7 @@ public class TestLuceneSearches {
 	private boolean supportsPreciseHitsCount(LocalSearcher searcher,
 			ClientQueryParams query) {
 		var sorted = query.isSorted();
-		if (searcher instanceof UnsortedUnscoredStreamingMultiSearcher) {
+		if (searcher instanceof UnsortedStreamingMultiSearcher) {
 			return false;
 		} else if (!sorted) {
 			return !(searcher instanceof AdaptiveMultiSearcher) && !(searcher instanceof AdaptiveLocalSearcher);

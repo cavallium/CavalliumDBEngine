@@ -156,7 +156,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								retries++;
 
 								if (retries == 1) {
-									retryTime = new ExponentialPageLimits(0, 5, 2000);
+									retryTime = new ExponentialPageLimits(0, 1, 2000);
 								}
 								long retryMs = retryTime.getPageLimit(retries);
 
@@ -172,7 +172,9 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								}
 								// Wait for n milliseconds
 								try {
-									Thread.sleep(retryMs);
+									if (retryMs > 0) {
+										Thread.sleep(retryMs);
+									}
 								} catch (InterruptedException e) {
 									throw new RocksDBException("Interrupted");
 								}

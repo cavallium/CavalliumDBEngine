@@ -12,8 +12,6 @@ import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.collector.FullDocsCollector;
 import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
-import java.io.Closeable;
-import java.io.IOException;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -21,13 +19,13 @@ import org.apache.lucene.search.IndexSearcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
+public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 
-	protected static final Logger logger = LogManager.getLogger(UnsortedScoredFullMultiSearcher.class);
+	protected static final Logger logger = LogManager.getLogger(SortedByScoreFullMultiSearcher.class);
 
 	private final LLTempLMDBEnv env;
 
-	public UnsortedScoredFullMultiSearcher(LLTempLMDBEnv env) {
+	public SortedByScoreFullMultiSearcher(LLTempLMDBEnv env) {
 		this.env = env;
 	}
 
@@ -46,7 +44,7 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
 
 		return queryParamsMono.flatMap(queryParams2 -> {
 			if (queryParams2.isSorted() && !queryParams2.isSortedByScore()) {
-				throw new IllegalArgumentException(UnsortedScoredFullMultiSearcher.this.getClass().getSimpleName()
+				throw new IllegalArgumentException(SortedByScoreFullMultiSearcher.this.getClass().getSimpleName()
 						+ " doesn't support sorted queries");
 			}
 
@@ -152,6 +150,6 @@ public class UnsortedScoredFullMultiSearcher implements MultiSearcher {
 
 	@Override
 	public String getName() {
-		return "unsorted scored full multi";
+		return "sorted by score full multi";
 	}
 }

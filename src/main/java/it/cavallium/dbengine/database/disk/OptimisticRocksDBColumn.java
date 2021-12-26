@@ -162,7 +162,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								long retryNs = 1000000L * retryTime.getPageLimit(retries);
 
 								// +- 30%
-								retryNs = retryNs + ThreadLocalRandom.current().nextLong(retryNs * 30L / 100L, -retryNs * 30L / 100L);
+								retryNs = retryNs + ThreadLocalRandom.current().nextLong(-retryNs * 30L / 100L, retryNs * 30L / 100L);
 
 								if (retries >= 5 && retries % 5 == 0 || ALWAYS_PRINT_OPTIMISTIC_RETRIES) {
 									logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"

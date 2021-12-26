@@ -159,21 +159,21 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								if (retries == 1) {
 									retryTime = new ExponentialPageLimits(0, 2, 2000);
 								}
-								long retryMs = retryTime.getPageLimit(retries);
+								long retryNs = 1000000L * retryTime.getPageLimit(retries);
 
 								// +- 30%
-								retryMs = retryMs + (long) (retryMs * 0.3d * ThreadLocalRandom.current().nextDouble(-1.0d, 1.0d));
+								retryNs = retryNs + ThreadLocalRandom.current().nextLong(retryNs * 30L / 100L, -retryNs * 30L / 100L);
 
 								if (retries >= 5 && retries % 5 == 0 || ALWAYS_PRINT_OPTIMISTIC_RETRIES) {
 									logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryMs, retries);
+											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryNs / 1000000d, retries);
 								} else if (logger.isDebugEnabled(MARKER_ROCKSDB)) {
 									logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryMs, retries);
+											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryNs / 1000000d, retries);
 								}
 								// Wait for n milliseconds
-								if (retryMs > 0) {
-									LockSupport.parkNanos(retryMs * 1000000L);
+								if (retryNs > 0) {
+									LockSupport.parkNanos(retryNs);
 								}
 							}
 						}

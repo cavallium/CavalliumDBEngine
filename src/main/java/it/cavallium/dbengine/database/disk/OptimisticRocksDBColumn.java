@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;
 import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.locks.LockSupport;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -156,12 +157,12 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								retries++;
 
 								if (retries == 1) {
-									retryTime = new ExponentialPageLimits(0, 1, 2000);
+									retryTime = new ExponentialPageLimits(0, 2, 2000);
 								}
 								long retryMs = retryTime.getPageLimit(retries);
 
-								// +- 20%
-								retryMs = retryMs + (long) (retryMs * 0.2d * ThreadLocalRandom.current().nextDouble(-1.0d, 1.0d));
+								// +- 30%
+								retryMs = retryMs + (long) (retryMs * 0.3d * ThreadLocalRandom.current().nextDouble(-1.0d, 1.0d));
 
 								if (retries >= 5 && retries % 5 == 0 || ALWAYS_PRINT_OPTIMISTIC_RETRIES) {
 									logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
@@ -171,12 +172,8 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryMs, retries);
 								}
 								// Wait for n milliseconds
-								try {
-									if (retryMs > 0) {
-										Thread.sleep(retryMs);
-									}
-								} catch (InterruptedException e) {
-									throw new RocksDBException("Interrupted");
+								if (retryMs > 0) {
+									LockSupport.parkNanos(retryMs * 1000000L);
 								}
 							}
 						}

@@ -11,4 +11,4 @@ import java.nio.file.Path;
  * Target size can be exceeded if all the volumes are full
  */
 @RecordBuilder
-public record DatabaseVolume(Path volumePath, long targetSizeBytes) {}
+public record DatabaseVolume(Path volumePath, long targetSizeBytes, Compression compression) {}

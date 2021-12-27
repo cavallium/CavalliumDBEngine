@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.net5.buffer.Unpooled.wrappedBuffer;
 import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.asReadOnlyDirect;
@@ -42,12 +41,11 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.function.Function;
-import java.util.function.Supplier;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.util.Supplier;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractSlice;
@@ -319,11 +317,8 @@ public class LLLocalDictionary implements LLDictionary {
 						try (var value = entry.getValue().receive()) {
 							assert key.isAccessible();
 							assert value.isAccessible();
-							logger.trace(MARKER_ROCKSDB,
-									"Writing {}: {}",
-									(Supplier<String>) () -> toStringSafe(key),
-									(Supplier<String>) () -> toStringSafe(value)
-							);
+							var varargs = new Supplier<?>[]{() -> toStringSafe(key), () -> toStringSafe(value)};
+							logger.trace(MARKER_ROCKSDB, "Writing {}: {}", varargs);
 							db.put(EMPTY_WRITE_OPTIONS, key, value);
 							sink.complete();
 						}

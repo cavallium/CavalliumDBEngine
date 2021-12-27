@@ -297,10 +297,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCompactionStyle(CompactionStyle.LEVEL);
 		options.setTargetFileSizeBase(64 * 1024 * 1024); // 64MiB sst file
 		options.setTargetFileSizeMultiplier(2); // Each level is 2 times the previous level
-		options.setCompressionPerLevel(List.of(CompressionType.NO_COMPRESSION,
-				CompressionType.SNAPPY_COMPRESSION,
-				CompressionType.SNAPPY_COMPRESSION
-		));
+		if (!databaseOptions.volumes().isEmpty()) {
+			options.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
+		}
 		options.setManualWalFlush(false);
 		options.setMinWriteBufferNumberToMerge(3);
 		options.setMaxWriteBufferNumber(4);

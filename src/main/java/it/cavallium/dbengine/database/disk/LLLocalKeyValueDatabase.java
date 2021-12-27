@@ -44,6 +44,7 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.CompactionPriority;
 import org.rocksdb.CompactionStyle;
+import org.rocksdb.CompressionOptions;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
@@ -303,6 +304,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setTargetFileSizeMultiplier(2); // Each level is 2 times the previous level
 		if (!databaseOptions.volumes().isEmpty()) {
 			options.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
+		} else {
+			options.setCompressionType(CompressionType.LZ4_COMPRESSION);
+			options.setBottommostCompressionType(CompressionType.LZ4HC_COMPRESSION);
 		}
 		options.setManualWalFlush(false);
 		options.setMinWriteBufferNumberToMerge(3);

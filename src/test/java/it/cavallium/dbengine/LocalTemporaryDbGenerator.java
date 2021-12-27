@@ -77,8 +77,8 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 						return Mono.zip(
 										conn.getDatabase("testdb",
 												List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-												new DatabaseOptions(Map.of(), true, false, true, false,
-														true, canUseNettyDirect, -1)
+												new DatabaseOptions(List.of(), Map.of(), true, false, true, false,
+														true, canUseNettyDirect, -1, null)
 										),
 										conn.getLuceneIndex("testluceneindex1",
 												1,

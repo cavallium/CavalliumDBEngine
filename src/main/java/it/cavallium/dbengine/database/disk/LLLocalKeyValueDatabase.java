@@ -6,6 +6,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.util.internal.PlatformDependent;
+import it.cavallium.dbengine.client.DatabaseVolume;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -49,15 +50,11 @@ import org.rocksdb.DbPath;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.OptimisticTransactionDB;
-import org.rocksdb.OptimisticTransactionOptions;
 import org.rocksdb.Options;
-import org.rocksdb.RateLimiter;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
-import org.rocksdb.Transaction;
 import org.rocksdb.TransactionDB;
-import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import reactor.core.publisher.Mono;
@@ -279,7 +276,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force compact
 	}
 
-	@SuppressWarnings({"CommentedOutCode"})
 	private static Options openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions) throws IOException {
 		// Get databases directory path
 		Path databasesDirPath;
@@ -305,7 +301,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				CompressionType.SNAPPY_COMPRESSION,
 				CompressionType.SNAPPY_COMPRESSION
 		));
-		//options.setMaxBytesForLevelBase(4 * 256 * 1024 * 1024); // 4 times the sst file
 		options.setManualWalFlush(false);
 		options.setMinWriteBufferNumberToMerge(3);
 		options.setMaxWriteBufferNumber(4);
@@ -318,24 +313,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setPreserveDeletes(false);
 		options.setKeepLogFileNum(10);
 		options.setAllowFAllocate(true);
-		//options.setRateLimiter(new RateLimiter(10L * 1024L * 1024L)); // 10MiB/s max compaction write speed
+		options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 
 		Objects.requireNonNull(databasesDirPath);
 		Objects.requireNonNull(path.getFileName());
-		List<DbPath> paths = List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-						100L * 1024L * 1024L * 1024L), // 100GiB
-				new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
-						500L * 1024L * 1024L * 1024L), // 500GiB
-				new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
-						500L * 1024L * 1024L * 1024L)); // 500GiB
+		List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes());
 		options.setDbPaths(paths);
-		options.setCfPaths(paths);
 		options.setMaxOpenFiles(databaseOptions.maxOpenFiles());
-		// Direct I/O parameters. Removed because they use too much disk.
-		//options.setUseDirectReads(true);
-		//options.setUseDirectIoForFlushAndCompaction(true);
-		//options.setWritableFileMaxBufferSize(1024 * 1024); // 1MB by default
-		//options.setCompactionReadaheadSize(2 * 1024 * 1024); // recommend at least 2MB
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		if (databaseOptions.lowMemory()) {
 			// LOW MEMORY
@@ -379,8 +363,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
 					.setBytesPerSync(64 * 1024 * 1024) // 1MiB
 					.setWalBytesPerSync(128 * 1024 * 1024)
-					.optimizeLevelStyleCompaction(
-							2048L * 1024L * 1024L) // 2GiB of ram will be used for level style compaction
+					.optimizeLevelStyleCompaction(2048L * 1024L * 1024L) // 2GiB of ram will be used for level style compaction
 					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
 					.setWalTtlSeconds(30) // flush wal after 30 seconds
 					.setWalSizeLimitMB(1024) // 1024MB
@@ -396,8 +379,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setPinL0FilterAndIndexBlocksInCache(true)
 					;
 			final BloomFilter bloomFilter = new BloomFilter(10, false);
-			// Disabled this option because it can cause memory corruption
-			//tableOptions.setOptimizeFiltersForMemory(true);
 			tableOptions.setFilterPolicy(bloomFilter);
 			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new ClockCache(128L * 1024L * 1024L))); // 128MiB
 
@@ -411,6 +392,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				;
 			}
 		}
+
+		if (databaseOptions.memtableMemoryBudgetBytes() != null) {
+			options.optimizeLevelStyleCompaction(databaseOptions.memtableMemoryBudgetBytes());
+		}
+
 		if (databaseOptions.useDirectIO()) {
 			options
 					.setAllowMmapReads(false)
@@ -432,6 +418,28 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 
 		return options;
+	}
+
+	private static List<DbPath> convertPaths(Path databasesDirPath, Path path, List<DatabaseVolume> volumes) {
+		var paths = new ArrayList<DbPath>(volumes.size());
+		if (volumes.isEmpty()) {
+			return List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
+							100L * 1024L * 1024L * 1024L), // 100GiB
+					new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
+							500L * 1024L * 1024L * 1024L), // 500GiB
+					new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
+							500L * 1024L * 1024L * 1024L)); // 500GiB
+		}
+		for (DatabaseVolume volume : volumes) {
+			Path volumePath;
+			if (volume.volumePath().isAbsolute()) {
+				volumePath = volume.volumePath();
+			} else {
+				volumePath = databasesDirPath.resolve(volume.volumePath());
+			}
+			paths.add(new DbPath(volumePath, volume.targetSizeBytes()));
+		}
+		return paths;
 	}
 
 	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors,

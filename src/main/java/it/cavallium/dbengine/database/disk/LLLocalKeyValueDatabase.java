@@ -155,7 +155,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
-					this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
+					if (databaseOptions.optimistic()) {
+						this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
+					} else {
+						this.db = TransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
+					}
 					break;
 				} catch (RocksDBException ex) {
 					switch (ex.getMessage()) {

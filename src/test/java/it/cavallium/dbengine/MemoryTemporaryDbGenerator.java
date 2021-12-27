@@ -49,7 +49,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 							.zip(
 									conn.getDatabase("testdb",
 											List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-											new DatabaseOptions(List.of(), Map.of(), true, false, true, false, true, canUseNettyDirect, -1, null)
+											new DatabaseOptions(List.of(), Map.of(), true, false, true, false, true, canUseNettyDirect, true, -1, null)
 									),
 									conn.getLuceneIndex("testluceneindex1",
 											1,

@@ -6,9 +6,9 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.util.internal.PlatformDependent;
+import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.DatabaseVolume;
 import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateMode;
@@ -44,7 +44,6 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.CompactionPriority;
 import org.rocksdb.CompactionStyle;
-import org.rocksdb.CompressionOptions;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
@@ -56,6 +55,8 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import org.rocksdb.TransactionDB;
+import org.rocksdb.TransactionDBOptions;
+import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import reactor.core.publisher.Mono;
@@ -159,7 +160,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					if (databaseOptions.optimistic()) {
 						this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
 					} else {
-						this.db = TransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
+						this.db = TransactionDB.open(new DBOptions(rocksdbOptions),
+								new TransactionDBOptions().setWritePolicy(TxnDBWritePolicy.WRITE_COMMITTED),
+								dbPathString,
+								descriptors,
+								handles
+						);
 					}
 					break;
 				} catch (RocksDBException ex) {
@@ -519,8 +525,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
 			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, cfh, meterRegistry);
-		} else if (db instanceof TransactionDB) {
-			return new PessimisticRocksDBColumn((TransactionDB) db, databaseOptions, allocator, cfh, meterRegistry);
+		} else if (db instanceof TransactionDB transactionDB) {
+			return new PessimisticRocksDBColumn(transactionDB, databaseOptions, allocator, cfh, meterRegistry);
 		} else {
 			return new StandardRocksDBColumn(db, databaseOptions, allocator, cfh, meterRegistry);
 		}

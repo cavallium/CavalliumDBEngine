@@ -86,13 +86,7 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 
 					@Nullable Buffer newData;
 					try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-						try (var newDataToReceive = updater.apply(sentData)) {
-							if (newDataToReceive != null) {
-								newData = newDataToReceive;
-							} else {
-								newData = null;
-							}
-						}
+						newData = updater.apply(sentData);
 					}
 					try (newData) {
 						var newDataArray = newData == null ? null : LLUtils.toArray(newData);

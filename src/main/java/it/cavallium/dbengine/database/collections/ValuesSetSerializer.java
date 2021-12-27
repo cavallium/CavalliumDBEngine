@@ -8,10 +8,14 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.ArrayList;
 import java.util.Objects;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
+
+	private static final Logger logger = LogManager.getLogger(ValuesSetSerializer.class);
 
 	private final Serializer<X> entrySerializer;
 
@@ -21,14 +25,23 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 
 	@Override
 	public @NotNull ObjectArraySet<X> deserialize(@NotNull Buffer serialized) throws SerializationException {
-		Objects.requireNonNull(serialized);
-		int entriesLength = serialized.readInt();
-		ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
-		for (int i = 0; i < entriesLength; i++) {
-			var deserializationResult = entrySerializer.deserialize(serialized);
-			deserializedElements.add(deserializationResult);
+		try {
+			Objects.requireNonNull(serialized);
+			if (serialized.readableBytes() == 0) {
+				logger.error("Can't deserialize, 0 bytes are readable");
+				return new ObjectArraySet<>();
+			}
+			int entriesLength = serialized.readInt();
+			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
+			for (int i = 0; i < entriesLength; i++) {
+				var deserializationResult = entrySerializer.deserialize(serialized);
+				deserializedElements.add(deserializationResult);
+			}
+			return new ObjectArraySet<>(deserializedElements);
+		} catch (IndexOutOfBoundsException ex) {
+			logger.error("Error during deserialization of value set, returning an empty set", ex);
+			return new ObjectArraySet<>();
 		}
-		return new ObjectArraySet<>(deserializedElements);
 	}
 
 	@Override

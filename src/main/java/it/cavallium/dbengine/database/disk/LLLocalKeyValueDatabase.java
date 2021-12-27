@@ -161,7 +161,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						this.db = OptimisticTransactionDB.open(new DBOptions(rocksdbOptions), dbPathString, descriptors, handles);
 					} else {
 						this.db = TransactionDB.open(new DBOptions(rocksdbOptions),
-								new TransactionDBOptions().setWritePolicy(TxnDBWritePolicy.WRITE_COMMITTED),
+								new TransactionDBOptions()
+										.setWritePolicy(TxnDBWritePolicy.WRITE_COMMITTED)
+										.setTransactionLockTimeout(5000)
+										.setDefaultLockTimeout(5000),
 								dbPathString,
 								descriptors,
 								handles

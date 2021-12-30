@@ -61,6 +61,7 @@ import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
+import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
@@ -219,6 +220,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
+		var mergePolicy = new TieredMergePolicy();
+		indexWriterConfig.setMergePolicy(mergePolicy);
 		int writerSchedulerMaxThreadCount;
 		MergeScheduler mergeScheduler;
 		if (lowMemory) {
@@ -270,9 +273,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		// Start scheduled tasks
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
 		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledCommit, commitMillis, commitMillis,
-				TimeUnit.MILLISECONDS);
-		// Maybe merge every 5 commits
-		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledMerge, commitMillis * 5, commitMillis * 5,
 				TimeUnit.MILLISECONDS);
 	}
 
@@ -577,7 +577,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 	}
 
-	private void scheduledMerge() {
+	private void scheduledMerge() { // Do not use. Merges are done automatically by merge policies
 		shutdownLock.lock();
 		try {
 			mergeTime.recordCallable(() -> {

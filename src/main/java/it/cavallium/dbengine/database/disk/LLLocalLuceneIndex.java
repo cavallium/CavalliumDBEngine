@@ -51,6 +51,7 @@ import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
@@ -60,6 +61,7 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
+import org.apache.lucene.index.SimpleMergedSegmentWarmer;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
@@ -222,6 +224,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setCommitOnClose(true);
 		var mergePolicy = new TieredMergePolicy();
 		indexWriterConfig.setMergePolicy(mergePolicy);
+		indexWriterConfig.setMergedSegmentWarmer(new SimpleMergedSegmentWarmer(null));
 		int writerSchedulerMaxThreadCount;
 		MergeScheduler mergeScheduler;
 		if (lowMemory) {
@@ -334,16 +337,21 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return documents.collectList().flatMap(documentsList -> this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
-			double count = documentsList.size();
-			startedDocIndexings.increment(count);
+		return documents.collectList().flatMap(documentsList -> this.<Void>runSafe(() -> {
+			var count = documentsList.size();
+			StopWatch stopWatch = StopWatch.createStarted();
 			try {
-				indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+				startedDocIndexings.increment(count);
+				try {
+					indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+				} finally {
+					endeddDocIndexings.increment(count);
+				}
 			} finally {
-				endeddDocIndexings.increment(count);
+				docIndexingTime.record(stopWatch.getTime(TimeUnit.MILLISECONDS) / Math.max(count, 1), TimeUnit.MILLISECONDS);
 			}
 			return null;
-		}))).transform(this::ensureOpen);
+		})).transform(this::ensureOpen);
 	}
 
 

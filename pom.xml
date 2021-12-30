@@ -501,6 +501,8 @@
               <overWriteReleases>false</overWriteReleases>
               <overWriteSnapshots>false</overWriteSnapshots>
               <overWriteIfNewer>true</overWriteIfNewer>
+              <prependGroupId>true</prependGroupId>
+              <stripVersion>true</stripVersion>
             </configuration>
           </execution>
         </executions>

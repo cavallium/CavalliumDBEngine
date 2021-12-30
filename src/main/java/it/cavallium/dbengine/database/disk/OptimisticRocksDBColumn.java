@@ -96,6 +96,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 						Buffer prevData;
 						if (prevDataArray != null) {
 							prevData = MemoryManager.unsafeWrap(prevDataArray);
+							prevDataArray = null;
 						} else {
 							prevData = null;
 						}

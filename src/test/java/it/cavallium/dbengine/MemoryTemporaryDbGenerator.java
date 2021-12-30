@@ -11,8 +11,8 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.database.memory.LLMemoryDatabaseConnection;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.time.Duration;
@@ -51,7 +51,8 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 											List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
 											new DatabaseOptions(List.of(), Map.of(), true, false, true, false, true, canUseNettyDirect, true, -1, null)
 									),
-									conn.getLuceneIndex("testluceneindex1",
+									conn.getLuceneIndex(null,
+											"testluceneindex1",
 											1,
 											IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
 											IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
@@ -59,6 +60,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 											luceneHacks
 									),
 									conn.getLuceneIndex("testluceneindex16",
+											null,
 											3,
 											IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
 											IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),

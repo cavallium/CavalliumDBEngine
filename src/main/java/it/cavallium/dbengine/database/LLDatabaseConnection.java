@@ -24,7 +24,8 @@ public interface LLDatabaseConnection {
 			List<Column> columns,
 			DatabaseOptions databaseOptions);
 
-	Mono<? extends LLLuceneIndex> getLuceneIndex(String name,
+	Mono<? extends LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
+			@Nullable String shardName,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,

@@ -6,10 +6,11 @@ import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
 import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANSFORMATION;
 
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -19,36 +20,33 @@ import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLIndexRequest;
-import it.cavallium.dbengine.database.LLSoftUpdateDocument;
-import it.cavallium.dbengine.database.LLUpdateDocument;
-import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLSoftUpdateDocument;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
+import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
-import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -60,11 +58,9 @@ import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
-import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
-import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.ByteBuffersDirectory;
@@ -76,8 +72,6 @@ import org.apache.lucene.store.NRTCachingDirectory;
 import org.apache.lucene.util.Constants;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.functional.IORunnable;
-import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -97,8 +91,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private static final ReentrantLock shutdownLock = new ReentrantLock();
 	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.single(Schedulers.boundedElastic()));
 
+	private final Counter startedDocIndexings;
+	private final Counter endeddDocIndexings;
+	private final Timer docIndexingTime;
+	private final Timer snapshotTime;
+	private final Timer flushTime;
+	private final Timer commitTime;
+	private final Timer mergeTime;
+	private final Timer refreshTime;
 
-	private final MeterRegistry meterRegistry;
 	private final String luceneIndexName;
 	private final IndexWriter indexWriter;
 	private final SnapshotsManager snapshotsManager;
@@ -114,21 +115,27 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public LLLocalLuceneIndex(LLTempLMDBEnv env,
 			@Nullable Path luceneBasePath,
 			MeterRegistry meterRegistry,
-			String name,
+			@Nullable String clusterName,
+			@Nullable String shardName,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
 			@Nullable LuceneHacks luceneHacks) throws IOException {
-		this.meterRegistry = meterRegistry;
+		if (clusterName == null && shardName == null) {
+			throw new IllegalArgumentException("Clustern name and/or shard name must be set");
+		}
+		String logName = Objects.requireNonNullElse(clusterName, shardName);
+		String luceneIndexName = Objects.requireNonNullElse(shardName, clusterName);
+
 		Path directoryPath;
 		if (luceneOptions.inMemory() != (luceneBasePath == null)) {
 			throw new IllegalArgumentException();
 		} else if (luceneBasePath != null) {
-			directoryPath = luceneBasePath.resolve(name + ".lucene.db");
+			directoryPath = luceneBasePath.resolve(shardName + ".lucene.db");
 		} else {
 			directoryPath = null;
 		}
-		if (name.length() == 0) {
+		if (luceneIndexName.length() == 0) {
 			throw new IOException("Empty lucene database name");
 		}
 		if (!MMapDirectory.UNMAP_SUPPORTED) {
@@ -194,7 +201,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			this.directory = directory;
 		}
 
-		this.luceneIndexName = name;
+		this.luceneIndexName = luceneIndexName;
 		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.lowMemory = lowMemory;
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
@@ -251,6 +258,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				luceneOptions.queryRefreshDebounceTime()
 		);
 
+		this.startedDocIndexings = meterRegistry.counter("index.write.doc.started.counter", "index.name", logName);
+		this.endeddDocIndexings = meterRegistry.counter("index.write.doc.ended.counter", "index.name", logName);
+		this.docIndexingTime = Timer.builder("index.write.doc.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+		this.snapshotTime = Timer.builder("index.write.snapshot.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+		this.flushTime = Timer.builder("index.write.flush.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+		this.commitTime = Timer.builder("index.write.commit.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+		this.mergeTime = Timer.builder("index.write.merge.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+		this.refreshTime = Timer.builder("index.search.refresh.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+
 		// Start scheduled tasks
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
 		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledCommit, commitMillis, commitMillis,
@@ -271,7 +287,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSnapshot> takeSnapshot() {
-		return snapshotsManager.takeSnapshot().transform(this::ensureOpen);
+		return snapshotsManager.takeSnapshot().elapsed().map(elapsed -> {
+			snapshotTime.record(elapsed.getT1(), TimeUnit.MILLISECONDS);
+			return elapsed.getT2();
+		}).transform(this::ensureOpen);
 	}
 
 	private <V> Mono<V> ensureOpen(Mono<V> mono) {
@@ -293,49 +312,75 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return snapshotsManager.releaseSnapshot(snapshot);
+		return snapshotsManager
+				.releaseSnapshot(snapshot)
+				.elapsed()
+				.doOnNext(elapsed -> snapshotTime.record(elapsed.getT1(), TimeUnit.MILLISECONDS))
+				.then();
 	}
 
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLUpdateDocument doc) {
-		return this.<Void>runSafe(() -> {
-			indexWriter.addDocument(toDocument(doc));
+		return this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
+			startedDocIndexings.increment();
+			try {
+				indexWriter.addDocument(toDocument(doc));
+			} finally {
+				endeddDocIndexings.increment();
+			}
 			return null;
-		}).transform(this::ensureOpen);
+		})).transform(this::ensureOpen);
 	}
 
 	@Override
 	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return documents.collectList().flatMap(documentsList -> this.<Void>runSafe(() -> {
-			indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+		return documents.collectList().flatMap(documentsList -> this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
+			double count = documentsList.size();
+			startedDocIndexings.increment(count);
+			try {
+				indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+			} finally {
+				endeddDocIndexings.increment(count);
+			}
 			return null;
-		})).transform(this::ensureOpen);
+		}))).transform(this::ensureOpen);
 	}
 
 
 	@Override
 	public Mono<Void> deleteDocument(LLTerm id) {
-		return this.<Void>runSafe(() -> {
-			indexWriter.deleteDocuments(LLUtils.toTerm(id));
+		return this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
+			startedDocIndexings.increment();
+			try {
+				indexWriter.deleteDocuments(LLUtils.toTerm(id));
+			} finally {
+				endeddDocIndexings.increment();
+			}
 			return null;
-		}).transform(this::ensureOpen);
+		})).transform(this::ensureOpen);
 	}
 
 	@Override
 	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
 		return this
-				.<Void>runSafe(() -> {
-					switch (request) {
-						case LLUpdateDocument updateDocument ->
-								indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
-						case LLSoftUpdateDocument softUpdateDocument -> indexWriter.softUpdateDocument(LLUtils.toTerm(id),
-								toDocument(softUpdateDocument.items()), toFields(softUpdateDocument.softDeleteItems()));
-						case LLUpdateFields updateFields ->
-								indexWriter.updateDocValues(LLUtils.toTerm(id), toFields(updateFields.items()));
-						case null, default -> throw new UnsupportedOperationException("Unexpected request type: " + request);
+				.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
+					startedDocIndexings.increment();
+					try {
+						switch (request) {
+							case LLUpdateDocument updateDocument ->
+									indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
+							case LLSoftUpdateDocument softUpdateDocument ->
+									indexWriter.softUpdateDocument(LLUtils.toTerm(id), toDocument(softUpdateDocument.items()),
+											toFields(softUpdateDocument.softDeleteItems()));
+							case LLUpdateFields updateFields -> indexWriter.updateDocValues(LLUtils.toTerm(id),
+									toFields(updateFields.items()));
+							case null, default -> throw new UnsupportedOperationException("Unexpected request type: " + request);
+						}
+					} finally {
+						endeddDocIndexings.increment();
 					}
 					return null;
-				})
+				}))
 				.transform(this::ensureOpen);
 	}
 
@@ -349,7 +394,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			for (Entry<LLTerm, LLUpdateDocument> entry : documentsMap.entrySet()) {
 				LLTerm key = entry.getKey();
 				LLUpdateDocument value = entry.getValue();
-				indexWriter.updateDocument(LLUtils.toTerm(key), toDocument(value));
+				startedDocIndexings.increment();
+				try {
+					docIndexingTime.recordCallable(() -> {
+						indexWriter.updateDocument(LLUtils.toTerm(key), toDocument(value));
+						return null;
+					});
+				} finally {
+					endeddDocIndexings.increment();
+				}
 			}
 			return null;
 		}).transform(this::ensureOpen);
@@ -469,7 +522,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					if (activeTasks.isTerminated()) return null;
 					shutdownLock.lock();
 					try {
-						indexWriter.flush();
+						flushTime.recordCallable(() -> {
+							indexWriter.flush();
+							return null;
+						});
 					} finally {
 						shutdownLock.unlock();
 					}
@@ -488,11 +544,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						if (activeTasks.isTerminated()) return null;
 						shutdownLock.lock();
 						try {
-							if (force) {
-								searcherManager.maybeRefreshBlocking();
-							} else {
-								searcherManager.maybeRefresh();
-							}
+							refreshTime.recordCallable(() -> {
+								if (force) {
+									searcherManager.maybeRefreshBlocking();
+								} else {
+									searcherManager.maybeRefresh();
+								}
+								return null;
+							});
 						} finally {
 							shutdownLock.unlock();
 						}
@@ -507,8 +566,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private void scheduledCommit() {
 		shutdownLock.lock();
 		try {
-			indexWriter.commit();
-		} catch (IOException ex) {
+			commitTime.recordCallable(() -> {
+				indexWriter.commit();
+				return null;
+			});
+		} catch (Exception ex) {
 			logger.error(MARKER_LUCENE, "Failed to execute a scheduled commit", ex);
 		} finally {
 			shutdownLock.unlock();
@@ -518,8 +580,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private void scheduledMerge() {
 		shutdownLock.lock();
 		try {
-			indexWriter.maybeMerge();
-		} catch (IOException ex) {
+			mergeTime.recordCallable(() -> {
+				indexWriter.maybeMerge();
+				return null;
+			});
+		} catch (Exception ex) {
 			logger.error(MARKER_LUCENE, "Failed to execute a scheduled merge", ex);
 		} finally {
 			shutdownLock.unlock();

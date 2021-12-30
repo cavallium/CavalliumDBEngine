@@ -80,7 +80,8 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 												new DatabaseOptions(List.of(), Map.of(), true, false, true, false,
 														true, canUseNettyDirect, false, -1, null)
 										),
-										conn.getLuceneIndex("testluceneindex1",
+										conn.getLuceneIndex(null,
+												"testluceneindex1",
 												1,
 												IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
 												IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
@@ -88,6 +89,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 												luceneHacks
 										),
 										conn.getLuceneIndex("testluceneindex16",
+												null,
 												3,
 												IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
 												IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),

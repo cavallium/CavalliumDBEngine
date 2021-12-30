@@ -8,6 +8,8 @@ import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static java.util.Objects.requireNonNull;
 import static java.util.Objects.requireNonNullElse;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Resource;
@@ -40,6 +42,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 import org.apache.commons.lang3.tuple.Pair;
@@ -131,6 +134,22 @@ public class LLLocalDictionary implements LLDictionary {
 	private final boolean nettyDirect;
 	private final BufferAllocator alloc;
 
+	private final Counter startedUpdates;
+	private final Counter endedUpdates;
+	private final Timer updateTime;
+	private final Counter startedGet;
+	private final Counter endedGet;
+	private final Timer getTime;
+	private final Counter startedContains;
+	private final Counter endedContains;
+	private final Timer containsTime;
+	private final Counter startedPut;
+	private final Counter endedPut;
+	private final Timer putTime;
+	private final Counter startedRemove;
+	private final Counter endedRemove;
+	private final Timer removeTime;
+
 	public LLLocalDictionary(
 			BufferAllocator allocator,
 			@NotNull RocksDBColumn db,
@@ -151,6 +170,48 @@ public class LLLocalDictionary implements LLDictionary {
 		this.databaseOptions = databaseOptions;
 		alloc = allocator;
 		this.nettyDirect = databaseOptions.allowNettyDirect() && alloc.getAllocationType() == OFF_HEAP;
+		var meterRegistry = db.getMeterRegistry();
+
+		this.startedGet = meterRegistry.counter("db.read.map.get.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedGet = meterRegistry.counter("db.read.map.get.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.getTime = Timer
+				.builder("db.read.get.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
+		this.startedContains = meterRegistry.counter("db.read.map.get.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedContains = meterRegistry.counter("db.read.map.get.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.containsTime = Timer
+				.builder("db.read.get.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
+		this.startedUpdates = meterRegistry.counter("db.write.map.update.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedUpdates = meterRegistry.counter("db.write.map.update.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.updateTime = Timer
+				.builder("db.write.map.update.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
+		this.startedPut = meterRegistry.counter("db.write.map.put.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedPut = meterRegistry.counter("db.write.map.put.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.putTime = Timer
+				.builder("db.write.map.put.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
+		this.startedRemove = meterRegistry.counter("db.write.map.remove.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedRemove = meterRegistry.counter("db.write.map.remove.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.removeTime = Timer
+				.builder("db.write.map.remove.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
 	}
 
 	@Override
@@ -205,7 +266,13 @@ public class LLLocalDictionary implements LLDictionary {
 					try (var key = keySend.receive()) {
 						try {
 							var readOptions = requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
-							var result = db.get(readOptions, key, existsAlmostCertainly);
+							Buffer result;
+							startedGet.increment();
+							try {
+								result = getTime.recordCallable(() -> db.get(readOptions, key, existsAlmostCertainly));
+							} finally {
+								endedGet.increment();
+							}
 							logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
 							if (result != null) {
 								sink.next(result.send());
@@ -236,52 +303,65 @@ public class LLLocalDictionary implements LLDictionary {
 
 	public boolean containsRange(@Nullable LLSnapshot snapshot, LLRange range) throws RocksDBException {
 		assert !Schedulers.isInNonBlockingThread() : "Called containsRange in a nonblocking thread";
-		if (range.isSingle()) {
-			var unmodifiableReadOpts = resolveSnapshot(snapshot);
-			return db.exists(unmodifiableReadOpts, range.getSingleUnsafe());
-		} else {
-			// Temporary resources to release after finished
-			AbstractSlice<?> slice1 = null;
-			AbstractSlice<?> slice2 = null;
-			try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
-				readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
-				readOpts.setFillCache(false);
-				if (range.hasMin()) {
-					var rangeMinInternalByteBuffer = asReadOnlyDirect(range.getMinUnsafe());
-					if (nettyDirect && rangeMinInternalByteBuffer != null) {
-						readOpts.setIterateLowerBound(slice1 = new DirectSlice(rangeMinInternalByteBuffer,
-								range.getMinUnsafe().readableBytes()));
-					} else {
-						readOpts.setIterateLowerBound(slice1 = new Slice(LLUtils.toArray(range.getMinUnsafe())));
-					}
-				}
-				if (range.hasMax()) {
-					var rangeMaxInternalByteBuffer = asReadOnlyDirect(range.getMaxUnsafe());
-					if (nettyDirect && rangeMaxInternalByteBuffer != null) {
-						readOpts.setIterateUpperBound(slice2 = new DirectSlice(rangeMaxInternalByteBuffer,
-								range.getMaxUnsafe().readableBytes()));
-					} else {
-						readOpts.setIterateUpperBound(slice2 = new Slice(LLUtils.toArray(range.getMaxUnsafe())));
-					}
-				}
-				try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
-					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-						var rangeMinInternalByteBuffer = asReadOnlyDirect(range.getMinUnsafe());
-						if (nettyDirect && rangeMinInternalByteBuffer != null) {
-							rocksIterator.seek(rangeMinInternalByteBuffer);
-						} else {
-							rocksIterator.seek(LLUtils.toArray(range.getMinUnsafe()));
+		startedContains.increment();
+		try {
+			var result = containsTime.recordCallable(() -> {
+				if (range.isSingle()) {
+					var unmodifiableReadOpts = resolveSnapshot(snapshot);
+					return db.exists(unmodifiableReadOpts, range.getSingleUnsafe());
+				} else {
+					// Temporary resources to release after finished
+					AbstractSlice<?> slice1 = null;
+					AbstractSlice<?> slice2 = null;
+					try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
+						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
+						readOpts.setFillCache(false);
+						if (range.hasMin()) {
+							var rangeMinInternalByteBuffer = asReadOnlyDirect(range.getMinUnsafe());
+							if (nettyDirect && rangeMinInternalByteBuffer != null) {
+								readOpts.setIterateLowerBound(slice1 = new DirectSlice(rangeMinInternalByteBuffer,
+										range.getMinUnsafe().readableBytes()));
+							} else {
+								readOpts.setIterateLowerBound(slice1 = new Slice(LLUtils.toArray(range.getMinUnsafe())));
+							}
 						}
-					} else {
-						rocksIterator.seekToFirst();
+						if (range.hasMax()) {
+							var rangeMaxInternalByteBuffer = asReadOnlyDirect(range.getMaxUnsafe());
+							if (nettyDirect && rangeMaxInternalByteBuffer != null) {
+								readOpts.setIterateUpperBound(slice2 = new DirectSlice(rangeMaxInternalByteBuffer,
+										range.getMaxUnsafe().readableBytes()));
+							} else {
+								readOpts.setIterateUpperBound(slice2 = new Slice(LLUtils.toArray(range.getMaxUnsafe())));
+							}
+						}
+						try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
+							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+								var rangeMinInternalByteBuffer = asReadOnlyDirect(range.getMinUnsafe());
+								if (nettyDirect && rangeMinInternalByteBuffer != null) {
+									rocksIterator.seek(rangeMinInternalByteBuffer);
+								} else {
+									rocksIterator.seek(LLUtils.toArray(range.getMinUnsafe()));
+								}
+							} else {
+								rocksIterator.seekToFirst();
+							}
+							rocksIterator.status();
+							return rocksIterator.isValid();
+						}
+					} finally {
+						if (slice1 != null) slice1.close();
+						if (slice2 != null) slice2.close();
 					}
-					rocksIterator.status();
-					return rocksIterator.isValid();
 				}
-			} finally {
-				if (slice1 != null) slice1.close();
-				if (slice2 != null) slice2.close();
-			}
+			});
+			assert result != null;
+			return result;
+		} catch (RocksDBException | RuntimeException e) {
+			throw e;
+		} catch (Exception ex) {
+			throw new RuntimeException(ex);
+		} finally {
+			endedContains.increment();
 		}
 	}
 
@@ -298,8 +378,21 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private boolean containsKey(@Nullable LLSnapshot snapshot, Buffer key) throws RocksDBException {
-		var unmodifiableReadOpts = resolveSnapshot(snapshot);
-		return db.exists(unmodifiableReadOpts, key);
+		startedContains.increment();
+		try {
+			var result = containsTime.recordCallable(() -> {
+				var unmodifiableReadOpts = resolveSnapshot(snapshot);
+				return db.exists(unmodifiableReadOpts, key);
+			});
+			assert result != null;
+			return result;
+		} catch (RocksDBException | RuntimeException e) {
+			throw e;
+		} catch (Exception ex) {
+			throw new RuntimeException(ex);
+		} finally {
+			endedContains.increment();
+		}
 	}
 
 	@Override
@@ -340,7 +433,14 @@ public class LLLocalDictionary implements LLDictionary {
 						safeCloseable.close();
 					}
 				})
-				.onErrorMap(cause -> new IOException("Failed to write", cause));
+				.onErrorMap(cause -> new IOException("Failed to write", cause))
+				.elapsed()
+				.map(tuple -> {
+					putTime.record(tuple.getT1(), TimeUnit.MILLISECONDS);
+					return tuple.getT2();
+				})
+				.doFirst(startedPut::increment)
+				.doFinally(s -> endedPut.increment());
 	}
 
 	@Override
@@ -366,8 +466,15 @@ public class LLLocalDictionary implements LLDictionary {
 						case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
 						case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 					};
-					UpdateAtomicResult result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater,
-							existsAlmostCertainly, returnMode);
+					UpdateAtomicResult result;
+					startedUpdates.increment();
+					try {
+						result = updateTime.recordCallable(() -> db.updateAtomic(EMPTY_READ_OPTIONS,
+								EMPTY_WRITE_OPTIONS, keySend, updater, existsAlmostCertainly, returnMode));
+					} finally {
+						endedUpdates.increment();
+					}
+					assert result != null;
 					return switch (updateReturnMode) {
 						case NOTHING -> null;
 						case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
@@ -395,8 +502,15 @@ public class LLLocalDictionary implements LLDictionary {
 						throw new UnsupportedOperationException("update() is disallowed because the database doesn't support"
 								+ "safe atomic operations");
 					}
-					UpdateAtomicResult result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater,
-							existsAlmostCertainly, UpdateAtomicResultMode.DELTA);
+					UpdateAtomicResult result;
+					startedUpdates.increment();
+					try {
+						result = updateTime.recordCallable(() -> db.updateAtomic(EMPTY_READ_OPTIONS,
+								EMPTY_WRITE_OPTIONS, keySend, updater, existsAlmostCertainly, UpdateAtomicResultMode.DELTA));
+					} finally {
+						endedUpdates.increment();
+					}
+					assert result != null;
 					return ((UpdateAtomicResultDelta) result).delta();
 				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
 				keySend -> Mono.fromRunnable(keySend::close)).doOnDiscard(UpdateAtomicResult.class, uar -> {
@@ -431,7 +545,10 @@ public class LLLocalDictionary implements LLDictionary {
 						)
 						.singleOrEmpty(),
 				keySend -> Mono.fromRunnable(keySend::close)
-		);
+		).elapsed().map(tuple -> {
+			removeTime.record(tuple.getT1(), TimeUnit.MILLISECONDS);
+			return tuple.getT2();
+		}).doFirst(startedRemove::increment).doFinally(s -> endedRemove.increment());
 	}
 
 	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType,

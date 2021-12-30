@@ -65,7 +65,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public LLLocalMultiLuceneIndex(LLTempLMDBEnv env,
 			Path lucene,
 			MeterRegistry meterRegistry,
-			String name,
+			String clusterName,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
@@ -79,16 +79,17 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		this.meterRegistry = meterRegistry;
 		LLLocalLuceneIndex[] luceneIndices = new LLLocalLuceneIndex[instancesCount];
 		for (int i = 0; i < instancesCount; i++) {
-			String instanceName;
+			String shardName;
 			if (i == 0) {
-				instanceName = name;
+				shardName = clusterName;
 			} else {
-				instanceName = name + "_" + String.format("%03d", i);
+				shardName = clusterName + "_" + String.format("%03d", i);
 			}
 			luceneIndices[i] = new LLLocalLuceneIndex(env,
 					lucene,
 					meterRegistry,
-					instanceName,
+					clusterName,
+					shardName,
 					indicizerAnalyzers,
 					indicizerSimilarities,
 					luceneOptions,

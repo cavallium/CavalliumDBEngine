@@ -79,7 +79,8 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<LLLuceneIndex> getLuceneIndex(String name,
+	public Mono<LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
+			@Nullable String shardName,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
@@ -91,7 +92,8 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 					return new LLLocalLuceneIndex(env,
 							null,
 							meterRegistry,
-							name,
+							clusterName,
+							shardName,
 							indicizerAnalyzers,
 							indicizerSimilarities,
 							luceneOptions,

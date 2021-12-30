@@ -2,24 +2,22 @@ package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
+import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import org.checkerframework.checker.units.qual.A;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -88,7 +86,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<LLLuceneIndex> getLuceneIndex(String name,
+	public Mono<LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
+			@Nullable String shardName,
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
@@ -97,12 +96,18 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		return Mono
 				.fromCallable(() -> {
 					var env = this.env.get();
+					if (clusterName == null && shardName == null) {
+						throw new IllegalArgumentException("Shard name and/or cluster name must be set");
+					}
 					if (instancesCount != 1) {
+						if (shardName != null && !shardName.equals(clusterName)) {
+							throw new IllegalArgumentException("You shouldn't use a shard name for clustered instances");
+						}
 						Objects.requireNonNull(env, "Environment not set");
 						return new LLLocalMultiLuceneIndex(env,
 								luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
 								meterRegistry,
-								name,
+								clusterName,
 								instancesCount,
 								indicizerAnalyzers,
 								indicizerSimilarities,
@@ -112,7 +117,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 					} else {
 						return new LLLocalLuceneIndex(env, luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
 								meterRegistry,
-								name,
+								clusterName,
+								shardName,
 								indicizerAnalyzers,
 								indicizerSimilarities,
 								luceneOptions,

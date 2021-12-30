@@ -175,15 +175,15 @@ public class LLLocalDictionary implements LLDictionary {
 		this.startedGet = meterRegistry.counter("db.read.map.get.started.counter", "db.name", databaseName, "db.column", columnName);
 		this.endedGet = meterRegistry.counter("db.read.map.get.ended.counter", "db.name", databaseName, "db.column", columnName);
 		this.getTime = Timer
-				.builder("db.read.get.timer")
+				.builder("db.read.map.get.timer")
 				.publishPercentiles(0.2, 0.5, 0.95)
 				.publishPercentileHistogram()
 				.tags("db.name", databaseName, "db.column", columnName)
 				.register(meterRegistry);
-		this.startedContains = meterRegistry.counter("db.read.map.get.started.counter", "db.name", databaseName, "db.column", columnName);
-		this.endedContains = meterRegistry.counter("db.read.map.get.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.startedContains = meterRegistry.counter("db.read.map.contains.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedContains = meterRegistry.counter("db.read.map.contains.ended.counter", "db.name", databaseName, "db.column", columnName);
 		this.containsTime = Timer
-				.builder("db.read.get.timer")
+				.builder("db.read.map.contains.timer")
 				.publishPercentiles(0.2, 0.5, 0.95)
 				.publishPercentileHistogram()
 				.tags("db.name", databaseName, "db.column", columnName)

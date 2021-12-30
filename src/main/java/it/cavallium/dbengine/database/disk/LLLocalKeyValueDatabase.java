@@ -4,6 +4,7 @@ import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.DatabaseOptions;
@@ -77,6 +78,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final MeterRegistry meterRegistry;
 	private final Scheduler dbScheduler;
 
+	private final Timer snapshotTime;
+
 	// Configurations
 
 	private final Path dbPath;
@@ -102,6 +105,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		this.allocator = allocator;
 		this.nettyDirect = databaseOptions.allowNettyDirect() && allocator.getAllocationType() == OFF_HEAP;
 		this.meterRegistry = meterRegistry;
+
+		this.snapshotTime = Timer
+				.builder("db.snapshot.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", name)
+				.register(meterRegistry);
 
 		if (nettyDirect) {
 			if (!PlatformDependent.hasUnsafe()) {
@@ -586,12 +596,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
-				.fromCallable(() -> {
+				.fromCallable(() -> snapshotTime.recordCallable(() -> {
 					var snapshot = db.getSnapshot();
 					long currentSnapshotSequenceNumber = nextSnapshotNumbers.getAndIncrement();
 					this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
 					return new LLSnapshot(currentSnapshotSequenceNumber);
-				})
+				}))
 				.subscribeOn(dbScheduler);
 	}
 

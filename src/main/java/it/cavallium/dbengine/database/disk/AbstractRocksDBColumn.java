@@ -128,7 +128,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					assert resultBuffer.writerOffset() == 0;
 					var resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
 
-					var keyMayExist = db.keyMayExist(cfh, keyNioBuffer, resultWritable);
+					var keyMayExist = db.keyMayExist(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
 					var keyMayExistState = KeyMayExistWorkaround.getExistenceState(keyMayExist);
 					int keyMayExistValueLength = KeyMayExistWorkaround.getValueLength(keyMayExist);
 					// At the beginning, size reflects the expected size, then it becomes the real data size
@@ -144,7 +144,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 							assert keyMayExistValueLength == 0;
 							resultWritable.clear();
 							// real data size
-							size = db.get(cfh, readOptions, keyNioBuffer.position(0), resultWritable);
+							size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
 							if (size == RocksDB.NOT_FOUND) {
 								resultBuffer.close();
 								return null;
@@ -164,7 +164,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 								assert resultBuffer.readerOffset() == 0;
 								assert resultBuffer.writerOffset() == 0;
 
-								size = db.get(cfh, readOptions, keyNioBuffer.position(0), resultWritable);
+								size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
 								if (size == RocksDB.NOT_FOUND) {
 									resultBuffer.close();
 									return null;

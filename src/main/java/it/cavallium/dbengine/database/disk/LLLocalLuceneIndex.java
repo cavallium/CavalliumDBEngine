@@ -73,6 +73,7 @@ import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.store.NRTCachingDirectory;
 import org.apache.lucene.util.Constants;
+import org.apache.lucene.util.InfoStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -224,7 +225,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setCommitOnClose(true);
 		var mergePolicy = new TieredMergePolicy();
 		indexWriterConfig.setMergePolicy(mergePolicy);
-		indexWriterConfig.setMergedSegmentWarmer(new SimpleMergedSegmentWarmer(null));
+		indexWriterConfig.setMergedSegmentWarmer(new SimpleMergedSegmentWarmer(InfoStream.getDefault()));
 		int writerSchedulerMaxThreadCount;
 		MergeScheduler mergeScheduler;
 		if (lowMemory) {

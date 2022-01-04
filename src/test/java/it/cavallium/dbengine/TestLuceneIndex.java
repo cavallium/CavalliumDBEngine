@@ -24,6 +24,8 @@ import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -34,14 +36,12 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.util.function.Tuples;
 
 public class TestLuceneIndex {
 
-	private final Logger log = LoggerFactory.getLogger(this.getClass());
+	private final Logger log = LogManager.getLogger(this.getClass());
 	private static LLTempLMDBEnv ENV;
 
 	private TestAllocator allocator;

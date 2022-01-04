@@ -17,14 +17,14 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
@@ -36,7 +36,7 @@ import reactor.util.function.Tuples;
 
 public abstract class TestDictionaryMap {
 
-	private static final Logger log = LoggerFactory.getLogger(TestDictionaryMap.class);
+	private static final Logger log = LogManager.getLogger(TestDictionaryMap.class);
 	private TestAllocator allocator;
 	private boolean checkLeaks = true;
 

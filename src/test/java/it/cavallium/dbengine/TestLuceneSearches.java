@@ -51,6 +51,8 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.function.FailableConsumer;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
@@ -60,8 +62,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.FluxSink.OverflowStrategy;
 import reactor.core.scheduler.Schedulers;
@@ -69,7 +69,7 @@ import reactor.util.function.Tuples;
 
 public class TestLuceneSearches {
 
-	private static final Logger log = LoggerFactory.getLogger(TestLuceneSearches.class);
+	private static final Logger log = LogManager.getLogger(TestLuceneSearches.class);
 	private static LLTempLMDBEnv ENV;
 	private static final MemoryTemporaryDbGenerator TEMP_DB_GENERATOR = new MemoryTemporaryDbGenerator();
 

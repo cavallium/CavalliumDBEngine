@@ -21,6 +21,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
 import java.util.stream.Stream;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,15 +30,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import org.warp.commonutils.log.Logger;
-import org.warp.commonutils.log.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public abstract class TestLLDictionary {
 
-	private final Logger log = LoggerFactory.getLogger(this.getClass());
+	private final Logger log = LogManager.getLogger(this.getClass());
 	private static final Mono<Send<LLRange>> RANGE_ALL = Mono.fromCallable(() -> LLRange.all().send());
 	private TestAllocator allocator;
 	private TempDb tempDb;

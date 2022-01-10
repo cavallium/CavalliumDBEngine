@@ -365,6 +365,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setPartitionFilters(true)
 					.setMetadataBlockSize(4096)
 					.setBlockCache(new ClockCache(8L * 1024L * 1024L)) // 8MiB
+					// Disable to reduce IOWAIT and make the read/writes faster, enable to reduce ram usage and startup time
 					.setCacheIndexAndFilterBlocks(true)
 					.setCacheIndexAndFilterBlocksWithHighPriority(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)
@@ -399,7 +400,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIndexType(IndexType.kTwoLevelIndexSearch)
 					.setPartitionFilters(true)
 					.setMetadataBlockSize(4096)
-					.setBlockCache(new ClockCache(512L * 1024L * 1024L)) // 512MiB
+					.setBlockCache(new ClockCache(1024L * 1024L * 1024L)) // 1GiB
+					// Disable to reduce IOWAIT and make the read/writes faster, enable to reduce ram usage and startup time
 					.setCacheIndexAndFilterBlocks(true)
 					.setCacheIndexAndFilterBlocksWithHighPriority(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)

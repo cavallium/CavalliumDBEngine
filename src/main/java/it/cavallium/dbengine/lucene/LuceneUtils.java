@@ -8,7 +8,6 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.database.EnglishItalianStopFilter;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
@@ -41,11 +40,9 @@ import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.LowerCaseFilter;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
-import org.apache.lucene.analysis.en.KStemFilter;
-import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
+import org.apache.lucene.analysis.CharArraySet;
+import org.apache.lucene.analysis.en.EnglishAnalyzer;
+import org.apache.lucene.analysis.it.ItalianAnalyzer;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
@@ -63,7 +60,6 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.TimeLimitingCollector;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.search.TopDocsCollector;
 import org.apache.lucene.search.TopFieldDocs;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.similarities.BooleanSimilarity;
@@ -88,20 +84,15 @@ public class LuceneUtils {
 
 	private static final Logger logger = LogManager.getLogger(LuceneUtils.class);
 
-	private static final Analyzer lucene4GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 4, 4);
-	private static final Analyzer lucene4GramStringAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(false, 4, 4);
-	private static final Analyzer lucene4GramWordsAnalyzerInstance = new NCharGramAnalyzer(true, 4, 4);
-	private static final Analyzer lucene4GramStringAnalyzerInstance = new NCharGramAnalyzer(false, 4, 4);
-	private static final Analyzer lucene3To5GramWordsAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(true, 3, 5);
-	private static final Analyzer lucene3To5GramStringAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(false, 3, 5);
-	private static final Analyzer lucene3To5GramWordsAnalyzerInstance = new NCharGramAnalyzer(true, 3, 5);
-	private static final Analyzer lucene3To5GramStringAnalyzerInstance = new NCharGramAnalyzer(false, 3, 5);
+	private static final Analyzer luceneEdge4GramAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(4, 4);
+	private static final Analyzer lucene4GramAnalyzerInstance = new NCharGramAnalyzer(4, 4);
+	private static final Analyzer luceneEdge3To5GramAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(3, 5);
+	private static final Analyzer lucene3To5GramAnalyzerInstance = new NCharGramAnalyzer(3, 5);
 	private static final Analyzer luceneStandardAnalyzerInstance = new StandardAnalyzer();
-	private static final Analyzer luceneWordAnalyzerStopWordsAndStemInstance = new WordAnalyzer(false,true, true);
-	private static final Analyzer luceneWordAnalyzerStopWordsInstance = new WordAnalyzer(false, true, false);
-	private static final Analyzer luceneWordAnalyzerStemInstance = new WordAnalyzer(false, false, true);
-	private static final Analyzer luceneWordAnalyzerSimpleInstance = new WordAnalyzer(false, false, false);
-	private static final Analyzer luceneICUCollationKeyInstance = new WordAnalyzer(false, true, true);
+	private static final Analyzer luceneWordAnalyzerStemInstance = new WordAnalyzer(false,true);
+	private static final Analyzer luceneWordAnalyzerSimpleInstance = new WordAnalyzer(false, false);
+	private static final Analyzer luceneICUCollationKeyInstance = new WordAnalyzer(true, true);
+	private static final Similarity luceneBM25StandardSimilarityInstance = new org.apache.lucene.search.similarities.BM25Similarity();
 	private static final Similarity luceneBM25ClassicSimilarityInstance = new BM25Similarity(BM25Model.CLASSIC);
 	private static final Similarity luceneBM25PlusSimilarityInstance = new BM25Similarity(BM25Model.PLUS);
 	private static final Similarity luceneBM25LSimilarityInstance = new BM25Similarity(BM25Model.L);
@@ -121,23 +112,26 @@ public class LuceneUtils {
 	private static final Similarity luceneRobertsonSimilarityInstance = new RobertsonSimilarity();
 	// TODO: remove this default page limits and make the limits configurable into QueryParams
 	private static final PageLimits DEFAULT_PAGE_LIMITS = new ExponentialPageLimits();
+	private static final CharArraySet ENGLISH_AND_ITALIAN_STOP_WORDS;
+
+	static {
+		var cas = new CharArraySet(
+				EnglishAnalyzer.ENGLISH_STOP_WORDS_SET.size() + ItalianAnalyzer.getDefaultStopSet().size(), true);
+		cas.addAll(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET);
+		cas.addAll(ItalianAnalyzer.getDefaultStopSet());
+		ENGLISH_AND_ITALIAN_STOP_WORDS = CharArraySet.unmodifiableSet(cas);
+	}
 
 	@SuppressWarnings("DuplicatedCode")
 	public static Analyzer getAnalyzer(TextFieldsAnalyzer analyzer) {
 		return switch (analyzer) {
-			case N4GramPartialWords -> lucene4GramWordsAnalyzerInstance;
-			case N4GramPartialString -> lucene4GramStringAnalyzerInstance;
-			case N4GramPartialWordsEdge -> lucene4GramWordsAnalyzerEdgeInstance;
-			case N4GramPartialStringEdge -> lucene4GramStringAnalyzerEdgeInstance;
-			case N3To5GramPartialWords -> lucene3To5GramWordsAnalyzerInstance;
-			case N3To5GramPartialString -> lucene3To5GramStringAnalyzerInstance;
-			case N3To5GramPartialWordsEdge -> lucene3To5GramWordsAnalyzerEdgeInstance;
-			case N3To5GramPartialStringEdge -> lucene3To5GramStringAnalyzerEdgeInstance;
+			case N4Gram -> lucene4GramAnalyzerInstance;
+			case N4GramEdge -> luceneEdge4GramAnalyzerEdgeInstance;
+			case N3To5Gram -> lucene3To5GramAnalyzerInstance;
+			case N3To5GramEdge -> luceneEdge3To5GramAnalyzerEdgeInstance;
 			case Standard -> luceneStandardAnalyzerInstance;
-			case FullText -> luceneWordAnalyzerStopWordsAndStemInstance;
-			case WordWithStopwordsStripping -> luceneWordAnalyzerStopWordsInstance;
-			case WordWithStemming -> luceneWordAnalyzerStemInstance;
-			case WordSimple -> luceneWordAnalyzerSimpleInstance;
+			case StandardMultilanguage -> luceneWordAnalyzerStemInstance;
+			case StandardSimple -> luceneWordAnalyzerSimpleInstance;
 			case ICUCollationKey -> luceneICUCollationKeyInstance;
 			//noinspection UnnecessaryDefault
 			default -> throw new UnsupportedOperationException("Unknown analyzer: " + analyzer);
@@ -147,6 +141,7 @@ public class LuceneUtils {
 	@SuppressWarnings("DuplicatedCode")
 	public static Similarity getSimilarity(TextFieldsSimilarity similarity) {
 		return switch (similarity) {
+			case BM25Standard -> luceneBM25StandardSimilarityInstance;
 			case BM25Classic -> luceneBM25ClassicSimilarityInstance;
 			case NGramBM25Classic -> luceneBM25ClassicNGramSimilarityInstance;
 			case BM25L -> luceneBM25LSimilarityInstance;
@@ -167,26 +162,6 @@ public class LuceneUtils {
 			//noinspection UnnecessaryDefault
 			default -> throw new IllegalStateException("Unknown similarity: " + similarity);
 		};
-	}
-
-	/**
-	 *
-	 * @param stem Enable stem filters on words.
-	 *              Pass false if it will be used with a n-gram filter
-	 */
-	public static TokenStream newCommonFilter(TokenStream tokenStream, boolean stem) {
-		tokenStream = newCommonNormalizer(tokenStream);
-		if (stem) {
-			tokenStream = new KStemFilter(tokenStream);
-			tokenStream = new EnglishPossessiveFilter(tokenStream);
-		}
-		return tokenStream;
-	}
-
-	public static TokenStream newCommonNormalizer(TokenStream tokenStream) {
-		tokenStream = new ASCIIFoldingFilter(tokenStream);
-		tokenStream = new LowerCaseFilter(tokenStream);
-		return tokenStream;
 	}
 
 	/**
@@ -532,7 +507,7 @@ public class LuceneUtils {
 					mlt.setMinDocFreq(3);
 					mlt.setMaxDocFreqPct(20);
 					mlt.setBoost(localQueryParams.needsScores());
-					mlt.setStopWords(EnglishItalianStopFilter.getStopWordsString());
+					mlt.setStopWords(ENGLISH_AND_ITALIAN_STOP_WORDS);
 					if (similarity instanceof TFIDFSimilarity tfidfSimilarity) {
 						mlt.setSimilarity(tfidfSimilarity);
 					} else {

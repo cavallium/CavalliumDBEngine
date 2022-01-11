@@ -6,7 +6,7 @@ import java.util.Map;
 public record IndicizerAnalyzers(TextFieldsAnalyzer defaultAnalyzer, Map<String, TextFieldsAnalyzer> fieldAnalyzer) {
 
 	public static IndicizerAnalyzers of() {
-		return of(TextFieldsAnalyzer.FullText);
+		return of(TextFieldsAnalyzer.ICUCollationKey);
 	}
 
 	public static IndicizerAnalyzers of(TextFieldsAnalyzer defaultAnalyzer) {

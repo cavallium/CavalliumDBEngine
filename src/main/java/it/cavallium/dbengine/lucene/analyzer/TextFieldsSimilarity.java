@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.analyzer;
 
 public enum TextFieldsSimilarity {
+	BM25Standard,
 	BM25Classic,
 	NGramBM25Classic,
 	BM25L,

@@ -57,11 +57,11 @@ public class StringIndicizer extends Indicizer<String, String> {
 
 	@Override
 	public IndicizerAnalyzers getPerFieldAnalyzer() {
-		return IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple);
+		return IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey);
 	}
 
 	@Override
 	public IndicizerSimilarities getPerFieldSimilarity() {
-		return IndicizerSimilarities.of(TextFieldsSimilarity.Boolean);
+		return IndicizerSimilarities.of(TextFieldsSimilarity.BM25Standard);
 	}
 }

@@ -7,7 +7,7 @@ import java.util.Map;
 public record IndicizerSimilarities(TextFieldsSimilarity defaultSimilarity, Map<String, TextFieldsSimilarity> fieldSimilarity) {
 
 	public static IndicizerSimilarities of() {
-		return of(TextFieldsSimilarity.BM25Plus);
+		return of(TextFieldsSimilarity.BM25Standard);
 	}
 
 	public static IndicizerSimilarities of(TextFieldsSimilarity defaultSimilarity) {

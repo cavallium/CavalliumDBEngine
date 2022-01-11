@@ -83,7 +83,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 										conn.getLuceneIndex(null,
 												"testluceneindex1",
 												1,
-												IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
+												IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey),
 												IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 												LUCENE_OPTS,
 												luceneHacks
@@ -91,7 +91,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 										conn.getLuceneIndex("testluceneindex16",
 												null,
 												3,
-												IndicizerAnalyzers.of(TextFieldsAnalyzer.WordSimple),
+												IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey),
 												IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 												LUCENE_OPTS,
 												luceneHacks

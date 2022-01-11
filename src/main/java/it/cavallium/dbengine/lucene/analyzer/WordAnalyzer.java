@@ -7,20 +7,20 @@ import org.apache.lucene.analysis.LowerCaseFilter;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.core.KeywordTokenizer;
+import org.apache.lucene.analysis.en.EnglishMinimalStemFilter;
 import org.apache.lucene.analysis.en.EnglishMinimalStemFilterFactory;
 import org.apache.lucene.analysis.icu.ICUCollationAttributeFactory;
 import org.apache.lucene.analysis.icu.ICUCollationKeyAnalyzer;
 import org.apache.lucene.analysis.icu.ICUFoldingFilter;
 import org.apache.lucene.analysis.icu.ICUFoldingFilterFactory;
 import org.apache.lucene.analysis.icu.segmentation.ICUTokenizer;
+import org.apache.lucene.analysis.it.ItalianLightStemFilter;
 import org.apache.lucene.analysis.it.ItalianLightStemFilterFactory;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.standard.StandardTokenizer;
 
 public class WordAnalyzer extends Analyzer {
 
-	private static final EnglishMinimalStemFilterFactory ENGLISH_MINIMAL_STEM_FILTER_FACTORY = new EnglishMinimalStemFilterFactory();
-	private static final ItalianLightStemFilterFactory ITALIAN_LIGHT_STEM_FILTER_FACTORY = new ItalianLightStemFilterFactory();
 	private static final Collator ROOT_COLLATOR = Collator.getInstance(ULocale.ROOT);
 	private static final ICUCollationAttributeFactory ROOT_ICU_ATTRIBUTE_FACTORY = new ICUCollationAttributeFactory(ROOT_COLLATOR);
 
@@ -51,7 +51,7 @@ public class WordAnalyzer extends Analyzer {
 			TokenStream tokenStream = standardTokenizer;
 			tokenStream = new LowerCaseFilter(tokenStream);
 			if (stem) {
-				tokenStream = ITALIAN_LIGHT_STEM_FILTER_FACTORY.create(ENGLISH_MINIMAL_STEM_FILTER_FACTORY.create(tokenStream));
+				tokenStream = new ItalianLightStemFilter(new EnglishMinimalStemFilter(tokenStream));
 			}
 			return new TokenStreamComponents(r -> {
 				standardTokenizer.setMaxTokenLength(maxTokenLength);

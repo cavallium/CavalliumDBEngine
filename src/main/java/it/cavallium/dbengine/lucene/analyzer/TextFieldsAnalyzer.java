@@ -8,5 +8,7 @@ public enum TextFieldsAnalyzer {
 	Standard,
 	StandardSimple,
 	ICUCollationKey,
-	StandardMultilanguage
+	StandardMultilanguage,
+	LegacyFullText,
+	LegacyWordWithStemming
 }

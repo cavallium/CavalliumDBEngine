@@ -9,4 +9,5 @@ import org.jetbrains.annotations.Nullable;
 public record DatabaseOptions(List<DatabaseVolume> volumes, Map<String, String> extraFlags, boolean absoluteConsistency,
 															boolean lowMemory, boolean inMemory, boolean useDirectIO, boolean allowMemoryMapping,
 															boolean allowNettyDirect, boolean optimistic, int maxOpenFiles,
-															@Nullable Long memtableMemoryBudgetBytes) {}
+															@Nullable Number memtableMemoryBudgetBytes, @Nullable Number blockCache,
+															@Nullable Boolean setCacheIndexAndFilterBlocks) {}

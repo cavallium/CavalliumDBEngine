@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+import static java.util.Objects.requireNonNullElse;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
@@ -39,12 +40,14 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
+import org.rocksdb.Cache;
 import org.rocksdb.ClockCache;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.CompactionPriority;
 import org.rocksdb.CompactionStyle;
+import org.rocksdb.CompressionOptions;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 import org.rocksdb.DbPath;
@@ -60,6 +63,7 @@ import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
+import org.rocksdb.util.SizeUnit;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -319,16 +323,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCreateIfMissing(true);
 		options.setCreateMissingColumnFamilies(true);
 		options.setCompactionStyle(CompactionStyle.LEVEL);
-		options.setTargetFileSizeBase(64 * 1024 * 1024); // 64MiB sst file
 		options.setTargetFileSizeMultiplier(2); // Each level is 2 times the previous level
-		if (!databaseOptions.volumes().isEmpty()) {
-			options.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
-		} else {
-			options.setCompressionType(CompressionType.LZ4_COMPRESSION);
-			options.setBottommostCompressionType(CompressionType.LZ4HC_COMPRESSION);
-		}
-		options.setManualWalFlush(false);
-		options.setMinWriteBufferNumberToMerge(3);
+		options.setMinWriteBufferNumberToMerge(2);
 		options.setMaxWriteBufferNumber(4);
 		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(false); // Flush all WALs during startup
@@ -336,10 +332,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				? WALRecoveryMode.AbsoluteConsistency
 				: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted.Default: TolerateCorruptedTailRecords
 		options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
-		options.setPreserveDeletes(false);
 		options.setKeepLogFileNum(10);
-		options.setAllowFAllocate(true);
-		options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 
 		Objects.requireNonNull(databasesDirPath);
 		Objects.requireNonNull(path.getFileName());
@@ -347,30 +340,28 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setDbPaths(paths);
 		options.setMaxOpenFiles(databaseOptions.maxOpenFiles());
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
+		Cache blockCache;
 		if (databaseOptions.lowMemory()) {
 			// LOW MEMORY
 			options
-					.setLevelCompactionDynamicLevelBytes(false)
 					.setBytesPerSync(0) // default
 					.setWalBytesPerSync(0) // default
 					.setIncreaseParallelism(1)
-					.optimizeLevelStyleCompaction(1024 * 1024) // 1MiB of ram will be used for level style compaction
-					.setWriteBufferSize(1024 * 1024) // 1MB
+					.setWriteBufferSize(8 * SizeUnit.MB)
 					.setWalTtlSeconds(0)
 					.setWalSizeLimitMB(0) // 16MB
 					.setMaxTotalWalSize(0) // automatic
 			;
+			blockCache = new ClockCache(requireNonNullElse(databaseOptions.blockCache(), 8L * SizeUnit.MB).longValue(), -1, true);
 			tableOptions
 					.setIndexType(IndexType.kTwoLevelIndexSearch)
 					.setPartitionFilters(true)
-					.setMetadataBlockSize(4096)
-					.setBlockCache(new ClockCache(8L * 1024L * 1024L)) // 8MiB
-					// Disable to reduce IOWAIT and make the read/writes faster, enable to reduce ram usage and startup time
-					.setCacheIndexAndFilterBlocks(true)
+					.setBlockCache(blockCache)
+					.setCacheIndexAndFilterBlocks(requireNonNullElse(databaseOptions.setCacheIndexAndFilterBlocks(), true))
 					.setCacheIndexAndFilterBlocksWithHighPriority(true)
+					.setPinTopLevelIndexAndFilter(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)
 			;
-			options.setWriteBufferManager(new WriteBufferManager(8L * 1024L * 1024L, new ClockCache(8L * 1024L * 1024L))); // 8MiB
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -384,31 +375,27 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} else {
 			// HIGH MEMORY
 			options
-					.setLevelCompactionDynamicLevelBytes(true)
-					.setAllowConcurrentMemtableWrite(true)
-					.setEnableWriteThreadAdaptiveYield(true)
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
-					.setBytesPerSync(64 * 1024 * 1024) // 1MiB
-					.setWalBytesPerSync(128 * 1024 * 1024)
-					.optimizeLevelStyleCompaction(2048L * 1024L * 1024L) // 2GiB of ram will be used for level style compaction
-					.setWriteBufferSize(64 * 1024 * 1024) // 64MB
+					.setBytesPerSync(8 * SizeUnit.KB)
+					.setWalBytesPerSync(8 * SizeUnit.KB)
+
 					.setWalTtlSeconds(30) // flush wal after 30 seconds
 					.setWalSizeLimitMB(1024) // 1024MB
-					.setMaxTotalWalSize(2L * 1024L * 1024L * 1024L) // 2GiB max wal directory size
+					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
 			;
+			blockCache = new ClockCache(requireNonNullElse(databaseOptions.blockCache(), 512 * SizeUnit.MB).longValue(), -1, true);
 			tableOptions
 					.setIndexType(IndexType.kTwoLevelIndexSearch)
 					.setPartitionFilters(true)
-					.setMetadataBlockSize(4096)
-					.setBlockCache(new ClockCache(1024L * 1024L * 1024L)) // 1GiB
-					// Disable to reduce IOWAIT and make the read/writes faster, enable to reduce ram usage and startup time
-					.setCacheIndexAndFilterBlocks(true)
+					.setBlockCache(blockCache)
+					.setCacheIndexAndFilterBlocks(requireNonNullElse(databaseOptions.setCacheIndexAndFilterBlocks(), true))
 					.setCacheIndexAndFilterBlocksWithHighPriority(true)
+					.setPinTopLevelIndexAndFilter(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)
 					;
-			final BloomFilter bloomFilter = new BloomFilter(10, false);
+			final BloomFilter bloomFilter = new BloomFilter(3, false);
 			tableOptions.setFilterPolicy(bloomFilter);
-			options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, new ClockCache(128L * 1024L * 1024L))); // 128MiB
+			tableOptions.setOptimizeFiltersForMemory(true);
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -421,8 +408,23 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			}
 		}
 
+		options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, blockCache));
+
 		if (databaseOptions.memtableMemoryBudgetBytes() != null) {
-			options.optimizeLevelStyleCompaction(databaseOptions.memtableMemoryBudgetBytes());
+			// 16MiB/256MiB of ram will be used for level style compaction
+			options.optimizeLevelStyleCompaction(requireNonNullElse(databaseOptions.memtableMemoryBudgetBytes(),
+					databaseOptions.lowMemory() ? 16L * SizeUnit.MB : 128L * SizeUnit.MB).longValue());
+		}
+
+		if (!databaseOptions.volumes().isEmpty()) {
+			options.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
+			options.setCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
+			options.setBottommostCompressionType(CompressionType.DISABLE_COMPRESSION_OPTION);
+		} else {
+			options.setCompressionType(CompressionType.LZ4_COMPRESSION);
+			options.setCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
+			options.setBottommostCompressionType(CompressionType.LZ4HC_COMPRESSION);
+			options.setBottommostCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
 		}
 
 		if (databaseOptions.useDirectIO()) {
@@ -441,7 +443,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			options.setUseDirectIoForFlushAndCompaction(true);
 		}
 
-		tableOptions.setBlockSize(16 * 1024); // 16MiB
+		tableOptions.setBlockSize(16 * 1024); // 16KiB
 		options.setTableFormatConfig(tableOptions);
 		options.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 

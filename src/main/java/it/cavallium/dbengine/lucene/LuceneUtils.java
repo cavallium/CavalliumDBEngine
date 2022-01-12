@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.analyzer.LegacyWordAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
@@ -89,6 +90,8 @@ public class LuceneUtils {
 	private static final Analyzer luceneEdge3To5GramAnalyzerEdgeInstance = new NCharGramEdgeAnalyzer(3, 5);
 	private static final Analyzer lucene3To5GramAnalyzerInstance = new NCharGramAnalyzer(3, 5);
 	private static final Analyzer luceneStandardAnalyzerInstance = new StandardAnalyzer();
+	private static final Analyzer luceneWordAnalyzerLegacy1Instance = new LegacyWordAnalyzer(false, true, true);
+	private static final Analyzer luceneWordAnalyzerLegacy2Instance = new LegacyWordAnalyzer(false, false, true);
 	private static final Analyzer luceneWordAnalyzerStemInstance = new WordAnalyzer(false,true);
 	private static final Analyzer luceneWordAnalyzerSimpleInstance = new WordAnalyzer(false, false);
 	private static final Analyzer luceneICUCollationKeyInstance = new WordAnalyzer(true, true);
@@ -131,6 +134,8 @@ public class LuceneUtils {
 			case N3To5GramEdge -> luceneEdge3To5GramAnalyzerEdgeInstance;
 			case Standard -> luceneStandardAnalyzerInstance;
 			case StandardMultilanguage -> luceneWordAnalyzerStemInstance;
+			case LegacyFullText -> luceneWordAnalyzerLegacy1Instance;
+			case LegacyWordWithStemming -> luceneWordAnalyzerLegacy2Instance;
 			case StandardSimple -> luceneWordAnalyzerSimpleInstance;
 			case ICUCollationKey -> luceneICUCollationKeyInstance;
 			//noinspection UnnecessaryDefault

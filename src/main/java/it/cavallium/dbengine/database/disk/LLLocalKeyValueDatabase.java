@@ -5,11 +5,13 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static java.util.Objects.requireNonNullElse;
 
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.DatabaseVolume;
+import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -75,8 +77,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalKeyValueDatabase.class);
-	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY = new ColumnFamilyDescriptor(
-			RocksDB.DEFAULT_COLUMN_FAMILY);
+	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY
+			= new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY);
 
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
@@ -96,6 +98,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final Map<Column, ColumnFamilyHandle> handles;
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
+	private volatile boolean closed = false;
 
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
 	public LLLocalKeyValueDatabase(BufferAllocator allocator,
@@ -220,6 +223,30 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
 		}
+
+		registerGauge(meterRegistry, name, "rocksdb.estimate-table-readers-mem");
+		registerGauge(meterRegistry, name, "rocksdb.size-all-mem-tables");
+		registerGauge(meterRegistry, name, "rocksdb.cur-size-all-mem-tables");
+		registerGauge(meterRegistry, name, "rocksdb.estimate-num-keys");
+		registerGauge(meterRegistry, name, "rocksdb.block-cache-usage");
+		registerGauge(meterRegistry, name, "rocksdb.block-cache-pinned-usage");
+	}
+
+	private void registerGauge(MeterRegistry meterRegistry, String name, String propertyName) {
+		meterRegistry.gauge("rocksdb.property.value",
+				List.of(Tag.of("db.name", name), Tag.of("db.property.name", propertyName)),
+				db,
+				database -> {
+					if (closed) {
+						return 0d;
+					}
+					try {
+						return database.getAggregatedLongProperty(propertyName);
+					} catch (RocksDBException e) {
+						throw new RuntimeException(e);
+					}
+				}
+		);
 	}
 
 	@Override
@@ -562,16 +589,21 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
-				.map(val -> {
-					// Sometimes this two properties return a negative value, I don't know why.
-					if (Objects.equals(propertyName, "rocksdb.cur-size-all-mem-tables")
-							|| Objects.equals(propertyName, "rocksdb.size-all-mem-tables")) {
-						return Math.abs(val);
-					} else {
-						return val;
-					}
-				})
 				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
+				.subscribeOn(dbScheduler);
+	}
+
+	@Override
+	public Mono<MemoryStats> getMemoryStats() {
+		return Mono
+				.fromCallable(() -> new MemoryStats(db.getAggregatedLongProperty("rocksdb.estimate-table-readers-mem"),
+						db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
+						db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
+						db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
+						db.getAggregatedLongProperty("rocksdb.block-cache-usage"),
+						db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage")
+				))
+				.onErrorMap(cause -> new IOException("Failed to read memory stats", cause))
 				.subscribeOn(dbScheduler);
 	}
 
@@ -628,6 +660,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return Mono
 				.<Void>fromCallable(() -> {
 					try {
+						closed = true;
 						flushAndCloseDb(db, new ArrayList<>(handles.values()));
 						deleteUnusedOldLogFiles();
 					} catch (RocksDBException e) {

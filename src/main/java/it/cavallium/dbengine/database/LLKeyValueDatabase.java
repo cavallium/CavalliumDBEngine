@@ -4,6 +4,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
+import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +44,8 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 	}
 
 	Mono<Long> getProperty(String propertyName);
+
+	Mono<MemoryStats> getMemoryStats();
 
 	Mono<Void> verifyChecksum();
 

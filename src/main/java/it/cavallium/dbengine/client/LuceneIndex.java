@@ -59,7 +59,7 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Buckets> computeBuckets(@Nullable CompositeSnapshot snapshot,
 			@NotNull List<Query> queries,
-			@Nullable Query normalizaitonQuery,
+			@Nullable Query normalizationQuery,
 			BucketParams bucketParams);
 
 	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);

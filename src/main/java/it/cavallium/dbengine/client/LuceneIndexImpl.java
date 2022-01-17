@@ -117,12 +117,11 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<Buckets> computeBuckets(@Nullable CompositeSnapshot snapshot,
 			@NotNull List<Query> query,
-			@Nullable Query normalizaitonQuery,
+			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
 		return luceneIndex
 				.computeBuckets(resolveSnapshot(snapshot),
-						query,
-						normalizaitonQuery,
+						query, normalizationQuery,
 						bucketParams
 				)
 				.single();

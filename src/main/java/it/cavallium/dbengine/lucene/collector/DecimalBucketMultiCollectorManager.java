@@ -20,12 +20,14 @@ import org.apache.lucene.facet.range.DoubleRangeFacetCounts;
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.facet.range.LongRangeFacetCounts;
 import org.apache.lucene.facet.range.Range;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.DoubleValuesSource;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.LongValuesSource;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
@@ -102,11 +104,21 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 
 		this.facetsCollectorManager = new FacetsCollectorManager() {
 			@Override
-			public FacetsCollector newCollector() throws IOException {
+			public FacetsCollector newCollector() {
 				if (sampleSize != null) {
-					return new RandomSamplingFacetsCollector(sampleSize);
+					return new RandomSamplingFacetsCollector(sampleSize) {
+						@Override
+						public ScoreMode scoreMode() {
+							return ScoreMode.COMPLETE_NO_SCORES;
+						}
+					};
 				} else {
-					return super.newCollector();
+					return new FacetsCollector(false) {
+						@Override
+						public ScoreMode scoreMode() {
+							return ScoreMode.COMPLETE_NO_SCORES;
+						}
+					};
 				}
 			}
 		};

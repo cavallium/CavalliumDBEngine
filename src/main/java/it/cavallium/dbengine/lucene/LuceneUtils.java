@@ -92,6 +92,7 @@ public class LuceneUtils {
 	private static final Analyzer luceneStandardAnalyzerInstance = new StandardAnalyzer();
 	private static final Analyzer luceneWordAnalyzerLegacy1Instance = new LegacyWordAnalyzer(false, true, true);
 	private static final Analyzer luceneWordAnalyzerLegacy2Instance = new LegacyWordAnalyzer(false, false, true);
+	private static final Analyzer luceneWordAnalyzerLegacy3Instance = new LegacyWordAnalyzer(false, true, true);
 	private static final Analyzer luceneWordAnalyzerStemInstance = new WordAnalyzer(false,true);
 	private static final Analyzer luceneWordAnalyzerSimpleInstance = new WordAnalyzer(false, false);
 	private static final Analyzer luceneICUCollationKeyInstance = new WordAnalyzer(true, true);
@@ -136,6 +137,7 @@ public class LuceneUtils {
 			case StandardMultilanguage -> luceneWordAnalyzerStemInstance;
 			case LegacyFullText -> luceneWordAnalyzerLegacy1Instance;
 			case LegacyWordWithStemming -> luceneWordAnalyzerLegacy2Instance;
+			case LegacyICU -> luceneWordAnalyzerLegacy3Instance;
 			case StandardSimple -> luceneWordAnalyzerSimpleInstance;
 			case ICUCollationKey -> luceneICUCollationKeyInstance;
 			//noinspection UnnecessaryDefault

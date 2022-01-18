@@ -36,7 +36,7 @@ import org.jetbrains.annotations.Nullable;
 
 public class DecimalBucketMultiCollectorManager implements CollectorMultiManager<Buckets, Buckets> {
 
-	private static final boolean USE_SINGLE_FACET_COLLECTOR = false;
+	private static final boolean USE_SINGLE_FACET_COLLECTOR = true;
 	private static final boolean AMORTIZE = true;
 	private final boolean randomSamplingEnabled;
 	private final FastFacetsCollectorManager facetsCollectorManager;

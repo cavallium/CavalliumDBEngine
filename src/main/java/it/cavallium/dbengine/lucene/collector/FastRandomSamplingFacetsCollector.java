@@ -47,10 +47,11 @@ public class FastRandomSamplingFacetsCollector extends SimpleCollector implement
 
 	@Override
 	public void collect(int doc) throws IOException {
-		if (hash.hashCode(doc) % collectionRate == 0) {
+		if (collectionRate == 1 || hash.hashCode(doc) % collectionRate == 0) {
 			collector.collect(doc);
 		}
 	}
+
 
 	@Override
 	public ScoreMode scoreMode() {

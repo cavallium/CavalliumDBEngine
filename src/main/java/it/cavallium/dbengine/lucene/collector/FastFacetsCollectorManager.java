@@ -72,7 +72,7 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 
 				@Override
 				public void collect(int doc) throws IOException {
-					if (hash.hashCode(doc) % collectionRate == 0) {
+					if (collectionRate == 1 || hash.hashCode(doc) % collectionRate == 0) {
 						leafCollector.collect(doc);
 					}
 				}

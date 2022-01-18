@@ -5,4 +5,5 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public record BucketParams(double min, double max, int buckets, String bucketFieldName,
-													 @NotNull BucketValueSource valueSource, @Nullable Integer sampleSize) {}
+													 @NotNull BucketValueSource valueSource, @Nullable Integer collectionRate,
+													 @Nullable Integer sampleSize) {}

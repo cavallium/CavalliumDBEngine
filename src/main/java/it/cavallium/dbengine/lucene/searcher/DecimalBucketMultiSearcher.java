@@ -46,6 +46,7 @@ public class DecimalBucketMultiSearcher {
 							bucketParams.valueSource(),
 							queries,
 							normalizationQuery,
+							bucketParams.collectionRate(),
 							bucketParams.sampleSize()
 					);
 				})

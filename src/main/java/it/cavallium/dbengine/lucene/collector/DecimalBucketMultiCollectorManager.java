@@ -1,18 +1,20 @@
 package it.cavallium.dbengine.lucene.collector;
 
+import com.google.common.cache.Cache;
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.List;
-import java.util.Set;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.lucene.document.DocumentStoredFieldVisitor;
 import org.apache.lucene.facet.FacetResult;
 import org.apache.lucene.facet.Facets;
 import org.apache.lucene.facet.FacetsCollector;
 import org.apache.lucene.facet.FacetsCollectorManager;
+import org.apache.lucene.facet.FacetsConfig;
 import org.apache.lucene.facet.LabelAndValue;
 import org.apache.lucene.facet.RandomSamplingFacetsCollector;
 import org.apache.lucene.facet.range.DoubleRange;
@@ -20,29 +22,30 @@ import org.apache.lucene.facet.range.DoubleRangeFacetCounts;
 import org.apache.lucene.facet.range.LongRange;
 import org.apache.lucene.facet.range.LongRangeFacetCounts;
 import org.apache.lucene.facet.range.Range;
-import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.CachingCollector;
 import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.DoubleValuesSource;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.LongValuesSource;
-import org.apache.lucene.search.MatchAllDocsQuery;
+import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.SimpleCollector;
 import org.jetbrains.annotations.Nullable;
 
 public class DecimalBucketMultiCollectorManager implements CollectorMultiManager<Buckets, Buckets> {
 
-	private final FacetsCollectorManager facetsCollectorManager;
+	private static final boolean USE_SINGLE_FACET_COLLECTOR = false;
+	private static final boolean AMORTIZE = true;
+	private final boolean randomSamplingEnabled;
+	private final FastFacetsCollectorManager facetsCollectorManager;
+	private final FastRandomSamplingFacetsCollector randomSamplingFacetsCollector;
 	private final Range[] bucketRanges;
 
 	private final List<Query> queries;
 	private final @Nullable Query normalizationQuery;
+	private final @Nullable Integer collectionRate;
 	private final @Nullable Integer sampleSize;
 
 	private final String bucketField;
@@ -64,6 +67,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			BucketValueSource bucketValueSource,
 			List<Query> queries,
 			@Nullable Query normalizationQuery,
+			@Nullable Integer collectionRate,
 			@Nullable Integer sampleSize) {
 		this.queries = queries;
 		this.normalizationQuery = normalizationQuery;
@@ -75,6 +79,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 		this.totalLength = bucketLength * bucketsInt;
 		this.bucketField = bucketField;
 		this.bucketValueSource = bucketValueSource;
+		this.collectionRate = collectionRate;
 		this.sampleSize = sampleSize;
 
 		if (USE_LONGS) {
@@ -102,26 +107,15 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			}
 		}
 
-		this.facetsCollectorManager = new FacetsCollectorManager() {
-			@Override
-			public FacetsCollector newCollector() {
-				if (sampleSize != null) {
-					return new RandomSamplingFacetsCollector(sampleSize) {
-						@Override
-						public ScoreMode scoreMode() {
-							return ScoreMode.COMPLETE_NO_SCORES;
-						}
-					};
-				} else {
-					return new FacetsCollector(false) {
-						@Override
-						public ScoreMode scoreMode() {
-							return ScoreMode.COMPLETE_NO_SCORES;
-						}
-					};
-				}
-			}
-		};
+		this.randomSamplingEnabled = sampleSize != null;
+		int intCollectionRate = this.collectionRate == null ? 1 : this.collectionRate;
+		if (randomSamplingEnabled) {
+			randomSamplingFacetsCollector = new FastRandomSamplingFacetsCollector(intCollectionRate, sampleSize, 0);
+			this.facetsCollectorManager = null;
+		} else {
+			this.randomSamplingFacetsCollector = null;
+			this.facetsCollectorManager = new FastFacetsCollectorManager(intCollectionRate);
+		}
 	}
 
 	public double[] newBuckets() {
@@ -129,18 +123,28 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 	}
 
 	public Buckets search(IndexSearcher indexSearcher) throws IOException {
-		Query globalQuery;
-		if (normalizationQuery != null) {
-			globalQuery = normalizationQuery;
+		Query query;
+		if (USE_SINGLE_FACET_COLLECTOR && normalizationQuery != null) {
+			query = normalizationQuery;
+		} else if (queries.size() == 0) {
+			query = new MatchNoDocsQuery();
+		} else if (queries.size() == 1) {
+			query = queries.get(0);
 		} else {
 			var booleanQueryBuilder = new BooleanQuery.Builder();
-			for (Query query : queries) {
-				booleanQueryBuilder.add(query, Occur.SHOULD);
+			for (Query queryEntry : queries) {
+				booleanQueryBuilder.add(queryEntry, Occur.SHOULD);
 			}
 			booleanQueryBuilder.setMinimumNumberShouldMatch(1);
-			globalQuery = booleanQueryBuilder.build();
+			query = booleanQueryBuilder.build();
 		}
-		var facetsCollector = indexSearcher.search(globalQuery, facetsCollectorManager);
+		it.cavallium.dbengine.lucene.collector.FacetsCollector queryFacetsCollector;
+		if (randomSamplingEnabled) {
+			indexSearcher.search(query, randomSamplingFacetsCollector);
+			queryFacetsCollector = randomSamplingFacetsCollector;
+		} else {
+			queryFacetsCollector = indexSearcher.search(query, facetsCollectorManager);
+		}
 		double[] reducedNormalizationBuckets = newBuckets();
 		List<DoubleArrayList> seriesReducedBuckets = new ArrayList<>(queries.size());
 		for (int i = 0; i < queries.size(); i++) {
@@ -148,7 +152,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			seriesReducedBuckets.add(DoubleArrayList.wrap(buckets));
 		}
 		int serieIndex = 0;
-		for (Query query : queries) {
+		for (Query queryEntry : queries) {
 			var reducedBuckets = seriesReducedBuckets.get(serieIndex);
 			Facets facets;
 			if (USE_LONGS) {
@@ -165,8 +169,8 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 				}
 				facets = new LongRangeFacetCounts(bucketField,
 						valuesSource,
-						facetsCollector,
-						query,
+						queryFacetsCollector.getLuceneFacetsCollector(),
+						USE_SINGLE_FACET_COLLECTOR && normalizationQuery != null || queries.size() > 1 ? queryEntry : null,
 						(LongRange[]) bucketRanges
 				);
 			} else {
@@ -182,12 +186,19 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 				}
 				facets = new DoubleRangeFacetCounts(bucketField,
 						valuesSource,
-						facetsCollector,
-						query,
+						queryFacetsCollector.getLuceneFacetsCollector(),
+						USE_SINGLE_FACET_COLLECTOR && normalizationQuery != null || queries.size() > 1 ? queryEntry : null,
 						(DoubleRange[]) bucketRanges
 				);
 			}
 			FacetResult children = facets.getTopChildren(0, bucketField);
+			if (AMORTIZE && randomSamplingEnabled) {
+				var cfg = new FacetsConfig();
+				for (Range bucketRange : bucketRanges) {
+					cfg.setIndexFieldName(bucketRange.label, bucketField);
+				}
+				((RandomSamplingFacetsCollector) queryFacetsCollector.getLuceneFacetsCollector()).amortizeFacetCounts(children, cfg, indexSearcher);
+			}
 			for (LabelAndValue labelAndValue : children.labelValues) {
 				var index = Integer.parseInt(labelAndValue.label);
 				reducedBuckets.set(index, reducedBuckets.getDouble(index) + labelAndValue.value.doubleValue());
@@ -195,8 +206,17 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			serieIndex++;
 		}
 
+		it.cavallium.dbengine.lucene.collector.FacetsCollector normalizationFacetsCollector;
 		Facets normalizationFacets;
 		if (normalizationQuery != null) {
+			if (USE_SINGLE_FACET_COLLECTOR) {
+				normalizationFacetsCollector = queryFacetsCollector;
+			} else if (randomSamplingEnabled) {
+				indexSearcher.search(normalizationQuery, randomSamplingFacetsCollector);
+				normalizationFacetsCollector = randomSamplingFacetsCollector;
+			} else {
+				normalizationFacetsCollector = indexSearcher.search(normalizationQuery, facetsCollectorManager);
+			}
 			if (USE_LONGS) {
 				LongValuesSource valuesSource;
 				if (bucketValueSource instanceof NullValueSource) {
@@ -210,7 +230,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 				}
 				normalizationFacets = new LongRangeFacetCounts(bucketField,
 						valuesSource,
-						facetsCollector,
+						normalizationFacetsCollector.getLuceneFacetsCollector(),
 						null,
 						(LongRange[]) bucketRanges
 				);
@@ -227,12 +247,19 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 				}
 				normalizationFacets = new DoubleRangeFacetCounts(bucketField,
 						valuesSource,
-						facetsCollector,
+						normalizationFacetsCollector.getLuceneFacetsCollector(),
 						null,
 						(DoubleRange[]) bucketRanges
 				);
 			}
 			var normalizationChildren = normalizationFacets.getTopChildren(0, bucketField);
+			if (AMORTIZE && randomSamplingEnabled) {
+				var cfg = new FacetsConfig();
+				for (Range bucketRange : bucketRanges) {
+					cfg.setIndexFieldName(bucketRange.label, bucketField);
+				}
+				((RandomSamplingFacetsCollector) normalizationFacetsCollector.getLuceneFacetsCollector()).amortizeFacetCounts(normalizationChildren, cfg, indexSearcher);
+			}
 			for (LabelAndValue labelAndValue : normalizationChildren.labelValues) {
 				var index = Integer.parseInt(labelAndValue.label);
 				reducedNormalizationBuckets[index] += labelAndValue.value.doubleValue();

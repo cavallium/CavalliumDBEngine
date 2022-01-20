@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.netty;
 
 import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.DefaultGlobalBufferAllocator;
+import io.net5.buffer.api.DefaultBufferAllocators;
 import io.net5.buffer.api.pool.MetricUtils;
 import io.net5.buffer.api.pool.PoolArenaMetric;
 import io.net5.buffer.api.pool.PooledBufferAllocator;
@@ -31,7 +31,7 @@ public class JMXNettyMonitoringManager {
 
 	public static void initialize() {
 		var instance = getInstance();
-		instance.register("global", DefaultGlobalBufferAllocator.DEFAULT_GLOBAL_BUFFER_ALLOCATOR);
+		instance.register("global", DefaultBufferAllocators.preferredAllocator());
 	}
 
 	public synchronized static JMXNettyMonitoringManager getInstance() {

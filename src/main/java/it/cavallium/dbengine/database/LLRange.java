@@ -107,6 +107,10 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 		return new LLRange(null, null, single);
 	}
 
+	public static LLRange singleUnsafe(Buffer single) {
+		return new LLRange(null, null, single);
+	}
+
 	public static LLRange of(Send<Buffer> min, Send<Buffer> max) {
 		return new LLRange(min, max, null);
 	}

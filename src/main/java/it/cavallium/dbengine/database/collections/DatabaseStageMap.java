@@ -12,7 +12,6 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -29,6 +28,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 		DatabaseStageEntry<Object2ObjectSortedMap<T, U>> {
 
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
+
+	default Mono<Boolean> containsKey(@Nullable CompositeSnapshot snapshot, T key) {
+		return LLUtils.usingResource(this.at(snapshot, key),
+				stage -> stage.isEmpty(snapshot).map(empty -> !empty), true);
+	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
 		return LLUtils.usingResource(this.at(snapshot, key),

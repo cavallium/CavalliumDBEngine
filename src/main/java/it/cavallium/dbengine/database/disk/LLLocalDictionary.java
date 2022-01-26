@@ -356,18 +356,6 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 	}
 
-	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
-		return keyMono
-				.publishOn(dbScheduler)
-				.handle((keySend, sink) -> {
-					try (var key = keySend.receive()) {
-						sink.next(containsKey(snapshot, key));
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				});
-	}
-
 	private boolean containsKey(@Nullable LLSnapshot snapshot, Buffer key) throws RocksDBException {
 		startedContains.increment();
 		try {
@@ -553,10 +541,16 @@ public class LLLocalDictionary implements LLDictionary {
 	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType,
 			boolean existsAlmostCertainly) {
 		return switch (resultType) {
-			case PREVIOUS_VALUE_EXISTENCE -> this
-					.containsKey(null, keyMono)
-					.single()
-					.map((Boolean bool) -> LLUtils.booleanToResponseByteBuffer(alloc, bool));
+			case PREVIOUS_VALUE_EXISTENCE -> keyMono
+					.publishOn(dbScheduler)
+					.handle((keySend, sink) -> {
+						try (var key = keySend.receive()) {
+							var contained = containsKey(null, key);
+							sink.next(LLUtils.booleanToResponseByteBuffer(alloc, contained));
+						} catch (RocksDBException ex) {
+							sink.error(ex);
+						}
+					});
 			case PREVIOUS_VALUE -> keyMono
 					.publishOn(dbScheduler)
 					.handle((keySend, sink) -> {

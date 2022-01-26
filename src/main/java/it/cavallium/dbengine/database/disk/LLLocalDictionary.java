@@ -14,7 +14,6 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
-import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.Column;
@@ -38,10 +37,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 import org.apache.commons.lang3.tuple.Pair;
@@ -781,38 +778,33 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
 			boolean existsAlmostCertainly) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> {
-					try (var range = rangeSend.receive()) {
-						if (range.isSingle()) {
-							var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
-							return getRangeSingle(snapshot, rangeSingleMono, existsAlmostCertainly);
-						} else {
-							return getRangeMulti(snapshot, rangeMono);
-						}
-					}
-				},
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
-		);
+		return rangeMono.flatMapMany(rangeSend -> {
+			try (var range = rangeSend.receive()) {
+				if (range.isSingle()) {
+					var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
+					return getRangeSingle(snapshot, rangeSingleMono, existsAlmostCertainly);
+				} else {
+					return getRangeMulti(snapshot, rangeMono);
+				}
+			}
+		});
 	}
 
 	@Override
 	public Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength, boolean existsAlmostCertainly) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> {
-					try (var range = rangeSend.receive()) {
-						if (range.isSingle()) {
-							var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
-							return getRangeSingle(snapshot, rangeSingleMono, existsAlmostCertainly).map(List::of);
-						} else {
-							return getRangeMultiGrouped(snapshot, rangeMono, prefixLength);
-						}
-					}
-				},
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
-		);
+			int prefixLength,
+			boolean existsAlmostCertainly) {
+		return rangeMono.flatMapMany(rangeSend -> {
+			try (var range = rangeSend.receive()) {
+				if (range.isSingle()) {
+					var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
+					return getRangeSingle(snapshot, rangeSingleMono, existsAlmostCertainly).map(List::of);
+				} else {
+					return getRangeMultiGrouped(snapshot, rangeMono, prefixLength);
+				}
+			}
+		});
 	}
 
 	private Flux<Send<LLEntry>> getRangeSingle(LLSnapshot snapshot,
@@ -825,58 +817,53 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> Flux.using(
-						() -> new LLLocalEntryReactiveRocksIterator(db, rangeSend,
-								nettyDirect, resolveSnapshot(snapshot)),
-						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
-						LLLocalReactiveRocksIterator::close
-				),
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
+		Mono<LLLocalEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
+			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot);
+		});
+		return Flux.usingWhen(iteratorMono,
+				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
 
 	private Flux<List<Send<LLEntry>>> getRangeMultiGrouped(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono,
 			int prefixLength) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> Flux.using(
-						() -> new LLLocalGroupedEntryReactiveRocksIterator(db, prefixLength, rangeSend,
-								nettyDirect, resolveSnapshot(snapshot)),
-						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
-						LLLocalGroupedReactiveRocksIterator::close
-				),
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
+		Mono<LLLocalGroupedEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
+			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			return new LLLocalGroupedEntryReactiveRocksIterator(db, prefixLength, rangeSend, nettyDirect, resolvedSnapshot);
+		});
+		return Flux.usingWhen(
+				iteratorMono,
+				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
 
 	@Override
 	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> {
-					try (var range = rangeSend.receive()) {
-						if (range.isSingle()) {
-							return this.getRangeKeysSingle(snapshot, rangeMono.map(r -> r.receive().getSingle()));
-						} else {
-							return this.getRangeKeysMulti(snapshot, rangeMono);
-						}
-					}
-				},
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
-		);
+		return rangeMono.flatMapMany(rangeSend -> {
+			try (var range = rangeSend.receive()) {
+				if (range.isSingle()) {
+					return this.getRangeKeysSingle(snapshot, rangeMono.map(r -> r.receive().getSingle()));
+				} else {
+					return this.getRangeKeysMulti(snapshot, rangeMono);
+				}
+			}
+		});
 	}
 
 	@Override
 	public Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
 			int prefixLength) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> Flux.using(
-						() -> new LLLocalGroupedKeyReactiveRocksIterator(db, prefixLength, rangeSend,
-								nettyDirect, resolveSnapshot(snapshot)),
-						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
-						LLLocalGroupedReactiveRocksIterator::close
-				),
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
+		Mono<LLLocalGroupedKeyReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
+			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			return new LLLocalGroupedKeyReactiveRocksIterator(db, prefixLength, rangeSend, nettyDirect, resolvedSnapshot);
+		});
+		return Flux.usingWhen(iteratorMono,
+				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
 
@@ -923,55 +910,47 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono,
 			int prefixLength) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> Flux
-						.using(
-								() -> new LLLocalKeyPrefixReactiveRocksIterator(db,
-										prefixLength,
-										rangeSend,
-										nettyDirect,
-										resolveSnapshot(snapshot),
-										true
-								),
-								LLLocalKeyPrefixReactiveRocksIterator::flux,
-								LLLocalKeyPrefixReactiveRocksIterator::close
-						)
-						.subscribeOn(dbScheduler),
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
+		Mono<LLLocalKeyPrefixReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
+			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			return new LLLocalKeyPrefixReactiveRocksIterator(db, prefixLength, range, nettyDirect, resolvedSnapshot, true);
+		});
+		return Flux.usingWhen(iteratorMono,
+				iterator -> iterator.flux().subscribeOn(dbScheduler),
+				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
 
 	private Flux<Send<Buffer>> getRangeKeysSingle(LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
-		return Flux.usingWhen(keyMono,
-				keySend -> this
-						.containsKey(snapshot, keyMono)
-						.<Send<Buffer>>handle((contains, sink) -> {
-							if (contains) {
-								sink.next(keySend);
-							} else {
-								sink.complete();
-							}
-						})
-						.flux(),
-				keySend -> Mono.fromRunnable(keySend::close)
-		);
+		return keyMono
+				.publishOn(dbScheduler)
+				.<Send<Buffer>>handle((keySend, sink) -> {
+					try (var key = keySend.receive()) {
+						if (containsKey(snapshot, key)) {
+							sink.next(key.send());
+						} else {
+							sink.complete();
+						}
+					} catch (Throwable ex) {
+						sink.error(ex);
+					}
+				})
+				.flux();
 	}
 
 	private Flux<Send<Buffer>> getRangeKeysMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return Flux.usingWhen(rangeMono,
-				rangeSend -> Flux.using(
-						() -> new LLLocalKeyReactiveRocksIterator(db, rangeSend,
-								nettyDirect, resolveSnapshot(snapshot)
-						),
-						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
-						LLLocalReactiveRocksIterator::close
-				),
-				rangeSend -> Mono.fromRunnable(rangeSend::close)
+		Mono<LLLocalKeyReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
+			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot);
+		});
+		return Flux.usingWhen(iteratorMono,
+				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
 
 	@Override
 	public Mono<Void> setRange(Mono<Send<LLRange>> rangeMono, Flux<Send<LLEntry>> entries) {
+		//todo: change usingWhen and use a better alternative
 		return Mono.usingWhen(rangeMono,
 				rangeSend -> {
 					if (USE_WINDOW_IN_SET_RANGE) {

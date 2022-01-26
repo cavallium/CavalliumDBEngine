@@ -126,7 +126,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
-	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
+	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean fillCache);
 
 	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean fast);
 

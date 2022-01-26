@@ -287,7 +287,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), rangeMono);
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), rangeMono, false);
 	}
 
 	@Override

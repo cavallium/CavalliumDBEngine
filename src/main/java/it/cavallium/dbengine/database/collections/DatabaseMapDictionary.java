@@ -181,7 +181,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), rangeMono);
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), rangeMono, false);
 	}
 
 	@Override
@@ -194,7 +194,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Boolean> containsKey(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return dictionary
 				.isRangeEmpty(resolveSnapshot(snapshot),
-						Mono.fromCallable(() -> LLRange.singleUnsafe(serializeKeySuffixToKey(keySuffix)).send())
+						Mono.fromCallable(() -> LLRange.singleUnsafe(serializeKeySuffixToKey(keySuffix)).send()),
+						true
 				)
 				.map(empty -> !empty);
 	}

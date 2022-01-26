@@ -91,10 +91,10 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 					}
-					return LLLocalDictionary.getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range, db);
+					return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, range, db);
 				}, (tuple, sink) -> {
 					try {
-						var rocksIterator = tuple.getT1();
+						var rocksIterator = tuple.iterator();
 						ObjectArrayList<T> values = new ObjectArrayList<>();
 						Buffer firstGroupKey = null;
 						try {
@@ -155,13 +155,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 						sink.error(ex);
 					}
 					return tuple;
-				}, tuple -> {
-					var rocksIterator = tuple.getT1();
-					rocksIterator.close();
-					tuple.getT2().close();
-					tuple.getT3().close();
-					tuple.getT4().close();
-				});
+				}, RocksIteratorTuple::close);
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);

@@ -279,19 +279,16 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues) {
-		return entries.handle((entryToReceive, sink) -> {
+	public Mono<Void> putMulti(Flux<Send<LLEntry>> entries) {
+		return entries.doOnNext(entryToReceive -> {
 			try (var entry = entryToReceive.receive()) {
 				try (var key = entry.getKey().receive()) {
 					try (var val = entry.getValue().receive()) {
-						var oldValue = mainDb.put(k(key.copy().send()), k(val.send()));
-						if (oldValue != null && getOldValues) {
-							sink.next(LLEntry.of(key.send(), kk(oldValue)).send());
-						}
+						mainDb.put(k(key.copy().send()), k(val.send()));
 					}
 				}
 			}
-		});
+		}).then();
 	}
 
 	@Override

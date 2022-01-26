@@ -67,7 +67,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		return getMulti(snapshot, keys, false);
 	}
 
-	Flux<Send<LLEntry>> putMulti(Flux<Send<LLEntry>> entries, boolean getOldValues);
+	Mono<Void> putMulti(Flux<Send<LLEntry>> entries);
 
 	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
 			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction);
@@ -111,11 +111,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 								.flatMap(entriesReplacer)
 						);
 			} else {
-				return this
-						.putMulti(this
-								.getRange(null, range, existsAlmostCertainly)
-								.flatMap(entriesReplacer), false)
-						.then();
+				return this.putMulti(this.getRange(null, range, existsAlmostCertainly).flatMap(entriesReplacer));
 			}
 		});
 	}

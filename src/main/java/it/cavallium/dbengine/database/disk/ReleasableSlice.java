@@ -10,10 +10,4 @@ public interface ReleasableSlice extends SafeCloseable {
 	default void close() {
 
 	}
-
-	AbstractSlice<?> slice();
-
-	Buffer byteBuf();
-
-	Object additionalData();
 }

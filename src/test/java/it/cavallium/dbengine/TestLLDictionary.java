@@ -3,7 +3,8 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
-import static it.cavallium.dbengine.SyncUtils.*;
+import static it.cavallium.dbengine.SyncUtils.run;
+import static it.cavallium.dbengine.SyncUtils.runVoid;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.net5.buffer.api.Buffer;
@@ -30,9 +31,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public abstract class TestLLDictionary {
 
@@ -211,17 +210,17 @@ public abstract class TestLLDictionary {
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, true).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, true).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, false).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, false).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
@@ -236,17 +235,17 @@ public abstract class TestLLDictionary {
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, true).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, true).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, false).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, false).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);

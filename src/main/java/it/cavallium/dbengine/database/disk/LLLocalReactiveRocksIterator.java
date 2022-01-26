@@ -25,8 +25,8 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 		@Override
 		public void drop(LLLocalReactiveRocksIterator<?> obj) {
 			try {
-				if (obj.range != null) {
-					obj.range.close();
+				if (obj.rangeShared != null) {
+					obj.rangeShared.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close range", ex);
@@ -54,7 +54,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	};
 
 	private final RocksDBColumn db;
-	private LLRange range;
+	private LLRange rangeShared;
 	private final boolean allowNettyDirect;
 	private ReadOptions readOptions;
 	private final boolean readValues;
@@ -66,27 +66,29 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			ReadOptions readOptions,
 			boolean readValues) {
 		super((Drop<LLLocalReactiveRocksIterator<T>>) (Drop) DROP);
-		this.db = db;
-		this.range = range.receive();
-		this.allowNettyDirect = allowNettyDirect;
-		this.readOptions = readOptions;
-		this.readValues = readValues;
+		try (range) {
+			this.db = db;
+			this.rangeShared = range.receive();
+			this.allowNettyDirect = allowNettyDirect;
+			this.readOptions = readOptions;
+			this.readValues = readValues;
+		}
 	}
 
 	public final Flux<T> flux() {
 		return Flux.generate(() -> {
 			var readOptions = new ReadOptions(this.readOptions);
-			if (!range.hasMin() || !range.hasMax()) {
+			if (!rangeShared.hasMin() || !rangeShared.hasMax()) {
 				readOptions.setReadaheadSize(32 * 1024); // 32KiB
 				readOptions.setFillCache(false);
 			}
 			if (logger.isTraceEnabled()) {
-				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range, db);
+			return getRocksIterator(allowNettyDirect, readOptions, rangeShared, db);
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.getT1();
+				var rocksIterator = tuple.iterator();
 				rocksIterator.status();
 				if (rocksIterator.isValid()) {
 					Buffer key;
@@ -110,7 +112,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 						if (logger.isTraceEnabled()) {
 							logger.trace(MARKER_ROCKSDB,
 									"Range {} is reading {}: {}",
-									LLUtils.toStringSafe(range),
+									LLUtils.toStringSafe(rangeShared),
 									LLUtils.toStringSafe(key),
 									LLUtils.toStringSafe(value)
 							);
@@ -128,24 +130,18 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 					}
 				} else {
 					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+						logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(rangeShared));
 					}
 					sink.complete();
 				}
 			} catch (RocksDBException ex) {
 				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(rangeShared));
 				}
 				sink.error(ex);
 			}
 			return tuple;
-		}, tuple -> {
-			var rocksIterator = tuple.getT1();
-			rocksIterator.close();
-			tuple.getT2().close();
-			tuple.getT3().close();
-			tuple.getT4().close();
-		});
+		}, RocksIteratorTuple::close);
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
@@ -157,7 +153,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 
 	@Override
 	protected Owned<LLLocalReactiveRocksIterator<T>> prepareSend() {
-		var range = this.range.send();
+		var range = this.rangeShared.send();
 		var readOptions = new ReadOptions(this.readOptions);
 		return drop -> new LLLocalReactiveRocksIterator<>(db, range, allowNettyDirect, readOptions, readValues) {
 			@Override
@@ -168,7 +164,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	}
 
 	protected void makeInaccessible() {
-		this.range = null;
+		this.rangeShared = null;
 		this.readOptions = null;
 	}
 }

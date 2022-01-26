@@ -3,7 +3,6 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Send;
@@ -12,10 +11,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.Nullable;
-import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
-import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
 
@@ -27,8 +23,8 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 		@Override
 		public void drop(LLLocalKeyPrefixReactiveRocksIterator obj) {
 			try {
-				if (obj.range != null) {
-					obj.range.close();
+				if (obj.rangeShared != null) {
+					obj.rangeShared.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close range", ex);
@@ -57,7 +53,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 
 	private final RocksDBColumn db;
 	private final int prefixLength;
-	private LLRange range;
+	private LLRange rangeShared;
 	private final boolean allowNettyDirect;
 	private ReadOptions readOptions;
 	private final boolean canFillCache;
@@ -72,7 +68,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 		try (range) {
 			this.db = db;
 			this.prefixLength = prefixLength;
-			this.range = range.receive();
+			this.rangeShared = range.receive();
 			this.allowNettyDirect = allowNettyDirect;
 			this.readOptions = readOptions;
 			this.canFillCache = canFillCache;
@@ -81,85 +77,78 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 
 
 	public Flux<Send<Buffer>> flux() {
-		return Flux.using(
-				() -> range.copy().send(),
-				rangeSend -> Flux
-						.generate(() -> {
-							var readOptions = new ReadOptions(this.readOptions);
-							if (!range.hasMin() || !range.hasMax()) {
-								readOptions.setReadaheadSize(32 * 1024); // 32KiB
-								readOptions.setFillCache(canFillCache);
+		return Flux.generate(() -> {
+			var readOptions = new ReadOptions(this.readOptions);
+			if (!rangeShared.hasMin() || !rangeShared.hasMax()) {
+				readOptions.setReadaheadSize(32 * 1024); // 32KiB
+				readOptions.setFillCache(canFillCache);
+			}
+			if (logger.isTraceEnabled()) {
+				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
+			}
+			return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, rangeShared, db);
+		}, (tuple, sink) -> {
+			try {
+				var rocksIterator = tuple.iterator();
+				rocksIterator.status();
+				Buffer firstGroupKey = null;
+				try {
+					while (rocksIterator.isValid()) {
+						Buffer key;
+						if (allowNettyDirect) {
+							key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key);
+						} else {
+							key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
+						}
+						try (key) {
+							if (firstGroupKey == null) {
+								firstGroupKey = key.copy();
+							} else if (!LLUtils.equals(firstGroupKey,
+									firstGroupKey.readerOffset(),
+									key,
+									key.readerOffset(),
+									prefixLength
+							)) {
+								break;
 							}
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-							}
-							return LLLocalDictionary.getRocksIterator(db.getAllocator(), allowNettyDirect, readOptions, range, db);
-						}, (tuple, sink) -> {
-							try {
-								var rocksIterator = tuple.getT1();
-								rocksIterator.status();
-								Buffer firstGroupKey = null;
-								try {
-									while (rocksIterator.isValid()) {
-										Buffer key;
-										if (allowNettyDirect) {
-											key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key);
-										} else {
-											key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
-										}
-										try (key) {
-											if (firstGroupKey == null) {
-												firstGroupKey = key.copy();
-											} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(), key, key.readerOffset(),
-													prefixLength)) {
-												break;
-											}
-											rocksIterator.next();
-											rocksIterator.status();
-										}
-									}
+							rocksIterator.next();
+							rocksIterator.status();
+						}
+					}
 
-									if (firstGroupKey != null) {
-										assert firstGroupKey.isAccessible();
-										var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
-										assert groupKeyPrefix.isAccessible();
+					if (firstGroupKey != null) {
+						assert firstGroupKey.isAccessible();
+						var groupKeyPrefix = firstGroupKey.copy(firstGroupKey.readerOffset(), prefixLength);
+						assert groupKeyPrefix.isAccessible();
 
-										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB,
-													"Range {} is reading prefix {}",
-													LLUtils.toStringSafe(range),
-													LLUtils.toStringSafe(groupKeyPrefix)
-											);
-										}
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB,
+									"Range {} is reading prefix {}",
+									LLUtils.toStringSafe(rangeShared),
+									LLUtils.toStringSafe(groupKeyPrefix)
+							);
+						}
 
-										sink.next(groupKeyPrefix.send());
-									} else {
-										if (logger.isTraceEnabled()) {
-											logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
-										}
-										sink.complete();
-									}
-								} finally {
-									if (firstGroupKey != null) {
-										firstGroupKey.close();
-									}
-								}
-							} catch (RocksDBException ex) {
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
-								}
-								sink.error(ex);
-							}
-							return tuple;
-						}, tuple -> {
-							var rocksIterator = tuple.getT1();
-							rocksIterator.close();
-							tuple.getT2().close();
-							tuple.getT3().close();
-							tuple.getT4().close();
-						}),
-				resource -> resource.close()
-		);
+						sink.next(groupKeyPrefix.send());
+					} else {
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(rangeShared));
+						}
+						sink.complete();
+					}
+				} finally {
+					if (firstGroupKey != null) {
+						firstGroupKey.close();
+					}
+				}
+			} catch (RocksDBException ex) {
+				if (logger.isTraceEnabled()) {
+					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(rangeShared));
+				}
+				sink.error(ex);
+			}
+			return tuple;
+		}, RocksIteratorTuple::close);
 	}
 
 	@Override
@@ -169,7 +158,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 
 	@Override
 	protected Owned<LLLocalKeyPrefixReactiveRocksIterator> prepareSend() {
-		var range = this.range.send();
+		var range = this.rangeShared.send();
 		var readOptions = new ReadOptions(this.readOptions);
 		return drop -> new LLLocalKeyPrefixReactiveRocksIterator(db,
 				prefixLength,
@@ -181,7 +170,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 	}
 
 	protected void makeInaccessible() {
-		this.range = null;
+		this.rangeShared = null;
 		this.readOptions = null;
 	}
 }

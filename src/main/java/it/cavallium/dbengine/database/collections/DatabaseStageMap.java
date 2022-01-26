@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.net5.buffer.api.Buffer;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -81,8 +80,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	default Mono<Delta<U>> updateValueAndGetDelta(T key,
 			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return LLUtils.usingResource(this.at(null, key).single(),
-				stage -> stage.updateAndGetDelta(updater, existsAlmostCertainly), true);
+		var stageMono = this.at(null, key).single();
+		return stageMono.flatMap(stage -> stage
+				.updateAndGetDelta(updater, existsAlmostCertainly)
+				.doFinally(s -> stage.close()));
 	}
 
 	default Mono<Delta<U>> updateValueAndGetDelta(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {

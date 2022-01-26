@@ -391,7 +391,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.error(e);
 					}
 				});
-		return dictionary.putMulti(serializedEntries, false).then();
+		return dictionary.putMulti(serializedEntries);
 	}
 
 	@Override

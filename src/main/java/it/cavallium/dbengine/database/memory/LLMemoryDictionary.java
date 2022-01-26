@@ -538,18 +538,14 @@ public class LLMemoryDictionary implements LLDictionary {
 	public Mono<Send<LLEntry>> getOne(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
 		return getRange(snapshot, rangeMono)
 				.take(1, true)
-				.singleOrEmpty()
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				.singleOrEmpty();
 	}
 
 	@Override
 	public Mono<Send<Buffer>> getOneKey(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
 		return getRangeKeys(snapshot, rangeMono)
 				.take(1, true)
-				.singleOrEmpty()
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				.singleOrEmpty();
 	}
 
 	@Override

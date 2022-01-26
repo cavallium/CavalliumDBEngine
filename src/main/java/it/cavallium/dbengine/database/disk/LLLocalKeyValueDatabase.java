@@ -8,13 +8,18 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.Resource;
+import io.net5.buffer.api.Send;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.DatabaseVolume;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.io.File;
 import java.io.IOException;
@@ -32,6 +37,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -66,14 +72,22 @@ import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.rocksdb.util.SizeUnit;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
+import reactor.util.function.Tuple3;
+import reactor.util.function.Tuple4;
+import reactor.util.function.Tuple5;
+import reactor.util.function.Tuple6;
+import reactor.util.function.Tuple7;
 
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	static {
 		RocksDB.loadLibrary();
+		LLUtils.initHooks();
 	}
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalKeyValueDatabase.class);

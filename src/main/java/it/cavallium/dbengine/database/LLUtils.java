@@ -20,10 +20,15 @@ import io.net5.buffer.api.unsafe.UnsafeMemoryManager;
 import io.net5.util.IllegalReferenceCountException;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.collections.DatabaseStage;
+import it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase;
 import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
+import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
+import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
+import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -34,6 +39,7 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
@@ -62,6 +68,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
@@ -84,6 +91,7 @@ public class LLUtils {
 	private static final byte[] RESPONSE_TRUE_BUF = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE_BUF = new byte[]{0};
 	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
+	public static final AtomicBoolean hookRegistered = new AtomicBoolean();
 
 	static {
 		MemoryManager unsafeMemoryManager;
@@ -96,6 +104,13 @@ public class LLUtils {
 		for (int i1 = 0; i1 < 256; i1++) {
 			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
 			b[0] = (byte) i1;
+		}
+		initHooks();
+	}
+
+	public static void initHooks() {
+		if (hookRegistered.compareAndSet(false, true)) {
+			Hooks.onNextDropped(LLUtils::onNextDropped);
 		}
 	}
 
@@ -492,9 +507,7 @@ public class LLUtils {
 			} else {
 				return Mono.empty();
 			}
-		}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()))
-				.doOnDiscard(Send.class, send -> send.close())
-				.doOnDiscard(Resource.class, Resource::close);
+		}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()));
 	}
 
 	// todo: remove this ugly method
@@ -523,13 +536,7 @@ public class LLUtils {
 					if (r.isAccessible()) {
 						r.close();
 					}
-				}))
-				.doOnDiscard(Resource.class, resource -> {
-					if (resource.isAccessible()) {
-						resource.close();
-					}
-				})
-				.doOnDiscard(Send.class, send -> send.close());
+				}));
 	}
 
 	// todo: remove this ugly method
@@ -558,13 +565,7 @@ public class LLUtils {
 					if (r.isAccessible()) {
 						r.close();
 					}
-				}))
-				.doOnDiscard(Resource.class, resource -> {
-					if (resource.isAccessible()) {
-						resource.close();
-					}
-				})
-				.doOnDiscard(Send.class, send -> send.close());
+				}));
 	}
 
 	// todo: remove this ugly method
@@ -594,13 +595,7 @@ public class LLUtils {
 					if (r.isAccessible()) {
 						r.close();
 					}
-				})))
-				.doOnDiscard(Resource.class, resource -> {
-					if (resource.isAccessible()) {
-						resource.close();
-					}
-				})
-				.doOnDiscard(Send.class, send -> send.close());
+				})));
 	}
 
 	// todo: remove this ugly method
@@ -625,13 +620,7 @@ public class LLUtils {
 					if (r.isAccessible()) {
 						r.close();
 					}
-				}))
-				.doOnDiscard(Resource.class, resource -> {
-					if (resource.isAccessible()) {
-						resource.close();
-					}
-				})
-				.doOnDiscard(Send.class, send -> send.close());
+				}));
 	}
 
 	// todo: remove this ugly method
@@ -660,13 +649,7 @@ public class LLUtils {
 					if (r.isAccessible()) {
 						r.close();
 					}
-				}))
-				.doOnDiscard(Resource.class, resource -> {
-					if (resource.isAccessible()) {
-						resource.close();
-					}
-				})
-				.doOnDiscard(Send.class, send -> send.close());
+				}));
 	}
 
 	public static boolean isSet(ScoreDoc[] scoreDocs) {
@@ -958,184 +941,6 @@ public class LLUtils {
 		return Mono.fromCallable(rangeCallable);
 	}
 
-	public static <T> Mono<T> handleDiscard(Mono<T> mono) {
-		return mono.doOnDiscard(Object.class, obj -> {
-			if (obj instanceof SafeCloseable o) {
-				discardRefCounted(o);
-			} else if (obj instanceof Entry o) {
-				discardEntry(o);
-			} else if (obj instanceof Collection o) {
-				discardCollection(o);
-			} else if (obj instanceof Tuple3 o) {
-				discardTuple3(o);
-			} else if (obj instanceof Tuple2 o) {
-				discardTuple2(o);
-			} else if (obj instanceof LLEntry o) {
-				discardLLEntry(o);
-			} else if (obj instanceof LLRange o) {
-				discardLLRange(o);
-			} else if (obj instanceof LLDelta o) {
-				discardLLDelta(o);
-			} else if (obj instanceof Delta o) {
-				discardDelta(o);
-			} else if (obj instanceof Send o) {
-				discardSend(o);
-			} else if (obj instanceof Map o) {
-				discardMap(o);
-			} else if (obj instanceof DatabaseStage o) {
-				discardStage(o);
-			}
-		});
-	}
-
-	public static <T> Flux<T> handleDiscard(Flux<T> mono) {
-		return mono.doOnDiscard(Object.class, obj -> {
-			if (obj instanceof SafeCloseable o) {
-				discardRefCounted(o);
-			} else if (obj instanceof Entry o) {
-				discardEntry(o);
-			} else if (obj instanceof Collection o) {
-				discardCollection(o);
-			} else if (obj instanceof Tuple3 o) {
-				discardTuple3(o);
-			} else if (obj instanceof Tuple2 o) {
-				discardTuple2(o);
-			} else if (obj instanceof LLEntry o) {
-				discardLLEntry(o);
-			} else if (obj instanceof LLRange o) {
-				discardLLRange(o);
-			} else if (obj instanceof Delta o) {
-				discardDelta(o);
-			} else if (obj instanceof LLDelta o) {
-				discardLLDelta(o);
-			} else if (obj instanceof Send o) {
-				discardSend(o);
-			} else if (obj instanceof Resource o) {
-				discardResource(o);
-			} else if (obj instanceof Map o) {
-				discardMap(o);
-			} else if (obj instanceof DatabaseStage o) {
-				discardStage(o);
-			}
-		});
-	}
-
-	private static void discardLLEntry(LLEntry entry) {
-		logger.trace(MARKER_ROCKSDB, "Releasing discarded Buffer");
-		entry.close();
-	}
-
-	private static void discardLLRange(LLRange range) {
-		logger.trace(MARKER_ROCKSDB, "Releasing discarded LLRange");
-		range.close();
-	}
-
-	private static void discardLLDelta(LLDelta delta) {
-		logger.trace(MARKER_ROCKSDB, "Releasing discarded LLDelta");
-		delta.close();
-	}
-
-	private static void discardEntry(Map.Entry<?, ?> e) {
-		if (e.getKey() instanceof Buffer bb) {
-			bb.close();
-		}
-		if (e.getValue() instanceof Buffer bb) {
-			bb.close();
-		}
-	}
-
-	private static void discardTuple2(Tuple2<?, ?> e) {
-		if (e.getT1() instanceof Buffer bb) {
-			bb.close();
-		}
-		if (e.getT2() instanceof Buffer bb) {
-			bb.close();
-		}
-	}
-
-	private static void discardTuple3(Tuple3<?, ?, ?> e) {
-		if (e.getT1() instanceof Buffer bb) {
-			bb.close();
-		} else if (e.getT1() instanceof Optional opt) {
-			if (opt.isPresent() && opt.get() instanceof Buffer bb) {
-				bb.close();
-			}
-		}
-		if (e.getT2() instanceof Buffer bb) {
-			bb.close();
-		} else if (e.getT1() instanceof Optional opt) {
-			if (opt.isPresent() && opt.get() instanceof Buffer bb) {
-				bb.close();
-			}
-		}
-		if (e.getT3() instanceof Buffer bb) {
-			bb.close();
-		} else if (e.getT1() instanceof Optional opt) {
-			if (opt.isPresent() && opt.get() instanceof Buffer bb) {
-				bb.close();
-			}
-		}
-	}
-
-	private static void discardRefCounted(SafeCloseable safeCloseable) {
-		safeCloseable.close();
-	}
-
-	private static void discardCollection(Collection<?> collection) {
-		for (Object o : collection) {
-			if (o instanceof SafeCloseable safeCloseable) {
-				safeCloseable.close();
-			} else if (o instanceof Map.Entry entry) {
-				if (entry.getKey() instanceof SafeCloseable bb) {
-					bb.close();
-				}
-				if (entry.getValue() instanceof SafeCloseable bb) {
-					bb.close();
-				}
-			} else {
-				break;
-			}
-		}
-	}
-
-	private static void discardDelta(Delta<?> delta) {
-		if (delta.previous() instanceof Buffer bb) {
-			bb.close();
-		}
-		if (delta.current() instanceof Buffer bb) {
-			bb.close();
-		}
-	}
-
-	private static void discardSend(Send<?> send) {
-		send.close();
-	}
-
-	private static void discardResource(Resource<?> res) {
-		res.close();
-	}
-
-	private static void discardMap(Map<?, ?> map) {
-		for (Entry<?, ?> entry : map.entrySet()) {
-			boolean hasByteBuf = false;
-			if (entry.getKey() instanceof Buffer bb) {
-				bb.close();
-				hasByteBuf = true;
-			}
-			if (entry.getValue() instanceof Buffer bb) {
-				bb.close();
-				hasByteBuf = true;
-			}
-			if (!hasByteBuf) {
-				break;
-			}
-		}
-	}
-
-	private static void discardStage(DatabaseStage<?> stage) {
-		// do nothing for now, to avoid double-free problems
-	}
-
 	public static boolean isDirect(Buffer key) {
 		var readableComponents = key.countReadableComponents();
 		if (readableComponents == 0) {
@@ -1163,5 +968,52 @@ public class LLUtils {
 
 	public static int utf8MaxBytes(String deserialized) {
 		return deserialized.length() * 3;
+	}
+
+	private static void onNextDropped(Object next) {
+		if (next instanceof Send<?> send) {
+			send.close();
+		} else if (next instanceof Resource<?> resource) {
+			resource.close();
+		} else if (next instanceof Iterable<?> iterable) {
+			iterable.forEach(LLUtils::onNextDropped);
+		} else if (next instanceof SafeCloseable safeCloseable) {
+			safeCloseable.close();
+		} else if (next instanceof UpdateAtomicResultDelta delta) {
+			delta.delta().close();
+		} else if (next instanceof UpdateAtomicResultCurrent cur) {
+			cur.current().close();
+		} else if (next instanceof UpdateAtomicResultPrevious cur) {
+			cur.previous().close();
+		} else if (next instanceof Optional<?> optional) {
+			optional.ifPresent(LLUtils::onNextDropped);
+		} else if (next instanceof Map.Entry<?, ?> entry) {
+			var key = entry.getKey();
+			if (key != null) {
+				onNextDropped(key);
+			}
+			var value = entry.getValue();
+			if (value != null) {
+				onNextDropped(value);
+			}
+		} else if (next instanceof Delta<?> delta) {
+			var previous = delta.previous();
+			if (previous != null) {
+				onNextDropped(previous);
+			}
+			var current = delta.current();
+			if (current != null) {
+				onNextDropped(current);
+			}
+		} else if (next instanceof Map<?, ?> map) {
+			map.forEach((key, value) -> {
+				if (key != null) {
+					onNextDropped(key);
+				}
+				if (value != null) {
+					onNextDropped(value);
+				}
+			});
+		}
 	}
 }

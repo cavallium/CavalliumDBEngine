@@ -54,10 +54,9 @@ public abstract class TestDictionaryMap {
 		} else {
 			badKeys = List.of();
 		}
-		List<Tuple2<String, Boolean>> keys = Stream.concat(
-				goodKeys.stream().map(s -> Tuples.of(s, false)),
-				badKeys.stream().map(s -> Tuples.of(s, true))
-		).collect(Collectors.toList());
+		List<Tuple2<String, Boolean>> keys = Stream
+				.concat(goodKeys.stream().map(s -> Tuples.of(s, false)), badKeys.stream().map(s -> Tuples.of(s, true)))
+				.toList();
 		var values = isCIMode() ? List.of("val") : List.of("", "\0", BIG_STRING);
 
 		return keys
@@ -249,7 +248,6 @@ public abstract class TestDictionaryMap {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
 			stpVer.verifyError();
@@ -316,7 +314,6 @@ public abstract class TestDictionaryMap {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
 			stpVer.verifyError();
@@ -405,7 +402,6 @@ public abstract class TestDictionaryMap {
 
 						.filter(entry -> entry.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -436,7 +432,6 @@ public abstract class TestDictionaryMap {
 						})
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -464,7 +459,6 @@ public abstract class TestDictionaryMap {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -500,7 +494,6 @@ public abstract class TestDictionaryMap {
 						})
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -620,7 +613,6 @@ public abstract class TestDictionaryMap {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -650,7 +642,6 @@ public abstract class TestDictionaryMap {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -685,7 +676,6 @@ public abstract class TestDictionaryMap {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -715,7 +705,6 @@ public abstract class TestDictionaryMap {
 								.doFinally(s -> map.close())
 						)
 						.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -743,7 +732,6 @@ public abstract class TestDictionaryMap {
 							.doFinally(s -> map.close())
 					)
 					.flatMap(val -> shouldFail ? Mono.empty() : Mono.just(val))
-					.transform(LLUtils::handleDiscard)
 					.collectList()
 			).singleOrEmpty());
 		} catch (Exception ex) {

@@ -119,14 +119,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 		return keys
 				.flatMapSequential(key -> this.getValue(snapshot, key, existsAlmostCertainly))
 				.map(Optional::of)
-				.defaultIfEmpty(Optional.empty())
-				.doOnDiscard(Entry.class, unknownEntry -> {
-					if (unknownEntry.getValue() instanceof Optional optionalBuffer
-							&& optionalBuffer.isPresent()
-							&& optionalBuffer.get() instanceof Buffer buffer) {
-						buffer.close();
-					}
-				});
+				.defaultIfEmpty(Optional.empty());
 	}
 
 	/**

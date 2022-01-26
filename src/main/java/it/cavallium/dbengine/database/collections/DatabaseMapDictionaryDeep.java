@@ -301,9 +301,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			}
 		});
 		return this.subStageGetter
-				.subStage(dictionary, snapshot, suffixKeyWithoutExt)
-				.transform(LLUtils::handleDiscard)
-				.doOnDiscard(DatabaseStage.class, DatabaseStage::close);
+				.subStage(dictionary, snapshot, suffixKeyWithoutExt);
 	}
 
 	@Override
@@ -334,8 +332,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 									}
 								}),
 						Resource::close
-				))
-				.transform(LLUtils::handleDiscard);
+				));
 	}
 
 	/**

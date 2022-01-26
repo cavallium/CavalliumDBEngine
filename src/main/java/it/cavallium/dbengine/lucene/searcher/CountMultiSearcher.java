@@ -134,9 +134,7 @@ public class CountMultiSearcher implements MultiSearcher {
 						},
 						is -> Mono.empty()
 				)
-				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null))
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null));
 	}
 
 	@Override

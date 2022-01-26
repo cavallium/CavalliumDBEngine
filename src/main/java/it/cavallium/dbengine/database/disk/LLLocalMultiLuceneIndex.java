@@ -18,6 +18,7 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
@@ -51,6 +52,10 @@ import reactor.core.scheduler.Schedulers;
 import reactor.util.function.Tuple2;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
+
+	static {
+		LLUtils.initHooks();
+	}
 
 	private final MeterRegistry meterRegistry;
 	private final ConcurrentHashMap<Long, LLSnapshot[]> registeredSnapshots = new ConcurrentHashMap<>();
@@ -237,9 +242,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return multiSearcher
 				.collectMulti(searchers, localQueryParams, keyFieldName, transformer)
 				// Transform the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
 	}
 
 	@Override
@@ -253,8 +256,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return multiSearcher
 				.collectMulti(searchers, localQueryParams, keyFieldName, LLSearchTransformer.NO_TRANSFORMATION)
 				// Transform the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
 	}
 
 	@Override
@@ -270,10 +272,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		var searchers = getIndexSearchers(snapshot);
 
 		// Collect all the shards results into a single global result
-		return decimalBucketMultiSearcher
-				.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery)
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
 	}
 
 	@Override

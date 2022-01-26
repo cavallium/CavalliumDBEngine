@@ -52,7 +52,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 					keyExtLength,
 					null
 			);
-		}).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
+		});
 	}
 
 	public int getKeyBinaryLength() {

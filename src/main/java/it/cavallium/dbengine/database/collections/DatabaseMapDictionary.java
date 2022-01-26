@@ -165,8 +165,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						.fromIterable(Collections.unmodifiableMap(value).entrySet())
 						.handle(this::serializeEntrySink)
 				).then(Mono.empty()))
-				.singleOrEmpty()
-				.transform(LLUtils::handleDiscard);
+				.singleOrEmpty();
 	}
 
 	@Override
@@ -359,8 +358,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					} finally {
 						valueBufOpt.ifPresent(Resource::close);
 					}
-				})
-				.transform(LLUtils::handleDiscard);
+				});
 	}
 
 	private LLEntry serializeEntry(T keySuffix, U value) throws SerializationException {
@@ -391,47 +389,22 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					} catch (Throwable e) {
 						sink.error(e);
 					}
-				})
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
-		return dictionary
-				.putMulti(serializedEntries, false)
-				.then()
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close)
-				.doOnDiscard(LLEntry.class, ResourceSupport::close)
-				.doOnDiscard(List.class, list -> {
-					for (Object o : list) {
-						if (o instanceof Send send) {
-							send.close();
-						} else if (o instanceof Buffer buf) {
-							buf.close();
-						}
-					}
 				});
+		return dictionary.putMulti(serializedEntries, false).then();
 	}
 
 	@Override
 	public Flux<Boolean> updateMulti(Flux<T> keys,
 			KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
 		var sharedKeys = keys.publish().refCount(2);
-		var serializedKeys = sharedKeys
-				.<Send<Buffer>>handle((key, sink) -> {
-					try {
-						Send<Buffer> serializedKey = serializeKeySuffixToKey(key).send();
-						sink.next(serializedKey);
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				})
-				.doOnDiscard(Tuple2.class, uncastedEntry -> {
-					if (uncastedEntry.getT1() instanceof Buffer byteBuf) {
-						byteBuf.close();
-					}
-					if (uncastedEntry.getT2() instanceof Buffer byteBuf) {
-						byteBuf.close();
-					}
-				});
+		var serializedKeys = sharedKeys.<Send<Buffer>>handle((key, sink) -> {
+			try {
+				Send<Buffer> serializedKey = serializeKeySuffixToKey(key).send();
+				sink.next(serializedKey);
+			} catch (Throwable ex) {
+				sink.error(ex);
+			}
+		});
 		var serializedUpdater = getSerializedUpdater(updater);
 		return dictionary.updateMulti(sharedKeys, serializedKeys, serializedUpdater);
 	}
@@ -483,14 +456,6 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						sink.next(entry);
 					} catch (Throwable e) {
 						sink.error(e);
-					}
-				})
-				.doOnDiscard(Entry.class, uncastedEntry -> {
-					if (uncastedEntry.getKey() instanceof Buffer byteBuf) {
-						byteBuf.close();
-					}
-					if (uncastedEntry.getValue() instanceof Buffer byteBuf) {
-						byteBuf.close();
 					}
 				});
 	}

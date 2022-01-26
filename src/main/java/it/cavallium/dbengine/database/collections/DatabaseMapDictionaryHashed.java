@@ -197,15 +197,13 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T key) {
 		return this
 				.atPrivate(snapshot, key, keySuffixHashFunction.apply(key))
-				.map(cast -> (DatabaseStageEntry<U>) cast)
-				.doOnDiscard(Resource.class, Resource::close);
+				.map(cast -> (DatabaseStageEntry<U>) cast);
 	}
 
 	private Mono<DatabaseSingleBucket<T, U, TH>> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
 		return subDictionary
 				.at(snapshot, hash)
-				.map(entry -> new DatabaseSingleBucket<T, U, TH>(entry, key, null))
-				.doOnDiscard(Resource.class, Resource::close);
+				.map(entry -> new DatabaseSingleBucket<T, U, TH>(entry, key, null));
 	}
 
 	@Override

@@ -156,9 +156,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					indexSearcher.setSimilarity(similarity);
 					assert indexSearcher.getIndexReader().getRefCount() > 0;
 					return new LLIndexSearcher(indexSearcher, decRef, this::dropCachedIndexSearcher).send();
-				})
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				});
 	}
 
 	private void dropCachedIndexSearcher() {

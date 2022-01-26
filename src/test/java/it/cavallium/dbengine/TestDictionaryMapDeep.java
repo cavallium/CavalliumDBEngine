@@ -627,7 +627,6 @@ public abstract class TestDictionaryMapDeep {
 												)
 								)
 								.doFinally(s -> map.close())
-								.transform(LLUtils::handleDiscard)
 						)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
@@ -730,7 +729,6 @@ public abstract class TestDictionaryMapDeep {
 												)
 								)
 								.doFinally(s -> map.close())
-								.transform(LLUtils::handleDiscard)
 						)
 				));
 		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
@@ -817,7 +815,6 @@ public abstract class TestDictionaryMapDeep {
 						})
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-						.transform(LLUtils::handleDiscard)
 				);
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -874,7 +871,6 @@ public abstract class TestDictionaryMapDeep {
 										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet()))
 								)
 								.doFinally(s -> map.close())
-								.transform(LLUtils::handleDiscard)
 						)
 				));
 		if (shouldFail) {
@@ -908,7 +904,6 @@ public abstract class TestDictionaryMapDeep {
 						})
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -945,7 +940,6 @@ public abstract class TestDictionaryMapDeep {
 									)
 									.doFinally(s -> map.close());
 						})
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -999,7 +993,6 @@ public abstract class TestDictionaryMapDeep {
 								.concatMapIterable(list -> list)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -1120,7 +1113,6 @@ public abstract class TestDictionaryMapDeep {
 								)
 								.doFinally(s -> map.close())
 						)
-						.transform(LLUtils::handleDiscard)
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;

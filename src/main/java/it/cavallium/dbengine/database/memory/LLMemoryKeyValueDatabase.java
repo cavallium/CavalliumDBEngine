@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
@@ -18,6 +19,10 @@ import java.util.concurrent.atomic.AtomicLong;
 import reactor.core.publisher.Mono;
 
 public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
+
+	static {
+		LLUtils.initHooks();
+	}
 
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;

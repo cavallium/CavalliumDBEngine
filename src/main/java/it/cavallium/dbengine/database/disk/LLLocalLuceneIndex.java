@@ -85,8 +85,7 @@ import reactor.util.function.Tuple2;
 public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalLuceneIndex.class);
-	private final LocalSearcher localSearcher;
-	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
+
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with
@@ -94,6 +93,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private static final ReentrantLock shutdownLock = new ReentrantLock();
 	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.single(Schedulers.boundedElastic()));
+
+	static {
+		LLUtils.initHooks();
+	}
+
+	private final LocalSearcher localSearcher;
+	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 
 	private final Counter startedDocIndexings;
 	private final Counter endeddDocIndexings;
@@ -443,9 +449,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, transformer)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
 	}
 
 	@Override
@@ -456,9 +460,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
 	}
 
 	@Override
@@ -475,17 +477,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.retrieveSearcher(snapshot)
 				.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher).send());
 
-		return decimalBucketMultiSearcher
-				.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery)
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
 	}
 
 	public Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot) {
-		return searcherManager
-				.retrieveSearcher(snapshot)
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Resource.class, Resource::close);
+		return searcherManager.retrieveSearcher(snapshot);
 	}
 
 	@Override

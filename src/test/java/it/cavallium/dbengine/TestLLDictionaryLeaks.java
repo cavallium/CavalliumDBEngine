@@ -133,9 +133,9 @@ public abstract class TestLLDictionaryLeaks {
 	public void testGet(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test"));
-		runVoid(dict.get(null, key).then().transform(LLUtils::handleDiscard));
-		runVoid(dict.get(null, key, true).then().transform(LLUtils::handleDiscard));
-		runVoid(dict.get(null, key, false).then().transform(LLUtils::handleDiscard));
+		runVoid(dict.get(null, key).then());
+		runVoid(dict.get(null, key, true).then());
+		runVoid(dict.get(null, key, false).then());
 	}
 
 	@ParameterizedTest
@@ -160,13 +160,13 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, this::pass, updateReturnMode, true).then().transform(LLUtils::handleDiscard)
+				dict.update(key, this::pass, updateReturnMode, true).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, this::pass, updateReturnMode, false).then().transform(LLUtils::handleDiscard)
+				dict.update(key, this::pass, updateReturnMode, false).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, this::pass, updateReturnMode).then().transform(LLUtils::handleDiscard)
+				dict.update(key, this::pass, updateReturnMode).then()
 		);
 	}
 
@@ -180,13 +180,13 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, this::pass, true).then().transform(LLUtils::handleDiscard)
+				dict.updateAndGetDelta(key, this::pass, true).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, this::pass, false).then().transform(LLUtils::handleDiscard)
+				dict.updateAndGetDelta(key, this::pass, false).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, this::pass).then().transform(LLUtils::handleDiscard)
+				dict.updateAndGetDelta(key, this::pass).then()
 		);
 	}
 

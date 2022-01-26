@@ -94,27 +94,7 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 								throw ex;
 							}
 						}))
-				)
-
-				.doOnDiscard(List.class, list -> {
-					try {
-						for (Object o : list) {
-							if (o instanceof LMDBFullFieldDocCollector fullDocsCollector) {
-								fullDocsCollector.close();
-							}
-						}
-					} catch (Exception ex) {
-						logger.error("Failed to discard collector", ex);
-					}
-				})
-				.doOnDiscard(LMDBFullFieldDocCollector.class, fullDocsCollector -> {
-					try {
-						fullDocsCollector.close();
-					} catch (Exception ex) {
-						logger.error("Failed to discard collector", ex);
-					}
-				})
-				.doOnDiscard(FullDocs.class, SafeCloseable::close);
+				);
 	}
 
 	/**

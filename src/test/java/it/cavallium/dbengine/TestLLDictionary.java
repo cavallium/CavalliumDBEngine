@@ -156,12 +156,12 @@ public abstract class TestLLDictionary {
 		var dict = getDict(updateMode);
 		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
 		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
-		Assertions.assertEquals("test-value", run(dict.get(null, keyEx).map(this::toString).transform(LLUtils::handleDiscard)));
-		Assertions.assertEquals("test-value", run(dict.get(null, keyEx, true).map(this::toString).transform(LLUtils::handleDiscard)));
-		Assertions.assertEquals("test-value", run(dict.get(null, keyEx, false).map(this::toString).transform(LLUtils::handleDiscard)));
-		Assertions.assertEquals((String) null, run(dict.get(null, keyNonEx).map(this::toString).transform(LLUtils::handleDiscard)));
-		Assertions.assertEquals((String) null, run(dict.get(null, keyNonEx, true).map(this::toString).transform(LLUtils::handleDiscard)));
-		Assertions.assertEquals((String) null, run(dict.get(null, keyNonEx, false).map(this::toString).transform(LLUtils::handleDiscard)));
+		Assertions.assertEquals("test-value", run(dict.get(null, keyEx).map(this::toString)));
+		Assertions.assertEquals("test-value", run(dict.get(null, keyEx, true).map(this::toString)));
+		Assertions.assertEquals("test-value", run(dict.get(null, keyEx, false).map(this::toString)));
+		Assertions.assertEquals((String) null, run(dict.get(null, keyNonEx).map(this::toString)));
+		Assertions.assertEquals((String) null, run(dict.get(null, keyNonEx, true).map(this::toString)));
+		Assertions.assertEquals((String) null, run(dict.get(null, keyNonEx, false).map(this::toString)));
 	}
 
 	@ParameterizedTest
@@ -211,17 +211,17 @@ public abstract class TestLLDictionary {
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, true).then().transform(LLUtils::handleDiscard)
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, true).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, false).then().transform(LLUtils::handleDiscard)
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, false).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).then().transform(LLUtils::handleDiscard)
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
@@ -236,17 +236,17 @@ public abstract class TestLLDictionary {
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, true).then().transform(LLUtils::handleDiscard)
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, true).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, false).then().transform(LLUtils::handleDiscard)
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, false).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).then().transform(LLUtils::handleDiscard)
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);

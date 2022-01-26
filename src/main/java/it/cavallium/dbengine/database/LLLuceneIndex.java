@@ -77,7 +77,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 					}
 				})
 				.defaultIfEmpty(TotalHitsCount.of(0, true))
-		).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
+		);
 	}
 
 	boolean isLowMemoryMode();

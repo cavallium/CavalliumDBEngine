@@ -32,7 +32,7 @@ public class SubStageGetterMap<T, U> implements
 		return prefixKeyMono.map(prefixKeyToReceive -> {
 			var prefixKey = prefixKeyToReceive.receive();
 			return DatabaseMapDictionary.tail(dictionary, prefixKey, keySerializer, valueSerializer, null);
-		}).doOnDiscard(Send.class, Send::close).doOnDiscard(Resource.class, Resource::close);
+		});
 	}
 
 	public int getKeyBinaryLength() {

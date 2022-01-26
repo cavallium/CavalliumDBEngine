@@ -65,6 +65,7 @@ import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -261,7 +262,7 @@ public class LLLocalDictionary implements LLDictionary {
 			Mono<Send<Buffer>> keyMono,
 			boolean existsAlmostCertainly) {
 		return keyMono
-				.publishOn(Schedulers.boundedElastic())
+				.publishOn(dbScheduler)
 				.<Send<Buffer>>handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						try {
@@ -290,15 +291,15 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
 		return rangeMono
-				.publishOn(Schedulers.boundedElastic())
-				.<Boolean>handle((rangeSend, sink) -> {
+				.publishOn(dbScheduler)
+				.handle((rangeSend, sink) -> {
 					try (var range = rangeSend.receive()) {
-						sink.next(containsRange(snapshot, range));
+						boolean rangeEmpty = !containsRange(snapshot, range);
+						sink.next(rangeEmpty);
 					} catch (Throwable ex) {
 						sink.error(ex);
 					}
-				})
-				.map(isContained -> !isContained);
+				});
 	}
 
 	public boolean containsRange(@Nullable LLSnapshot snapshot, LLRange range) throws RocksDBException {
@@ -367,7 +368,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	private Mono<Boolean> containsKey(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return keyMono
-				.publishOn(Schedulers.boundedElastic())
+				.publishOn(dbScheduler)
 				.handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						sink.next(containsKey(snapshot, key));
@@ -404,7 +405,7 @@ public class LLLocalDictionary implements LLDictionary {
 		var previousDataMono = this.getPreviousData(keyMono, resultType, false);
 		// Write the new entry to the database
 		var putMono = entryMono
-				.publishOn(Schedulers.boundedElastic())
+				.publishOn(dbScheduler)
 				.<Void>handle((entry, sink) -> {
 					try (var key = entry.getKey().receive()) {
 						try (var value = entry.getValue().receive()) {
@@ -423,16 +424,6 @@ public class LLLocalDictionary implements LLDictionary {
 		return Flux
 				.concat(previousDataMono, putMono.then(Mono.empty()))
 				.singleOrEmpty()
-				// Clean discarded elements
-				.doOnDiscard(Send.class, Send::close)
-				.doOnDiscard(Entry.class, entry -> {
-					if (entry.getKey() instanceof SafeCloseable safeCloseable) {
-						safeCloseable.close();
-					}
-					if (entry.getValue() instanceof SafeCloseable safeCloseable) {
-						safeCloseable.close();
-					}
-				})
 				.onErrorMap(cause -> new IOException("Failed to write", cause))
 				.elapsed()
 				.map(tuple -> {
@@ -513,15 +504,7 @@ public class LLLocalDictionary implements LLDictionary {
 					assert result != null;
 					return ((UpdateAtomicResultDelta) result).delta();
 				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-				keySend -> Mono.fromRunnable(keySend::close)).doOnDiscard(UpdateAtomicResult.class, uar -> {
-					if (uar instanceof UpdateAtomicResultDelta delta) {
-						delta.delta().close();
-					} else if (uar instanceof UpdateAtomicResultCurrent cur) {
-						cur.current().close();
-					} else if (uar instanceof UpdateAtomicResultPrevious cur) {
-						cur.previous().close();
-					}
-		});
+				keySend -> Mono.fromRunnable(keySend::close));
 	}
 
 	@Override
@@ -590,19 +573,6 @@ public class LLLocalDictionary implements LLDictionary {
 			boolean existsAlmostCertainly) {
 		return keys
 				.buffer(MULTI_GET_WINDOW)
-				.doOnDiscard(Tuple2.class, discardedEntry -> {
-					if (discardedEntry.getT2() instanceof Resource<?> resource) {
-						resource.close();
-					}
-				})
-				.doOnDiscard(Tuple3.class, discardedEntry -> {
-					if (discardedEntry.getT2() instanceof Resource<?> resource) {
-						resource.close();
-					}
-					if (discardedEntry.getT3() instanceof Resource<?> resource) {
-						resource.close();
-					}
-				})
 				.flatMapSequential(keysWindow -> runOnDb(() -> {
 					List<Buffer> keyBufsWindow = new ArrayList<>(keysWindow.size());
 					for (Send<Buffer> bufferSend : keysWindow) {
@@ -637,13 +607,7 @@ public class LLLocalDictionary implements LLDictionary {
 				})
 				.flatMapIterable(list -> list)
 				.onErrorMap(cause -> new IOException("Failed to read keys", cause))
-				.doAfterTerminate(() -> keysWindow.forEach(Send::close)), 2) // Max concurrency is 2 to read data while preparing the next segment
-				.doOnDiscard(LLEntry.class, ResourceSupport::close)
-				.doOnDiscard(Optional.class, opt -> {
-					if (opt.isPresent() && opt.get() instanceof Buffer bb) {
-						bb.close();
-					}
-				});
+				.doAfterTerminate(() -> keysWindow.forEach(Send::close)), 2); // Max concurrency is 2 to read data while preparing the next segment;
 	}
 
 	@Override
@@ -711,8 +675,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							}
 						}).subscribeOn(dbScheduler), 2) // Max concurrency is 2 to read data while preparing the next segment
-				.flatMapIterable(oldValuesList -> oldValuesList)
-				.transform(LLUtils::handleDiscard);
+				.flatMapIterable(oldValuesList -> oldValuesList);
 	}
 
 	@Override
@@ -820,15 +783,7 @@ public class LLLocalDictionary implements LLDictionary {
 							tuple.getT2().close();
 						}
 					}
-				}).flatMapIterable(list -> list), /* Max concurrency is 2 to update data while preparing the next segment */ 2)
-				.doOnDiscard(Tuple2.class, entry -> {
-					if (entry.getT1() instanceof Buffer bb) {
-						bb.close();
-					}
-					if (entry.getT2() instanceof Buffer bb) {
-						bb.close();
-					}
-				});
+				}).flatMapIterable(list -> list), /* Max concurrency is 2 to update data while preparing the next segment */ 2);
 	}
 
 	@Override
@@ -875,8 +830,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return Mono
 				.zip(keyMono, this.get(snapshot, keyMono, existsAlmostCertainly))
 				.map(result -> LLEntry.of(result.getT1(), result.getT2()).send())
-				.flux()
-				.transform(LLUtils::handleDiscard);
+				.flux();
 	}
 
 	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
@@ -886,7 +840,7 @@ public class LLLocalDictionary implements LLDictionary {
 								nettyDirect, resolveSnapshot(snapshot)),
 						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalReactiveRocksIterator::close
-				).transform(LLUtils::handleDiscard),
+				),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}
@@ -899,7 +853,7 @@ public class LLLocalDictionary implements LLDictionary {
 								nettyDirect, resolveSnapshot(snapshot)),
 						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalGroupedReactiveRocksIterator::close
-				).transform(LLUtils::handleDiscard),
+				),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}
@@ -930,7 +884,7 @@ public class LLLocalDictionary implements LLDictionary {
 								nettyDirect, resolveSnapshot(snapshot)),
 						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalGroupedReactiveRocksIterator::close
-				).transform(LLUtils::handleDiscard),
+				),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}
@@ -1015,8 +969,7 @@ public class LLLocalDictionary implements LLDictionary {
 								sink.complete();
 							}
 						})
-						.flux()
-						.doOnDiscard(Buffer.class, Buffer::close),
+						.flux(),
 				keySend -> Mono.fromRunnable(keySend::close)
 		);
 	}
@@ -1029,7 +982,7 @@ public class LLLocalDictionary implements LLDictionary {
 						),
 						iterator -> iterator.flux().subscribeOn(dbScheduler, false),
 						LLLocalReactiveRocksIterator::close
-				).transform(LLUtils::handleDiscard),
+				),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}

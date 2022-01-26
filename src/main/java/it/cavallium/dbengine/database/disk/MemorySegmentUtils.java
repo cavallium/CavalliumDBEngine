@@ -100,7 +100,7 @@ public class MemorySegmentUtils {
 		try {
 			if (!isSupported()) {
 				if (PlatformDependent.hasDirectBufferNoCleanerConstructor()) {
-					return PlatformDependent.directBuffer(address, (int) size);
+					return PlatformDependent.directBuffer(address, (int) size, null);
 				}
 				throw new UnsupportedOperationException("Foreign Memory Access API is disabled!"
 						+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"",

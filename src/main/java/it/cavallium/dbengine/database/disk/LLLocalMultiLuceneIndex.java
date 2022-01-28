@@ -2,8 +2,8 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 
+import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -12,23 +12,22 @@ import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLIndexRequest;
-import it.cavallium.dbengine.database.LLUpdateDocument;
-import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
+import it.cavallium.dbengine.lucene.mlt.MoreLikeThisTransformer;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
-import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -39,7 +38,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
@@ -49,7 +47,6 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuple2;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
@@ -233,10 +230,10 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
+			Multimap<String, String> mltDocumentFields) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searchers = this.getIndexSearchers(snapshot);
-		var transformer = new MultiMoreLikeThisTransformer(mltDocumentFields);
+		var transformer = new MoreLikeThisTransformer(mltDocumentFields, luceneAnalyzer, luceneSimilarity);
 
 		// Collect all the shards results into a single global result
 		return multiSearcher
@@ -339,20 +336,5 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public boolean isLowMemoryMode() {
 		return luceneIndices[0].isLowMemoryMode();
-	}
-
-	private class MultiMoreLikeThisTransformer implements LLSearchTransformer {
-
-		private final Flux<Tuple2<String, Set<String>>> mltDocumentFields;
-
-		public MultiMoreLikeThisTransformer(Flux<Tuple2<String, Set<String>>> mltDocumentFields) {
-			this.mltDocumentFields = mltDocumentFields;
-		}
-
-		@Override
-		public Mono<LocalQueryParams> transform(Mono<TransformerInput> inputMono) {
-			return inputMono.flatMap(input -> LuceneUtils.getMoreLikeThisQuery(input.indexSearchers(), input.queryParams(),
-					luceneAnalyzer, luceneSimilarity, mltDocumentFields));
-		}
 	}
 }

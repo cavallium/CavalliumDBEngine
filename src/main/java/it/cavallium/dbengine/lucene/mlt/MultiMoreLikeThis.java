@@ -564,7 +564,7 @@ public final class MultiMoreLikeThis {
 	 * @param filteredDocument Document with field values extracted for selected fields.
 	 * @return More Like This query for the passed document.
 	 */
-	public Query like(Map<String, Collection<Object>> filteredDocument) throws IOException {
+	public Query like(Map<String, ? extends Collection<?>> filteredDocument) throws IOException {
 		if (fieldNames == null) {
 			// gather list of valid fields from lucene
 			Collection<String> fields = BigCompositeReader.getIndexedFields(ir);
@@ -743,11 +743,11 @@ public final class MultiMoreLikeThis {
 		}
 	}
 
-	private PriorityQueue<ScoreTerm> retrieveTerms(Map<String, Collection<Object>> field2fieldValues)
+	private PriorityQueue<ScoreTerm> retrieveTerms(Map<String, ? extends Collection<?>> field2fieldValues)
 			throws IOException {
 		Map<String, Map<String, Long>> field2termFreqMap = new HashMap<>();
 		for (String fieldName : fieldNames) {
-			Collection<Object> fieldValues = field2fieldValues.get(fieldName);
+			Collection<?> fieldValues = field2fieldValues.get(fieldName);
 			if (fieldValues == null) {
 				continue;
 			}

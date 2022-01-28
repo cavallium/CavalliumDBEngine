@@ -43,19 +43,8 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 
 					return queryParamsMono.flatMap(queryParams2 -> {
 						var localQueryParams = getLocalQueryParams(queryParams2);
-						return Mono
-								.fromRunnable(() -> {
-									LLUtils.ensureBlocking();
-									if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
-										throw new UnsupportedOperationException("Sorted queries are not supported"
-												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
-									}
-									if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
-										throw new UnsupportedOperationException("Scored queries are not supported"
-												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
-									}
-								})
-								.thenMany(Flux.fromIterable(indexSearchers.shards()))
+						return Flux
+								.fromIterable(indexSearchers.shards())
 								.flatMap(searcher -> {
 									var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, null).send());
 									return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
@@ -85,6 +74,17 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 										}
 										indexSearchers.close();
 									});
+								})
+								.doFirst(() -> {
+									LLUtils.ensureBlocking();
+									if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
+										throw new UnsupportedOperationException("Sorted queries are not supported"
+												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
+									}
+									if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
+										throw new UnsupportedOperationException("Scored queries are not supported"
+												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
+									}
 								});
 							}
 					);

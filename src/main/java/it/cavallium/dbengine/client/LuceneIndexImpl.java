@@ -90,7 +90,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	public Mono<Hits<HitKey<T>>> moreLikeThis(ClientQueryParams queryParams,
 			T key,
 			U mltDocumentValue) {
-		Flux<Tuple2<String, Set<String>>> mltDocumentFields
+		var mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 
 		return luceneIndex

@@ -2,6 +2,8 @@ package it.cavallium.dbengine.lucene;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 
+import com.google.common.collect.HashMultimap;
+import com.google.common.collect.Multimap;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
@@ -31,12 +33,12 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
-import java.util.Set;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -49,6 +51,7 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.queries.mlt.MoreLikeThisQuery;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.Collector;
@@ -79,7 +82,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
-import reactor.util.function.Tuple2;
 
 public class LuceneUtils {
 
@@ -470,80 +472,57 @@ public class LuceneUtils {
 		}
 	}
 
-	public static Mono<LocalQueryParams> getMoreLikeThisQuery(
-			LLIndexSearchers inputIndexSearchers,
+	public static Query getMoreLikeThisQuery(LLIndexSearchers inputIndexSearchers,
 			LocalQueryParams localQueryParams,
 			Analyzer analyzer,
 			Similarity similarity,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFieldsFlux) {
-		var indexSearchers = inputIndexSearchers.shards();
-		Query luceneAdditionalQuery;
-		try {
-			luceneAdditionalQuery = localQueryParams.query();
-		} catch (Exception e) {
-			return Mono.error(e);
+			Multimap<String, String> mltDocumentFieldsMultimap) throws IOException {
+		List<IndexSearcher> indexSearchers = inputIndexSearchers.shards();
+		Query luceneAdditionalQuery = localQueryParams.query();
+		// Create the mutable version of the input
+		Map<String, Collection<String>> mltDocumentFields = HashMultimap.create(mltDocumentFieldsMultimap).asMap();
+
+		mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
+		if (mltDocumentFields.isEmpty()) {
+			return new MatchNoDocsQuery();
 		}
-		return mltDocumentFieldsFlux
-				.collectMap(Tuple2::getT1, Tuple2::getT2, HashMap::new)
-				.flatMap(mltDocumentFields -> Mono.fromCallable(() -> {
-					mltDocumentFields.entrySet().removeIf(entry -> entry.getValue().isEmpty());
-					if (mltDocumentFields.isEmpty()) {
-						return new LocalQueryParams(new MatchNoDocsQuery(),
-								localQueryParams.offsetLong(),
-								localQueryParams.limitLong(),
-								DEFAULT_PAGE_LIMITS,
-								localQueryParams.minCompetitiveScore(),
-								localQueryParams.sort(),
-								localQueryParams.computePreciseHitsCount(),
-								localQueryParams.timeout()
-						);
-					}
-					MultiMoreLikeThis mlt;
-					if (indexSearchers.size() == 1) {
-						mlt = new MultiMoreLikeThis(new BigCompositeReader<>(indexSearchers.get(0).getIndexReader(), IndexReader[]::new), null);
-					} else {
-						IndexReader[] indexReaders = new IndexReader[indexSearchers.size()];
-						for (int i = 0, size = indexSearchers.size(); i < size; i++) {
-							indexReaders[i] = indexSearchers.get(i).getIndexReader();
-						}
-						mlt = new MultiMoreLikeThis(new BigCompositeReader<>(indexReaders, new ArrayIndexComparator(indexReaders)), null);
-					}
-					mlt.setAnalyzer(analyzer);
-					mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
-					mlt.setMinTermFreq(1);
-					mlt.setMinDocFreq(3);
-					mlt.setMaxDocFreqPct(20);
-					mlt.setBoost(localQueryParams.needsScores());
-					mlt.setStopWords(ENGLISH_AND_ITALIAN_STOP_WORDS);
-					if (similarity instanceof TFIDFSimilarity tfidfSimilarity) {
-						mlt.setSimilarity(tfidfSimilarity);
-					} else {
-						mlt.setSimilarity(new ClassicSimilarity());
-					}
+		MultiMoreLikeThis mlt;
+		if (indexSearchers.size() == 1) {
+			mlt = new MultiMoreLikeThis(new BigCompositeReader<>(indexSearchers.get(0).getIndexReader(), IndexReader[]::new),
+					null
+			);
+		} else {
+			IndexReader[] indexReaders = new IndexReader[indexSearchers.size()];
+			for (int i = 0, size = indexSearchers.size(); i < size; i++) {
+				indexReaders[i] = indexSearchers.get(i).getIndexReader();
+			}
+			mlt = new MultiMoreLikeThis(new BigCompositeReader<>(indexReaders, new ArrayIndexComparator(indexReaders)), null);
+		}
+		mlt.setAnalyzer(analyzer);
+		mlt.setFieldNames(mltDocumentFields.keySet().toArray(String[]::new));
+		mlt.setMinTermFreq(1);
+		mlt.setMinDocFreq(3);
+		mlt.setMaxDocFreqPct(20);
+		mlt.setBoost(localQueryParams.needsScores());
+		mlt.setStopWords(ENGLISH_AND_ITALIAN_STOP_WORDS);
+		if (similarity instanceof TFIDFSimilarity tfidfSimilarity) {
+			mlt.setSimilarity(tfidfSimilarity);
+		} else {
+			mlt.setSimilarity(new ClassicSimilarity());
+		}
 
-					// Get the reference docId and apply it to MoreLikeThis, to generate the query
-					@SuppressWarnings({"unchecked", "rawtypes"})
-					var mltQuery = mlt.like((Map) mltDocumentFields);
-					Query luceneQuery;
-					if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
-						luceneQuery = new Builder()
-								.add(mltQuery, Occur.MUST)
-								.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
-								.build();
-					} else {
-						luceneQuery = mltQuery;
-					}
-
-					return new LocalQueryParams(luceneQuery,
-							localQueryParams.offsetLong(),
-							localQueryParams.limitLong(),
-							DEFAULT_PAGE_LIMITS,
-							localQueryParams.minCompetitiveScore(),
-							localQueryParams.sort(),
-							localQueryParams.computePreciseHitsCount(),
-							localQueryParams.timeout());
-				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
-				.publishOn(Schedulers.parallel());
+		// Get the reference docId and apply it to MoreLikeThis, to generate the query
+		Query mltQuery = mlt.like(mltDocumentFields);
+		Query luceneQuery;
+		if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
+			luceneQuery = new Builder()
+					.add(mltQuery, Occur.MUST)
+					.add(new ConstantScoreQuery(luceneAdditionalQuery), Occur.MUST)
+					.build();
+		} else {
+			luceneQuery = mltQuery;
+		}
+		return luceneQuery;
 	}
 
 	public static Collector withTimeout(Collector collector, Duration timeout) {

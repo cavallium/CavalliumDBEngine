@@ -1,11 +1,14 @@
 package it.cavallium.dbengine.client;
 
+import com.google.common.collect.Multimap;
+import com.google.common.collect.Multimaps;
 import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLSoftUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
+import java.util.Map;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
@@ -43,7 +46,7 @@ public abstract class Indicizer<T, U> {
 
 	public abstract IndicizerSimilarities getPerFieldSimilarity();
 
-	public Flux<Tuple2<String, Set<String>>> getMoreLikeThisDocumentFields(T key, U value) {
-		return Flux.empty();
+	public Multimap<String, String> getMoreLikeThisDocumentFields(T key, U value) {
+		return Multimaps.forMap(Map.of());
 	}
 }

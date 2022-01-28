@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import com.google.common.collect.Multimap;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.data.generator.nativedata.Nullablefloat;
@@ -51,7 +52,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
-			Flux<Tuple2<String, Set<String>>> mltDocumentFields);
+			Multimap<String, String> mltDocumentFields);
 
 	/**
 	 * @param queryParams the limit is valid for each lucene instance. If you have 15 instances, the number of elements

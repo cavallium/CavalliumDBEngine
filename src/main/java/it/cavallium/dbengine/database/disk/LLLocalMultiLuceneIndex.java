@@ -25,7 +25,7 @@ import it.cavallium.dbengine.lucene.mlt.MoreLikeThisTransformer;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
+import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import java.io.Closeable;
@@ -251,7 +251,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 		// Collect all the shards results into a single global result
 		return multiSearcher
-				.collectMulti(searchers, localQueryParams, keyFieldName, LLSearchTransformer.NO_TRANSFORMATION)
+				.collectMulti(searchers, localQueryParams, keyFieldName, GlobalQueryRewrite.NO_REWRITE)
 				// Transform the result type
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
 	}

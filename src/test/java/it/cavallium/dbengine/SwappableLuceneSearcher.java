@@ -6,7 +6,7 @@ import static java.util.Objects.requireNonNullElseGet;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer;
+import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
@@ -29,7 +29,7 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		var single = requireNonNullElseGet(this.single.get(), this.multi::get);
 		requireNonNull(single, "LuceneLocalSearcher not set");
 		return single.collect(indexSearcherMono, queryParams, keyFieldName, transformer);
@@ -54,7 +54,7 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		var multi = requireNonNull(this.multi.get(), "LuceneMultiSearcher not set");
 		return multi.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 	}

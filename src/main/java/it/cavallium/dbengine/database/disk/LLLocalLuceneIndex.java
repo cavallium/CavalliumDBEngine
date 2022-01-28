@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
-import static it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.NO_TRANSFORMATION;
+import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.Counter;
@@ -457,7 +457,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		var searcher = searcherManager.retrieveSearcher(snapshot);
 
 		return localSearcher
-				.collect(searcher, localQueryParams, keyFieldName, NO_TRANSFORMATION)
+				.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE)
 				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
 	}
 

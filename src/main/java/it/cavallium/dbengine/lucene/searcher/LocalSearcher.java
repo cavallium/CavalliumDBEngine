@@ -15,7 +15,7 @@ public interface LocalSearcher {
 	Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer);
+			GlobalQueryRewrite transformer);
 
 	/**
 	 * Get the name of this searcher type

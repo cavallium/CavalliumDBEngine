@@ -6,14 +6,12 @@ import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SE
 
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
-import it.cavallium.dbengine.client.UninterruptibleScheduler;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.TopDocsCollectorMultiManager;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
@@ -33,18 +31,19 @@ public class PagedLocalSearcher implements LocalSearcher {
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
 		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded).map(ResourceSupport::send);
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 					Mono<LocalQueryParams> queryParamsMono;
-					if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+					if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 						queryParamsMono = Mono.just(queryParams);
 					} else {
-						queryParamsMono = transformer.transform(Mono
-								.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams)));
+						queryParamsMono = Mono
+								.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+								.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
 					}
 
 					return queryParamsMono.flatMap(queryParams2 -> this

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.net5.buffer.api.Send;
@@ -10,7 +11,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
 import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorMultiManager;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -18,7 +19,6 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -36,13 +36,20 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		Mono<LocalQueryParams> queryParamsMono;
-		if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+		if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 			queryParamsMono = Mono.just(queryParams);
 		} else {
-			queryParamsMono = LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> transformer.transform(Mono
-					.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams))), true);
+			queryParamsMono = indexSearchersMono
+					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.handle((indexSearchers, sink) -> {
+						try {
+							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
+						} catch (IOException ex) {
+							sink.error(ex);
+						}
+					});
 		}
 
 		return queryParamsMono.flatMap(queryParams2 -> {

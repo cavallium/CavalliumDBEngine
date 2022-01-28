@@ -16,7 +16,7 @@ public interface MultiSearcher extends LocalSearcher {
 	Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer);
+			GlobalQueryRewrite transformer);
 
 	/**
 	 * @param indexSearcherMono Lucene index searcher
@@ -28,7 +28,7 @@ public interface MultiSearcher extends LocalSearcher {
 	default Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		var searchers = indexSearcherMono.map(a -> LLIndexSearchers.unsharded(a).send());
 		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);
 	}

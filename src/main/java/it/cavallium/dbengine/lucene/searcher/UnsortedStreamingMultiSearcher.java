@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static java.util.Objects.requireNonNull;
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -8,12 +8,12 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
 import java.util.List;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 
@@ -21,15 +21,16 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 				queryParamsMono = Mono.just(queryParams);
 			} else {
-				queryParamsMono = transformer.transform(Mono
-						.fromCallable(() -> new TransformerInput(indexSearchers, queryParams)));
+				queryParamsMono = Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
 			}
 
 			return queryParamsMono.map(queryParams2 -> {

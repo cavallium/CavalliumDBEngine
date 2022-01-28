@@ -1,22 +1,23 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.io.IOException;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.TimeLimitingCollector;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class OfficialSearcher implements MultiSearcher {
 
@@ -29,13 +30,20 @@ public class OfficialSearcher implements MultiSearcher {
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		Mono<LocalQueryParams> queryParamsMono;
-		if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+		if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 			queryParamsMono = Mono.just(queryParams);
 		} else {
-			queryParamsMono = LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> transformer.transform(Mono
-					.fromSupplier(() -> new TransformerInput(indexSearchers, queryParams))), true);
+			queryParamsMono = indexSearchersMono
+					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.handle((indexSearchers, sink) -> {
+						try {
+							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
+						} catch (IOException ex) {
+							sink.error(ex);
+						}
+					});
 		}
 
 		return queryParamsMono.flatMap(queryParams2 -> LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this

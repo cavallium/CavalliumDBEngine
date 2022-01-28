@@ -1,12 +1,16 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
+
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.searcher.LLSearchTransformer.TransformerInput;
+import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveMultiSearcher implements MultiSearcher {
 
@@ -39,15 +43,20 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
-		if (transformer == LLSearchTransformer.NO_TRANSFORMATION) {
+			GlobalQueryRewrite transformer) {
+		if (transformer == NO_REWRITE) {
 			return transformedCollectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 		} else {
-			return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> transformer
-					.transform(Mono.fromCallable(() -> new TransformerInput(indexSearchers, queryParams)))
-					.flatMap(queryParams2 -> this
-							.transformedCollectMulti(indexSearchersMono, queryParams2, keyFieldName, LLSearchTransformer.NO_TRANSFORMATION)),
-					true);
+			return indexSearchersMono
+					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.<LocalQueryParams>handle((indexSearchers, sink) -> {
+						try {
+							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
+						} catch (IOException ex) {
+							sink.error(ex);
+						}
+					})
+					.flatMap(queryParams2 -> transformedCollectMulti(indexSearchersMono, queryParams2, keyFieldName, NO_REWRITE));
 		}
 	}
 
@@ -55,7 +64,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	public Mono<LuceneSearchResult> transformedCollectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			LLSearchTransformer transformer) {
+			GlobalQueryRewrite transformer) {
 		// offset + limit
 		long realLimit = queryParams.offsetLong() + queryParams.limitLong();
 		long maxAllowedInMemoryLimit

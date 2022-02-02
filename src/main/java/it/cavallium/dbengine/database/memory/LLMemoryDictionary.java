@@ -515,10 +515,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean fillCache) {
 		return getRangeKeys(snapshot, rangeMono)
-				.map(buf -> {
-					buf.receive().close();
-					return true;
-				})
+				.doOnNext(buf -> buf.receive().close())
 				.count()
 				.map(count -> count == 0);
 	}

@@ -287,7 +287,7 @@ public class LLLocalDictionary implements LLDictionary {
 				assert !Schedulers.isInNonBlockingThread() : "Called isRangeEmpty in a nonblocking thread";
 				startedContains.increment();
 				try {
-					var result = containsTime.recordCallable(() -> {
+					Boolean isRangeEmpty = containsTime.recordCallable(() -> {
 						if (range.isSingle()) {
 							return !containsKey(snapshot, range.getSingleUnsafe());
 						} else {
@@ -330,7 +330,7 @@ public class LLLocalDictionary implements LLDictionary {
 										rocksIterator.seekToFirst();
 									}
 									rocksIterator.status();
-									return rocksIterator.isValid();
+									return !rocksIterator.isValid();
 								}
 							} finally {
 								if (slice1 != null) {
@@ -342,8 +342,8 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						}
 					});
-					assert result != null;
-					sink.next(!result);
+					assert isRangeEmpty != null;
+					sink.next(isRangeEmpty);
 				} catch (RocksDBException ex) {
 					sink.error(new RocksDBException("Failed to read range " + LLUtils.toStringSafe(range)
 							+ ": " + ex.getMessage()));

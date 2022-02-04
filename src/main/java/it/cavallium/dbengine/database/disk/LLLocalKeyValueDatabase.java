@@ -458,9 +458,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 
 		if (!databaseOptions.volumes().isEmpty()) {
-			options.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
+			int btmIndex = databaseOptions.volumes().size() - 1;
+			options.setCompressionType(databaseOptions.volumes().get(0).compression().getType());
 			options.setCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
-			options.setBottommostCompressionType(CompressionType.DISABLE_COMPRESSION_OPTION);
+			options.setBottommostCompressionType(databaseOptions.volumes().get(btmIndex).compression().getType());
+			options.setBottommostCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
+
+			options.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
 		} else {
 			options.setCompressionType(CompressionType.LZ4_COMPRESSION);
 			options.setCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));

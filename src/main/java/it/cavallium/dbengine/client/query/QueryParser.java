@@ -4,10 +4,16 @@ import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
 import it.cavallium.dbengine.client.query.current.data.BoostQuery;
 import it.cavallium.dbengine.client.query.current.data.BoxedQuery;
 import it.cavallium.dbengine.client.query.current.data.ConstantScoreQuery;
+import it.cavallium.dbengine.client.query.current.data.IntNDPointExactQuery;
+import it.cavallium.dbengine.client.query.current.data.IntNDPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.IntPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.IntPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.IntPointSetQuery;
+import it.cavallium.dbengine.client.query.current.data.LongNDPointExactQuery;
+import it.cavallium.dbengine.client.query.current.data.LongNDPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.LongPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.LongPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.LongPointSetQuery;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.PhraseQuery;
 import it.cavallium.dbengine.client.query.current.data.SortedDocFieldExistsQuery;
@@ -78,9 +84,23 @@ public class QueryParser {
 			case IntPointExactQuery:
 				var intPointExactQuery = (IntPointExactQuery) query;
 				return IntPoint.newExactQuery(intPointExactQuery.field(), intPointExactQuery.value());
+			case IntNDPointExactQuery:
+				var intndPointExactQuery = (IntNDPointExactQuery) query;
+				var intndValues = intndPointExactQuery.value().toIntArray();
+				return IntPoint.newRangeQuery(intndPointExactQuery.field(), intndValues, intndValues);
 			case LongPointExactQuery:
 				var longPointExactQuery = (LongPointExactQuery) query;
 				return LongPoint.newExactQuery(longPointExactQuery.field(), longPointExactQuery.value());
+			case LongNDPointExactQuery:
+				var longndPointExactQuery = (LongNDPointExactQuery) query;
+				var longndValues = longndPointExactQuery.value().toLongArray();
+				return LongPoint.newRangeQuery(longndPointExactQuery.field(), longndValues, longndValues);
+			case IntPointSetQuery:
+				var intPointSetQuery = (IntPointSetQuery) query;
+				return IntPoint.newSetQuery(intPointSetQuery.field(), intPointSetQuery.values().toIntArray());
+			case LongPointSetQuery:
+				var longPointSetQuery = (LongPointSetQuery) query;
+				return LongPoint.newSetQuery(longPointSetQuery.field(), longPointSetQuery.values().toLongArray());
 			case TermQuery:
 				var termQuery = (TermQuery) query;
 				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.term()));
@@ -106,11 +126,23 @@ public class QueryParser {
 						intPointRangeQuery.min(),
 						intPointRangeQuery.max()
 				);
+			case IntNDPointRangeQuery:
+				var intndPointRangeQuery = (IntNDPointRangeQuery) query;
+				return IntPoint.newRangeQuery(intndPointRangeQuery.field(),
+						intndPointRangeQuery.min().toIntArray(),
+						intndPointRangeQuery.max().toIntArray()
+				);
 			case LongPointRangeQuery:
 				var longPointRangeQuery = (LongPointRangeQuery) query;
 				return LongPoint.newRangeQuery(longPointRangeQuery.field(),
 						longPointRangeQuery.min(),
 						longPointRangeQuery.max()
+				);
+			case LongNDPointRangeQuery:
+				var longndPointRangeQuery = (LongNDPointRangeQuery) query;
+				return LongPoint.newRangeQuery(longndPointRangeQuery.field(),
+						longndPointRangeQuery.min().toLongArray(),
+						longndPointRangeQuery.max().toLongArray()
 				);
 			case MatchAllDocsQuery:
 				return new MatchAllDocsQuery();

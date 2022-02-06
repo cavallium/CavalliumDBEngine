@@ -45,12 +45,40 @@ public class LLItem {
 		this.data = Longs.toByteArray(data);
 	}
 
+	private LLItem(LLType type, String name, int... data) {
+		this.type = type;
+		this.name = name;
+		var ba = new byte[data.length * Integer.BYTES];
+		for (int i = 0; i < data.length; i++) {
+			System.arraycopy(Ints.toByteArray(data[i]), 0, ba, i * Integer.BYTES, Integer.BYTES);
+		}
+		this.data = ba;
+	}
+
+	private LLItem(LLType type, String name, long... data) {
+		this.type = type;
+		this.name = name;
+		var ba = new byte[data.length * Long.BYTES];
+		for (int i = 0; i < data.length; i++) {
+			System.arraycopy(Longs.toByteArray(data[i]), 0, ba, i * Long.BYTES, Long.BYTES);
+		}
+		this.data = ba;
+	}
+
 	public static LLItem newIntPoint(String name, int data) {
 		return new LLItem(LLType.IntPoint, name, data);
 	}
 
+	public static LLItem newIntPointND(String name, int... data) {
+		return new LLItem(LLType.IntPointND, name, data);
+	}
+
 	public static LLItem newLongPoint(String name, long data) {
 		return new LLItem(LLType.LongPoint, name, data);
+	}
+
+	public static LLItem newLongPointND(String name, long... data) {
+		return new LLItem(LLType.LongPointND, name, data);
 	}
 
 	public static LLItem newLongStoredField(String name, long data) {

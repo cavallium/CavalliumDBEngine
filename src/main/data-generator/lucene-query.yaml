@@ -11,8 +11,9 @@ versions:
       Query: [
           BoxedQuery, TermQuery, PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery,
           MatchNoDocsQuery, BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
-          ConstantScoreQuery, BoostQuery, IntPointRangeQuery, LongPointRangeQuery, IntPointExactQuery,
-          LongPointExactQuery, StandardQuery
+          ConstantScoreQuery, BoostQuery, IntPointRangeQuery, IntNDPointRangeQuery, LongPointRangeQuery,
+          LongNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, LongNDPointExactQuery,
+          IntPointSetQuery, LongPointSetQuery, StandardQuery
       ]
       Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
       Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
@@ -160,22 +161,54 @@ versions:
           field: String
           min: int
           max: int
+      # Query that matches an int point field, from "min", to "max"
+      IntNDPointRangeQuery:
+        data:
+          field: String
+          min: int[]
+          max: int[]
       # Query that matches a long point field, from "min", to "max"
       LongPointRangeQuery:
         data:
           field: String
           min: long
           max: long
+      # Query that matches a long point field, from "min", to "max"
+      LongNDPointRangeQuery:
+        data:
+          field: String
+          min: long[]
+          max: long[]
       # Query that matches an int point field
       IntPointExactQuery:
         data:
           field: String
           value: int
+      # Query that matches an int point field
+      IntNDPointExactQuery:
+        data:
+          field: String
+          value: int[]
       # Query that matches a long point field
       LongPointExactQuery:
         data:
           field: String
           value: long
+      # Query that matches a long point field
+      LongNDPointExactQuery:
+        data:
+          field: String
+          value: long[]
+      # Query that matches a set of int point field
+      IntPointSetQuery:
+        data:
+          field: String
+          values: int[]
+      # Query that matches a set of long point field
+      LongPointSetQuery:
+        data:
+          field: String
+          values: long[]
 
 
       # Extra data used for parameters and the client

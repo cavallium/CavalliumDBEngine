@@ -8,6 +8,8 @@ public enum LLType {
 	StringFieldStored,
 	IntPoint,
 	LongPoint,
+	IntPointND,
+	LongPointND,
 	LongStoredField,
 	FloatPoint,
 	NumericDocValuesField,

@@ -18,17 +18,12 @@ import io.net5.buffer.api.bytebuffer.ByteBufferMemoryManager;
 import io.net5.buffer.api.internal.Statics;
 import io.net5.buffer.api.unsafe.UnsafeMemoryManager;
 import io.net5.util.IllegalReferenceCountException;
-import io.net5.util.internal.PlatformDependent;
-import it.cavallium.dbengine.database.collections.DatabaseStage;
-import it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase;
-import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
-import it.cavallium.dbengine.lucene.collector.LMDBFullFieldDocCollector;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -40,7 +35,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
@@ -71,8 +65,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -212,7 +204,9 @@ public class LLUtils {
 	private static Field toField(LLItem item) {
 		return switch (item.getType()) {
 			case IntPoint -> new IntPoint(item.getName(), Ints.fromByteArray(item.getData()));
+			case IntPointND -> new IntPoint(item.getName(), getIntArray(item.getData()));
 			case LongPoint -> new LongPoint(item.getName(), Longs.fromByteArray(item.getData()));
+			case LongPointND -> new LongPoint(item.getName(), getLongArray(item.getData()));
 			case LongStoredField -> new StoredField(item.getName(), Longs.fromByteArray(item.getData()));
 			case FloatPoint -> new FloatPoint(item.getName(), ByteBuffer.wrap(item.getData()).getFloat());
 			case TextField -> new TextField(item.getName(), item.stringValue(), Field.Store.NO);
@@ -223,6 +217,38 @@ public class LLUtils {
 			case StringField -> new StringField(item.getName(), item.stringValue(), Field.Store.NO);
 			case StringFieldStored -> new StringField(item.getName(), item.stringValue(), Field.Store.YES);
 		};
+	}
+
+	@SuppressWarnings("ResultOfMethodCallIgnored")
+	private static int[] getIntArray(byte[] data) {
+		var count = data.length / Integer.BYTES;
+		var items = new int[count];
+		for (int i = 0; i < items.length; i++) {
+			items[i] = Ints.fromBytes(data[i * Integer.BYTES],
+					data[i * Integer.BYTES + 1],
+					data[i * Integer.BYTES + 2],
+					data[i * Integer.BYTES + 3]
+			);
+		}
+		return items;
+	}
+
+	@SuppressWarnings("ResultOfMethodCallIgnored")
+	private static long[] getLongArray(byte[] data) {
+		var count = data.length / Long.BYTES;
+		var items = new long[count];
+		for (int i = 0; i < items.length; i++) {
+			items[i] = Longs.fromBytes(data[i * Long.BYTES],
+					data[i * Long.BYTES + 1],
+					data[i * Long.BYTES + 2],
+					data[i * Long.BYTES + 3],
+					data[i * Long.BYTES + 4],
+					data[i * Long.BYTES + 5],
+					data[i * Long.BYTES + 6],
+					data[i * Long.BYTES + 7]
+			);
+		}
+		return items;
 	}
 
 	public static it.cavallium.dbengine.database.LLKeyScore toKeyScore(LLKeyScore hit) {

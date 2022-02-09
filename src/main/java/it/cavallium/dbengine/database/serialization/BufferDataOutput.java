@@ -98,9 +98,15 @@ public class BufferDataOutput implements DataOutput {
 	@Override
 	public void writeUTF(@NotNull String s) {
 		int sizeShortOffset = buf.writerOffset();
+		buf.ensureWritable(Short.BYTES + 1);
 		int stringOffset = sizeShortOffset + Short.BYTES;
 		buf.writerOffset(stringOffset);
-		buf.writeCharSequence(s, StandardCharsets.UTF_8);
+		// todo: replace with writeCharSequence when it will be optimized in netty 5
+		{
+			byte[] bytes = s.getBytes(StandardCharsets.UTF_8);
+			buf.ensureWritable(bytes.length);
+			buf.writeBytes(bytes);
+		}
 		int endOffset = buf.writerOffset();
 		int stringSize = endOffset - stringOffset;
 		buf.writerOffset(sizeShortOffset);

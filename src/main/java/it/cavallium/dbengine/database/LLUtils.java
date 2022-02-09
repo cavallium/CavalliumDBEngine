@@ -155,13 +155,7 @@ public class LLUtils {
 	}
 
 	public static Term toTerm(LLTerm term) {
-		var valueRef = new BytesRefBuilder() {
-			@Override
-			public BytesRef toBytesRef() {
-				byte[] data = term.getValue().getBytes(StandardCharsets.UTF_8);
-				return new BytesRef(data, 0, data.length);
-			}
-		};
+		var valueRef = new FakeBytesRefBuilder(term);
 		return new Term(term.getKey(), valueRef);
 	}
 
@@ -1050,6 +1044,21 @@ public class LLUtils {
 					onNextDropped(value);
 				}
 			});
+		}
+	}
+
+	private static class FakeBytesRefBuilder extends BytesRefBuilder {
+
+		private final LLTerm term;
+
+		public FakeBytesRefBuilder(LLTerm term) {
+			this.term = term;
+		}
+
+		@Override
+		public BytesRef toBytesRef() {
+			byte[] data = term.getValue().getBytes(StandardCharsets.UTF_8);
+			return new BytesRef(data, 0, data.length);
 		}
 	}
 }

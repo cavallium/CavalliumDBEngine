@@ -120,11 +120,8 @@ public class BufferDataInputOwned implements SafeCloseable, BufferDataInput {
 	@Override
 	public String readUTF() {
 		if (buf == null) throw new IndexOutOfBoundsException();
-		var len = buf.readUnsignedShort();
-		byte[] bytes = new byte[len];
-		buf.copyInto(buf.readerOffset(), bytes, 0, len);
-		buf.readerOffset(buf.readerOffset() + len);
-		return new String(bytes, StandardCharsets.UTF_8);
+		int len = buf.readUnsignedShort();
+		return buf.readCharSequence(len, StandardCharsets.UTF_8).toString();
 	}
 
 	@Override

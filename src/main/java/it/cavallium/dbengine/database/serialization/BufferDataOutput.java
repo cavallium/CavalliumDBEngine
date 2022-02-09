@@ -97,9 +97,19 @@ public class BufferDataOutput implements DataOutput {
 
 	@Override
 	public void writeUTF(@NotNull String s) {
-		var bytes = s.getBytes(StandardCharsets.UTF_8);
-		buf.ensureWritable(Short.BYTES + Byte.BYTES * bytes.length);
-		buf.writeUnsignedShort(bytes.length);
-		buf.writeBytes(bytes);
+		int sizeShortOffset = buf.writerOffset();
+		int stringOffset = sizeShortOffset + Short.BYTES;
+		buf.writerOffset(stringOffset);
+		buf.writeCharSequence(s, StandardCharsets.UTF_8);
+		int endOffset = buf.writerOffset();
+		int stringSize = endOffset - stringOffset;
+		buf.writerOffset(sizeShortOffset);
+		buf.writeUnsignedShort(stringSize);
+		if (stringSize > (1 << 16) - 1) {
+			buf.writerOffset(sizeShortOffset);
+			throw new IndexOutOfBoundsException("String too large: " + stringSize);
+		} else {
+			buf.writerOffset(endOffset);
+		}
 	}
 }

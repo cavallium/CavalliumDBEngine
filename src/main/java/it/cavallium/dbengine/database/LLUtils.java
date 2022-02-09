@@ -26,6 +26,7 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -58,6 +59,8 @@ import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSortField;
+import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDB;
@@ -152,7 +155,14 @@ public class LLUtils {
 	}
 
 	public static Term toTerm(LLTerm term) {
-		return new Term(term.getKey(), term.getValue());
+		var valueRef = new BytesRefBuilder() {
+			@Override
+			public BytesRef toBytesRef() {
+				byte[] data = term.getValue().getBytes(StandardCharsets.UTF_8);
+				return new BytesRef(data, 0, data.length);
+			}
+		};
+		return new Term(term.getKey(), valueRef);
 	}
 
 	public static Document toDocument(LLUpdateDocument document) {

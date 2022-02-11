@@ -128,21 +128,11 @@ public class LuceneGeneratorTest {
 	public void testDummies() throws IOException {
 		var query = new TermQuery(new Term("dummy", "dummy"));
 		int limit = Integer.MAX_VALUE;
+		var localQueryParams = new LocalQueryParams(query, 0, limit, pageLimits, null, null, Duration.ofDays(1));
 
 		var expectedResults = fixResults(List.of(is.search(query, limit).scoreDocs));
 
-		var limitThresholdChecker = CustomHitsThresholdChecker.create(limit);
-		var reactiveGenerator = LuceneGenerator.reactive(is,
-				new LocalQueryParams(query,
-						0,
-						limit,
-						pageLimits,
-						null,
-						null,
-						Duration.ofDays(1)
-				),
-				-1
-		);
+		var reactiveGenerator = LuceneGenerator.reactive(is, localQueryParams, -1);
 		var results = fixResults(reactiveGenerator.collectList().block());
 
 		Assertions.assertEquals(4, results.size());

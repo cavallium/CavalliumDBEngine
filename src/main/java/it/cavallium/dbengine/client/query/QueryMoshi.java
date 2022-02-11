@@ -11,6 +11,9 @@ import it.unimi.dsi.fastutil.chars.CharList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.longs.LongList;
+import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
+import it.unimi.dsi.fastutil.objects.Object2ObjectMaps;
+import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.shorts.ShortList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -54,7 +57,7 @@ public class QueryMoshi extends MoshiPolymorphic<IType> {
 
 		this.abstractClasses = abstractClasses;
 		this.concreteClasses = concreteClasses;
-		Map<Class<?>, JsonAdapter<?>> extraAdapters = new HashMap<>();
+		Object2ObjectMap<Class<?>, JsonAdapter<?>> extraAdapters = new Object2ObjectOpenHashMap<>();
 		extraAdapters.put(BooleanList.class, new BooleanListJsonAdapter());
 		extraAdapters.put(ByteList.class, new ByteListJsonAdapter());
 		extraAdapters.put(ShortList.class, new ShortListJsonAdapter());
@@ -62,7 +65,7 @@ public class QueryMoshi extends MoshiPolymorphic<IType> {
 		extraAdapters.put(IntList.class, new IntListJsonAdapter());
 		extraAdapters.put(LongList.class, new LongListJsonAdapter());
 		extraAdapters.put(IntOpenHashSet.class, new IntOpenHashSetJsonAdapter());
-		this.extraAdapters = Collections.unmodifiableMap(extraAdapters);
+		this.extraAdapters = Object2ObjectMaps.unmodifiable(extraAdapters);
 	}
 
 	@Override

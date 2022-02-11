@@ -1,11 +1,9 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
-import org.apache.lucene.search.CustomHitsThresholdChecker;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 
@@ -14,17 +12,14 @@ public class LuceneMultiGenerator implements Supplier<ScoreDoc> {
 	private final Iterator<Supplier<ScoreDoc>> generators;
 	private Supplier<ScoreDoc> luceneGenerator;
 
-	public LuceneMultiGenerator(List<IndexSearcher> shards,
-			LocalQueryParams localQueryParams,
-			CustomHitsThresholdChecker hitsThresholdChecker) {
+	public LuceneMultiGenerator(List<IndexSearcher> shards, LocalQueryParams localQueryParams) {
 		this.generators = IntStream
 				.range(0, shards.size())
 				.mapToObj(shardIndex -> {
 					IndexSearcher shard = shards.get(shardIndex);
 					return (Supplier<ScoreDoc>) new LuceneGenerator(shard,
 							localQueryParams,
-							shardIndex,
-							hitsThresholdChecker
+							shardIndex
 					);
 				})
 				.iterator();

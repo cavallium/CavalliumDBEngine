@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;
-import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import it.unimi.dsi.fastutil.longs.LongList;
 import java.io.IOException;
 import java.time.Duration;
@@ -67,11 +66,10 @@ public class LuceneGeneratorTest {
 						limit,
 						pageLimits,
 						null,
-						true,
+						null,
 						Duration.ofDays(1)
 				),
-				-1,
-				limitThresholdChecker
+				-1
 		);
 		var results = fixResults(reactiveGenerator.collectList().block());
 
@@ -92,12 +90,11 @@ public class LuceneGeneratorTest {
 						0L,
 						0,
 						pageLimits,
-						Sort.RELEVANCE,
-						true,
+						null,
+						null,
 						Duration.ofDays(1)
 				),
-				-1,
-				limitThresholdChecker
+				-1
 		);
 		var results = reactiveGenerator.collectList().block();
 
@@ -116,11 +113,10 @@ public class LuceneGeneratorTest {
 						limit,
 						pageLimits,
 						null,
-						true,
+						null,
 						Duration.ofDays(1)
 				),
-				-1,
-				limitThresholdChecker
+				-1
 		);
 		var results = reactiveGenerator.collectList().block();
 
@@ -142,11 +138,10 @@ public class LuceneGeneratorTest {
 						limit,
 						pageLimits,
 						null,
-						true,
+						null,
 						Duration.ofDays(1)
 				),
-				-1,
-				limitThresholdChecker
+				-1
 		);
 		var results = fixResults(reactiveGenerator.collectList().block());
 

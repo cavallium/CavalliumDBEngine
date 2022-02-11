@@ -64,7 +64,7 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 			return Flux.fromIterable(shards).index().flatMap(tuple -> {
 				var shardIndex = (int) (long) tuple.getT1();
 				var shard = tuple.getT2();
-				return LuceneGenerator.reactive(shard, localQueryParams, shardIndex, hitsThreshold);
+				return LuceneGenerator.reactive(shard, localQueryParams, shardIndex);
 			});
 		});
 	}

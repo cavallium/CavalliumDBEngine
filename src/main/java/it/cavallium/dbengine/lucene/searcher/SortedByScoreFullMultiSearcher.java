@@ -85,7 +85,8 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 
 							var collector = sharedManager.newCollector();
 							try {
-								assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
+								assert queryParams.computePreciseHitsCount() == null ||
+										queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
 
 								shard.search(queryParams.query(), collector);
 								return collector;

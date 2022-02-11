@@ -33,7 +33,6 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 	private final Iterator<LeafReaderContext> leavesIterator;
 	private final boolean computeScores;
 	private final CustomHitsThresholdChecker hitsThresholdChecker;
-	private final MaxScoreAccumulator minScoreAcc;
 	private final @Nullable Long limit;
 
 	private long remainingOffset;
@@ -48,8 +47,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 	LuceneGenerator(IndexSearcher shard,
 			LocalQueryParams localQueryParams,
 			int shardIndex,
-			CustomHitsThresholdChecker hitsThresholdChecker,
-			MaxScoreAccumulator minScoreAcc) {
+			CustomHitsThresholdChecker hitsThresholdChecker) {
 		this.shard = shard;
 		this.shardIndex = shardIndex;
 		this.query = localQueryParams.query();
@@ -59,20 +57,20 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		List<LeafReaderContext> leaves = shard.getTopReaderContext().leaves();
 		this.leavesIterator = leaves.iterator();
 		this.hitsThresholdChecker = hitsThresholdChecker;
-		this.minScoreAcc = minScoreAcc;
 	}
 
 	public static Flux<ScoreDoc> reactive(IndexSearcher shard,
 			LocalQueryParams localQueryParams,
 			int shardIndex,
-			CustomHitsThresholdChecker hitsThresholdChecker,
-			MaxScoreAccumulator minScoreAcc) {
+			CustomHitsThresholdChecker hitsThresholdChecker) {
+		if (localQueryParams.sort() != null) {
+			return Flux.error(new IllegalArgumentException("Sorting is not allowed"));
+		}
 		return Flux
 				.<ScoreDoc, LuceneGenerator>generate(() -> new LuceneGenerator(shard,
 								localQueryParams,
 								shardIndex,
-								hitsThresholdChecker,
-								minScoreAcc
+								hitsThresholdChecker
 						),
 						(s, sink) -> {
 							ScoreDoc val = s.get();
@@ -92,7 +90,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		while (remainingOffset > 0) {
 			skipNext();
 		}
-		if ((limit != null && totalHits > limit) || hitsThresholdChecker.isThresholdReached(true)) {
+		if ((limit != null && totalHits >= limit) || hitsThresholdChecker.isThresholdReached(true)) {
 			return null;
 		}
 		return getNext();
@@ -142,10 +140,6 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 				totalHits++;
 				hitsThresholdChecker.incrementHitCount();
 
-				if (minScoreAcc != null && (totalHits & minScoreAcc.modInterval) == 0) {
-					updateGlobalMinCompetitiveScore(scorer);
-				}
-
 				return transformDoc(doc);
 			}
 			docIdSetIterator = null;
@@ -166,9 +160,6 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 			this.scorer = scorer;
 			this.leaf = leaf;
 			this.docIdSetIterator = scorer.iterator();
-			if (minScoreAcc != null) {
-				updateGlobalMinCompetitiveScore(scorer);
-			}
 			return true;
 		}
 		return false;
@@ -183,23 +174,6 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 			return false;
 		}
 		return !liveDocs.get(doc);
-	}
-
-	protected void updateGlobalMinCompetitiveScore(Scorable scorer) throws IOException {
-		assert minScoreAcc != null;
-		DocAndScore maxMinScore = minScoreAcc.get();
-		if (maxMinScore != null) {
-			// since we tie-break on doc id and collect in doc id order we can require
-			// the next float if the global minimum score is set on a document id that is
-			// smaller than the ids in the current leaf
-			float score =
-					leaf.docBase >= maxMinScore.docBase ? Math.nextUp(maxMinScore.score) : maxMinScore.score;
-			if (score > minCompetitiveScore) {
-				assert hitsThresholdChecker.isThresholdReached(true);
-				scorer.setMinCompetitiveScore(score);
-				minCompetitiveScore = score;
-			}
-		}
 	}
 
 	private void clearState() {

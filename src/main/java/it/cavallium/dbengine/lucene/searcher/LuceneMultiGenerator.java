@@ -16,8 +16,7 @@ public class LuceneMultiGenerator implements Supplier<ScoreDoc> {
 
 	public LuceneMultiGenerator(List<IndexSearcher> shards,
 			LocalQueryParams localQueryParams,
-			CustomHitsThresholdChecker hitsThresholdChecker,
-			MaxScoreAccumulator minScoreAcc) {
+			CustomHitsThresholdChecker hitsThresholdChecker) {
 		this.generators = IntStream
 				.range(0, shards.size())
 				.mapToObj(shardIndex -> {
@@ -25,8 +24,7 @@ public class LuceneMultiGenerator implements Supplier<ScoreDoc> {
 					return (Supplier<ScoreDoc>) new LuceneGenerator(shard,
 							localQueryParams,
 							shardIndex,
-							hitsThresholdChecker,
-							minScoreAcc
+							hitsThresholdChecker
 					);
 				})
 				.iterator();

@@ -157,7 +157,7 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-      <version>1.7.32</version>
+      <version>1.7.35</version>
     </dependency>
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
@@ -212,6 +212,11 @@
     <dependency>
       <groupId>org.apache.lucene</groupId>
       <artifactId>lucene-facet</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.lucene</groupId>
+      <artifactId>lucene-test-framework</artifactId>
+      <scope>test</scope>
     </dependency>
     <dependency>
       <groupId>org.jetbrains</groupId>
@@ -392,6 +397,11 @@
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-facet</artifactId>
+        <version>9.0.0</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.lucene</groupId>
+        <artifactId>lucene-test-framework</artifactId>
         <version>9.0.0</version>
       </dependency>
       <dependency>

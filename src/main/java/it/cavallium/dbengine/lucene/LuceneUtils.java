@@ -441,12 +441,12 @@ public class LuceneUtils {
 		return result;
 	}
 
-	public static int totalHitsThreshold(boolean complete) {
-		return complete ? Integer.MAX_VALUE : 1;
+	public static int totalHitsThreshold(@Nullable Boolean complete) {
+		return complete == null || complete ? Integer.MAX_VALUE : 1;
 	}
 
-	public static long totalHitsThresholdLong(boolean complete) {
-		return complete ? Long.MAX_VALUE : 1;
+	public static long totalHitsThresholdLong(@Nullable Boolean complete) {
+		return complete == null || complete ? Long.MAX_VALUE : 1;
 	}
 
 	public static TotalHitsCount convertTotalHitsCount(TotalHits totalHits) {

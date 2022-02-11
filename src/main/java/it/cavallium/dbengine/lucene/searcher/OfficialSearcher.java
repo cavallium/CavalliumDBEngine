@@ -80,7 +80,8 @@ public class OfficialSearcher implements MultiSearcher {
 							LLUtils.ensureBlocking();
 
 							var collector = sharedManager.newCollector();
-							assert queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive();
+							assert queryParams.computePreciseHitsCount() == null
+									|| (queryParams.computePreciseHitsCount() == collector.scoreMode().isExhaustive());
 
 							shard.search(queryParams.query(), LuceneUtils.withTimeout(collector, queryParams.timeout()));
 							return collector;

@@ -12,15 +12,28 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetLong, int limitInt, long limitLong,
-															 @NotNull PageLimits pageLimits, @Nullable Sort sort, boolean computePreciseHitsCount,
-															 Duration timeout) {
+															 @NotNull PageLimits pageLimits, @Nullable Sort sort,
+															 @Nullable Boolean computePreciseHitsCount, Duration timeout) {
 
+	public LocalQueryParams {
+		if ((sort == null) != (computePreciseHitsCount == null)) {
+			if (sort == null) {
+				throw new IllegalArgumentException("If computePreciseHitsCount is set, sort must be set");
+			} else {
+				throw new IllegalArgumentException("If sort is set, computePreciseHitsCount must be set");
+			}
+		}
+	}
+
+	/**
+	 * Sorted params with long offsets
+	 */
 	public LocalQueryParams(@NotNull Query query,
 			long offsetLong,
 			long limitLong,
 			@NotNull PageLimits pageLimits,
 			@Nullable Sort sort,
-			boolean computePreciseHitsCount,
+			@Nullable Boolean computePreciseHitsCount,
 			Duration timeout) {
 		this(query,
 				safeLongToInt(offsetLong),
@@ -34,6 +47,9 @@ public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetL
 		);
 	}
 
+	/**
+	 * Sorted params with int offsets
+	 */
 	public LocalQueryParams(@NotNull Query query,
 			int offsetInt,
 			int limitInt,
@@ -42,6 +58,38 @@ public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetL
 			boolean computePreciseHitsCount,
 			Duration timeout) {
 		this(query, offsetInt, offsetInt, limitInt, limitInt, pageLimits, sort, computePreciseHitsCount, timeout);
+	}
+
+	/**
+	 * Unsorted params with int offsets
+	 */
+	public LocalQueryParams(@NotNull Query query,
+			int offsetInt,
+			int limitInt,
+			@NotNull PageLimits pageLimits,
+			Duration timeout) {
+		this(query, offsetInt, offsetInt, limitInt, limitInt, pageLimits, null, null, timeout);
+	}
+
+
+	/**
+	 * Unsorted params with long offsets
+	 */
+	public LocalQueryParams(@NotNull Query query,
+			long offsetLong,
+			long limitLong,
+			@NotNull PageLimits pageLimits,
+			Duration timeout) {
+		this(query,
+				safeLongToInt(offsetLong),
+				offsetLong,
+				safeLongToInt(limitLong),
+				limitLong,
+				pageLimits,
+				null,
+				null,
+				timeout
+		);
 	}
 
 	public boolean isSorted() {

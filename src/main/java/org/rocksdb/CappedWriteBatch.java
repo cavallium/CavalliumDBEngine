@@ -172,12 +172,7 @@ public class CappedWriteBatch extends WriteBatch {
 		ByteBuffer keyNioBuffer;
 		if (USE_FAST_DIRECT_BUFFERS && (keyNioBuffer = asReadOnlyDirect(key)) != null) {
 			buffersToRelease.add(key);
-			removeDirect(nativeHandle_,
-					keyNioBuffer,
-					keyNioBuffer.position(),
-					keyNioBuffer.remaining(),
-					columnFamilyHandle.nativeHandle_
-			);
+			remove(columnFamilyHandle, keyNioBuffer);
 		} else {
 			try {
 				super.delete(columnFamilyHandle, LLUtils.toArray(key));

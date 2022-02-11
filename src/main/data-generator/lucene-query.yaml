@@ -220,7 +220,6 @@ versions:
           query: Query
           offset: long
           limit: long
-          minCompetitiveScore: -float
           sort: Sort
           computePreciseHitsCount: boolean
           timeoutMilliseconds: long

@@ -13,11 +13,10 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 @RecordBuilder
-public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
+public record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 																			@NotNull Query query,
 																			long offset,
 																			long limit,
-																			@Nullable Float minCompetitiveScore,
 																			@Nullable Sort sort,
 																			boolean computePreciseHitsCount,
 																			@NotNull Duration timeout) {
@@ -28,7 +27,6 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.snapshot(null)
 				.offset(0)
 				.limit(Long.MAX_VALUE)
-				.minCompetitiveScore(null)
 				.sort(null)
 				// Default timeout: 4 minutes
 				.timeout(Duration.ofMinutes(4))
@@ -44,7 +42,6 @@ public final record ClientQueryParams(@Nullable CompositeSnapshot snapshot,
 				.builder()
 				.query(query())
 				.sort(sort != null ? sort.querySort() : new NoSort())
-				.minCompetitiveScore(Nullablefloat.ofNullable(minCompetitiveScore()))
 				.offset(offset())
 				.limit(limit())
 				.computePreciseHitsCount(computePreciseHitsCount())

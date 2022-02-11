@@ -8,7 +8,9 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
+import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import java.util.List;
+import org.apache.lucene.search.CustomHitsThresholdChecker;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import reactor.core.publisher.Flux;
@@ -56,15 +58,15 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	}
 
 	private Flux<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {
-		return Flux
-				.fromIterable(shards)
-				.index()
-				.flatMap(tuple -> {
-					var shardIndex = (int) (long) tuple.getT1();
-					var shard = tuple.getT2();
-					return LuceneGenerator.reactive(shard, localQueryParams, shardIndex);
-				});
-
+		return Flux.defer(() -> {
+			var hitsThreshold = CustomHitsThresholdChecker.createShared(localQueryParams.getTotalHitsThresholdLong());
+			MaxScoreAccumulator maxScoreAccumulator = new MaxScoreAccumulator();
+			return Flux.fromIterable(shards).index().flatMap(tuple -> {
+				var shardIndex = (int) (long) tuple.getT1();
+				var shard = tuple.getT2();
+				return LuceneGenerator.reactive(shard, localQueryParams, shardIndex, hitsThreshold, maxScoreAccumulator);
+			});
+		});
 	}
 
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
@@ -72,7 +74,6 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 				0L,
 				queryParams.offsetLong() + queryParams.limitLong(),
 				queryParams.pageLimits(),
-				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
 				queryParams.computePreciseHitsCount(),
 				queryParams.timeout()

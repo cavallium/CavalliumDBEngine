@@ -3,7 +3,6 @@ package it.cavallium.dbengine.lucene;
 import static org.apache.lucene.search.SortField.STRING_LAST;
 
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.comparators.DocComparator;
 import it.cavallium.dbengine.lucene.comparators.DoubleComparator;
 import it.cavallium.dbengine.lucene.comparators.FloatComparator;
 import it.cavallium.dbengine.lucene.comparators.IntComparator;
@@ -19,7 +18,7 @@ import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSelector;
-import org.apache.lucene.search.SortedNumericSortField;
+import org.apache.lucene.search.comparators.LMDBDocComparator;
 
 public class LMDBComparator {
 
@@ -94,7 +93,7 @@ public class LMDBComparator {
 			var comparatorSource = sortField.getComparatorSource();
 			return switch (sortField.getType()) {
 				case SCORE -> new RelevanceComparator(env, numHits);
-				case DOC -> new DocComparator(env, numHits, reverse, sortPos);
+				case DOC -> new LMDBDocComparator(env, numHits, reverse, sortPos);
 				case INT -> new IntComparator(env, numHits, field, (Integer) missingValue,
 						reverse, sortPos);
 				case FLOAT -> new FloatComparator(env, numHits, field, (Float) missingValue,

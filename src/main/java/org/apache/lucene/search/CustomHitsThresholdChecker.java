@@ -15,15 +15,14 @@
  * limitations under the License.
  */
 
-package it.cavallium.dbengine.lucene.collector;
+package org.apache.lucene.search;
 
 import java.util.concurrent.atomic.AtomicLong;
-import org.apache.lucene.search.ScoreMode;
 
 /** Used for defining custom algorithms to allow searches to early terminate */
-abstract class HitsThresholdChecker {
-	/** Implementation of HitsThresholdChecker which allows global hit counting */
-	private static class GlobalHitsThresholdChecker extends HitsThresholdChecker {
+public abstract class CustomHitsThresholdChecker {
+	/** Implementation of CustomHitsThresholdChecker which allows global hit counting */
+	private static class GlobalHitsThresholdChecker extends CustomHitsThresholdChecker {
 		private final long totalHitsThreshold;
 		private final AtomicLong globalHitCount;
 
@@ -70,8 +69,8 @@ abstract class HitsThresholdChecker {
 		}
 	}
 
-	/** Default implementation of HitsThresholdChecker to be used for single threaded execution */
-	private static class LocalHitsThresholdChecker extends HitsThresholdChecker {
+	/** Default implementation of CustomHitsThresholdChecker to be used for single threaded execution */
+	private static class LocalHitsThresholdChecker extends CustomHitsThresholdChecker {
 		private final long totalHitsThreshold;
 		private long hitCount;
 
@@ -120,14 +119,14 @@ abstract class HitsThresholdChecker {
 	/*
 	 * Returns a threshold checker that is useful for single threaded searches
 	 */
-	public static HitsThresholdChecker create(final long totalHitsThreshold) {
+	public static CustomHitsThresholdChecker create(final long totalHitsThreshold) {
 		return new LocalHitsThresholdChecker(totalHitsThreshold);
 	}
 
 	/*
 	 * Returns a threshold checker that is based on a shared counter
 	 */
-	public static HitsThresholdChecker createShared(final long totalHitsThreshold) {
+	public static CustomHitsThresholdChecker createShared(final long totalHitsThreshold) {
 		return new GlobalHitsThresholdChecker(totalHitsThreshold);
 	}
 

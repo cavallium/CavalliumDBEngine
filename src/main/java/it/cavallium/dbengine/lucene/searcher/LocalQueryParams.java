@@ -12,40 +12,36 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetLong, int limitInt, long limitLong,
-															 @NotNull PageLimits pageLimits, @Nullable Float minCompetitiveScore, @Nullable Sort sort,
-															 boolean computePreciseHitsCount, Duration timeout) {
+															 @NotNull PageLimits pageLimits, @Nullable Sort sort, boolean computePreciseHitsCount,
+															 Duration timeout) {
 
 	public LocalQueryParams(@NotNull Query query,
 			long offsetLong,
 			long limitLong,
 			@NotNull PageLimits pageLimits,
-			@Nullable Float minCompetitiveScore,
 			@Nullable Sort sort,
 			boolean computePreciseHitsCount,
 			Duration timeout) {
-		this(query, safeLongToInt(offsetLong), offsetLong, safeLongToInt(limitLong), limitLong, pageLimits,
-				minCompetitiveScore, sort, computePreciseHitsCount, timeout);
+		this(query,
+				safeLongToInt(offsetLong),
+				offsetLong,
+				safeLongToInt(limitLong),
+				limitLong,
+				pageLimits,
+				sort,
+				computePreciseHitsCount,
+				timeout
+		);
 	}
 
 	public LocalQueryParams(@NotNull Query query,
 			int offsetInt,
 			int limitInt,
 			@NotNull PageLimits pageLimits,
-			@Nullable Float minCompetitiveScore,
 			@Nullable Sort sort,
 			boolean computePreciseHitsCount,
 			Duration timeout) {
-		this(query,
-				offsetInt,
-				offsetInt,
-				limitInt,
-				limitInt,
-				pageLimits,
-				minCompetitiveScore,
-				sort,
-				computePreciseHitsCount,
-				timeout
-		);
+		this(query, offsetInt, offsetInt, limitInt, limitInt, pageLimits, sort, computePreciseHitsCount, timeout);
 	}
 
 	public boolean isSorted() {

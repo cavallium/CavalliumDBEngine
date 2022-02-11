@@ -14,28 +14,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package it.cavallium.dbengine.lucene.collector;
+package org.apache.lucene.search;
 
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.LLScoreDocCodec;
 import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import it.cavallium.dbengine.lucene.ResourceIterable;
+import it.cavallium.dbengine.lucene.collector.FullDocsCollector;
 import java.io.IOException;
 import java.util.Collection;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.CollectorManager;
-import org.apache.lucene.search.IndexSearcher;
-import org.apache.lucene.search.LeafCollector;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator.DocAndScore;
-import org.apache.lucene.search.Scorable;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.TotalHits;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -53,7 +45,8 @@ import org.jetbrains.annotations.Nullable;
  * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/TopScoreDocCollector.java">
  *   Lucene TopScoreDocCollector changes on GitHub</a>
  */
-public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPriorityQueue<LLScoreDoc>, LLScoreDoc, LLScoreDoc> {
+public abstract class LMDBFullScoreDocCollector extends
+		FullDocsCollector<LMDBPriorityQueue<LLScoreDoc>, LLScoreDoc, LLScoreDoc> {
 
 	/** Scorable leaf collector */
 	public abstract static class ScorerLeafCollector implements LeafCollector {
@@ -69,7 +62,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 	private static class SimpleLMDBFullScoreDocCollector extends LMDBFullScoreDocCollector {
 
 		SimpleLMDBFullScoreDocCollector(LLTempLMDBEnv env, @Nullable Long limit,
-				HitsThresholdChecker hitsThresholdChecker, MaxScoreAccumulator minScoreAcc) {
+				CustomHitsThresholdChecker hitsThresholdChecker, MaxScoreAccumulator minScoreAcc) {
 			super(env, limit, hitsThresholdChecker, minScoreAcc);
 		}
 
@@ -153,7 +146,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 	 * <code>numHits</code>, and fill the array with sentinel objects.
 	 */
 	public static LMDBFullScoreDocCollector create(LLTempLMDBEnv env, long numHits, int totalHitsThreshold) {
-		return create(env, numHits, HitsThresholdChecker.create(totalHitsThreshold), null);
+		return create(env, numHits, CustomHitsThresholdChecker.create(totalHitsThreshold), null);
 	}
 
 	/**
@@ -163,12 +156,12 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 	 * but will also likely make query processing slower.
 	 */
 	public static LMDBFullScoreDocCollector create(LLTempLMDBEnv env, int totalHitsThreshold) {
-		return create(env, HitsThresholdChecker.create(totalHitsThreshold), null);
+		return create(env, CustomHitsThresholdChecker.create(totalHitsThreshold), null);
 	}
 
 	static LMDBFullScoreDocCollector create(
 			LLTempLMDBEnv env,
-			HitsThresholdChecker hitsThresholdChecker,
+			CustomHitsThresholdChecker hitsThresholdChecker,
 			MaxScoreAccumulator minScoreAcc) {
 
 		if (hitsThresholdChecker == null) {
@@ -181,7 +174,7 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 	static LMDBFullScoreDocCollector create(
 			LLTempLMDBEnv env,
 			@NotNull Long numHits,
-			HitsThresholdChecker hitsThresholdChecker,
+			CustomHitsThresholdChecker hitsThresholdChecker,
 			MaxScoreAccumulator minScoreAcc) {
 
 		if (hitsThresholdChecker == null) {
@@ -205,8 +198,8 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 			long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
-			private final HitsThresholdChecker hitsThresholdChecker =
-					HitsThresholdChecker.createShared(totalHitsThreshold);
+			private final CustomHitsThresholdChecker hitsThresholdChecker =
+					CustomHitsThresholdChecker.createShared(totalHitsThreshold);
 			private final MaxScoreAccumulator minScoreAcc = new MaxScoreAccumulator();
 
 			@Override
@@ -230,8 +223,8 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 			long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
-			private final HitsThresholdChecker hitsThresholdChecker =
-					HitsThresholdChecker.createShared(totalHitsThreshold);
+			private final CustomHitsThresholdChecker hitsThresholdChecker =
+					CustomHitsThresholdChecker.createShared(totalHitsThreshold);
 			private final MaxScoreAccumulator minScoreAcc = new MaxScoreAccumulator();
 
 			@Override
@@ -258,13 +251,13 @@ public abstract class LMDBFullScoreDocCollector extends FullDocsCollector<LMDBPr
 
 	int docBase;
 	final @Nullable Long limit;
-	final HitsThresholdChecker hitsThresholdChecker;
+	final CustomHitsThresholdChecker hitsThresholdChecker;
 	final MaxScoreAccumulator minScoreAcc;
 	float minCompetitiveScore;
 
 	// prevents instantiation
 	LMDBFullScoreDocCollector(LLTempLMDBEnv env, @Nullable Long limit,
-			HitsThresholdChecker hitsThresholdChecker, MaxScoreAccumulator minScoreAcc) {
+			CustomHitsThresholdChecker hitsThresholdChecker, MaxScoreAccumulator minScoreAcc) {
 		super(new LMDBPriorityQueue<>(env, new LLScoreDocCodec()));
 		assert hitsThresholdChecker != null;
 		this.limit = limit;

@@ -336,7 +336,6 @@ public class LuceneUtils {
 				queryParams.offset(),
 				queryParams.limit(),
 				DEFAULT_PAGE_LIMITS,
-				queryParams.minCompetitiveScore().getNullable(),
 				QueryParser.toSort(queryParams.sort()),
 				queryParams.computePreciseHitsCount(),
 				Duration.ofMillis(queryParams.timeoutMilliseconds())

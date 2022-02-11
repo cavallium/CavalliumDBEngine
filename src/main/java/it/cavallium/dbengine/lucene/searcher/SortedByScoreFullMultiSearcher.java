@@ -10,7 +10,7 @@ import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
-import it.cavallium.dbengine.lucene.collector.LMDBFullScoreDocCollector;
+import org.apache.lucene.search.LMDBFullScoreDocCollector;
 import java.io.IOException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

@@ -1,9 +1,5 @@
 package it.cavallium.dbengine.lucene.collector;
 
-import com.google.common.cache.Cache;
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -12,8 +8,6 @@ import java.util.List;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.lucene.facet.FacetResult;
 import org.apache.lucene.facet.Facets;
-import org.apache.lucene.facet.FacetsCollector;
-import org.apache.lucene.facet.FacetsCollectorManager;
 import org.apache.lucene.facet.FacetsConfig;
 import org.apache.lucene.facet.LabelAndValue;
 import org.apache.lucene.facet.RandomSamplingFacetsCollector;
@@ -24,8 +18,6 @@ import org.apache.lucene.facet.range.LongRangeFacetCounts;
 import org.apache.lucene.facet.range.Range;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
-import org.apache.lucene.search.CachingCollector;
-import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.DoubleValuesSource;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LongValuesSource;
@@ -157,12 +149,12 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			Facets facets;
 			if (USE_LONGS) {
 				LongValuesSource valuesSource;
-				if (bucketValueSource instanceof NullValueSource) {
+				if (bucketValueSource instanceof BucketValueSource.NullValueSource) {
 
 					valuesSource = null;
-				} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.ConstantValueSource constantValueSource) {
 					valuesSource = LongValuesSource.constant(constantValueSource.constant().longValue());
-				} else if (bucketValueSource instanceof LongBucketValueSource longBucketValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.LongBucketValueSource longBucketValueSource) {
 					valuesSource = longBucketValueSource.source();
 				} else {
 					throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
@@ -175,11 +167,11 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 				);
 			} else {
 				DoubleValuesSource valuesSource;
-				if (bucketValueSource instanceof NullValueSource) {
+				if (bucketValueSource instanceof BucketValueSource.NullValueSource) {
 					valuesSource = null;
-				} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.ConstantValueSource constantValueSource) {
 					valuesSource = DoubleValuesSource.constant(constantValueSource.constant().longValue());
-				} else if (bucketValueSource instanceof DoubleBucketValueSource doubleBucketValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.DoubleBucketValueSource doubleBucketValueSource) {
 					valuesSource = doubleBucketValueSource.source();
 				} else {
 					throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
@@ -219,11 +211,11 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 			}
 			if (USE_LONGS) {
 				LongValuesSource valuesSource;
-				if (bucketValueSource instanceof NullValueSource) {
+				if (bucketValueSource instanceof BucketValueSource.NullValueSource) {
 					valuesSource = null;
-				} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.ConstantValueSource constantValueSource) {
 					valuesSource = LongValuesSource.constant(constantValueSource.constant().longValue());
-				} else if (bucketValueSource instanceof LongBucketValueSource longBucketValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.LongBucketValueSource longBucketValueSource) {
 					valuesSource = longBucketValueSource.source();
 				} else {
 					throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);
@@ -236,11 +228,11 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 				);
 			} else {
 				DoubleValuesSource valuesSource;
-				if (bucketValueSource instanceof NullValueSource) {
+				if (bucketValueSource instanceof BucketValueSource.NullValueSource) {
 					valuesSource = null;
-				} else if (bucketValueSource instanceof ConstantValueSource constantValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.ConstantValueSource constantValueSource) {
 					valuesSource = DoubleValuesSource.constant(constantValueSource.constant().longValue());
-				} else if (bucketValueSource instanceof DoubleBucketValueSource doubleBucketValueSource) {
+				} else if (bucketValueSource instanceof BucketValueSource.DoubleBucketValueSource doubleBucketValueSource) {
 					valuesSource = doubleBucketValueSource.source();
 				} else {
 					throw new IllegalArgumentException("Wrong value source type: " + bucketValueSource);

@@ -28,6 +28,7 @@ import java.io.IOException;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.LeafFieldComparator;
+import org.apache.lucene.search.comparators.NumericComparator;
 
 /**
  * Comparator based on {@link Integer#compare} for {@code numHits}. This comparator provides a

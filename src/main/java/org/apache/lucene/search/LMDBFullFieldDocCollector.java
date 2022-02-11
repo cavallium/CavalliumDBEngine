@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package it.cavallium.dbengine.lucene.collector;
+package org.apache.lucene.search;
 
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
@@ -27,23 +27,12 @@ import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import it.cavallium.dbengine.lucene.PriorityQueue;
 import it.cavallium.dbengine.lucene.ResourceIterable;
-import java.io.Closeable;
+import it.cavallium.dbengine.lucene.collector.FullDocsCollector;
+import it.cavallium.dbengine.lucene.collector.FullFieldDocs;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.CollectionTerminatedException;
-import org.apache.lucene.search.CollectorManager;
-import org.apache.lucene.search.DocIdSetIterator;
-import org.apache.lucene.search.FieldComparator;
-import org.apache.lucene.search.LeafCollector;
-import org.apache.lucene.search.LeafFieldComparator;
-import it.cavallium.dbengine.lucene.comparators.MultiLeafFieldComparator;
-import org.apache.lucene.search.Scorable;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.SortField;
-import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.TotalHits.Relation;
 import reactor.core.publisher.Flux;
 
@@ -57,7 +46,8 @@ import reactor.core.publisher.Flux;
  * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/TopFieldCollector.java">
  *   Lucene TopFieldCollector changes on GitHub</a>
  */
-public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
+public abstract class LMDBFullFieldDocCollector extends
+		FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
 
 	// TODO: one optimization we could do is to pre-fill
 	// the queue with sentinel value that guaranteed to
@@ -71,10 +61,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 		Scorable scorer;
 		boolean collectedAllCompetitiveHits = false;
 
-		TopFieldLeafCollector(PriorityQueue<LLSlotDoc> queue,
-				FieldValueHitQueue fieldValueHitQueue,
-				Sort sort,
-				LeafReaderContext context)
+		TopFieldLeafCollector(FieldValueHitQueue fieldValueHitQueue, Sort sort, LeafReaderContext context)
 				throws IOException {
 			// as all segments are sorted in the same way, enough to check only the 1st segment for
 			// indexSort
@@ -103,9 +90,9 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 			if (minScoreAcc != null && (totalHits & minScoreAcc.modInterval) == 0) {
 				updateGlobalMinCompetitiveScore(scorer);
 			}
-			if (scoreMode.isExhaustive() == false
+			if (!scoreMode.isExhaustive()
 					&& totalHitsRelation == TotalHits.Relation.EQUAL_TO
-					&& hitsThresholdChecker.isThresholdReached(false)) {
+					&& hitsThresholdChecker.isThresholdReached()) {
 				// for the first time hitsThreshold is reached, notify comparator about this
 				comparator.setHitsThresholdReached();
 				totalHitsRelation = TotalHits.Relation.GREATER_THAN_OR_EQUAL_TO;
@@ -118,7 +105,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 				// this document is largest than anything else in the queue, and
 				// therefore not competitive.
 				if (searchSortPartOfIndexSort) {
-					if (hitsThresholdChecker.isThresholdReached(false)) {
+					if (hitsThresholdChecker.isThresholdReached()) {
 						totalHitsRelation = Relation.GREATER_THAN_OR_EQUAL_TO;
 						throw new CollectionTerminatedException();
 					} else {
@@ -220,7 +207,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 		public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
 			docBase = context.docBase;
 
-			return new TopFieldLeafCollector(queue, fieldValueHitQueue, sort, context) {
+			return new TopFieldLeafCollector(fieldValueHitQueue, sort, context) {
 
 				@Override
 				public void collect(int doc) throws IOException {
@@ -298,12 +285,12 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 
 		if (firstComparator.getClass().equals(FieldComparator.RelevanceComparator.class)
 				&& reverseMul == 1 // if the natural sort is preserved (sort by descending relevance)
-				&& hitsThresholdChecker.getHitsThreshold(false) != Integer.MAX_VALUE) {
+				&& hitsThresholdChecker.getHitsThreshold() != Integer.MAX_VALUE) {
 			scoreMode = ScoreMode.TOP_SCORES;
 			canSetMinScore = true;
 		} else {
 			canSetMinScore = false;
-			if (hitsThresholdChecker.getHitsThreshold(false) != Integer.MAX_VALUE) {
+			if (hitsThresholdChecker.getHitsThreshold() != Integer.MAX_VALUE) {
 				scoreMode = needsScores ? ScoreMode.TOP_DOCS_WITH_SCORES : ScoreMode.TOP_DOCS;
 			} else {
 				scoreMode = needsScores ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES;
@@ -319,7 +306,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 
 	protected void updateGlobalMinCompetitiveScore(Scorable scorer) throws IOException {
 		assert minScoreAcc != null;
-		if (canSetMinScore && hitsThresholdChecker.isThresholdReached(false)) {
+		if (canSetMinScore && hitsThresholdChecker.isThresholdReached()) {
 			// we can start checking the global maximum score even
 			// if the local queue is not full because the threshold
 			// is reached.
@@ -333,7 +320,7 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 	}
 
 	protected void updateMinCompetitiveScore(Scorable scorer) throws IOException {
-		if (canSetMinScore && queueFull && hitsThresholdChecker.isThresholdReached(false)) {
+		if (canSetMinScore && queueFull && hitsThresholdChecker.isThresholdReached()) {
 			assert pq.top() != null;
 			float minScore = (float) firstComparator.value(pq.top().slot());
 			if (minScore > minCompetitiveScore) {
@@ -422,17 +409,25 @@ public abstract class LMDBFullFieldDocCollector extends FullDocsCollector<LMDBPr
 			LLTempLMDBEnv env, Sort sort, int numHits, long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
-			private final HitsThresholdChecker hitsThresholdChecker =
-					HitsThresholdChecker.createShared(Math.max(totalHitsThreshold, numHits));
+			private final HitsThresholdChecker hitsThresholdChecker;
+
+			{
+				if (totalHitsThreshold < Integer.MAX_VALUE) {
+					hitsThresholdChecker = HitsThresholdChecker.createShared(Math.max((int) totalHitsThreshold, numHits));
+				} else {
+					hitsThresholdChecker = HitsThresholdChecker.createShared(Integer.MAX_VALUE);
+				}
+			}
+
 			private final MaxScoreAccumulator minScoreAcc = new MaxScoreAccumulator();
 
 			@Override
-			public LMDBFullFieldDocCollector newCollector() throws IOException {
+			public LMDBFullFieldDocCollector newCollector() {
 				return create(env, sort, numHits, hitsThresholdChecker, minScoreAcc);
 			}
 
 			@Override
-			public FullFieldDocs<LLFieldDoc> reduce(Collection<LMDBFullFieldDocCollector> collectors) throws IOException {
+			public FullFieldDocs<LLFieldDoc> reduce(Collection<LMDBFullFieldDocCollector> collectors) {
 				return reduceShared(sort, collectors);
 			}
 		};

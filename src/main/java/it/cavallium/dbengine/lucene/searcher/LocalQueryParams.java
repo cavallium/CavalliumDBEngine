@@ -15,16 +15,6 @@ public record LocalQueryParams(@NotNull Query query, int offsetInt, long offsetL
 															 @NotNull PageLimits pageLimits, @Nullable Sort sort,
 															 @Nullable Boolean computePreciseHitsCount, Duration timeout) {
 
-	public LocalQueryParams {
-		if ((sort == null) != (computePreciseHitsCount == null)) {
-			if (sort == null) {
-				throw new IllegalArgumentException("If computePreciseHitsCount is set, sort must be set");
-			} else {
-				throw new IllegalArgumentException("If sort is set, computePreciseHitsCount must be set");
-			}
-		}
-	}
-
 	/**
 	 * Sorted params with long offsets
 	 */

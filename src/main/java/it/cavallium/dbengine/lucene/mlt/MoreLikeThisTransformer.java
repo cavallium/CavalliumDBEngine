@@ -35,7 +35,6 @@ public class MoreLikeThisTransformer implements GlobalQueryRewrite {
 				queryParams.offsetLong(),
 				queryParams.limitLong(),
 				queryParams.pageLimits(),
-				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
 				queryParams.computePreciseHitsCount(),
 				queryParams.timeout()

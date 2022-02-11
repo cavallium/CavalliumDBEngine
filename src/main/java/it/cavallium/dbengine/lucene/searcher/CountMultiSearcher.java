@@ -86,7 +86,6 @@ public class CountMultiSearcher implements MultiSearcher {
 				0L,
 				queryParams.offsetLong() + queryParams.limitLong(),
 				queryParams.pageLimits(),
-				queryParams.minCompetitiveScore(),
 				queryParams.sort(),
 				queryParams.computePreciseHitsCount(),
 				queryParams.timeout()

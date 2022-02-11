@@ -3,24 +3,16 @@ package it.cavallium.dbengine.database.disk;
 import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES;
 import static java.util.Objects.requireNonNull;
+import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithValue;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.AllocationType;
-import io.net5.buffer.api.AllocatorControl;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.CompositeBuffer;
-import io.net5.buffer.api.MemoryManager;
-import io.net5.buffer.api.Send;
-import io.net5.buffer.api.StandardAllocationTypes;
 import io.net5.buffer.api.WritableComponent;
-import io.net5.buffer.api.internal.Statics;
-import io.net5.buffer.api.unsafe.UnsafeMemoryManager;
 import io.net5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.LLUtils.DirectBuffer;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -31,9 +23,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
-import org.rocksdb.FileOperationInfo;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
+import org.rocksdb.KeyMayExist.KeyMayExistEnum;
 import org.rocksdb.KeyMayExistWorkaround;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -43,7 +35,6 @@ import org.rocksdb.Transaction;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import reactor.core.scheduler.Schedulers;
-import sun.misc.Unsafe;
 
 public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements RocksDBColumn
 		permits StandardRocksDBColumn, OptimisticRocksDBColumn, PessimisticRocksDBColumn {
@@ -129,18 +120,16 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					var resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
 
 					var keyMayExist = db.keyMayExist(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
-					var keyMayExistState = KeyMayExistWorkaround.getExistenceState(keyMayExist);
-					int keyMayExistValueLength = KeyMayExistWorkaround.getValueLength(keyMayExist);
+					KeyMayExistEnum keyMayExistState = keyMayExist.exists;
+					int keyMayExistValueLength = keyMayExist.valueLength;
 					// At the beginning, size reflects the expected size, then it becomes the real data size
-					int size = keyMayExistState == 2 ? keyMayExistValueLength : -1;
+					int size = keyMayExistState == kExistsWithValue ? keyMayExistValueLength : -1;
 					switch (keyMayExistState) {
-						// kNotExist
-						case 0: {
+						case kNotExist: {
 							resultBuffer.close();
 							return null;
 						}
-						// kExistsWithoutValue
-						case 1: {
+						case kExistsWithoutValue: {
 							assert keyMayExistValueLength == 0;
 							resultWritable.clear();
 							// real data size
@@ -150,8 +139,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 								return null;
 							}
 						}
-						// kExistsWithValue
-						case 2: {
+						case kExistsWithValue: {
 							// real data size
 							this.lastDataSizeMetric.set(size);
 							assert size >= 0;

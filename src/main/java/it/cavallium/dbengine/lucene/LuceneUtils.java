@@ -356,11 +356,22 @@ public class LuceneUtils {
 			return hitsFlux
 					.buffer(Queues.XS_BUFFER_SIZE, () -> new ArrayList<Object>(Queues.XS_BUFFER_SIZE))
 					.flatMap(shardHits -> Mono.fromCallable(() -> {
-						for (int i = 0, size = shardHits.size(); i < size; i++) {
-							shardHits.set(i, mapHitBlocking((ScoreDoc) shardHits.get(i), indexSearchers, keyFieldName));
+						int i2 = 0;
+						int size = shardHits.size();
+						for (int i = 0; i < size; i++) {
+							var el = mapHitBlocking((ScoreDoc) shardHits.get(i), indexSearchers, keyFieldName);
+							if (el != null) {
+								shardHits.set(i2, el);
+								i2++;
+							}
 						}
-						//noinspection unchecked
-						return (List<LLKeyScore>) (List<?>) shardHits;
+						if (i2 < size) {
+							//noinspection unchecked
+							return (List<LLKeyScore>) (List<?>) shardHits.subList(0, i2);
+						} else {
+							//noinspection unchecked
+							return (List<LLKeyScore>) (List<?>) shardHits;
+						}
 					}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 					.flatMapIterable(a -> a)
 					.publishOn(Schedulers.parallel());

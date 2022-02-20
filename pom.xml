@@ -28,15 +28,6 @@
       <url>https://mvn.mchv.eu/repository/mchv-snapshot</url>
     </repository>
     <repository>
-      <id>lucene-repository</id>
-      <name>Lucene Maven</name>
-      <url>https://repository.apache.org/snapshots/</url>
-      <snapshots>
-        <enabled>true</enabled>
-        <updatePolicy>always</updatePolicy>
-      </snapshots>
-    </repository>
-    <repository>
       <id>mulesoft-public-snapshots</id>
       <name>MuleSoft public snapshots</name>
       <url>https://repository.mulesoft.org/nexus/content/repositories/public</url>

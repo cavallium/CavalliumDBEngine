@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.StringJoiner;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.index.VectorSimilarityFunction;
 
 public class LLItem {
 
@@ -19,6 +20,12 @@ public class LLItem {
 	private final Object data;
 
 	public LLItem(LLType type, String name, ByteBuffer data) {
+		this.type = type;
+		this.name = name;
+		this.data = data;
+	}
+
+	public LLItem(LLType type, String name, KnnFieldData data) {
 		this.type = type;
 		this.name = name;
 		this.data = data;
@@ -132,6 +139,10 @@ public class LLItem {
 		return new LLItem(LLType.NumericDocValuesField, name, data);
 	}
 
+	public static LLItem newKnnField(String name, KnnFieldData knnFieldData) {
+		return new LLItem(LLType.NumericDocValuesField, name, knnFieldData);
+	}
+
 	public String getName() {
 		return name;
 	}
@@ -209,7 +220,13 @@ public class LLItem {
 		return (double[]) data;
 	}
 
+	public KnnFieldData knnFieldData() {
+		return (KnnFieldData) data;
+	}
+
 	public String stringValue() {
 		return (String) data;
 	}
+
+	public record KnnFieldData(float[] data, VectorSimilarityFunction vectorSimilarityFunction) {}
 }

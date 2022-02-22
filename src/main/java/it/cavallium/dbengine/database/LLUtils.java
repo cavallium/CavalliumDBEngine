@@ -44,7 +44,9 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
 import org.apache.lucene.document.Document;
+import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.Field.Store;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.LongPoint;
@@ -207,23 +209,24 @@ public class LLUtils {
 
 	private static Field toField(LLItem item) {
 		return switch (item.getType()) {
-			case IntPoint -> new IntPoint(item.getName(), Ints.fromByteArray(item.getData()));
-			case IntPointND -> new IntPoint(item.getName(), getIntArray(item.getData()));
-			case LongPoint -> new LongPoint(item.getName(), Longs.fromByteArray(item.getData()));
-			case LongPointND -> new LongPoint(item.getName(), getLongArray(item.getData()));
-			case LongStoredField -> new StoredField(item.getName(), Longs.fromByteArray(item.getData()));
-			case FloatPoint -> new FloatPoint(item.getName(), ByteBuffer.wrap(item.getData()).getFloat());
-			case TextField -> new TextField(item.getName(), item.stringValue(), Field.Store.NO);
-			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Field.Store.YES);
-			case SortedNumericDocValuesField ->
-					new SortedNumericDocValuesField(item.getName(), Longs.fromByteArray(item.getData()));
-			case NumericDocValuesField -> new NumericDocValuesField(item.getName(), Longs.fromByteArray(item.getData()));
-			case StringField -> new StringField(item.getName(), item.stringValue(), Field.Store.NO);
-			case StringFieldStored -> new StringField(item.getName(), item.stringValue(), Field.Store.YES);
+			case IntPoint -> new IntPoint(item.getName(), item.intData());
+			case DoublePoint -> new DoublePoint(item.getName(), item.doubleData());
+			case IntPointND -> new IntPoint(item.getName(), item.intArrayData());
+			case LongPoint -> new LongPoint(item.getName(), item.longData());
+			case LongPointND -> new LongPoint(item.getName(), item.longArrayData());
+			case FloatPointND -> new FloatPoint(item.getName(), item.floatArrayData());
+			case DoublePointND -> new DoublePoint(item.getName(), item.doubleArrayData());
+			case LongStoredField -> new StoredField(item.getName(), item.longData());
+			case FloatPoint -> new FloatPoint(item.getName(), item.floatData());
+			case TextField -> new TextField(item.getName(), item.stringValue(), Store.NO);
+			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Store.YES);
+			case SortedNumericDocValuesField -> new SortedNumericDocValuesField(item.getName(), item.longData());
+			case NumericDocValuesField -> new NumericDocValuesField(item.getName(), item.longData());
+			case StringField -> new StringField(item.getName(), item.stringValue(), Store.NO);
+			case StringFieldStored -> new StringField(item.getName(), item.stringValue(), Store.YES);
 		};
 	}
 
-	@SuppressWarnings("ResultOfMethodCallIgnored")
 	private static int[] getIntArray(byte[] data) {
 		var count = data.length / Integer.BYTES;
 		var items = new int[count];
@@ -237,7 +240,6 @@ public class LLUtils {
 		return items;
 	}
 
-	@SuppressWarnings("ResultOfMethodCallIgnored")
 	private static long[] getLongArray(byte[] data) {
 		var count = data.length / Long.BYTES;
 		var items = new long[count];

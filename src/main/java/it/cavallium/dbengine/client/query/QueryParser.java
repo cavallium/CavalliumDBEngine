@@ -4,6 +4,16 @@ import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
 import it.cavallium.dbengine.client.query.current.data.BoostQuery;
 import it.cavallium.dbengine.client.query.current.data.BoxedQuery;
 import it.cavallium.dbengine.client.query.current.data.ConstantScoreQuery;
+import it.cavallium.dbengine.client.query.current.data.DoubleNDPointExactQuery;
+import it.cavallium.dbengine.client.query.current.data.DoubleNDPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.DoublePointExactQuery;
+import it.cavallium.dbengine.client.query.current.data.DoublePointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.DoublePointSetQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatNDPointExactQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatNDPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatPointExactQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatPointSetQuery;
 import it.cavallium.dbengine.client.query.current.data.IntNDPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.IntNDPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.IntPointExactQuery;
@@ -27,6 +37,8 @@ import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.document.DoublePoint;
+import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
@@ -91,16 +103,36 @@ public class QueryParser {
 			case LongPointExactQuery:
 				var longPointExactQuery = (LongPointExactQuery) query;
 				return LongPoint.newExactQuery(longPointExactQuery.field(), longPointExactQuery.value());
+			case FloatPointExactQuery:
+				var floatPointExactQuery = (FloatPointExactQuery) query;
+				return FloatPoint.newExactQuery(floatPointExactQuery.field(), floatPointExactQuery.value());
+			case DoublePointExactQuery:
+				var doublePointExactQuery = (DoublePointExactQuery) query;
+				return DoublePoint.newExactQuery(doublePointExactQuery.field(), doublePointExactQuery.value());
 			case LongNDPointExactQuery:
 				var longndPointExactQuery = (LongNDPointExactQuery) query;
 				var longndValues = longndPointExactQuery.value().toLongArray();
 				return LongPoint.newRangeQuery(longndPointExactQuery.field(), longndValues, longndValues);
+			case FloatNDPointExactQuery:
+				var floatndPointExactQuery = (FloatNDPointExactQuery) query;
+				var floatndValues = floatndPointExactQuery.value().toFloatArray();
+				return FloatPoint.newRangeQuery(floatndPointExactQuery.field(), floatndValues, floatndValues);
+			case DoubleNDPointExactQuery:
+				var doublendPointExactQuery = (DoubleNDPointExactQuery) query;
+				var doublendValues = doublendPointExactQuery.value().toDoubleArray();
+				return DoublePoint.newRangeQuery(doublendPointExactQuery.field(), doublendValues, doublendValues);
 			case IntPointSetQuery:
 				var intPointSetQuery = (IntPointSetQuery) query;
 				return IntPoint.newSetQuery(intPointSetQuery.field(), intPointSetQuery.values().toIntArray());
 			case LongPointSetQuery:
 				var longPointSetQuery = (LongPointSetQuery) query;
 				return LongPoint.newSetQuery(longPointSetQuery.field(), longPointSetQuery.values().toLongArray());
+			case FloatPointSetQuery:
+				var floatPointSetQuery = (FloatPointSetQuery) query;
+				return FloatPoint.newSetQuery(floatPointSetQuery.field(), floatPointSetQuery.values().toFloatArray());
+			case DoublePointSetQuery:
+				var doublePointSetQuery = (DoublePointSetQuery) query;
+				return DoublePoint.newSetQuery(doublePointSetQuery.field(), doublePointSetQuery.values().toDoubleArray());
 			case TermQuery:
 				var termQuery = (TermQuery) query;
 				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.term()));
@@ -138,11 +170,35 @@ public class QueryParser {
 						longPointRangeQuery.min(),
 						longPointRangeQuery.max()
 				);
+			case FloatPointRangeQuery:
+				var floatPointRangeQuery = (FloatPointRangeQuery) query;
+				return FloatPoint.newRangeQuery(floatPointRangeQuery.field(),
+						floatPointRangeQuery.min(),
+						floatPointRangeQuery.max()
+				);
+			case DoublePointRangeQuery:
+				var doublePointRangeQuery = (DoublePointRangeQuery) query;
+				return DoublePoint.newRangeQuery(doublePointRangeQuery.field(),
+						doublePointRangeQuery.min(),
+						doublePointRangeQuery.max()
+				);
 			case LongNDPointRangeQuery:
 				var longndPointRangeQuery = (LongNDPointRangeQuery) query;
 				return LongPoint.newRangeQuery(longndPointRangeQuery.field(),
 						longndPointRangeQuery.min().toLongArray(),
 						longndPointRangeQuery.max().toLongArray()
+				);
+			case FloatNDPointRangeQuery:
+				var floatndPointRangeQuery = (FloatNDPointRangeQuery) query;
+				return FloatPoint.newRangeQuery(floatndPointRangeQuery.field(),
+						floatndPointRangeQuery.min().toFloatArray(),
+						floatndPointRangeQuery.max().toFloatArray()
+				);
+			case DoubleNDPointRangeQuery:
+				var doublendPointRangeQuery = (DoubleNDPointRangeQuery) query;
+				return DoublePoint.newRangeQuery(doublendPointRangeQuery.field(),
+						doublendPointRangeQuery.min().toDoubleArray(),
+						doublendPointRangeQuery.max().toDoubleArray()
 				);
 			case MatchAllDocsQuery:
 				return new MatchAllDocsQuery();

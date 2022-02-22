@@ -1,8 +1,11 @@
 package it.cavallium.dbengine.database;
 
+import com.google.common.primitives.Floats;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import java.nio.Buffer;
 import java.nio.ByteBuffer;
+import java.nio.FloatBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.Objects;
@@ -13,9 +16,9 @@ public class LLItem {
 
 	private final LLType type;
 	private final String name;
-	private final byte[] data;
+	private final Object data;
 
-	public LLItem(LLType type, String name, byte[] data) {
+	public LLItem(LLType type, String name, ByteBuffer data) {
 		this.type = type;
 		this.name = name;
 		this.data = data;
@@ -24,45 +27,49 @@ public class LLItem {
 	private LLItem(LLType type, String name, String data) {
 		this.type = type;
 		this.name = name;
-		this.data = data.getBytes(StandardCharsets.UTF_8);
+		this.data = data;
 	}
 
 	private LLItem(LLType type, String name, int data) {
 		this.type = type;
 		this.name = name;
-		this.data = Ints.toByteArray(data);
+		this.data = data;
 	}
 
 	private LLItem(LLType type, String name, float data) {
 		this.type = type;
 		this.name = name;
-		this.data = ByteBuffer.allocate(4).putFloat(data).array();
+		this.data = data;
 	}
 
 	private LLItem(LLType type, String name, long data) {
 		this.type = type;
 		this.name = name;
-		this.data = Longs.toByteArray(data);
+		this.data = data;
 	}
 
 	private LLItem(LLType type, String name, int... data) {
 		this.type = type;
 		this.name = name;
-		var ba = new byte[data.length * Integer.BYTES];
-		for (int i = 0; i < data.length; i++) {
-			System.arraycopy(Ints.toByteArray(data[i]), 0, ba, i * Integer.BYTES, Integer.BYTES);
-		}
-		this.data = ba;
+		this.data = data;
+	}
+
+	private LLItem(LLType type, String name, float... data) {
+		this.type = type;
+		this.name = name;
+		this.data = data;
+	}
+
+	private LLItem(LLType type, String name, double... data) {
+		this.type = type;
+		this.name = name;
+		this.data = data;
 	}
 
 	private LLItem(LLType type, String name, long... data) {
 		this.type = type;
 		this.name = name;
-		var ba = new byte[data.length * Long.BYTES];
-		for (int i = 0; i < data.length; i++) {
-			System.arraycopy(Longs.toByteArray(data[i]), 0, ba, i * Long.BYTES, Long.BYTES);
-		}
-		this.data = ba;
+		this.data = data;
 	}
 
 	public static LLItem newIntPoint(String name, int data) {
@@ -77,16 +84,28 @@ public class LLItem {
 		return new LLItem(LLType.LongPoint, name, data);
 	}
 
+	public static LLItem newFloatPoint(String name, float data) {
+		return new LLItem(LLType.FloatPoint, name, data);
+	}
+
+	public static LLItem newDoublePoint(String name, double data) {
+		return new LLItem(LLType.DoublePoint, name, data);
+	}
+
 	public static LLItem newLongPointND(String name, long... data) {
 		return new LLItem(LLType.LongPointND, name, data);
 	}
 
-	public static LLItem newLongStoredField(String name, long data) {
-		return new LLItem(LLType.LongStoredField, name, data);
+	public static LLItem newFloatPointND(String name, float... data) {
+		return new LLItem(LLType.FloatPointND, name, data);
 	}
 
-	public static LLItem newFloatPoint(String name, float data) {
-		return new LLItem(LLType.FloatPoint, name, data);
+	public static LLItem newDoublePointND(String name, double... data) {
+		return new LLItem(LLType.DoublePointND, name, data);
+	}
+
+	public static LLItem newLongStoredField(String name, long data) {
+		return new LLItem(LLType.LongStoredField, name, data);
 	}
 
 	public static LLItem newTextField(String name, String data, Field.Store store) {
@@ -121,7 +140,7 @@ public class LLItem {
 		return type;
 	}
 
-	public byte[] getData() {
+	public Object getData() {
 		return data;
 	}
 
@@ -133,31 +152,64 @@ public class LLItem {
 		if (o == null || getClass() != o.getClass()) {
 			return false;
 		}
+
 		LLItem llItem = (LLItem) o;
-		return type == llItem.type &&
-				Objects.equals(name, llItem.name) &&
-				Arrays.equals(data, llItem.data);
+
+		if (type != llItem.type) {
+			return false;
+		}
+		return Objects.equals(name, llItem.name);
 	}
 
 	@Override
 	public int hashCode() {
-		int result = Objects.hash(type, name);
-		result = 31 * result + Arrays.hashCode(data);
+		int result = type != null ? type.hashCode() : 0;
+		result = 31 * result + (name != null ? name.hashCode() : 0);
 		return result;
 	}
 
 	@Override
 	public String toString() {
-		var sj = new StringJoiner(", ", "[", "]")
+		return new StringJoiner(", ", LLItem.class.getSimpleName() + "[", "]")
 				.add("type=" + type)
-				.add("name='" + name + "'");
-		if (data != null && data.length > 0) {
-			sj.add("data=" + new String(data));
-		}
-		return sj.toString();
+				.add("name='" + name + "'")
+				.add("data=" + data)
+				.toString();
+	}
+
+	public int intData() {
+		return (int) data;
+	}
+
+	public int[] intArrayData() {
+		return (int[]) data;
+	}
+
+	public long longData() {
+		return (long) data;
+	}
+
+	public long[] longArrayData() {
+		return (long[]) data;
+	}
+
+	public float floatData() {
+		return (float) data;
+	}
+
+	public float[] floatArrayData() {
+		return (float[]) data;
+	}
+
+	public double doubleData() {
+		return (double) data;
+	}
+
+	public double[] doubleArrayData() {
+		return (double[]) data;
 	}
 
 	public String stringValue() {
-		return new String(data, StandardCharsets.UTF_8);
+		return (String) data;
 	}
 }

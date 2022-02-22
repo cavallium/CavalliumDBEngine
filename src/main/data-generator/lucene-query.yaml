@@ -12,8 +12,11 @@ versions:
           BoxedQuery, TermQuery, PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery,
           MatchNoDocsQuery, BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
           ConstantScoreQuery, BoostQuery, IntPointRangeQuery, IntNDPointRangeQuery, LongPointRangeQuery,
-          LongNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, LongNDPointExactQuery,
-          IntPointSetQuery, LongPointSetQuery, StandardQuery
+          FloatPointRangeQuery, DoublePointRangeQuery, LongNDPointRangeQuery, FloatNDPointRangeQuery,
+          DoubleNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, FloatPointExactQuery,
+          FloatPointExactQuery, DoublePointExactQuery, LongNDPointExactQuery, FloatNDPointExactQuery,
+          DoubleNDPointExactQuery, IntPointSetQuery, LongPointSetQuery, FloatPointSetQuery, DoublePointSetQuery,
+          StandardQuery
       ]
       Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
       Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
@@ -173,12 +176,36 @@ versions:
           field: String
           min: long
           max: long
+      # Query that matches a float point field, from "min", to "max"
+      FloatPointRangeQuery:
+        data:
+          field: String
+          min: float
+          max: float
+      # Query that matches a double point field, from "min", to "max"
+      DoublePointRangeQuery:
+        data:
+          field: String
+          min: double
+          max: double
       # Query that matches a long point field, from "min", to "max"
       LongNDPointRangeQuery:
         data:
           field: String
           min: long[]
           max: long[]
+      # Query that matches a float point field, from "min", to "max"
+      FloatNDPointRangeQuery:
+        data:
+          field: String
+          min: float[]
+          max: float[]
+      # Query that matches a double point field, from "min", to "max"
+      DoubleNDPointRangeQuery:
+        data:
+          field: String
+          min: double[]
+          max: double[]
       # Query that matches an int point field
       IntPointExactQuery:
         data:
@@ -194,11 +221,31 @@ versions:
         data:
           field: String
           value: long
+      # Query that matches a float point field
+      FloatPointExactQuery:
+        data:
+          field: String
+          value: float
+      # Query that matches a double point field
+      DoublePointExactQuery:
+        data:
+          field: String
+          value: double
       # Query that matches a long point field
       LongNDPointExactQuery:
         data:
           field: String
           value: long[]
+      # Query that matches a float point field
+      FloatNDPointExactQuery:
+        data:
+          field: String
+          value: float[]
+      # Query that matches a double point field
+      DoubleNDPointExactQuery:
+        data:
+          field: String
+          value: double[]
       # Query that matches a set of int point field
       IntPointSetQuery:
         data:
@@ -209,6 +256,16 @@ versions:
         data:
           field: String
           values: long[]
+      # Query that matches a set of float point field
+      FloatPointSetQuery:
+        data:
+          field: String
+          values: float[]
+      # Query that matches a set of double point field
+      DoublePointSetQuery:
+        data:
+          field: String
+          values: double[]
 
 
       # Extra data used for parameters and the client

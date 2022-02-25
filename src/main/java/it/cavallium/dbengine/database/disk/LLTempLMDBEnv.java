@@ -19,32 +19,49 @@ public class LLTempLMDBEnv implements Closeable {
 	private static final long TWENTY_GIBIBYTES = 20L * 1024L * 1024L * 1024L;
 	public static final int MAX_DATABASES = 1024;
 	private static final AtomicInteger NEXT_LMDB_ENV_ID = new AtomicInteger(0);
-	private final BitSet freeIds;
+	private BitSet freeIds;
 
-	private final int envId;
-	private final Path tempDirectory;
-	private final Env<ByteBuf> env;
+	private int envId;
+	private Path tempDirectory;
+	private Env<ByteBuf> env;
+	private volatile boolean initialized;
 	private volatile boolean closed;
 
-	public LLTempLMDBEnv() throws IOException {
+	public LLTempLMDBEnv() {
 		this.envId = NEXT_LMDB_ENV_ID.getAndIncrement();
-		tempDirectory = Files.createTempDirectory("lmdb");
-		var envBuilder = Env.create(Net5ByteBufProxy.PROXY_NETTY)
-				.setMapSize(TWENTY_GIBIBYTES)
-				.setMaxDbs(MAX_DATABASES);
-		//env = envBuilder.open(tempDirectory.toFile(), MDB_NOLOCK, MDB_NOSYNC, MDB_NOTLS, MDB_NORDAHEAD, MDB_WRITEMAP);
-		env = envBuilder.open(tempDirectory.toFile(), MDB_NOTLS, MDB_NOSYNC, MDB_NORDAHEAD, MDB_NOMETASYNC);
-		freeIds = BitSet.of(DocIdSetIterator.range(0, MAX_DATABASES), MAX_DATABASES);
 	}
 
 	public Env<ByteBuf> getEnv() {
 		if (closed) {
 			throw new IllegalStateException("Environment closed");
 		}
+		initializeIfPossible();
 		return env;
 	}
 
+	private void initializeIfPossible() {
+		if (!initialized) {
+			synchronized(this) {
+				if (!initialized) {
+					try {
+						tempDirectory = Files.createTempDirectory("lmdb");
+						var envBuilder = Env.create(Net5ByteBufProxy.PROXY_NETTY)
+								.setMapSize(TWENTY_GIBIBYTES)
+								.setMaxDbs(MAX_DATABASES);
+						//env = envBuilder.open(tempDirectory.toFile(), MDB_NOLOCK, MDB_NOSYNC, MDB_NOTLS, MDB_NORDAHEAD, MDB_WRITEMAP);
+						env = envBuilder.open(tempDirectory.toFile(), MDB_NOTLS, MDB_NOSYNC, MDB_NORDAHEAD, MDB_NOMETASYNC);
+						freeIds = BitSet.of(DocIdSetIterator.range(0, MAX_DATABASES), MAX_DATABASES);
+					} catch (IOException e) {
+						throw new RuntimeException(e);
+					}
+				}
+			}
+		}
+	}
+
 	public int allocateDb() {
+		initializeIfPossible();
+		//noinspection SynchronizeOnNonFinalField
 		synchronized (freeIds) {
 			var freeBit = freeIds.nextSetBit(0);
 			if (freeBit == DocIdSetIterator.NO_MORE_DOCS) {
@@ -61,6 +78,8 @@ public class LLTempLMDBEnv implements Closeable {
 	}
 
 	public void freeDb(int db) {
+		initializeIfPossible();
+		//noinspection SynchronizeOnNonFinalField
 		synchronized (freeIds) {
 			freeIds.set(db);
 		}
@@ -68,6 +87,16 @@ public class LLTempLMDBEnv implements Closeable {
 
 	@Override
 	public void close() throws IOException {
+		if (this.closed) {
+			return;
+		}
+		if (!this.initialized) {
+			synchronized (this) {
+				closed = true;
+				initialized = true;
+				return;
+			}
+		}
 		this.closed = true;
 		env.close();
 		//noinspection ResultOfMethodCallIgnored

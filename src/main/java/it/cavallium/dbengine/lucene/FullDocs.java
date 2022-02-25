@@ -138,17 +138,19 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 				@SuppressWarnings("unchecked") Flux<T>[] fluxes = new Flux[fullDocs.length];
 				for (int i = 0; i < iterables.length; i++) {
 					var shardIndex = i;
-					fluxes[i] = iterables[i].<T>map(shard -> switch (shard) {
-						case LLScoreDoc scoreDoc ->
-								//noinspection unchecked
-								(T) new LLScoreDoc(scoreDoc.doc(), scoreDoc.score(), shardIndex);
-						case LLFieldDoc fieldDoc ->
-								//noinspection unchecked
-								(T) new LLFieldDoc(fieldDoc.doc(), fieldDoc.score(), shardIndex, fieldDoc.fields());
-						case LLSlotDoc slotDoc ->
-								//noinspection unchecked
-								(T) new LLSlotDoc(slotDoc.doc(), slotDoc.score(), shardIndex, slotDoc.slot());
-						case null, default -> throw new UnsupportedOperationException("Unsupported type " + (shard == null ? null : shard.getClass()));
+					fluxes[i] = iterables[i].<T>map(shard -> {
+						if (shard instanceof LLScoreDoc scoreDoc) {
+							//noinspection unchecked
+							return (T) new LLScoreDoc(scoreDoc.doc(), scoreDoc.score(), shardIndex);
+						} else if (shard instanceof LLFieldDoc fieldDoc) {
+							//noinspection unchecked
+							return (T) new LLFieldDoc(fieldDoc.doc(), fieldDoc.score(), shardIndex, fieldDoc.fields());
+						} else if (shard instanceof LLSlotDoc slotDoc) {
+							//noinspection unchecked
+							return (T) new LLSlotDoc(slotDoc.doc(), slotDoc.score(), shardIndex, slotDoc.slot());
+						} else {
+							throw new UnsupportedOperationException("Unsupported type " + (shard == null ? null : shard.getClass()));
+						}
 					});
 					if (fullDocs[i].totalHits().relation == EQUAL_TO) {
 						fluxes[i] = fluxes[i].take(fullDocs[i].totalHits().value, true);

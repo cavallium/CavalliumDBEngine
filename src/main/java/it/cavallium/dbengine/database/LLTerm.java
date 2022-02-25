@@ -1,13 +1,20 @@
 package it.cavallium.dbengine.database;
 
 import java.util.Objects;
+import org.apache.lucene.index.Term;
+import org.apache.lucene.util.BytesRef;
 
 public class LLTerm {
 
 	private final String key;
-	private final String value;
+	private final BytesRef value;
 
 	public LLTerm(String key, String value) {
+		this.key = key;
+		this.value = new BytesRef(value);
+	}
+
+	public LLTerm(String key, BytesRef value) {
 		this.key = key;
 		this.value = value;
 	}
@@ -16,7 +23,11 @@ public class LLTerm {
 		return key;
 	}
 
-	public String getValue() {
+	public String getValueUTF8() {
+		return value.utf8ToString();
+	}
+
+	public BytesRef getValueBytesRef() {
 		return value;
 	}
 

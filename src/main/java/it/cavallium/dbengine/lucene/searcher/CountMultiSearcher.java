@@ -119,7 +119,7 @@ public class CountMultiSearcher implements MultiSearcher {
 										}
 									}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 									.publishOn(Schedulers.parallel())
-									.timeout(queryParams.timeout());
+									.transform(TimeoutUtil.timeoutMono(queryParams.timeout()));
 						},
 						is -> Mono.empty()
 				)

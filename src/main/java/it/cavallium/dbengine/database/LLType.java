@@ -15,6 +15,7 @@ public enum LLType {
 	FloatPointND,
 	DoublePointND,
 	LongStoredField,
+	BytesStoredField,
 	NumericDocValuesField,
 	SortedNumericDocValuesField,
 	TextField,

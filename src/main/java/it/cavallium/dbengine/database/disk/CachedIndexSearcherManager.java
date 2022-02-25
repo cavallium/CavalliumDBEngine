@@ -5,18 +5,16 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.time.Duration;
-import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexWriter;
@@ -36,16 +34,20 @@ import reactor.core.scheduler.Schedulers;
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger logger = LogManager.getLogger(CachedIndexSearcherManager.class);
-	private final Executor SEARCH_EXECUTOR = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors(),
-			new ShortNamedThreadFactory("lucene-search").withGroup(new ThreadGroup("lucene-search")));
-	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
+	private final ExecutorService searchExecutor = Executors.newFixedThreadPool(
+			Runtime.getRuntime().availableProcessors(),
+			new ShortNamedThreadFactory("lucene-search")
+					.setDaemon(true).withGroup(new ThreadGroup("lucene-search"))
+	);
+	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(searchExecutor);
 
 	private final SnapshotsManager snapshotsManager;
 	private final Similarity similarity;
 	private final SearcherManager searcherManager;
 	private final Duration queryRefreshDebounceTime;
-	private final Phaser activeSearchers = new Phaser(1);
-	private final Phaser activeRefreshes = new Phaser(1);
+
+	private final AtomicLong activeSearchers = new AtomicLong(0);
+	private final AtomicLong activeRefreshes = new AtomicLong(0);
 
 	private final LoadingCache<LLSnapshot, Mono<Send<LLIndexSearcher>>> cachedSnapshotSearchers;
 	private final Mono<Send<LLIndexSearcher>> cachedMainSearcher;
@@ -104,35 +106,30 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				.then(Mono.<Void>fromRunnable(() -> {
 					logger.info("Closed IndexSearcherManager");
 					logger.info("Closing refreshes...");
-					if (!activeRefreshes.isTerminated()) {
-						try {
-							//noinspection BlockingMethodInNonBlockingContext
-							activeRefreshes.awaitAdvanceInterruptibly(activeRefreshes.arrive(), 15, TimeUnit.SECONDS);
-						} catch (Exception ex) {
-							if (ex instanceof TimeoutException) {
-								logger.error("Failed to terminate active refreshes: timeout");
-							} else {
-								logger.error("Failed to terminate active refreshes", ex);
-							}
-						}
+					long initTime = System.nanoTime();
+					while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
+						LockSupport.parkNanos(50000000);
 					}
 					logger.info("Closed refreshes...");
 					logger.info("Closing active searchers...");
-					if (!activeSearchers.isTerminated()) {
-						try {
-							//noinspection BlockingMethodInNonBlockingContext
-							activeSearchers.awaitAdvanceInterruptibly(activeSearchers.arrive(), 15, TimeUnit.SECONDS);
-						} catch (Exception ex) {
-							if (ex instanceof TimeoutException) {
-								logger.error("Failed to terminate active searchers: timeout");
-							} else {
-								logger.error("Failed to terminate active searchers", ex);
-							}
-						}
+					initTime = System.nanoTime();
+					while (activeSearchers.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
+						LockSupport.parkNanos(50000000);
 					}
 					logger.info("Closed active searchers");
+					logger.info("Stopping searcher executor...");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
+					searchExecutor.shutdown();
+					try {
+						//noinspection BlockingMethodInNonBlockingContext
+						if (!searchExecutor.awaitTermination(15, TimeUnit.SECONDS)) {
+							searchExecutor.shutdownNow();
+						}
+					} catch (InterruptedException e) {
+						logger.error("Failed to stop executor", e);
+					}
+					logger.info("Stopped searcher executor...");
 				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 				.publishOn(Schedulers.parallel())
 				.cache();
@@ -143,14 +140,14 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					if (closeRequested.get()) {
 						return null;
 					}
-					activeSearchers.register();
+					activeSearchers.incrementAndGet();
 					IndexSearcher indexSearcher;
 					boolean decRef;
 					if (snapshot == null) {
 						indexSearcher = searcherManager.acquire();
 						decRef = true;
 					} else {
-						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
+						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(searchExecutor);
 						decRef = false;
 					}
 					indexSearcher.setSimilarity(similarity);
@@ -161,30 +158,30 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private void dropCachedIndexSearcher() {
 		// This shouldn't happen more than once per searcher.
-		activeSearchers.arriveAndDeregister();
+		activeSearchers.decrementAndGet();
 	}
 
 	@Override
 	public void maybeRefreshBlocking() throws IOException {
 		try {
-			activeRefreshes.register();
+			activeRefreshes.incrementAndGet();
 			searcherManager.maybeRefreshBlocking();
 		} catch (AlreadyClosedException ignored) {
 
 		} finally {
-			activeRefreshes.arriveAndDeregister();
+			activeRefreshes.decrementAndGet();
 		}
 	}
 
 	@Override
 	public void maybeRefresh() throws IOException {
 		try {
-			activeRefreshes.register();
+			activeRefreshes.incrementAndGet();
 			searcherManager.maybeRefresh();
 		} catch (AlreadyClosedException ignored) {
 
 		} finally {
-			activeRefreshes.arriveAndDeregister();
+			activeRefreshes.decrementAndGet();
 		}
 	}
 

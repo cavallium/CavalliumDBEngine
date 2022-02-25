@@ -375,26 +375,25 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
-		return this
-				.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
-					startedDocIndexings.increment();
-					try {
-						switch (request) {
-							case LLUpdateDocument updateDocument ->
-									indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
-							case LLSoftUpdateDocument softUpdateDocument ->
-									indexWriter.softUpdateDocument(LLUtils.toTerm(id), toDocument(softUpdateDocument.items()),
-											toFields(softUpdateDocument.softDeleteItems()));
-							case LLUpdateFields updateFields -> indexWriter.updateDocValues(LLUtils.toTerm(id),
-									toFields(updateFields.items()));
-							case null, default -> throw new UnsupportedOperationException("Unexpected request type: " + request);
-						}
-					} finally {
-						endeddDocIndexings.increment();
-					}
-					return null;
-				}))
-				.transform(this::ensureOpen);
+		return this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
+			startedDocIndexings.increment();
+			try {
+				if (request instanceof LLUpdateDocument updateDocument) {
+					indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
+				} else if (request instanceof LLSoftUpdateDocument softUpdateDocument) {
+					indexWriter.softUpdateDocument(LLUtils.toTerm(id),
+							toDocument(softUpdateDocument.items()),
+							toFields(softUpdateDocument.softDeleteItems()));
+				} else if (request instanceof LLUpdateFields updateFields) {
+					indexWriter.updateDocValues(LLUtils.toTerm(id), toFields(updateFields.items()));
+				} else {
+					throw new UnsupportedOperationException("Unexpected request type: " + request);
+				}
+			} finally {
+				endeddDocIndexings.increment();
+			}
+			return null;
+		})).transform(this::ensureOpen);
 	}
 
 	@Override

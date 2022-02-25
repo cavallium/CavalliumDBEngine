@@ -11,7 +11,9 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.StringJoiner;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.VectorSimilarityFunction;
+import org.apache.lucene.util.BytesRef;
 
 public class LLItem {
 
@@ -20,6 +22,12 @@ public class LLItem {
 	private final Object data;
 
 	public LLItem(LLType type, String name, ByteBuffer data) {
+		this.type = type;
+		this.name = name;
+		this.data = data;
+	}
+
+	public LLItem(LLType type, String name, BytesRef data) {
 		this.type = type;
 		this.name = name;
 		this.data = data;
@@ -113,6 +121,11 @@ public class LLItem {
 
 	public static LLItem newLongStoredField(String name, long data) {
 		return new LLItem(LLType.LongStoredField, name, data);
+	}
+
+	public static LLItem newLongStoredFieldND(String name, long... data) {
+		BytesRef packed = LongPoint.pack(data);
+		return new LLItem(LLType.BytesStoredField, name, packed);
 	}
 
 	public static LLItem newTextField(String name, String data, Field.Store store) {

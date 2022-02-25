@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.Map;
 import java.util.Set;
+import org.apache.lucene.util.BytesRef;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -40,7 +41,7 @@ public abstract class Indicizer<T, U> {
 
 	public abstract @NotNull String getKeyFieldName();
 
-	public abstract @NotNull T getKey(String key);
+	public abstract @NotNull T getKey(BytesRef key);
 
 	public abstract IndicizerAnalyzers getPerFieldAnalyzer();
 

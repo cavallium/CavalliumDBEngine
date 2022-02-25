@@ -42,6 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
+import org.apache.lucene.util.StringHelper;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -116,7 +117,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	private int getLuceneIndexId(LLTerm id) {
-		return Math.abs(id.getValue().hashCode()) % luceneIndices.length;
+		return Math.abs(StringHelper.murmurhash3_x86_32(id.getValueBytesRef(), 7) % luceneIndices.length);
 	}
 
 	@Override

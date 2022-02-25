@@ -13,6 +13,7 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.util.LinkedList;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Store;
+import org.apache.lucene.util.BytesRef;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Mono;
 
@@ -51,8 +52,8 @@ public class StringIndicizer extends Indicizer<String, String> {
 	}
 
 	@Override
-	public @NotNull String getKey(String key) {
-		return key;
+	public @NotNull String getKey(BytesRef key) {
+		return key.utf8ToString();
 	}
 
 	@Override

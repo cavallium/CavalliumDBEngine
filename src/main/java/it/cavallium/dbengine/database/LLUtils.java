@@ -217,6 +217,7 @@ public class LLUtils {
 			case FloatPointND -> new FloatPoint(item.getName(), item.floatArrayData());
 			case DoublePointND -> new DoublePoint(item.getName(), item.doubleArrayData());
 			case LongStoredField -> new StoredField(item.getName(), item.longData());
+			case BytesStoredField -> new StoredField(item.getName(), (BytesRef) item.getData());
 			case FloatPoint -> new FloatPoint(item.getName(), item.floatData());
 			case TextField -> new TextField(item.getName(), item.stringValue(), Store.NO);
 			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Store.YES);
@@ -1059,8 +1060,7 @@ public class LLUtils {
 
 		@Override
 		public BytesRef toBytesRef() {
-			byte[] data = term.getValue().getBytes(StandardCharsets.UTF_8);
-			return new BytesRef(data, 0, data.length);
+			return term.getValueBytesRef();
 		}
 	}
 }

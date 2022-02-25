@@ -71,6 +71,7 @@ import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
+import org.apache.lucene.util.BytesRef;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.novasearch.lucene.search.similarities.BM25Similarity;
@@ -178,7 +179,7 @@ public class LuceneUtils {
 	 * @throws IOException when an error occurs when reading the document
 	 */
 	@NotNull
-	public static String keyOfTopDoc(int docId, IndexReader indexReader,
+	public static BytesRef keyOfTopDoc(int docId, IndexReader indexReader,
 			String keyFieldName) throws IOException, NoSuchElementException {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called keyOfTopDoc in a nonblocking thread");
@@ -202,7 +203,7 @@ public class LuceneUtils {
 								.map(IndexableField::name)
 								.collect(Collectors.joining(",", "[", "]")));
 			} else {
-				return field.stringValue();
+				return field.binaryValue();
 			}
 		}
 	}
@@ -392,7 +393,7 @@ public class LuceneUtils {
 			indexSearcher = indexSearchers.get(shardIndex);
 		}
 		try {
-			String collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
+			BytesRef collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
 			return new LLKeyScore(shardDocId, score, collectedDoc);
 		} catch (NoSuchElementException ex) {
 			logger.debug("Error: document {} key is not present!", shardDocId);

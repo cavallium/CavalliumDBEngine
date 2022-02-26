@@ -5,7 +5,9 @@ import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
+import it.cavallium.dbengine.client.LuceneDirectoryOptions.ByteBuffersDirectory;
 import it.cavallium.dbengine.client.LuceneOptions;
+import it.cavallium.dbengine.client.LuceneOptionsBuilder;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -14,7 +16,6 @@ import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
-import java.nio.file.Files;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -84,19 +85,22 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 			int instancesCount,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions,
+			LuceneOptions inputLuceneOptions,
 			@Nullable LuceneHacks luceneHacks) {
+		var memoryLuceneOptions = LuceneOptionsBuilder
+				.builder(inputLuceneOptions)
+				.directoryOptions(new ByteBuffersDirectory())
+				.build();
 		return Mono
 				.<LLLuceneIndex>fromCallable(() -> {
 					var env = this.env.get();
 					return new LLLocalLuceneIndex(env,
-							null,
 							meterRegistry,
 							clusterName,
 							shardName,
 							indicizerAnalyzers,
 							indicizerSimilarities,
-							luceneOptions,
+							memoryLuceneOptions,
 							luceneHacks
 					);
 				})

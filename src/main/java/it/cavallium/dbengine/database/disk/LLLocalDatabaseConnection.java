@@ -105,7 +105,6 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						}
 						Objects.requireNonNull(env, "Environment not set");
 						return new LLLocalMultiLuceneIndex(env,
-								luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
 								meterRegistry,
 								clusterName,
 								instancesCount,
@@ -115,7 +114,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 								luceneHacks
 						);
 					} else {
-						return new LLLocalLuceneIndex(env, luceneOptions.inMemory() ? null : basePath.resolve("lucene"),
+						return new LLLocalLuceneIndex(env,
 								meterRegistry,
 								clusterName,
 								shardName,

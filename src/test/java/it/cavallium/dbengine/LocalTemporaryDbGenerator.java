@@ -9,8 +9,9 @@ import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
+import it.cavallium.dbengine.client.LuceneDirectoryOptions;
+import it.cavallium.dbengine.client.LuceneDirectoryOptions.ByteBuffersDirectory;
 import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
@@ -34,15 +35,11 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 
 	private static final AtomicInteger dbId = new AtomicInteger(0);
 
-	private static final Optional<NRTCachingOptions> NRT = Optional.empty();
 	private static final LuceneOptions LUCENE_OPTS = new LuceneOptions(Map.of(),
 			Duration.ofSeconds(5),
 			Duration.ofSeconds(5),
 			false,
-			true,
-			Optional.empty(),
-			true,
-			NRT,
+			new ByteBuffersDirectory(),
 			16 * 1024 * 1024,
 			true,
 			false,

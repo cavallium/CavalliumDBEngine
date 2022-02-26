@@ -66,7 +66,6 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 
 	public LLLocalMultiLuceneIndex(LLTempLMDBEnv env,
-			Path lucene,
 			MeterRegistry meterRegistry,
 			String clusterName,
 			int instancesCount,
@@ -89,7 +88,6 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				shardName = clusterName + "_" + String.format("%03d", i);
 			}
 			luceneIndices[i] = new LLLocalLuceneIndex(env,
-					lucene,
 					meterRegistry,
 					clusterName,
 					shardName,

@@ -11,11 +11,9 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.client.DirectIOOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.client.NRTCachingOptions;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
@@ -28,7 +26,6 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.lucene.AlwaysDirectIOFSDirectory;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
@@ -63,15 +60,9 @@ import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SimpleMergedSegmentWarmer;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.TieredMergePolicy;
-import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.similarities.Similarity;
-import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
-import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.store.MMapDirectory;
-import org.apache.lucene.store.NIOFSDirectory;
-import org.apache.lucene.store.NRTCachingDirectory;
-import org.apache.lucene.util.Constants;
 import org.apache.lucene.util.InfoStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -121,7 +112,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final AtomicBoolean closeRequested = new AtomicBoolean();
 
 	public LLLocalLuceneIndex(LLTempLMDBEnv env,
-			@Nullable Path luceneBasePath,
 			MeterRegistry meterRegistry,
 			@Nullable String clusterName,
 			@Nullable String shardName,
@@ -135,14 +125,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		String logName = Objects.requireNonNullElse(clusterName, shardName);
 		String luceneIndexName = Objects.requireNonNullElse(shardName, clusterName);
 
-		Path directoryPath;
-		if (luceneOptions.inMemory() != (luceneBasePath == null)) {
-			throw new IllegalArgumentException();
-		} else if (luceneBasePath != null) {
-			directoryPath = luceneBasePath.resolve(shardName + ".lucene.db");
-		} else {
-			directoryPath = null;
-		}
 		if (luceneIndexName.length() == 0) {
 			throw new IOException("Empty lucene database name");
 		}
@@ -151,67 +133,11 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		} else {
 			logger.debug("Lucene MMap is supported");
 		}
-		boolean lowMemory = luceneOptions.lowMemory();
-		if (luceneOptions.inMemory()) {
-			this.directory = new ByteBuffersDirectory();
-		} else {
-			Directory directory;
-			{
-				Directory forcedDirectFsDirectory = null;
-				if (luceneOptions.directIOOptions().isPresent()) {
-					DirectIOOptions directIOOptions = luceneOptions.directIOOptions().get();
-						if (directIOOptions.alwaysForceDirectIO()) {
-							try {
-								forcedDirectFsDirectory = new AlwaysDirectIOFSDirectory(directoryPath);
-							} catch (UnsupportedOperationException ex) {
-								logger.warn("Failed to open FSDirectory with DIRECT flag", ex);
-							}
-						}
-				}
-				if (forcedDirectFsDirectory != null) {
-					directory = forcedDirectFsDirectory;
-				} else {
-					FSDirectory fsDirectory;
-					if (luceneOptions.allowMemoryMapping()) {
-						fsDirectory = FSDirectory.open(directoryPath);
-					} else {
-						fsDirectory = new NIOFSDirectory(directoryPath);
-					}
-					if (Constants.LINUX || Constants.MAC_OS_X) {
-						try {
-							int mergeBufferSize;
-							long minBytesDirect;
-							if (luceneOptions.directIOOptions().isPresent()) {
-								var directIOOptions = luceneOptions.directIOOptions().get();
-								mergeBufferSize = directIOOptions.mergeBufferSize();
-								minBytesDirect = directIOOptions.minBytesDirect();
-							} else {
-								mergeBufferSize = DirectIODirectory.DEFAULT_MERGE_BUFFER_SIZE;
-								minBytesDirect = DirectIODirectory.DEFAULT_MIN_BYTES_DIRECT;
-							}
-							directory = new DirectIODirectory(fsDirectory, mergeBufferSize, minBytesDirect);
-						} catch (UnsupportedOperationException ex) {
-							logger.warn("Failed to open FSDirectory with DIRECT flag", ex);
-							directory = fsDirectory;
-						}
-					} else {
-						directory = fsDirectory;
-					}
-				}
-			}
-
-			if (luceneOptions.nrtCachingOptions().isPresent()) {
-				NRTCachingOptions nrtCachingOptions = luceneOptions.nrtCachingOptions().get();
-				directory = new NRTCachingDirectory(directory, nrtCachingOptions.maxMergeSizeMB(),
-						nrtCachingOptions.maxCachedMB());
-			}
-
-			this.directory = directory;
-		}
+		this.lowMemory = luceneOptions.lowMemory();
+		this.directory = luceneOptions.directoryOptions().createLuceneDirectory(luceneIndexName);
 
 		this.luceneIndexName = luceneIndexName;
 		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
-		this.lowMemory = lowMemory;
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 
@@ -239,7 +165,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			var concurrentMergeScheduler = new ConcurrentMergeScheduler();
 			// false means SSD, true means HDD
 			concurrentMergeScheduler.setDefaultMaxMergesAndThreads(false);
-			if (luceneOptions.inMemory()) {
+			if (luceneOptions.directoryOptions().getManagedPath().isEmpty()) {
 				concurrentMergeScheduler.disableAutoIOThrottle();
 			} else {
 				concurrentMergeScheduler.enableAutoIOThrottle();

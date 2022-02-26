@@ -345,7 +345,7 @@ public class LuceneUtils {
 
 	public static Flux<LLKeyScore> convertHits(Flux<ScoreDoc> hitsFlux,
 			List<IndexSearcher> indexSearchers,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			boolean preserveOrder) {
 		if (preserveOrder) {
 			return hitsFlux
@@ -381,7 +381,7 @@ public class LuceneUtils {
 	@Nullable
 	private static LLKeyScore mapHitBlocking(ScoreDoc hit,
 			List<IndexSearcher> indexSearchers,
-			String keyFieldName) {
+			@Nullable String keyFieldName) {
 		assert !Schedulers.isInNonBlockingThread();
 		int shardDocId = hit.doc;
 		int shardIndex = hit.shardIndex;
@@ -393,7 +393,12 @@ public class LuceneUtils {
 			indexSearcher = indexSearchers.get(shardIndex);
 		}
 		try {
-			BytesRef collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
+			BytesRef collectedDoc;
+			if (keyFieldName != null) {
+				collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
+			} else {
+				collectedDoc = null;
+			}
 			return new LLKeyScore(shardDocId, score, collectedDoc);
 		} catch (NoSuchElementException ex) {
 			logger.debug("Error: document {} key is not present!", shardDocId);

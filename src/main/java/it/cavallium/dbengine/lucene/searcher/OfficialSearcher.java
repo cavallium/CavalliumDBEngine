@@ -15,6 +15,7 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopScoreDocCollector;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -29,7 +30,7 @@ public class OfficialSearcher implements MultiSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		Mono<LocalQueryParams> queryParamsMono;
 		if (transformer == GlobalQueryRewrite.NO_REWRITE) {

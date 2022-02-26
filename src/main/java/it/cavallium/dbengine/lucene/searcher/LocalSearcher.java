@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public interface LocalSearcher {
@@ -14,7 +15,7 @@ public interface LocalSearcher {
 	 */
 	Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer);
 
 	/**

@@ -15,6 +15,7 @@ import java.io.IOException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -32,7 +33,7 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		Mono<LocalQueryParams> queryParamsMono;
 		if (transformer == GlobalQueryRewrite.NO_REWRITE) {

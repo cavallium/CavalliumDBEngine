@@ -14,6 +14,7 @@ import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Closeable {
@@ -28,7 +29,7 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 	@Override
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		var single = requireNonNullElseGet(this.single.get(), this.multi::get);
 		requireNonNull(single, "LuceneLocalSearcher not set");

@@ -246,7 +246,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
-			String keyFieldName) {
+			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searchers = getIndexSearchers(snapshot);
 

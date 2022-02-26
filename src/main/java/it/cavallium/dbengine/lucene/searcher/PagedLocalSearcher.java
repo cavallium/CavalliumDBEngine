@@ -20,6 +20,7 @@ import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.TotalHits.Relation;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
@@ -30,7 +31,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 

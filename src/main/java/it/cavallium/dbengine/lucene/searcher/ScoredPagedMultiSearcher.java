@@ -35,7 +35,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		Mono<LocalQueryParams> queryParamsMono;
 		if (transformer == GlobalQueryRewrite.NO_REWRITE) {

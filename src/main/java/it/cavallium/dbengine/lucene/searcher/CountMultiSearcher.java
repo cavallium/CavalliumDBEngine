@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -95,7 +96,7 @@ public class CountMultiSearcher implements MultiSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		return Mono
 				.usingWhen(

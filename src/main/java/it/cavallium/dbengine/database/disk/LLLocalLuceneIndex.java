@@ -438,7 +438,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			Multimap<String, String> mltDocumentFieldsFlux) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searcher = this.searcherManager.retrieveSearcher(snapshot);
@@ -451,7 +451,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
-			String keyFieldName) {
+			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searcher = searcherManager.retrieveSearcher(snapshot);
 

@@ -13,6 +13,7 @@ import java.util.List;
 import org.apache.lucene.search.CustomHitsThresholdChecker;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -22,7 +23,7 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {

@@ -42,7 +42,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		if (transformer == NO_REWRITE) {
 			return transformedCollectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
@@ -63,7 +63,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	// Remember to change also AdaptiveLocalSearcher
 	public Mono<LuceneSearchResult> transformedCollectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		// offset + limit
 		long realLimit = queryParams.offsetLong() + queryParams.limitLong();

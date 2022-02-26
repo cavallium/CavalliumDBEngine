@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public interface MultiSearcher extends LocalSearcher {
@@ -15,7 +16,7 @@ public interface MultiSearcher extends LocalSearcher {
 	 */
 	Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer);
 
 	/**
@@ -27,7 +28,7 @@ public interface MultiSearcher extends LocalSearcher {
 	@Override
 	default Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		var searchers = indexSearcherMono.map(a -> LLIndexSearchers.unsharded(a).send());
 		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);

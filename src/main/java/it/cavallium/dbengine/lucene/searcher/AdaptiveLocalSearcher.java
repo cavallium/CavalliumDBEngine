@@ -44,7 +44,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	@Override
 	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcher,
 			LocalQueryParams queryParams,
-			String keyFieldName,
+			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		Mono<Send<LLIndexSearchers>> indexSearchersMono = indexSearcher
 				.map(LLIndexSearchers::unsharded)

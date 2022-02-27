@@ -1,62 +1,60 @@
 package it.cavallium.dbengine.lucene.directory;
 
-import org.apache.lucene.index.IndexFileNames;
-import org.apache.lucene.store.*;
-import org.apache.lucene.util.Accountable;
-
+import com.google.common.util.concurrent.Striped;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import org.apache.lucene.index.IndexFileNames;
+import org.apache.lucene.store.BaseDirectory;
+import org.apache.lucene.store.IOContext;
+import org.apache.lucene.store.IndexInput;
+import org.apache.lucene.store.IndexOutput;
+import org.apache.lucene.store.LockFactory;
+import org.apache.lucene.store.SingleInstanceLockFactory;
+import org.apache.lucene.util.Accountable;
+import org.jetbrains.annotations.Nullable;
+import org.rocksdb.ColumnFamilyHandle;
+import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
-/**
- * Created by wens on 16-3-10.
- */
 public class RocksdbDirectory extends BaseDirectory implements Accountable {
 
 	private static final int BUFFER_SIZE = 10 * 1024;
 
+	@SuppressWarnings("UnstableApiUsage")
+	protected final Striped<ReadWriteLock> metaLock = Striped.readWriteLock(64);
+
 	protected final RocksdbFileStore store;
 
-	protected final AtomicLong sizeInBytes = new AtomicLong();
-
-	/** Used to generate temp file names in {@link #createTempOutput}. */
 	private final AtomicLong nextTempFileCounter = new AtomicLong();
 
-	public RocksdbDirectory(Path path) throws IOException {
-		this(path, new SingleInstanceLockFactory());
+	public RocksdbDirectory(Path path, int blockSize) throws IOException {
+		this(path, blockSize, new SingleInstanceLockFactory());
 	}
 
-	/**
-	 * Sole constructor.
-	 *
-	 */
-	protected RocksdbDirectory(Path path, LockFactory lockFactory) throws IOException {
+	public RocksdbDirectory(RocksDB db, Map<String, ColumnFamilyHandle> handles, @Nullable String name, int blockSize)
+			throws IOException {
+		this(db, handles, name, blockSize, new SingleInstanceLockFactory());
+	}
+
+	protected RocksdbDirectory(Path path, int blockSize, LockFactory lockFactory) throws IOException {
 		super(lockFactory);
-		store = new RocksdbFileStore(path);
+		store = RocksdbFileStore.create(path, blockSize, metaLock);
 	}
 
-
-	public RocksdbDirectory(Path path, FSDirectory dir, IOContext context) throws IOException {
-		this(path, dir, false, context);
-	}
-
-	private RocksdbDirectory(Path path, FSDirectory dir, boolean closeDir, IOContext context) throws IOException {
-		this(path);
-		for (String file : dir.listAll()) {
-			if (!Files.isDirectory(dir.getDirectory().resolve(file))) {
-				copyFrom(dir, file, file, context);
-			}
-		}
-		if (closeDir) {
-			dir.close();
-		}
+	protected RocksdbDirectory(RocksDB db,
+			Map<String, ColumnFamilyHandle> handles,
+			@Nullable String name,
+			int blockSize,
+			LockFactory lockFactory) throws IOException {
+		super(lockFactory);
+		store = RocksdbFileStore.create(db, handles, name, blockSize, metaLock);
 	}
 
 	@Override
@@ -88,12 +86,17 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 	@Override
 	public void deleteFile(String name) throws IOException {
 		ensureOpen();
-		long size = store.getSize(name);
-		if (size != -1) {
-			sizeInBytes.addAndGet(-size);
-			store.remove(name);
-		} else {
-			throw new FileNotFoundException(name);
+		var l = metaLock.get(name).writeLock();
+		l.lock();
+		try {
+			long size = store.getSize(name);
+			if (size != -1) {
+				store.remove(name);
+			} else {
+				throw new FileNotFoundException(name);
+			}
+		} finally {
+			l.unlock();
 		}
 	}
 
@@ -103,6 +106,8 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 	@Override
 	public IndexOutput createOutput(String name, IOContext context) throws IOException {
 		ensureOpen();
+		var l = metaLock.get(name).writeLock();
+		l.lock();
 		try {
 			if (store.contains(name)) {
 				store.remove(name);
@@ -111,6 +116,8 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 			return new RocksdbOutputStream(name, store, BUFFER_SIZE, true);
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
+		} finally {
+			l.unlock();
 		}
 	}
 	@Override
@@ -134,17 +141,22 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 	}
 
 	@Override
-	public void sync(Collection<String> names) {
+	public void sync(Collection<String> names) throws IOException {
+		// System.out.println("Syncing " + names.size() + " files");
 	}
 
 	@Override
-	public void syncMetaData() {
-
+	public void syncMetaData() throws IOException {
+		// System.out.println("Syncing meta");
 	}
 
 	@Override
 	public void rename(String source, String dest) throws IOException {
 		ensureOpen();
+		var l = metaLock.bulkGet(List.of(source, dest));
+		for (ReadWriteLock ll : l) {
+			ll.writeLock().lock();
+		}
 		try {
 			if (!store.contains(source)) {
 				throw new FileNotFoundException(source);
@@ -152,6 +164,10 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 			store.move(source, dest);
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
+		} finally {
+			for (ReadWriteLock ll : l) {
+				ll.writeLock().unlock();
+			}
 		}
 	}
 
@@ -161,6 +177,8 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 	@Override
 	public IndexInput openInput(String name, IOContext context) throws IOException {
 		ensureOpen();
+		var l = metaLock.get(name).readLock();
+		l.lock();
 		try {
 			if (!store.contains(name)) {
 				throw new FileNotFoundException(name);
@@ -169,6 +187,8 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 			return new RocksdbInputStream(name, store, BUFFER_SIZE);
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
+		} finally {
+			l.unlock();
 		}
 	}
 

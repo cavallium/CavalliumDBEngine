@@ -3,6 +3,7 @@ package it.cavallium.dbengine.client;
 import it.cavallium.dbengine.lucene.directory.RocksdbDirectory;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -10,12 +11,16 @@ import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.Constants;
+import org.rocksdb.ColumnFamilyHandle;
+import org.rocksdb.RocksDB;
 
 public sealed interface LuceneDirectoryOptions {
 
 	Directory createLuceneDirectory(String directoryName) throws IOException;
 
 	Optional<Path> getManagedPath();
+
+	boolean isStorageCompressed();
 
 	record ByteBuffersDirectory() implements LuceneDirectoryOptions {
 
@@ -28,6 +33,11 @@ public sealed interface LuceneDirectoryOptions {
 		public Optional<Path> getManagedPath() {
 			return Optional.empty();
 		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return false;
+		}
 	}
 
 	record MemoryMappedFSDirectory(Path managedPath) implements StandardFSDirectoryOptions {
@@ -36,6 +46,11 @@ public sealed interface LuceneDirectoryOptions {
 		public FSDirectory createLuceneDirectory(String directoryName) throws IOException {
 			return FSDirectory.open(managedPath.resolve(directoryName + ".lucene.db"));
 		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return false;
+		}
 	}
 
 	record NIOFSDirectory(Path managedPath) implements StandardFSDirectoryOptions {
@@ -43,6 +58,11 @@ public sealed interface LuceneDirectoryOptions {
 		@Override
 		public FSDirectory createLuceneDirectory(String directoryName) throws IOException {
 			return org.apache.lucene.store.NIOFSDirectory.open(managedPath.resolve(directoryName + ".lucene.db"));
+		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return false;
 		}
 	}
 
@@ -73,14 +93,44 @@ public sealed interface LuceneDirectoryOptions {
 		public Optional<Path> getManagedPath() {
 			return delegate.getManagedPath();
 		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return delegate.isStorageCompressed();
+		}
 	}
 
-	record RocksDBDirectory(Path managedPath) implements PathDirectoryOptions {
+	record RocksDBStandaloneDirectory(Path managedPath, int blockSize) implements PathDirectoryOptions {
 
 		@Override
 		public Directory createLuceneDirectory(String directoryName) throws IOException {
-			return new RocksdbDirectory(managedPath.resolve(directoryName + ".lucene.db"));
+			return new RocksdbDirectory(managedPath.resolve(directoryName + ".lucene.db"), blockSize);
 		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return true;
+		}
+	}
+
+	record RocksDBSharedDirectory(RocksDB db, Map<String, ColumnFamilyHandle> handles, int blockSize) implements
+			LuceneDirectoryOptions {
+
+		@Override
+		public Directory createLuceneDirectory(String directoryName) throws IOException {
+			return new RocksdbDirectory(db, handles, directoryName, blockSize);
+		}
+
+		@Override
+		public Optional<Path> getManagedPath() {
+			return Optional.empty();
+		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return true;
+		}
+
 	}
 
 	record NRTCachingDirectory(LuceneDirectoryOptions delegate, long maxMergeSizeBytes, long maxCachedBytes) implements
@@ -99,6 +149,11 @@ public sealed interface LuceneDirectoryOptions {
 		public Optional<Path> getManagedPath() {
 			return delegate.getManagedPath();
 		}
+
+		@Override
+		public boolean isStorageCompressed() {
+			return delegate.isStorageCompressed();
+		}
 	}
 
 	sealed interface StandardFSDirectoryOptions extends PathDirectoryOptions {
@@ -115,5 +170,6 @@ public sealed interface LuceneDirectoryOptions {
 		default Optional<Path> getManagedPath() {
 			return Optional.of(managedPath());
 		}
+
 	}
 }

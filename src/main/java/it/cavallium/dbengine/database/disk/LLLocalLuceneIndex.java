@@ -51,6 +51,9 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.codecs.Codec;
+import org.apache.lucene.codecs.lucene90.Lucene90Codec;
+import org.apache.lucene.codecs.lucene90.Lucene90Codec.Mode;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -61,6 +64,7 @@ import org.apache.lucene.index.SimpleMergedSegmentWarmer;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.search.similarities.Similarity;
+import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.InfoStream;
@@ -135,6 +139,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		this.lowMemory = luceneOptions.lowMemory();
 		this.directory = luceneOptions.directoryOptions().createLuceneDirectory(luceneIndexName);
+		boolean compressCodec = !luceneOptions.directoryOptions().isStorageCompressed();
 
 		this.luceneIndexName = luceneIndexName;
 		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
@@ -450,6 +455,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					if (activeTasks.isTerminated()) return null;
 					shutdownLock.lock();
 					try {
+						if (closeRequested.get()) {
+							return null;
+						}
 						flushTime.recordCallable(() -> {
 							indexWriter.flush();
 							return null;
@@ -472,6 +480,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						if (activeTasks.isTerminated()) return null;
 						shutdownLock.lock();
 						try {
+							if (closeRequested.get()) {
+								return null;
+							}
 							refreshTime.recordCallable(() -> {
 								if (force) {
 									searcherManager.maybeRefreshBlocking();
@@ -491,9 +502,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.subscribeOn(luceneHeavyTasksScheduler);
 	}
 
-	private void scheduledCommit() {
+	/**
+	 * Internal method, do not use
+	 */
+	public void scheduledCommit() {
 		shutdownLock.lock();
 		try {
+			if (closeRequested.get()) {
+				return;
+			}
 			commitTime.recordCallable(() -> {
 				indexWriter.commit();
 				return null;
@@ -505,9 +522,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 	}
 
-	private void scheduledMerge() { // Do not use. Merges are done automatically by merge policies
+	/**
+	 * Internal method, do not use
+	 */
+	public void scheduledMerge() { // Do not use. Merges are done automatically by merge policies
 		shutdownLock.lock();
 		try {
+			if (closeRequested.get()) {
+				return;
+			}
 			mergeTime.recordCallable(() -> {
 				indexWriter.maybeMerge();
 				return null;

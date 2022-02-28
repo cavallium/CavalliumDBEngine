@@ -28,6 +28,7 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
+import org.rocksdb.DirectSlice;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.Options;
 import org.rocksdb.ReadOptions;
@@ -35,13 +36,9 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.WALRecoveryMode;
-import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import org.rocksdb.util.SizeUnit;
 
-/**
- * Created by wens on 16-3-10.
- */
 public class RocksdbFileStore {
 
 	private static final byte[] NEXT_ID_KEY = new byte[]{0x0};
@@ -54,11 +51,11 @@ public class RocksdbFileStore {
 	@SuppressWarnings("UnstableApiUsage")
 	private final Striped<ReadWriteLock> metaLock;
 
-	private static final ReadOptions DEFAULT_READ_OPTS = new ReadOptions();
-	private static final ReadOptions DEFAULT_IT_READ_OPTS = new ReadOptions()
-			.setReadaheadSize(SizeUnit.MB)
-			.setVerifyChecksums(false);
-	private static final WriteOptions DEFAULT_WRITE_OPTS = new WriteOptions();
+	private static final ReadOptions DEFAULT_READ_OPTS = new ReadOptions()
+			.setVerifyChecksums(false)
+			.setIgnoreRangeDeletions(true);
+	private final ReadOptions itReadOpts;
+	private static final WriteOptions DEFAULT_WRITE_OPTS = new WriteOptions().setDisableWAL(true);
 	private static final ByteBuffer EMPTY_BYTE_BUF = ByteBuffer.allocateDirect(0);
 
 	private final RocksDB db;
@@ -96,6 +93,10 @@ public class RocksdbFileStore {
 				db.put(headers, NEXT_ID_KEY, Longs.toByteArray(100));
 				incFlush();
 			}
+			this.itReadOpts = new ReadOptions()
+					.setReadaheadSize(blockSize * 4L)
+					.setVerifyChecksums(false)
+					.setIgnoreRangeDeletions(true);
 		} catch (RocksDBException e) {
 			throw new IOException("Failed to open RocksDB meta file store", e);
 		}
@@ -429,6 +430,12 @@ public class RocksdbFileStore {
 		return buf;
 	}
 
+	private ByteBuf getDataKeyPrefix(long id) {
+		var buf = ByteBufAllocator.DEFAULT.buffer(Long.BYTES);
+		buf.writeLongLE(id);
+		return buf;
+	}
+
 	private byte[] getDataKeyByteArray(long id, int i) {
 		ByteBuffer bb = ByteBuffer.wrap(new byte[Long.BYTES + Integer.BYTES]);
 		bb.order(ByteOrder.LITTLE_ENDIAN);
@@ -438,7 +445,7 @@ public class RocksdbFileStore {
 	}
 
 
-	public int load(String name, long position, byte[] buf, int offset, int len) throws IOException {
+	public int load(String name, long position, ByteBuf buf, int offset, int len) throws IOException {
 		var l = metaLock.get(name).readLock();
 		l.lock();
 		try {
@@ -453,7 +460,7 @@ public class RocksdbFileStore {
 				return -1;
 			}
 
-			if (buf.length < offset + len) {
+			if (buf.capacity() < offset + len) {
 				throw new IllegalArgumentException("len is too long");
 			}
 
@@ -463,50 +470,64 @@ public class RocksdbFileStore {
 
 			ByteBuf valBuf = getDataValueBuf();
 			ByteBuffer valBuffer = valBuf.nioBuffer(0, blockSize);
-			boolean shouldSeekTo = true;
-			try (RocksIterator it = db.newIterator(data, DEFAULT_IT_READ_OPTS)) {
-				int m;
-				int r;
-				int i;
-				do {
-					m = (int) (p % (long) blockSize);
-					r = Math.min(blockSize - m, n);
-					i = (int) (p / (long) blockSize);
+			try {
+				boolean shouldSeekTo = true;
+				try (var ro = new ReadOptions(itReadOpts)) {
+					ro.setIgnoreRangeDeletions(true);
+					ByteBuf fileIdPrefix = getDataKeyPrefix(fileId);
+					try {
+						try (var lb = new DirectSlice(fileIdPrefix.internalNioBuffer(0, Long.BYTES), Long.BYTES)) {
+							ro.setIterateLowerBound(lb);
+							ro.setPrefixSameAsStart(true);
+							try (RocksIterator it = db.newIterator(data, itReadOpts)) {
+								int m;
+								int r;
+								int i;
+								do {
+									m = (int) (p % (long) blockSize);
+									r = Math.min(blockSize - m, n);
+									i = (int) (p / (long) blockSize);
 
-					//System.out.println("Reading block " + name + "(" + fileId + "):" + i);
+									//System.out.println("Reading block " + name + "(" + fileId + "):" + i);
 
-					if (shouldSeekTo) {
-						shouldSeekTo = false;
-						ByteBuf dataKey = getDataKey(null, fileId, i);
-						try {
-							it.seek(dataKey.nioBuffer());
-						} finally {
-							dataKey.release();
+									if (shouldSeekTo) {
+										shouldSeekTo = false;
+										ByteBuf dataKey = getDataKey(null, fileId, i);
+										try {
+											it.seek(dataKey.nioBuffer());
+										} finally {
+											dataKey.release();
+										}
+										if (!it.isValid()) {
+											throw new IOException("Block " + name + "(" + fileId + ")" + ":" + i + " not found");
+										}
+									} else {
+										it.next();
+										if (!it.isValid()) {
+											throw new IOException("Block " + name + "(" + fileId + ")" + ":" + i + " not found");
+										}
+									}
+									assert Arrays.equals(getDataKeyByteArray(fileId, i), it.key());
+									int dataRead = it.value(valBuffer);
+									valBuf.writerIndex(dataRead);
+
+									valBuf.getBytes(m, buf, f, r);
+
+									valBuf.writerIndex(0);
+									valBuf.readerIndex(0);
+
+									p += r;
+									f += r;
+									n -= r;
+								} while (n != 0 && p < size);
+
+								return (int) (p - position);
+							}
 						}
-						if (!it.isValid()) {
-							throw new IOException("Block " + name + "(" + fileId + ")" + ":" + i + " not found");
-						}
-					} else {
-						it.next();
-						if (!it.isValid()) {
-							throw new IOException("Block " + name + "(" + fileId + ")" + ":" + i + " not found");
-						}
-						assert Arrays.equals(getDataKeyByteArray(fileId, i), it.key());
+					} finally {
+						fileIdPrefix.release();
 					}
-					int dataRead = it.value(valBuffer);
-					valBuf.writerIndex(dataRead);
-
-					valBuf.getBytes(m, buf, f, r);
-
-					valBuf.writerIndex(0);
-					valBuf.readerIndex(0);
-
-					p += r;
-					f += r;
-					n -= r;
-				} while (n != 0 && p < size);
-
-				return (int) (p - position);
+				}
 			} finally {
 				valBuf.release();
 			}
@@ -666,7 +687,7 @@ public class RocksdbFileStore {
 		return keys;
 	}
 
-	public void append(String name, byte[] buf, int offset, int len) throws IOException {
+	public void append(String name, ByteBuf buf, int offset, int len) throws IOException {
 		var l = metaLock.get(name).writeLock();
 		l.lock();
 		try {
@@ -687,7 +708,6 @@ public class RocksdbFileStore {
 			ByteBuf dataKey = null;
 			ByteBuf bb = getDataValueBuf();
 			try {
-				try (var wb = new WriteBatch(len)) {
 					do {
 						int m = (int) (size % (long) blockSize);
 						int r = Math.min(blockSize - m, n);
@@ -709,7 +729,7 @@ public class RocksdbFileStore {
 						bb.ensureWritable(r);
 						bb.setBytes(m, buf, f, r);
 
-						wb.put(data, dataKey.nioBuffer(), bb.internalNioBuffer(0, m + r));
+					db.put(data, DEFAULT_WRITE_OPTS, dataKey.nioBuffer(), bb.internalNioBuffer(0, m + r));
 						incFlush();
 						size += r;
 						f += r;
@@ -720,9 +740,6 @@ public class RocksdbFileStore {
 						bb.readerIndex(0);
 						bb.writerIndex(0);
 					} while (n != 0);
-					db.write(DEFAULT_WRITE_OPTS, wb);
-					wb.clear();
-				}
 			} finally {
 				if (dataKey != null) {
 					dataKey.release();

@@ -1,13 +1,12 @@
 package it.cavallium.dbengine.lucene.directory;
 
-import org.apache.lucene.store.IndexInput;
-
+import io.net5.buffer.ByteBuf;
+import io.net5.buffer.ByteBufAllocator;
+import io.net5.buffer.Unpooled;
 import java.io.EOFException;
 import java.io.IOException;
+import org.apache.lucene.store.IndexInput;
 
-/**
- * Created by wens on 16-3-10.
- */
 public class RocksdbInputStream extends IndexInput {
 
 	private final int bufferSize;
@@ -16,9 +15,7 @@ public class RocksdbInputStream extends IndexInput {
 
 	private final long length;
 
-	private byte[] currentBuffer;
-
-	private int currentBufferIndex;
+	private ByteBuf currentBuffer;
 
 	private final RocksdbFileStore store;
 
@@ -29,21 +26,28 @@ public class RocksdbInputStream extends IndexInput {
 	}
 
 	public RocksdbInputStream(String name, RocksdbFileStore store, int bufferSize, long length) {
+		this(name,
+				store,
+				bufferSize,
+				length,
+				ByteBufAllocator.DEFAULT.ioBuffer(bufferSize, bufferSize).writerIndex(bufferSize)
+		);
+	}
+
+	private RocksdbInputStream(String name, RocksdbFileStore store, int bufferSize, long length, ByteBuf currentBuffer) {
 		super("RocksdbInputStream(name=" + name + ")");
 		this.name = name;
 		this.store = store;
 		this.bufferSize = bufferSize;
-		this.currentBuffer = new byte[this.bufferSize];
-		this.currentBufferIndex = bufferSize;
+		this.currentBuffer = currentBuffer;
+		currentBuffer.readerIndex(bufferSize);
 		this.position = 0;
 		this.length = length;
-
-
 	}
 
 	@Override
 	public void close() throws IOException {
-		//store.close();
+		currentBuffer.release();
 	}
 
 	@Override
@@ -57,7 +61,7 @@ public class RocksdbInputStream extends IndexInput {
 			throw new IllegalArgumentException("pos must be between 0 and " + length);
 		}
 		position = pos;
-		currentBufferIndex = this.bufferSize;
+		currentBuffer.readerIndex(bufferSize);
 	}
 
 	@Override
@@ -72,7 +76,12 @@ public class RocksdbInputStream extends IndexInput {
 			throw new IllegalArgumentException("slice() " + sliceDescription + " out of bounds: " + this);
 		}
 
-		return new RocksdbInputStream(name, store, bufferSize, offset + length) {
+		return new RocksdbInputStream(name,
+				store,
+				bufferSize,
+				offset + length,
+				Unpooled.buffer(bufferSize, bufferSize).writerIndex(bufferSize)
+		) {
 			{
 				seek(0L);
 			}
@@ -112,18 +121,18 @@ public class RocksdbInputStream extends IndexInput {
 			throw new EOFException("Read end");
 		}
 		loadBufferIfNeed();
-		byte b = currentBuffer[currentBufferIndex++];
+		byte b = currentBuffer.readByte();
 		position++;
 		return b;
 	}
 
 	protected void loadBufferIfNeed() throws IOException {
-		if (this.currentBufferIndex == this.bufferSize) {
+		if (currentBuffer.readerIndex() == this.bufferSize) {
 			int n = store.load(name, position, currentBuffer, 0, bufferSize);
 			if (n == -1) {
 				throw new EOFException("Read end");
 			}
-			this.currentBufferIndex = 0;
+			currentBuffer.readerIndex(0);
 		}
 	}
 
@@ -139,13 +148,12 @@ public class RocksdbInputStream extends IndexInput {
 		do {
 			loadBufferIfNeed();
 
-			int r = Math.min(bufferSize - currentBufferIndex, n);
+			int r = Math.min(bufferSize - currentBuffer.readerIndex(), n);
 
-			System.arraycopy(currentBuffer, currentBufferIndex, b, f, r);
+			currentBuffer.readBytes(b, f, r);
 
 			f += r;
 			position += r;
-			currentBufferIndex += r;
 			n -= r;
 
 		} while (n != 0);
@@ -154,8 +162,7 @@ public class RocksdbInputStream extends IndexInput {
 	@Override
 	public IndexInput clone() {
 		RocksdbInputStream in = (RocksdbInputStream) super.clone();
-		in.currentBuffer = new byte[bufferSize];
-		System.arraycopy(this.currentBuffer, 0, in.currentBuffer, 0, bufferSize);
+		in.currentBuffer = in.currentBuffer.duplicate();
 		return in;
 	}
 }

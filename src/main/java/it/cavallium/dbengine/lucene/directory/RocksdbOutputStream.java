@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.directory;
 
+import io.net5.buffer.ByteBuf;
+import io.net5.buffer.ByteBufAllocator;
 import org.apache.lucene.store.BufferedChecksum;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.Accountable;
@@ -9,18 +11,13 @@ import java.util.Collection;
 import java.util.zip.CRC32;
 import java.util.zip.Checksum;
 
-/**
- * Created by wens on 16-3-10.
- */
 public class RocksdbOutputStream extends IndexOutput implements Accountable {
 
 	private final int bufferSize;
 
 	private long position;
 
-	private final byte[] currentBuffer;
-
-	private int currentBufferIndex;
+	private ByteBuf currentBuffer;
 
 	private boolean dirty;
 
@@ -35,7 +32,7 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 		this.name = name;
 		this.store = store;
 		this.bufferSize = bufferSize;
-		this.currentBuffer = new byte[this.bufferSize];
+		this.currentBuffer = ByteBufAllocator.DEFAULT.ioBuffer(bufferSize, bufferSize);
 		this.position = 0;
 		this.dirty = false;
 		if (checksum) {
@@ -47,17 +44,19 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 
 	@Override
 	public void close() throws IOException {
-		if (dirty) {
-			flush();
+		if (currentBuffer != null) {
+			if (dirty) {
+				flush();
+			}
+			currentBuffer.release();
+			currentBuffer = null;
 		}
-		//store.close();
 	}
 
 
 	private void flush() throws IOException {
-
-		store.append(name, currentBuffer, 0, currentBufferIndex);
-		currentBufferIndex = 0;
+		store.append(name, currentBuffer, 0, currentBuffer.writerIndex());
+		currentBuffer.writerIndex(0);
 		dirty = false;
 	}
 
@@ -82,10 +81,10 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 		if (crc != null) {
 			crc.update(b);
 		}
-		if (currentBufferIndex == bufferSize) {
+		if (currentBuffer.writerIndex() == bufferSize) {
 			flush();
 		}
-		currentBuffer[currentBufferIndex++] = b;
+		currentBuffer.writeByte(b);
 		position++;
 		dirty = true;
 	}
@@ -99,13 +98,12 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 		int f = offset;
 		int n = length;
 		do {
-			if (currentBufferIndex == bufferSize) {
+			if (currentBuffer.writerIndex() == bufferSize) {
 				flush();
 			}
-			int r = Math.min(bufferSize - currentBufferIndex, n);
-			System.arraycopy(b, f, currentBuffer, currentBufferIndex, r);
+			int r = Math.min(bufferSize - currentBuffer.writerIndex(), n);
+			currentBuffer.writeBytes(b, f, r);
 			f += r;
-			currentBufferIndex += r;
 			position += r;
 			n -= r;
 			dirty = true;

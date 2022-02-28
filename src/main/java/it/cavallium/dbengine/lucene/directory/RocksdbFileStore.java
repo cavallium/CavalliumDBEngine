@@ -106,7 +106,6 @@ public class RocksdbFileStore {
 		var options = new DBOptions();
 		options.setWalSizeLimitMB(256);
 		options.setMaxWriteBatchGroupSizeBytes(2 * SizeUnit.MB);
-		options.setMaxLogFileSize(256 * SizeUnit.MB);
 		options.setAtomicFlush(false);
 		options.setWalRecoveryMode(WALRecoveryMode.PointInTimeRecovery);
 		options.setCreateMissingColumnFamilies(true);
@@ -119,7 +118,6 @@ public class RocksdbFileStore {
 		options.setAllowMmapWrites(true);
 		options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 		options.setDeleteObsoleteFilesPeriodMicros(Duration.ofMinutes(15).toNanos() / 1000L);
-		options.setRecycleLogFileNum(10);
 		return options;
 	}
 

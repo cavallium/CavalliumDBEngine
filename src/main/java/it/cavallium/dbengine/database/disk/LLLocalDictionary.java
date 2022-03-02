@@ -261,7 +261,7 @@ public class LLLocalDictionary implements LLDictionary {
 							Buffer result;
 							startedGet.increment();
 							try {
-								result = getTime.recordCallable(() -> db.get(readOptions, key, existsAlmostCertainly));
+								result = getTime.recordCallable(() -> db.get(readOptions, key));
 							} finally {
 								endedGet.increment();
 							}
@@ -431,8 +431,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Mono<Send<Buffer>> update(Mono<Send<Buffer>> keyMono,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly) {
+			UpdateReturnMode updateReturnMode) {
 		return keyMono
 				.publishOn(dbScheduler)
 				.handle((keySend, sink) -> {
@@ -451,7 +450,7 @@ public class LLLocalDictionary implements LLDictionary {
 						startedUpdates.increment();
 						try {
 							result = updateTime.recordCallable(() -> db.updateAtomic(EMPTY_READ_OPTIONS,
-									EMPTY_WRITE_OPTIONS, keySend, updater, existsAlmostCertainly, returnMode));
+									EMPTY_WRITE_OPTIONS, keySend, updater, returnMode));
 						} finally {
 							endedUpdates.increment();
 						}
@@ -475,8 +474,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			boolean existsAlmostCertainly) {
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
 		return keyMono
 				.publishOn(dbScheduler)
 				.handle((keySend, sink) -> {
@@ -496,7 +494,7 @@ public class LLLocalDictionary implements LLDictionary {
 						startedUpdates.increment();
 						try {
 							result = updateTime.recordCallable(() -> db.updateAtomic(EMPTY_READ_OPTIONS,
-									EMPTY_WRITE_OPTIONS, keySend, updater, existsAlmostCertainly, UpdateAtomicResultMode.DELTA));
+									EMPTY_WRITE_OPTIONS, keySend, updater, UpdateAtomicResultMode.DELTA));
 						} finally {
 							endedUpdates.increment();
 						}
@@ -556,7 +554,7 @@ public class LLLocalDictionary implements LLDictionary {
 					.handle((keySend, sink) -> {
 						try (var key = keySend.receive()) {
 							assert !Schedulers.isInNonBlockingThread() : "Called getPreviousData in a nonblocking thread";
-							var result = db.get(EMPTY_READ_OPTIONS, key, existsAlmostCertainly);
+							var result = db.get(EMPTY_READ_OPTIONS, key);
 							logger.trace(MARKER_ROCKSDB, "Reading {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
 							if (result == null) {
 								sink.complete();

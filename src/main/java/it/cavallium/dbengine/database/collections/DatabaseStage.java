@@ -47,23 +47,13 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T>, Resource<Da
 	}
 
 	default Mono<T> update(SerializationFunction<@Nullable T, @Nullable T> updater,
-			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly) {
+			UpdateReturnMode updateReturnMode) {
 		return this
-				.updateAndGetDelta(updater, existsAlmostCertainly)
+				.updateAndGetDelta(updater)
 				.transform(prev -> LLUtils.resolveDelta(prev, updateReturnMode));
 	}
 
-	default Mono<T> update(SerializationFunction<@Nullable T, @Nullable T> updater, UpdateReturnMode updateReturnMode) {
-		return update(updater, updateReturnMode, false);
-	}
-
-	Mono<Delta<T>> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater,
-			boolean existsAlmostCertainly);
-
-	default Mono<Delta<T>> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater) {
-		return updateAndGetDelta(updater, false);
-	}
+	Mono<Delta<T>> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater);
 
 	default Mono<Void> clear() {
 		return clearAndGetStatus().then();

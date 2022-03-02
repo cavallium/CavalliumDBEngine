@@ -83,7 +83,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public @Nullable Buffer get(@NotNull ReadOptions readOptions, Buffer key, boolean existsAlmostCertainly)
+	public @Nullable Buffer get(@NotNull ReadOptions readOptions, Buffer key)
 			throws RocksDBException {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called dbGet in a nonblocking thread");
@@ -177,9 +177,9 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			try {
 				byte[] keyArray = LLUtils.toArray(key);
 				requireNonNull(keyArray);
-				Holder<byte[]> data = existsAlmostCertainly ? null : new Holder<>();
-				if (existsAlmostCertainly || db.keyMayExist(cfh, readOptions, keyArray, data)) {
-					if (!existsAlmostCertainly && data.getValue() != null) {
+				Holder<byte[]> data = new Holder<>();
+				if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
+					if (data.getValue() != null) {
 						return LLUtils.fromByteArray(alloc, data.getValue());
 					} else {
 						byte[] result = db.get(cfh, readOptions, keyArray);

@@ -334,7 +334,7 @@ public class TestLuceneSearches {
 	@MethodSource("provideQueryArgumentsScoreModeAndSort")
 	public void testSearchAdvancedText(boolean shards, Sort multiSort) throws Throwable {
 		var queryBuilder = ClientQueryParams
-				.<LazyHitKey<String>>builder()
+				.builder()
 				.query(new BooleanQuery(List.of(
 						new BooleanQueryPart(new BoostQuery(new TermQuery(new Term("text", "hello")), 3), new OccurShould()),
 						new BooleanQueryPart(new TermQuery(new Term("text", "world")), new OccurShould()),

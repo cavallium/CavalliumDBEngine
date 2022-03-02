@@ -113,8 +113,7 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 
 	@Override
 	public Mono<A> update(SerializationFunction<@Nullable A, @Nullable A> updater,
-			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly) {
+			UpdateReturnMode updateReturnMode) {
 		return serializedSingle.update(oldValue -> {
 			var result = updater.apply(oldValue == null ? null : this.unMap(oldValue));
 			if (result == null) {
@@ -122,12 +121,11 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 			} else {
 				return this.map(result);
 			}
-		}, updateReturnMode, existsAlmostCertainly).handle(this::deserializeSink);
+		}, updateReturnMode).handle(this::deserializeSink);
 	}
 
 	@Override
-	public Mono<Delta<A>> updateAndGetDelta(SerializationFunction<@Nullable A, @Nullable A> updater,
-			boolean existsAlmostCertainly) {
+	public Mono<Delta<A>> updateAndGetDelta(SerializationFunction<@Nullable A, @Nullable A> updater) {
 		return serializedSingle.updateAndGetDelta(oldValue -> {
 			var result = updater.apply(oldValue == null ? null : this.unMap(oldValue));
 			if (result == null) {
@@ -135,7 +133,7 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 			} else {
 				return this.map(result);
 			}
-		}, existsAlmostCertainly).transform(mono -> LLUtils.mapDelta(mono, this::unMap));
+		}).transform(mono -> LLUtils.mapDelta(mono, this::unMap));
 	}
 
 	@Override

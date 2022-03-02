@@ -50,7 +50,6 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			@NotNull WriteOptions writeOptions,
 			Send<Buffer> keySend,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			boolean existsAlmostCertainly,
 			UpdateAtomicResultMode returnMode) throws IOException, RocksDBException {
 		try (Buffer key = keySend.receive()) {
 			try {

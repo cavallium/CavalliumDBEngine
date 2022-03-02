@@ -5,13 +5,9 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.RepeatedElementList;
-import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.util.List;
-import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -20,8 +16,6 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
-import org.rocksdb.Transaction;
-import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 
@@ -34,7 +28,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 		var allocator = getAllocator();
 		try (var keyBuf = allocator.allocate(key.length)) {
 			keyBuf.writeBytes(key);
-			var result = this.get(readOptions, keyBuf, existsAlmostCertainly);
+			var result = this.get(readOptions, keyBuf);
 			if (result == null) {
 				return null;
 			}
@@ -43,8 +37,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	}
 
 	@Nullable
-	Buffer get(@NotNull ReadOptions readOptions, Buffer key,
-			boolean existsAlmostCertainly) throws RocksDBException;
+	Buffer get(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
 
 	boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
 
@@ -68,7 +61,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	@NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions, @NotNull WriteOptions writeOptions,
 			Send<Buffer> keySend, SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			boolean existsAlmostCertainly, UpdateAtomicResultMode returnMode) throws RocksDBException, IOException;
+			UpdateAtomicResultMode returnMode) throws RocksDBException, IOException;
 
 	void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException;
 

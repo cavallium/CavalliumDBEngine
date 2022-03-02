@@ -119,8 +119,8 @@ public class LLLocalSingleton implements LLSingleton {
 						case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
 						case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 					};
-					UpdateAtomicResult result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater,
-							true, returnMode);
+					UpdateAtomicResult result
+							= db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater, returnMode);
 					return switch (updateReturnMode) {
 						case NOTHING -> null;
 						case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();

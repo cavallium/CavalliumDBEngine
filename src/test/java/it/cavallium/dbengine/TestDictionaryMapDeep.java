@@ -563,19 +563,19 @@ public abstract class TestDictionaryMapDeep {
 											assert old == null;
 											return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
 										}),
-										map.updateValue(key, false, old -> {
+										map.updateValue(key, old -> {
 											assert Objects.equals(old, Map.of("error?", "error."));
 											return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
 										}),
-										map.updateValue(key, true, old -> {
+										map.updateValue(key, old -> {
 											assert Objects.equals(old, Map.of("error?", "error."));
 											return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
 										}),
-										map.updateValue(key, true, old -> {
+										map.updateValue(key, old -> {
 											assert Objects.equals(old, Map.of("error?", "error."));
 											return value;
 										}),
-										map.updateValue(key, true, old -> {
+										map.updateValue(key, old -> {
 											assert Objects.equals(old, value);
 											return value;
 										})
@@ -652,19 +652,19 @@ public abstract class TestDictionaryMapDeep {
 							assert old == null;
 							return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
 						}).then(map.getValue(null, key)),
-						map.updateValue(key, false, old -> {
+						map.updateValue(key, old -> {
 							assert Objects.equals(old, Map.of("error?", "error."));
 							return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
 						}).then(map.getValue(null, key)),
-						map.updateValue(key, true, old -> {
+						map.updateValue(key, old -> {
 							assert Objects.equals(old, Map.of("error?", "error."));
 							return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
 						}).then(map.getValue(null, key)),
-						map.updateValue(key, true, old -> {
+						map.updateValue(key, old -> {
 							assert Objects.equals(old, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")));
 							return value;
 						}).then(map.getValue(null, key)),
-						map.updateValue(key, true, old -> {
+						map.updateValue(key, old -> {
 							assert Objects.equals(old, value);
 							return value;
 						}).then(map.getValue(null, key))

@@ -160,10 +160,10 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, this::pass, updateReturnMode, true).then()
+				dict.update(key, this::pass, updateReturnMode).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(key, this::pass, updateReturnMode, false).then()
+				dict.update(key, this::pass, updateReturnMode).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.update(key, this::pass, updateReturnMode).then()
@@ -180,10 +180,10 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, this::pass, true).then()
+				dict.updateAndGetDelta(key, this::pass).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.updateAndGetDelta(key, this::pass, false).then()
+				dict.updateAndGetDelta(key, this::pass).then()
 		);
 		runVoid(updateMode == UpdateMode.DISALLOW,
 				dict.updateAndGetDelta(key, this::pass).then()

@@ -210,12 +210,12 @@ public abstract class TestLLDictionary {
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, true).doOnNext(Send::close).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode, false).doOnNext(Send::close).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
@@ -235,12 +235,12 @@ public abstract class TestLLDictionary {
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, true).doOnNext(Send::close).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode, false).doOnNext(Send::close).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);

@@ -197,8 +197,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			boolean existsAlmostCertainly) {
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
 					try (key) {

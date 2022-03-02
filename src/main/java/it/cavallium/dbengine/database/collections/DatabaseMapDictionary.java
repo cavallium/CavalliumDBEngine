@@ -228,21 +228,19 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<U> updateValue(T keySuffix,
 			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix).send());
 		return dictionary
-				.update(keyMono, getSerializedUpdater(updater), updateReturnMode, existsAlmostCertainly)
+				.update(keyMono, getSerializedUpdater(updater), updateReturnMode)
 				.handle(this::deserializeValue);
 	}
 
 	@Override
 	public Mono<Delta<U>> updateValueAndGetDelta(T keySuffix,
-			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix).send());
 		return  dictionary
-				.updateAndGetDelta(keyMono, getSerializedUpdater(updater), existsAlmostCertainly)
+				.updateAndGetDelta(keyMono, getSerializedUpdater(updater))
 				.transform(mono -> LLUtils.mapLLDelta(mono, serializedToReceive -> {
 					try (var serialized = serializedToReceive.receive()) {
 						return valueSerializer.deserialize(serialized);

@@ -107,9 +107,7 @@ public class DatabaseSingleBucket<K, V, TH>
 	}
 
 	@Override
-	public Mono<V> update(SerializationFunction<@Nullable V, @Nullable V> updater,
-			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly) {
+	public Mono<V> update(SerializationFunction<@Nullable V, @Nullable V> updater, UpdateReturnMode updateReturnMode) {
 		return bucketStage
 				.update(oldBucket -> {
 					V oldValue = extractValue(oldBucket);
@@ -120,13 +118,12 @@ public class DatabaseSingleBucket<K, V, TH>
 					} else {
 						return this.insertValueOrCreate(oldBucket, newValue);
 					}
-				}, updateReturnMode, existsAlmostCertainly)
+				}, updateReturnMode)
 				.flatMap(this::extractValueTransformation);
 	}
 
 	@Override
-	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater,
-			boolean existsAlmostCertainly) {
+	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater) {
 		return bucketStage
 				.updateAndGetDelta(oldBucket -> {
 					V oldValue = extractValue(oldBucket);
@@ -136,7 +133,7 @@ public class DatabaseSingleBucket<K, V, TH>
 					} else {
 						return this.insertValueOrCreate(oldBucket, result);
 					}
-				}, existsAlmostCertainly)
+				})
 				.transform(mono -> LLUtils.mapDelta(mono, this::extractValue));
 	}
 

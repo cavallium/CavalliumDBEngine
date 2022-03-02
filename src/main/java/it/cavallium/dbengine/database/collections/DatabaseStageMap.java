@@ -55,39 +55,25 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 
 	default Mono<U> updateValue(T key,
 			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return LLUtils.usingResource(this.at(null, key).single(),
-				stage -> stage.update(updater, updateReturnMode, existsAlmostCertainly), true);
+				stage -> stage.update(updater, updateReturnMode), true);
 	}
 
 	default Flux<Boolean> updateMulti(Flux<T> keys, KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
 		return keys.flatMapSequential(key -> this.updateValue(key, prevValue -> updater.apply(key, prevValue)));
 	}
 
-	default Mono<U> updateValue(T key, UpdateReturnMode updateReturnMode, SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return updateValue(key, updateReturnMode, false, updater);
-	}
-
 	default Mono<Boolean> updateValue(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return updateValueAndGetDelta(key, false, updater).map(LLUtils::isDeltaChanged).single();
-	}
-
-	default Mono<Boolean> updateValue(T key, boolean existsAlmostCertainly, SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return updateValueAndGetDelta(key, existsAlmostCertainly, updater).map(LLUtils::isDeltaChanged).single();
+		return updateValueAndGetDelta(key, updater).map(LLUtils::isDeltaChanged).single();
 	}
 
 	default Mono<Delta<U>> updateValueAndGetDelta(T key,
-			boolean existsAlmostCertainly,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		var stageMono = this.at(null, key).single();
 		return stageMono.flatMap(stage -> stage
-				.updateAndGetDelta(updater, existsAlmostCertainly)
+				.updateAndGetDelta(updater)
 				.doFinally(s -> stage.close()));
-	}
-
-	default Mono<Delta<U>> updateValueAndGetDelta(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return updateValueAndGetDelta(key, false, updater);
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
@@ -203,8 +189,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	@Override
-	default Mono<Delta<Object2ObjectSortedMap<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater,
-			boolean existsAlmostCertainly) {
+	default Mono<Delta<Object2ObjectSortedMap<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater) {
 		return this
 				.getUpdateMode()
 				.single()

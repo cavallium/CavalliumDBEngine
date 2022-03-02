@@ -73,6 +73,6 @@ public class LLMemorySingleton implements LLSingleton {
 	@Override
 	public Mono<Send<Buffer>> update(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			UpdateReturnMode updateReturnMode) {
-		return dict.update(singletonNameBufMono, updater, updateReturnMode, true);
+		return dict.update(singletonNameBufMono, updater, updateReturnMode);
 	}
 }

@@ -32,27 +32,14 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly) {
+			UpdateReturnMode updateReturnMode) {
 		return this
-				.updateAndGetDelta(key, updater, existsAlmostCertainly)
+				.updateAndGetDelta(key, updater)
 				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
 	}
 
-	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			UpdateReturnMode returnMode) {
-		return update(key, updater, returnMode, false);
-	}
-
 	Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			boolean existsAlmostCertainly);
-
-	default Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
-		return updateAndGetDelta(key, updater, false);
-	}
+			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater);
 
 	Mono<Void> clear();
 

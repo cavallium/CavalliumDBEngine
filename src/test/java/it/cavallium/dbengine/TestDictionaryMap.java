@@ -229,19 +229,19 @@ public abstract class TestDictionaryMap {
 											Assertions.assertNull(old);
 											return "error?";
 										}),
-										map.updateValue(key, false, old -> {
+										map.updateValue(key, old -> {
 											Assertions.assertEquals("error?", old);
 											return "error?";
 										}),
-										map.updateValue(key, true, old -> {
+										map.updateValue(key, old -> {
 											Assertions.assertEquals("error?", old);
 											return "error?";
 										}),
-										map.updateValue(key, true, old -> {
+										map.updateValue(key, old -> {
 											Assertions.assertEquals("error?", old);
 											return value;
 										}),
-										map.updateValue(key, true, old -> {
+										map.updateValue(key, old -> {
 											Assertions.assertEquals(value, old);
 											return value;
 										})
@@ -278,7 +278,7 @@ public abstract class TestDictionaryMap {
 
 										Mono
 												.fromRunnable(() -> log.debug("2. Updating value: {}", key))
-												.then(map.updateValue(key, false, old -> {
+												.then(map.updateValue(key, old -> {
 													assert Objects.equals(old, "error?");
 													return "error?";
 												}))
@@ -287,7 +287,7 @@ public abstract class TestDictionaryMap {
 
 										Mono
 												.fromRunnable(() -> log.debug("3. Updating value: {}", key))
-												.then(map.updateValue(key, true, old -> {
+												.then(map.updateValue(key, old -> {
 													assert Objects.equals(old, "error?");
 													return "error?";
 												}))
@@ -296,7 +296,7 @@ public abstract class TestDictionaryMap {
 
 										Mono
 												.fromRunnable(() -> log.debug("4. Updating value: {}", key))
-												.then(map.updateValue(key, true, old -> {
+												.then(map.updateValue(key, old -> {
 													assert Objects.equals(old, "error?");
 													return value;
 												}))
@@ -305,7 +305,7 @@ public abstract class TestDictionaryMap {
 
 										Mono
 												.fromRunnable(() -> log.debug("5. Updating value: {}", key))
-												.then(map.updateValue(key, true, old -> {
+												.then(map.updateValue(key, old -> {
 													assert Objects.equals(old, value);
 													return value;
 												}))

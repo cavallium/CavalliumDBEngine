@@ -14,7 +14,6 @@ import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
-import org.rocksdb.Holder;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -45,43 +44,23 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 			@NotNull WriteOptions writeOptions,
 			Send<Buffer> keySend,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			boolean existsAlmostCertainly,
 			UpdateAtomicResultMode returnMode) throws IOException, RocksDBException {
 		try (Buffer key = keySend.receive()) {
 			try {
-				var cfh = getCfh();
-				var db = getDb();
-				var alloc = getAllocator();
-				@Nullable Buffer prevData;
-				var prevDataHolder = existsAlmostCertainly ? null : new Holder<byte[]>();
-				if (existsAlmostCertainly || db.keyMayExist(cfh, LLUtils.toArray(key), prevDataHolder)) {
-					if (!existsAlmostCertainly && prevDataHolder.getValue() != null) {
-						byte @Nullable [] prevDataBytes = prevDataHolder.getValue();
-						if (prevDataBytes != null) {
-							prevData = LLUtils.fromByteArray(alloc, prevDataBytes);
-						} else {
-							prevData = null;
-						}
-					} else {
-						prevData = this.get(readOptions, key, existsAlmostCertainly);
+				@Nullable Buffer prevData = this.get(readOptions, key);
+				try (prevData) {
+					if (logger.isTraceEnabled()) {
+						logger.trace(MARKER_ROCKSDB,
+								"Reading {}: {} (before update)",
+								LLUtils.toStringSafe(key),
+								LLUtils.toStringSafe(prevData)
+						);
 					}
-				} else {
-					prevData = null;
-				}
-				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Reading {}: {} (before update)", LLUtils.toStringSafe(key),
-							LLUtils.toStringSafe(prevData));
-				}
-				try {
 					@Nullable Buffer newData;
 					try (Buffer prevDataToSendToUpdater = prevData == null ? null : prevData.copy()) {
 						try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
 							try (var newDataToReceive = updater.apply(sentData)) {
-								if (newDataToReceive != null) {
-									newData = newDataToReceive;
-								} else {
-									newData = null;
-								}
+								newData = newDataToReceive;
 							}
 						}
 					}
@@ -90,8 +69,11 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 					try {
 						if (logger.isTraceEnabled()) {
 							logger.trace(MARKER_ROCKSDB,
-									"Updating {}. previous data: {}, updated data: {}", LLUtils.toStringSafe(key),
-									LLUtils.toStringSafe(prevData), LLUtils.toStringSafe(newData));
+									"Updating {}. previous data: {}, updated data: {}",
+									LLUtils.toStringSafe(key),
+									LLUtils.toStringSafe(prevData),
+									LLUtils.toStringSafe(newData)
+							);
 						}
 						if (prevData != null && newData == null) {
 							if (logger.isTraceEnabled()) {
@@ -101,8 +83,11 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 							changed = true;
 						} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Writing {}: {} (after update)", LLUtils.toStringSafe(key),
-										LLUtils.toStringSafe(newData));
+								logger.trace(MARKER_ROCKSDB,
+										"Writing {}: {} (after update)",
+										LLUtils.toStringSafe(key),
+										LLUtils.toStringSafe(newData)
+								);
 							}
 							Buffer dataToPut;
 							if (returnMode == UpdateAtomicResultMode.CURRENT) {
@@ -152,10 +137,6 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 						if (newData != null) {
 							newData.close();
 						}
-					}
-				} finally {
-					if (prevData != null) {
-						prevData.close();
 					}
 				}
 			} catch (Throwable ex) {

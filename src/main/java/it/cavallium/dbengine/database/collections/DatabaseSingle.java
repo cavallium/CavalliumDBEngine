@@ -117,8 +117,7 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 
 	@Override
 	public Mono<U> update(SerializationFunction<@Nullable U, @Nullable U> updater,
-			UpdateReturnMode updateReturnMode,
-			boolean existsAlmostCertainly) {
+			UpdateReturnMode updateReturnMode) {
 		return dictionary
 				.update(keyMono, (oldValueSer) -> {
 					try (oldValueSer) {
@@ -138,13 +137,12 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 							return serializeValue(result).receive();
 						}
 					}
-				}, updateReturnMode, existsAlmostCertainly)
+				}, updateReturnMode)
 				.handle(this::deserializeValue);
 	}
 
 	@Override
-	public Mono<Delta<U>> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater,
-			boolean existsAlmostCertainly) {
+	public Mono<Delta<U>> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return dictionary
 				.updateAndGetDelta(keyMono, (oldValueSer) -> {
 					try (oldValueSer) {
@@ -164,7 +162,7 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 							return serializeValue(result).receive();
 						}
 					}
-				}, existsAlmostCertainly).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
+				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
 					try (var valueBuf = serialized.receive()) {
 						return serializer.deserialize(valueBuf);
 					}

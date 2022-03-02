@@ -4,20 +4,23 @@ import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import it.cavallium.data.generator.nativedata.Nullableboolean;
+import it.cavallium.data.generator.nativedata.Nullableint;
+import it.cavallium.data.generator.nativedata.Nullablelong;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
-import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneDirectoryOptions;
 import it.cavallium.dbengine.client.LuceneDirectoryOptions.ByteBuffersDirectory;
 import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.disk.LLLocalDatabaseConnection;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
+import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -67,26 +70,25 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 						return null;
 					})
 					.subscribeOn(Schedulers.boundedElastic())
-					.then(new LLLocalDatabaseConnection(allocator.allocator(), new SimpleMeterRegistry(), wrkspcPath).connect())
+					.then(new LLLocalDatabaseConnection(allocator.allocator(), new SimpleMeterRegistry(), wrkspcPath, true).connect())
 					.flatMap(conn -> {
 						SwappableLuceneSearcher searcher = new SwappableLuceneSearcher();
 						var luceneHacks = new LuceneHacks(() -> searcher, () -> searcher);
 						return Mono.zip(
 										conn.getDatabase("testdb",
-												List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
+												List.of(ColumnUtils.dictionary("testmap"), ColumnUtils.special("ints"), ColumnUtils.special("longs")),
 												new DatabaseOptions(List.of(),
 														Map.of(),
 														true,
 														false,
-														true,
 														false,
 														true,
 														canUseNettyDirect,
 														false,
-														-1,
-														null,
-														null,
-														null
+														Nullableint.of(-1),
+														Nullablelong.empty(),
+														Nullablelong.empty(),
+														Nullableboolean.empty()
 												)
 										),
 										conn.getLuceneIndex(null,

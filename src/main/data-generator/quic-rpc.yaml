@@ -1,0 +1,243 @@
+# A type that starts with "-" is an optional type, otherwise it can't be null
+currentVersion: "0.0.0"
+interfacesData:
+  StandardFSDirectoryOptions:
+    extendInterfaces: [PathDirectoryOptions]
+  PathDirectoryOptions:
+    extendInterfaces: [LuceneDirectoryOptions]
+# versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
+versions:
+  0.0.0:
+    details:
+      changelog: "First version"
+    superTypes:
+      ServerBoundRequest: [
+        GetDatabase,
+        GetLuceneIndex,
+        Disconnect,
+        GetSingleton,
+        SingletonGet,
+        SingletonSet,
+        SingletonUpdateInit,
+        SingletonUpdateEnd
+      ]
+      ClientBoundResponse: [
+        Empty,
+        GeneratedEntityId,
+        Binary,
+        BinaryOptional
+      ]
+      ClientBoundRequest: [
+        SingletonUpdateOldData
+      ]
+      ServerBoundResponse: [
+        Empty
+      ]
+      LuceneDirectoryOptions: [
+        ByteBuffersDirectory,
+        MemoryMappedFSDirectory,
+        NIOFSDirectory,
+        DirectIOFSDirectory,
+        RocksDBStandaloneDirectory,
+        RocksDBSharedDirectory,
+        NRTCachingDirectory
+      ]
+      StandardFSDirectoryOptions: [
+        MemoryMappedFSDirectory,
+        NIOFSDirectory
+      ]
+      PathDirectoryOptions: [
+        MemoryMappedFSDirectory,
+        NIOFSDirectory,
+        RocksDBStandaloneDirectory,
+        StandardFSDirectoryOptions
+      ]
+    customTypes:
+      Path:
+        javaClass: java.nio.file.Path
+        serializer: it.cavallium.dbengine.database.remote.PathSerializer
+      Compression:
+        javaClass: it.cavallium.dbengine.client.Compression
+        serializer: it.cavallium.dbengine.database.remote.CompressionSerializer
+      TextFieldsAnalyzer:
+        javaClass: it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer
+        serializer: it.cavallium.dbengine.database.remote.TextFieldsAnalyzerSerializer
+      TextFieldsSimilarity:
+        javaClass: it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity
+        serializer: it.cavallium.dbengine.database.remote.TextFieldsSimilaritySerializer
+      Duration:
+        javaClass: java.time.Duration
+        serializer: it.cavallium.dbengine.database.remote.DurationSerializer
+      RocksDB:
+        javaClass: org.rocksdb.RocksDB
+        serializer: it.cavallium.dbengine.database.remote.RocksDBSerializer
+      ColumnFamilyHandle:
+        javaClass: org.rocksdb.ColumnFamilyHandle
+        serializer: it.cavallium.dbengine.database.remote.ColumnFamilyHandleSerializer
+      LuceneHacks:
+        javaClass: it.cavallium.dbengine.lucene.LuceneHacks
+        serializer: it.cavallium.dbengine.database.remote.LuceneHacksSerializer
+      UpdateReturnMode:
+        javaClass: it.cavallium.dbengine.database.UpdateReturnMode
+        serializer: it.cavallium.dbengine.database.remote.UpdateReturnModeSerializer
+      LLSnapshot:
+        javaClass: it.cavallium.dbengine.database.LLSnapshot
+        serializer: it.cavallium.dbengine.database.remote.LLSnapshotSerializer
+
+      StringMap:
+        javaClass: java.util.Map<java.lang.String, java.lang.String>
+        serializer: it.cavallium.dbengine.database.remote.StringMapSerializer
+      String2FieldAnalyzerMap:
+        javaClass: java.util.Map<java.lang.String, it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer>
+        serializer: it.cavallium.dbengine.database.remote.String2FieldAnalyzerMapSerializer
+      String2ColumnFamilyHandleMap:
+        javaClass: java.util.Map<java.lang.String, org.rocksdb.ColumnFamilyHandle>
+        serializer: it.cavallium.dbengine.database.remote.String2ColumnFamilyHandleMapSerializer
+    classes:
+
+      # Server-bound requests
+
+      BoxedServerBoundRequest:
+        data:
+          val: ServerBoundRequest
+      GetDatabase:
+        data:
+          name: String
+          columns: Column[]
+          databaseOptions: DatabaseOptions
+      GetLuceneIndex:
+        data:
+          clusterName: -String
+          shardName: -String
+          instancesCount: int
+          indicizerAnalyzers: IndicizerAnalyzers
+          indicizerSimilarities: IndicizerSimilarities
+      Disconnect: { data: { } }
+      GetSingleton:
+        data:
+          databaseId: long
+          singletonListColumnName: byte[]
+          name: byte[]
+          defaultValue: byte[]
+      SingletonGet:
+        data:
+          singletonId: long
+          snapshot: -LLSnapshot
+      SingletonSet:
+        data:
+          singletonId: long
+          value: byte[]
+      SingletonUpdateInit:
+        data:
+          singletonId: long
+          updateReturnMode: UpdateReturnMode
+      SingletonUpdateEnd:
+        data:
+          exist: boolean
+          value: byte[]
+
+      # Client-bound responses
+
+      BoxedClientBoundResponse:
+        data:
+          val: ClientBoundResponse
+      GeneratedEntityId:
+        data:
+          id: long
+
+      # Client-bound requests
+
+      BoxedClientBoundRequest:
+        data:
+          val: ClientBoundRequest
+      SingletonUpdateOldData:
+        data:
+          exist: boolean
+          oldValue: byte[]
+
+      # Server-bound responses
+
+      BoxedServerBoundResponse:
+        data:
+          val: ServerBoundResponse
+
+      # Data
+
+      BinaryOptional:
+        data:
+          val: -Binary
+      Binary:
+        data:
+          val: byte[]
+      Empty: { data: { } }
+      Column:
+        data:
+          name: String
+      DatabaseOptions:
+        data:
+          volumes: DatabaseVolume[]
+          extraFlags: StringMap
+          absoluteConsistency: boolean
+          lowMemory: boolean
+          useDirectIO: boolean
+          allowMemoryMapping: boolean
+          allowNettyDirect: boolean
+          optimistic: boolean
+          maxOpenFiles: -int
+          memtableMemoryBudgetBytes: -long
+          blockCache: -long
+          setCacheIndexAndFilterBlocks: -boolean
+      DatabaseVolume:
+        data:
+          volumePath: Path
+          targetSizeBytes: long
+          compression: Compression
+      IndicizerAnalyzers:
+        data:
+          defaultAnalyzer: TextFieldsAnalyzer
+          fieldAnalyzer: String2FieldAnalyzerMap
+          indicizerSimilarities: IndicizerSimilarities
+          luceneOptions: LuceneOptions
+          luceneHacks: LuceneHacks
+      IndicizerSimilarities:
+        data:
+          defaultSimilarity: TextFieldsSimilarity
+          fieldSimilarity: String2FieldAnalyzerMap
+      LuceneOptions:
+        data:
+          extraFlags: StringMap
+          queryRefreshDebounceTime: Duration
+          commitDebounceTime: Duration
+          lowMemory: boolean
+          directoryOptions: LuceneDirectoryOptions
+          indexWriterBufferSize: long
+          applyAllDeletes: boolean
+          writeAllDeletes: boolean
+          allowNonVolatileCollection: boolean
+          maxInMemoryResultEntries: int
+      ByteBuffersDirectory: { data: { } }
+      MemoryMappedFSDirectory:
+        data:
+          managedPath: Path
+      NIOFSDirectory:
+        data:
+          managedPath: Path
+      DirectIOFSDirectory:
+        data:
+          delegate: StandardFSDirectoryOptions
+          mergeBufferSize: -int
+          minBytesDirect: -long
+      RocksDBStandaloneDirectory:
+        data:
+          managedPath: Path
+          blockSize: int
+      RocksDBSharedDirectory:
+        data:
+          db: RocksDB
+          handles: String2ColumnFamilyHandleMap
+          blockSize: int
+      NRTCachingDirectory:
+        data:
+          delegate: LuceneDirectoryOptions
+          maxMergeSizeBytes: long
+          maxCachedBytes: long

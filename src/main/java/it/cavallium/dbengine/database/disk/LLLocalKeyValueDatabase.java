@@ -2,25 +2,21 @@ package it.cavallium.dbengine.database.disk;
 
 import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
-import static java.util.Objects.requireNonNullElse;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.Resource;
-import io.net5.buffer.api.Send;
 import io.net5.util.internal.PlatformDependent;
-import it.cavallium.dbengine.client.DatabaseOptions;
-import it.cavallium.dbengine.client.DatabaseVolume;
 import it.cavallium.dbengine.client.MemoryStats;
-import it.cavallium.dbengine.database.Column;
-import it.cavallium.dbengine.database.LLEntry;
+import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -37,7 +33,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -72,16 +67,9 @@ import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.rocksdb.util.SizeUnit;
-import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
-import reactor.util.function.Tuple4;
-import reactor.util.function.Tuple5;
-import reactor.util.function.Tuple6;
-import reactor.util.function.Tuple7;
 
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
@@ -118,6 +106,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public LLLocalKeyValueDatabase(BufferAllocator allocator,
 			MeterRegistry meterRegistry,
 			String name,
+			boolean inMemory,
 			@Nullable Path path,
 			List<Column> columns,
 			List<ColumnFamilyHandle> handles,
@@ -183,7 +172,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			);*/
 			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
-			createIfNotExists(descriptors, rocksdbOptions, databaseOptions, dbPath, dbPathString);
+			createIfNotExists(descriptors, rocksdbOptions, inMemory, dbPath, dbPathString);
 
 			while (true) {
 				try {
@@ -217,7 +206,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 			}
 			this.handles = new HashMap<>();
-			if (enableColumnsBug && !databaseOptions.inMemory()) {
+			if (enableColumnsBug && !inMemory) {
 				for (int i = 0; i < columns.size(); i++) {
 					this.handles.put(columns.get(i), handles.get(i));
 				}
@@ -379,7 +368,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		Objects.requireNonNull(path.getFileName());
 		List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes());
 		options.setDbPaths(paths);
-		options.setMaxOpenFiles(databaseOptions.maxOpenFiles());
+		options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
 		final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 		Cache blockCache;
 		if (databaseOptions.lowMemory()) {
@@ -393,12 +382,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(0) // 16MB
 					.setMaxTotalWalSize(0) // automatic
 			;
-			blockCache = new ClockCache(requireNonNullElse(databaseOptions.blockCache(), 8L * SizeUnit.MB).longValue(), -1, true);
+			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), -1, true);
 			tableOptions
 					.setIndexType(IndexType.kTwoLevelIndexSearch)
 					.setPartitionFilters(true)
 					.setBlockCache(blockCache)
-					.setCacheIndexAndFilterBlocks(requireNonNullElse(databaseOptions.setCacheIndexAndFilterBlocks(), true))
+					.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse(true))
 					.setCacheIndexAndFilterBlocksWithHighPriority(true)
 					.setPinTopLevelIndexAndFilter(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)
@@ -424,12 +413,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(1024) // 1024MB
 					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
 			;
-			blockCache = new ClockCache(requireNonNullElse(databaseOptions.blockCache(), 512 * SizeUnit.MB).longValue(), -1, true);
+			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB), -1, true);
 			tableOptions
 					.setIndexType(IndexType.kTwoLevelIndexSearch)
 					.setPartitionFilters(true)
 					.setBlockCache(blockCache)
-					.setCacheIndexAndFilterBlocks(requireNonNullElse(databaseOptions.setCacheIndexAndFilterBlocks(), true))
+					.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse( true))
 					.setCacheIndexAndFilterBlocksWithHighPriority(true)
 					.setPinTopLevelIndexAndFilter(true)
 					.setPinL0FilterAndIndexBlocksInCache(true)
@@ -451,10 +440,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 		options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, blockCache));
 
+		//noinspection ConstantConditions
 		if (databaseOptions.memtableMemoryBudgetBytes() != null) {
 			// 16MiB/256MiB of ram will be used for level style compaction
-			options.optimizeLevelStyleCompaction(requireNonNullElse(databaseOptions.memtableMemoryBudgetBytes(),
-					databaseOptions.lowMemory() ? 16L * SizeUnit.MB : 128L * SizeUnit.MB).longValue());
+			options.optimizeLevelStyleCompaction(databaseOptions
+					.memtableMemoryBudgetBytes()
+					.orElse(databaseOptions.lowMemory() ? 16L * SizeUnit.MB : 128L * SizeUnit.MB));
 		}
 
 		if (!databaseOptions.volumes().isEmpty()) {
@@ -519,10 +510,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors,
 			Options options,
-			DatabaseOptions databaseOptions,
+			boolean inMemory,
 			Path dbPath,
 			String dbPathString) throws RocksDBException {
-		if (databaseOptions.inMemory()) {
+		if (inMemory) {
 			return;
 		}
 		if (Files.notExists(dbPath)) {
@@ -575,7 +566,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						allocator,
 						getRocksDBColumn(db, getCfh(columnName)),
 						name,
-						Column.toString(columnName),
+						ColumnUtils.toString(columnName),
 						dbScheduler,
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						updateMode,
@@ -595,7 +586,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	private ColumnFamilyHandle getCfh(byte[] columnName) throws RocksDBException {
-		ColumnFamilyHandle cfh = handles.get(Column.special(Column.toString(columnName)));
+		ColumnFamilyHandle cfh = handles.get(ColumnUtils.special(ColumnUtils.toString(columnName)));
 		assert enableColumnsBug || Arrays.equals(cfh.getName(), columnName);
 		return cfh;
 	}

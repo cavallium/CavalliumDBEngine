@@ -2,11 +2,12 @@ package it.cavallium.dbengine.database;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
-import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.util.List;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;

@@ -2,15 +2,15 @@ package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
-import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.database.Column;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
+import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedList;
@@ -32,12 +32,17 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
 	private final Path basePath;
+	private final boolean inMemory;
 	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
 
-	public LLLocalDatabaseConnection(BufferAllocator allocator, MeterRegistry meterRegistry, Path basePath) {
+	public LLLocalDatabaseConnection(BufferAllocator allocator,
+			MeterRegistry meterRegistry,
+			Path basePath,
+			boolean inMemory) {
 		this.allocator = allocator;
 		this.meterRegistry = meterRegistry;
 		this.basePath = basePath;
+		this.inMemory = inMemory;
 	}
 
 	@Override
@@ -77,6 +82,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						allocator,
 						meterRegistry,
 						name,
+						inMemory,
 						basePath.resolve("database_" + name),
 						columns,
 						new LinkedList<>(),

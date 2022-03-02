@@ -3,18 +3,21 @@ package it.cavallium.dbengine;
 import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import it.cavallium.data.generator.nativedata.Nullableboolean;
+import it.cavallium.data.generator.nativedata.Nullableint;
+import it.cavallium.data.generator.nativedata.Nullablelong;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
-import it.cavallium.dbengine.client.DatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.LuceneDirectoryOptions.ByteBuffersDirectory;
 import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.memory.LLMemoryDatabaseConnection;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
+import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -45,20 +48,19 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 					return Mono
 							.zip(
 									conn.getDatabase("testdb",
-											List.of(Column.dictionary("testmap"), Column.special("ints"), Column.special("longs")),
-											new DatabaseOptions(List.of(),
+											List.of(ColumnUtils.dictionary("testmap"), ColumnUtils.special("ints"), ColumnUtils.special("longs")),
+											DatabaseOptions.of(List.of(),
 													Map.of(),
 													true,
 													false,
-													true,
 													false,
 													true,
 													canUseNettyDirect,
 													true,
-													-1,
-													null,
-													null,
-													null
+													Nullableint.of(-1),
+													Nullablelong.empty(),
+													Nullablelong.empty(),
+													Nullableboolean.empty()
 											)
 									),
 									conn.getLuceneIndex(null,

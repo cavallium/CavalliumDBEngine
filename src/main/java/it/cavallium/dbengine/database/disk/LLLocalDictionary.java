@@ -14,8 +14,7 @@ import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
-import it.cavallium.dbengine.client.DatabaseOptions;
-import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -28,6 +27,7 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -891,7 +891,7 @@ public class LLLocalDictionary implements LLDictionary {
 											rocksIterator.value(DUMMY_WRITE_ONLY_BYTE_BUFFER);
 											rocksIterator.status();
 										} catch (RocksDBException ex) {
-											sink.next(new BadBlock(databaseName, Column.special(columnName), null, ex));
+											sink.next(new BadBlock(databaseName, ColumnUtils.special(columnName), null, ex));
 										}
 										rocksIterator.next();
 									}

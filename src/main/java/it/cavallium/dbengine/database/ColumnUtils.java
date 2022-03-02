@@ -1,10 +1,13 @@
 package it.cavallium.dbengine.database;
 
+import it.cavallium.dbengine.rpc.current.data.Column;
 import java.nio.charset.StandardCharsets;
-import java.util.Objects;
-import java.util.StringJoiner;
 
-public record Column(String name) {
+public class ColumnUtils {
+
+	private ColumnUtils() {
+
+	}
 
 	public static Column dictionary(String name) {
 		return new Column("hash_map_" + name);

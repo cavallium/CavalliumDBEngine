@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.dbengine.database.Column;
+import it.cavallium.dbengine.rpc.current.data.Column;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import org.jetbrains.annotations.Nullable;
 

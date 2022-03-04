@@ -5,13 +5,26 @@ interfacesData:
     extendInterfaces: [PathDirectoryOptions]
   PathDirectoryOptions:
     extendInterfaces: [LuceneDirectoryOptions]
+  ClientBoundRequest:
+    extendInterfaces: [RPCEvent]
+  ClientBoundResponse:
+    extendInterfaces: [RPCEvent]
+  ServerBoundRequest:
+    extendInterfaces: [RPCEvent]
+  ServerBoundResponse:
+    extendInterfaces: [RPCEvent]
 # versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
 versions:
   0.0.0:
     details:
       changelog: "First version"
     superTypes:
-      ServerBoundRequest: [
+      RPCEvent: [
+        Empty,
+        Binary,
+        BinaryOptional,
+        SingletonUpdateOldData,
+        GeneratedEntityId,
         GetDatabase,
         GetLuceneIndex,
         Disconnect,
@@ -19,19 +32,31 @@ versions:
         SingletonGet,
         SingletonSet,
         SingletonUpdateInit,
-        SingletonUpdateEnd
+        SingletonUpdateEnd,
+        RPCCrash
+      ]
+      ServerBoundRequest: [
+        GetDatabase,
+        GetLuceneIndex,
+        Disconnect,
+        GetSingleton,
+        SingletonGet,
+        SingletonSet,
+        SingletonUpdateInit
       ]
       ClientBoundResponse: [
         Empty,
         GeneratedEntityId,
         Binary,
-        BinaryOptional
+        BinaryOptional,
+        RPCCrash
       ]
       ClientBoundRequest: [
         SingletonUpdateOldData
       ]
       ServerBoundResponse: [
-        Empty
+        Empty,
+        SingletonUpdateEnd
       ]
       LuceneDirectoryOptions: [
         ByteBuffersDirectory,
@@ -94,12 +119,12 @@ versions:
         javaClass: java.util.Map<java.lang.String, org.rocksdb.ColumnFamilyHandle>
         serializer: it.cavallium.dbengine.database.remote.String2ColumnFamilyHandleMapSerializer
     classes:
+      BoxedRPCEvent:
+        data:
+          val: RPCEvent
 
       # Server-bound requests
 
-      BoxedServerBoundRequest:
-        data:
-          val: ServerBoundRequest
       GetDatabase:
         data:
           name: String
@@ -138,18 +163,16 @@ versions:
 
       # Client-bound responses
 
-      BoxedClientBoundResponse:
-        data:
-          val: ClientBoundResponse
       GeneratedEntityId:
         data:
           id: long
+      RPCCrash:
+        data:
+          code: int
+          message: -String
 
       # Client-bound requests
 
-      BoxedClientBoundRequest:
-        data:
-          val: ClientBoundRequest
       SingletonUpdateOldData:
         data:
           exist: boolean
@@ -157,9 +180,6 @@ versions:
 
       # Server-bound responses
 
-      BoxedServerBoundResponse:
-        data:
-          val: ServerBoundResponse
 
       # Data
 

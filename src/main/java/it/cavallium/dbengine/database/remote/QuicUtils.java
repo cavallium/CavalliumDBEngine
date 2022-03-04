@@ -77,7 +77,8 @@ public class QuicUtils {
 										.in()
 										.withConnection(conn -> conn.addHandler(recvCodec.get()))
 										.receiveObject()
-										.log("RECEIVE_OBJECT_FROM_SERVER", Level.FINEST))
+										.log("ClientBoundEvent", Level.FINEST)
+								)
 								.publish(1)
 								.refCount();
 						return new MappedStream<>(stream.out, sendCodec, inConn, streamTerminator);
@@ -97,14 +98,13 @@ public class QuicUtils {
 		return QuicUtils
 				.createMappedStream(quicConnection, sendCodec, recvCodec)
 				.flatMap(stream -> {
-					var recv = stream.receive().log("SR-Receive", Level.FINEST);
-					var send = stream.send(req).log("SR-Send", Level.FINEST);
+					var recv = stream.receive().log("ClientBoundEvent", Level.FINEST);
+					var send = stream.send(req).log("ServerBoundEvent", Level.FINEST);
 					return send
 							.then(recv)
 							.doFinally(s -> stream.close());
 				})
-				.switchIfEmpty((Mono<RECV>) NO_RESPONSE_ERROR)
-				.log("SR-Result", Level.FINEST);
+				.switchIfEmpty((Mono<RECV>) NO_RESPONSE_ERROR);
 	}
 
 	/**
@@ -119,17 +119,17 @@ public class QuicUtils {
 				.flatMapMany(stream -> {
 					var sends = Flux
 							.from(requestFlux)
-							.log("SR-Send", Level.FINEST)
+							.log("ServerBoundEvent", Level.FINEST)
 							.concatMap(request -> stream.send(request)
 									.thenReturn(request));
 					var receives = stream
 							.receiveMany()
-							.log("SR-Receive", Level.FINEST);
+							.log("ClientBoundEvent", Level.FINEST);
 					return Flux
 							.zip(sends, receives, QuicUtils::extractResponse)
 							.doFinally(s -> stream.close());
 				})
-				.log("SR-Result", Level.FINEST);
+				.log("ServerBoundEvent", Level.FINEST);
 	}
 
 	/**

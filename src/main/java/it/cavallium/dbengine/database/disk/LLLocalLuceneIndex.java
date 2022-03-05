@@ -11,9 +11,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import io.net5.buffer.api.Send;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
@@ -27,6 +24,7 @@ import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.mlt.MoreLikeThisTransformer;
@@ -35,13 +33,14 @@ import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
@@ -51,9 +50,6 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
-import org.apache.lucene.codecs.Codec;
-import org.apache.lucene.codecs.lucene90.Lucene90Codec;
-import org.apache.lucene.codecs.lucene90.Lucene90Codec.Mode;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -64,7 +60,6 @@ import org.apache.lucene.index.SimpleMergedSegmentWarmer;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.search.similarities.Similarity;
-import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.InfoStream;
@@ -103,12 +98,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final Timer mergeTime;
 	private final Timer refreshTime;
 
-	private final String luceneIndexName;
+	private final String shardName;
 	private final IndexWriter indexWriter;
 	private final SnapshotsManager snapshotsManager;
 	private final IndexSearcherManager searcherManager;
 	private final PerFieldAnalyzerWrapper luceneAnalyzer;
 	private final Similarity luceneSimilarity;
+	private final LuceneRocksDBManager rocksDBManager;
 	private final Directory directory;
 	private final boolean lowMemory;
 
@@ -117,19 +113,15 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	public LLLocalLuceneIndex(LLTempLMDBEnv env,
 			MeterRegistry meterRegistry,
-			@Nullable String clusterName,
-			@Nullable String shardName,
+			@NotNull String clusterName,
+			int shardIndex,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
-			@Nullable LuceneHacks luceneHacks) throws IOException {
-		if (clusterName == null && shardName == null) {
-			throw new IllegalArgumentException("Clustern name and/or shard name must be set");
-		}
-		String logName = Objects.requireNonNullElse(clusterName, shardName);
-		String luceneIndexName = Objects.requireNonNullElse(shardName, clusterName);
+			@Nullable LuceneHacks luceneHacks,
+			@Nullable LuceneRocksDBManager rocksDBManager) throws IOException {
 
-		if (luceneIndexName.length() == 0) {
+		if (clusterName.isBlank()) {
 			throw new IOException("Empty lucene database name");
 		}
 		if (!MMapDirectory.UNMAP_SUPPORTED) {
@@ -138,13 +130,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			logger.debug("Lucene MMap is supported");
 		}
 		this.lowMemory = luceneOptions.lowMemory();
-		this.directory = luceneOptions.directoryOptions().createLuceneDirectory(luceneIndexName);
-		boolean compressCodec = !luceneOptions.directoryOptions().isStorageCompressed();
+		this.directory = LuceneUtils.createLuceneDirectory(luceneOptions.directoryOptions(),
+				LuceneUtils.getStandardName(clusterName, shardIndex),
+				rocksDBManager);
+		//boolean compressCodec = !luceneOptions.directoryOptions().isStorageCompressed();
 
-		this.luceneIndexName = luceneIndexName;
+		this.shardName = clusterName;
 		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
+		this.rocksDBManager = rocksDBManager;
 
 		var useLMDB = luceneOptions.allowNonVolatileCollection();
 		var maxInMemoryResultEntries = luceneOptions.maxInMemoryResultEntries();
@@ -170,7 +165,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			var concurrentMergeScheduler = new ConcurrentMergeScheduler();
 			// false means SSD, true means HDD
 			concurrentMergeScheduler.setDefaultMaxMergesAndThreads(false);
-			if (luceneOptions.directoryOptions().getManagedPath().isEmpty()) {
+			if (LuceneUtils.getManagedPath(luceneOptions.directoryOptions()).isEmpty()) {
 				concurrentMergeScheduler.disableAutoIOThrottle();
 			} else {
 				concurrentMergeScheduler.enableAutoIOThrottle();
@@ -200,14 +195,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				luceneOptions.queryRefreshDebounceTime()
 		);
 
-		this.startedDocIndexings = meterRegistry.counter("index.write.doc.started.counter", "index.name", logName);
-		this.endeddDocIndexings = meterRegistry.counter("index.write.doc.ended.counter", "index.name", logName);
-		this.docIndexingTime = Timer.builder("index.write.doc.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
-		this.snapshotTime = Timer.builder("index.write.snapshot.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
-		this.flushTime = Timer.builder("index.write.flush.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
-		this.commitTime = Timer.builder("index.write.commit.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
-		this.mergeTime = Timer.builder("index.write.merge.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
-		this.refreshTime = Timer.builder("index.search.refresh.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", logName).register(meterRegistry);
+		this.startedDocIndexings = meterRegistry.counter("index.write.doc.started.counter", "index.name", clusterName);
+		this.endeddDocIndexings = meterRegistry.counter("index.write.doc.ended.counter", "index.name", clusterName);
+		this.docIndexingTime = Timer.builder("index.write.doc.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
+		this.snapshotTime = Timer.builder("index.write.snapshot.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
+		this.flushTime = Timer.builder("index.write.flush.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
+		this.commitTime = Timer.builder("index.write.commit.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
+		this.mergeTime = Timer.builder("index.write.merge.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
+		this.refreshTime = Timer.builder("index.search.refresh.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
 
 		// Start scheduled tasks
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
@@ -221,7 +216,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public String getLuceneIndexName() {
-		return luceneIndexName;
+		return shardName;
 	}
 
 	@Override
@@ -328,8 +323,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Mono<Map<LLTerm, LLUpdateDocument>> documents) {
-		return documents.flatMap(this::updateDocuments).then();
+	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+		return documents
+				.collectMap(Entry::getKey, Entry::getValue)
+				.flatMap(this::updateDocuments).then();
 	}
 
 	private Mono<Void> updateDocuments(Map<LLTerm, LLUpdateDocument> documentsMap) {
@@ -367,7 +364,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Flux<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName,
 			Multimap<String, String> mltDocumentFieldsFlux) {
@@ -377,18 +374,20 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, transformer)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.flux();
 	}
 
 	@Override
-	public Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
+	public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searcher = searcherManager.retrieveSearcher(snapshot);
 
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close));
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.flux();
 	}
 
 	@Override

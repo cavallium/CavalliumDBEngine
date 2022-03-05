@@ -10,6 +10,8 @@ import java.nio.charset.StandardCharsets;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -38,7 +40,7 @@ public class QuicUtils {
 
 	public record QuicStream(NettyInbound in, NettyOutbound out) {}
 
-	public static Mono<RPCEvent> catchRPCErrors(Throwable error) {
+	public static Mono<RPCEvent> catchRPCErrors(@NotNull Throwable error) {
 		return Mono.just(new RPCCrash(500, NullableString.ofNullableBlank(error.getMessage())));
 	}
 
@@ -65,22 +67,27 @@ public class QuicUtils {
 	 */
 	@SuppressWarnings("unchecked")
 	public static <SEND, RECV> Mono<MappedStream<SEND, RECV>> createMappedStream(
-			QuicConnection quicConnection,
-			Supplier<ByteToMessageCodec<? super SEND>> sendCodec,
-			Supplier<ByteToMessageCodec<? super RECV>> recvCodec) {
+			@NotNull QuicConnection quicConnection,
+			@NotNull Supplier<ByteToMessageCodec<? super SEND>> sendCodec,
+			@Nullable Supplier<ByteToMessageCodec<? super RECV>> recvCodec) {
 		return Mono.defer(() -> {
 			Empty<Void> streamTerminator = Sinks.empty();
 			return QuicUtils
 					.createStream(quicConnection, streamTerminator.asMono())
 					.map(stream -> {
-						Flux<RECV> inConn = Flux.defer(() -> (Flux<RECV>) stream
-										.in()
-										.withConnection(conn -> conn.addHandler(recvCodec.get()))
-										.receiveObject()
-										.log("ClientBoundEvent", Level.FINEST)
-								)
-								.publish(1)
-								.refCount();
+						Flux<RECV> inConn;
+						if (recvCodec == null) {
+							inConn = Flux.error(() -> new UnsupportedOperationException("Receiving responses is supported"));
+						} else {
+							inConn = Flux.defer(() -> (Flux<RECV>) stream
+											.in()
+											.withConnection(conn -> conn.addHandler(recvCodec.get()))
+											.receiveObject()
+											.log("ClientBoundEvent", Level.FINEST)
+									)
+									.publish(1)
+									.refCount();
+						}
 						return new MappedStream<>(stream.out, sendCodec, inConn, streamTerminator);
 					})
 					.single();
@@ -104,7 +111,33 @@ public class QuicUtils {
 							.then(recv)
 							.doFinally(s -> stream.close());
 				})
+				.map(QuicUtils::mapErrors)
 				.switchIfEmpty((Mono<RECV>) NO_RESPONSE_ERROR);
+	}
+
+	/**
+	 * Send a single request, receive a single response
+	 */
+
+	public static <SEND> Mono<Void> sendSimpleEvent(QuicConnection quicConnection,
+			Supplier<ByteToMessageCodec<? super SEND>> sendCodec,
+			SEND req) {
+		return QuicUtils
+				.createMappedStream(quicConnection, sendCodec, null)
+				.flatMap(stream -> {
+					var send = stream.send(req).log("ServerBoundEvent", Level.FINEST);
+					return send.doFinally(s -> stream.close());
+				})
+				.map(QuicUtils::mapErrors)
+				.then();
+	}
+
+	private static <R> R mapErrors(R value) {
+		if (value instanceof RPCCrash crash) {
+			throw new RPCException(crash.code(), crash.message().orElse(null));
+		} else {
+			return value;
+		}
 	}
 
 	/**
@@ -129,6 +162,7 @@ public class QuicUtils {
 							.zip(sends, receives, QuicUtils::extractResponse)
 							.doFinally(s -> stream.close());
 				})
+				.map(QuicUtils::mapErrors)
 				.log("ServerBoundEvent", Level.FINEST);
 	}
 
@@ -183,6 +217,7 @@ public class QuicUtils {
 							.merge(firstRequest, firstResponse.then(Mono.empty()), secondRequest, secondResponse)
 							.doFinally(s -> stream.close());
 				})
+				.map(QuicUtils::mapErrors)
 				.singleOrEmpty();
 	}
 }

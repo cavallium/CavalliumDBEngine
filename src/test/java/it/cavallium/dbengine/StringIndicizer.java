@@ -3,13 +3,13 @@ package it.cavallium.dbengine;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.client.Indicizer;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLItem;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import java.util.LinkedList;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.Field.Store;
@@ -58,11 +58,11 @@ public class StringIndicizer extends Indicizer<String, String> {
 
 	@Override
 	public IndicizerAnalyzers getPerFieldAnalyzer() {
-		return IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey);
+		return it.cavallium.dbengine.client.IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey);
 	}
 
 	@Override
 	public IndicizerSimilarities getPerFieldSimilarity() {
-		return IndicizerSimilarities.of(TextFieldsSimilarity.BM25Standard);
+		return it.cavallium.dbengine.client.IndicizerSimilarities.of(TextFieldsSimilarity.BM25Standard);
 	}
 }

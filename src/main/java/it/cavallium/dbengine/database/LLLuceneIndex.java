@@ -32,7 +32,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	Mono<Void> update(LLTerm id, LLIndexRequest request);
 
-	Mono<Void> updateDocuments(Mono<Map<LLTerm, LLUpdateDocument>> documents);
+	Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents);
 
 	Mono<Void> deleteAll();
 
@@ -43,7 +43,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 *                    The additional query will be used with the moreLikeThis query: "mltQuery AND additionalQuery"
 	 * @return the collection has one or more flux
 	 */
-	Mono<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+	Flux<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName,
 			Multimap<String, String> mltDocumentFields);
@@ -53,7 +53,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 *                    returned can be at most <code>limit * 15</code>
 	 * @return the collection has one or more flux
 	 */
-	Mono<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
+	Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName);
 

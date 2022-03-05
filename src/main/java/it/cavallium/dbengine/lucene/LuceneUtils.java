@@ -5,12 +5,11 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
+import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
@@ -22,15 +21,27 @@ import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
+import it.cavallium.dbengine.lucene.directory.RocksdbDirectory;
 import it.cavallium.dbengine.lucene.mlt.BigCompositeReader;
 import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
+import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
+import it.cavallium.dbengine.rpc.current.data.DirectIOFSDirectory;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
+import it.cavallium.dbengine.rpc.current.data.LuceneDirectoryOptions;
+import it.cavallium.dbengine.rpc.current.data.MemoryMappedFSDirectory;
+import it.cavallium.dbengine.rpc.current.data.NIOFSDirectory;
+import it.cavallium.dbengine.rpc.current.data.NRTCachingDirectory;
+import it.cavallium.dbengine.rpc.current.data.RocksDBSharedDirectory;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -39,6 +50,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -51,7 +63,7 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
-import org.apache.lucene.queries.mlt.MoreLikeThisQuery;
+import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.Collector;
@@ -71,7 +83,11 @@ import org.apache.lucene.search.similarities.ClassicSimilarity;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
+import org.apache.lucene.store.Directory;
+import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.Constants;
+import org.apache.lucene.util.StringHelper;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.novasearch.lucene.search.similarities.BM25Similarity;
@@ -543,5 +559,79 @@ public class LuceneUtils {
 
 	public static Collector withTimeout(Collector collector, Duration timeout) {
 		return new TimeLimitingCollector(collector, TimeLimitingCollector.getGlobalCounter(), timeout.toMillis());
+	}
+
+	public static String getStandardName(String clusterName, int shardIndex) {
+		return clusterName + "-shard" + shardIndex;
+	}
+
+	public static int getLuceneIndexId(LLTerm id, int totalShards) {
+		return Math.abs(StringHelper.murmurhash3_x86_32(id.getValueBytesRef(), 7) % totalShards);
+	}
+
+	public static Directory createLuceneDirectory(LuceneDirectoryOptions directoryOptions,
+			String directoryName,
+			LuceneRocksDBManager rocksDBManager)
+			throws IOException {
+		if (directoryOptions instanceof ByteBuffersDirectory) {
+			return new org.apache.lucene.store.ByteBuffersDirectory();
+		} else if (directoryOptions instanceof DirectIOFSDirectory directIOFSDirectory) {
+			FSDirectory delegateDirectory = (FSDirectory) createLuceneDirectory(directIOFSDirectory.delegate(),
+					directoryName,
+					rocksDBManager
+			);
+			if (Constants.LINUX || Constants.MAC_OS_X) {
+				try {
+					int mergeBufferSize = directIOFSDirectory.mergeBufferSize().orElse(DirectIODirectory.DEFAULT_MERGE_BUFFER_SIZE);
+					long minBytesDirect = directIOFSDirectory.minBytesDirect().orElse(DirectIODirectory.DEFAULT_MIN_BYTES_DIRECT);
+					return new DirectIODirectory(delegateDirectory, mergeBufferSize, minBytesDirect);
+				} catch (UnsupportedOperationException ex) {
+					logger.warn("Failed to open FSDirectory with DIRECT flag", ex);
+					return delegateDirectory;
+				}
+			} else {
+				logger.warn("Failed to open FSDirectory with DIRECT flag because the operating system is Windows");
+				return delegateDirectory;
+			}
+		} else if (directoryOptions instanceof MemoryMappedFSDirectory memoryMappedFSDirectory) {
+			return FSDirectory.open(memoryMappedFSDirectory.managedPath().resolve(directoryName + ".lucene.db"));
+		} else if (directoryOptions instanceof NIOFSDirectory niofsDirectory) {
+			return org.apache.lucene.store.NIOFSDirectory.open(niofsDirectory
+					.managedPath()
+					.resolve(directoryName + ".lucene.db"));
+		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
+			var delegateDirectory = createLuceneDirectory(nrtCachingDirectory.delegate(), directoryName, rocksDBManager);
+			return new org.apache.lucene.store.NRTCachingDirectory(delegateDirectory,
+					nrtCachingDirectory.maxMergeSizeBytes() / 1024D / 1024D,
+					nrtCachingDirectory.maxCachedBytes() / 1024D / 1024D
+			);
+		} else if (directoryOptions instanceof RocksDBSharedDirectory rocksDBSharedDirectory) {
+			var dbInstance = rocksDBManager.getOrCreate(rocksDBSharedDirectory.managedPath());
+			return new RocksdbDirectory(dbInstance.db(),
+					dbInstance.handles(),
+					directoryName,
+					rocksDBSharedDirectory.blockSize()
+			);
+		} else {
+			throw new UnsupportedOperationException("Unsupported directory: " + directoryName + ", " + directoryOptions);
+		}
+	}
+
+	public static Optional<Path> getManagedPath(LuceneDirectoryOptions directoryOptions) {
+		if (directoryOptions instanceof ByteBuffersDirectory) {
+			return Optional.empty();
+		} else if (directoryOptions instanceof DirectIOFSDirectory directIOFSDirectory) {
+			return getManagedPath(directIOFSDirectory.delegate());
+		} else if (directoryOptions instanceof MemoryMappedFSDirectory memoryMappedFSDirectory) {
+			return Optional.of(memoryMappedFSDirectory.managedPath());
+		} else if (directoryOptions instanceof NIOFSDirectory niofsDirectory) {
+			return Optional.of(niofsDirectory.managedPath());
+		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
+			return getManagedPath(nrtCachingDirectory.delegate());
+		} else if (directoryOptions instanceof RocksDBSharedDirectory rocksDBSharedDirectory) {
+			return Optional.of(rocksDBSharedDirectory.managedPath());
+		} else {
+			throw new UnsupportedOperationException("Unsupported directory: " + directoryOptions);
+		}
 	}
 }

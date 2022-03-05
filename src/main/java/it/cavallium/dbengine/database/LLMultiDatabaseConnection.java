@@ -8,10 +8,16 @@ import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart.Connection
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart.ConnectionPartRocksDB;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
+import it.unimi.dsi.fastutil.ints.IntSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -24,6 +30,7 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.function.Tuple2;
 
 public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
@@ -108,25 +115,75 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<? extends LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
-			@Nullable String shardName,
-			int instancesCount,
-			IndicizerAnalyzers indicizerAnalyzers,
-			IndicizerSimilarities indicizerSimilarities,
+	public Mono<? extends LLLuceneIndex> getLuceneIndex(String clusterName,
+			LuceneIndexStructure indexStructure,
+			it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers indicizerAnalyzers,
+			it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
 			@Nullable LuceneHacks luceneHacks) {
-		String indexShardName = Objects.requireNonNullElse(shardName, clusterName);
-		Objects.requireNonNull(indexShardName, "ClusterName and ShardName are both null");
-		LLDatabaseConnection conn = luceneShardConnections.getOrDefault(indexShardName, defaultLuceneConnection);
-		Objects.requireNonNull(conn, "Null connection");
-		return conn.getLuceneIndex(clusterName,
-				shardName,
-				instancesCount,
-				indicizerAnalyzers,
-				indicizerSimilarities,
-				luceneOptions,
-				luceneHacks
-		);
+		IntSet registeredShards = new IntOpenHashSet();
+		Map<LLDatabaseConnection, IntSet> connectionToShardMap = new HashMap<>();
+		for (int activeShard : indexStructure.activeShards()) {
+			if (activeShard >= indexStructure.totalShards()) {
+				throw new IllegalArgumentException(
+						"ActiveShard " + activeShard + " is bigger than total shards count " + indexStructure.totalShards());
+			}
+			if (!registeredShards.add(activeShard)) {
+				throw new IllegalArgumentException("ActiveShard " + activeShard + " has been specified twice");
+			}
+			var shardName = LuceneUtils.getStandardName(clusterName, activeShard);
+			var connection = luceneShardConnections.getOrDefault(shardName, defaultLuceneConnection);
+			Objects.requireNonNull(connection, "Null connection");
+			connectionToShardMap.computeIfAbsent(connection, k -> new IntOpenHashSet()).add(activeShard);
+		}
+		if (connectionToShardMap.keySet().size() == 1) {
+			return connectionToShardMap
+					.keySet()
+					.stream()
+					.findFirst()
+					.orElseThrow()
+					.getLuceneIndex(clusterName,
+							indexStructure,
+							indicizerAnalyzers,
+							indicizerSimilarities,
+							luceneOptions,
+							luceneHacks
+					);
+		} else {
+			return Flux
+					.fromIterable(connectionToShardMap.entrySet())
+					.flatMap(entry -> {
+						var connectionIndexStructure = indexStructure
+								.setActiveShards(new IntArrayList(entry.getValue()));
+
+						var connIndex = entry.getKey()
+								.getLuceneIndex(clusterName,
+										connectionIndexStructure,
+										indicizerAnalyzers,
+										indicizerSimilarities,
+										luceneOptions,
+										luceneHacks
+								).cache().repeat();
+						return Flux
+								.fromIterable(entry.getValue())
+								.zipWith(connIndex);
+					})
+					.collectList()
+					.map(indices -> {
+						var luceneIndices = new LLLuceneIndex[indexStructure.totalShards()];
+						for (Tuple2<Integer, ? extends LLLuceneIndex> index : indices) {
+							luceneIndices[index.getT1()] = index.getT2();
+						}
+						return new LLMultiLuceneIndex(clusterName,
+								indexStructure,
+								indicizerAnalyzers,
+								indicizerSimilarities,
+								luceneOptions,
+								luceneHacks,
+								luceneIndices
+						);
+					});
+		}
 	}
 
 	@Override

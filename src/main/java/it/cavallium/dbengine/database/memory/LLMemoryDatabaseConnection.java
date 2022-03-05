@@ -2,20 +2,22 @@ package it.cavallium.dbengine.database.memory;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneDirectoryOptions.ByteBuffersDirectory;
-import it.cavallium.dbengine.client.LuceneOptions;
-import it.cavallium.dbengine.client.LuceneOptionsBuilder;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
+import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptionsBuilder;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -80,15 +82,14 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
-			@Nullable String shardName,
-			int instancesCount,
+	public Mono<? extends LLLuceneIndex> getLuceneIndex(String clusterName,
+			LuceneIndexStructure indexStructure,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions inputLuceneOptions,
+			LuceneOptions luceneOptions,
 			@Nullable LuceneHacks luceneHacks) {
 		var memoryLuceneOptions = LuceneOptionsBuilder
-				.builder(inputLuceneOptions)
+				.builder(luceneOptions)
 				.directoryOptions(new ByteBuffersDirectory())
 				.build();
 		return Mono
@@ -97,11 +98,12 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 					return new LLLocalLuceneIndex(env,
 							meterRegistry,
 							clusterName,
-							shardName,
+							0,
 							indicizerAnalyzers,
 							indicizerSimilarities,
 							memoryLuceneOptions,
-							luceneHacks
+							luceneHacks,
+							null
 					);
 				})
 				.subscribeOn(Schedulers.boundedElastic());

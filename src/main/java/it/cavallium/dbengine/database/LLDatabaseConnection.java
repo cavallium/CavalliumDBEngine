@@ -2,13 +2,16 @@ package it.cavallium.dbengine.database;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import java.util.List;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
@@ -25,9 +28,8 @@ public interface LLDatabaseConnection {
 			List<Column> columns,
 			DatabaseOptions databaseOptions);
 
-	Mono<? extends LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
-			@Nullable String shardName,
-			int instancesCount,
+	Mono<? extends LLLuceneIndex> getLuceneIndex(String clusterName,
+			LuceneIndexStructure indexStructure,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,

@@ -1,20 +1,20 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import java.util.Map;
 
-public record IndicizerSimilarities(TextFieldsSimilarity defaultSimilarity, Map<String, TextFieldsSimilarity> fieldSimilarity) {
+public class IndicizerSimilarities {
 
-	public static IndicizerSimilarities of() {
+	public static it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities of() {
 		return of(TextFieldsSimilarity.BM25Standard);
 	}
 
-	public static IndicizerSimilarities of(TextFieldsSimilarity defaultSimilarity) {
+	public static it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities of(TextFieldsSimilarity defaultSimilarity) {
 		return of(defaultSimilarity, Map.of());
 	}
 
-	public static IndicizerSimilarities of(TextFieldsSimilarity defaultSimilarity, Map<String, TextFieldsSimilarity> fieldSimilarity) {
-		return new IndicizerSimilarities(defaultSimilarity, fieldSimilarity);
+	public static it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities of(TextFieldsSimilarity defaultSimilarity,
+			Map<String, TextFieldsSimilarity> fieldSimilarity) {
+		return it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities.of(defaultSimilarity, fieldSimilarity);
 	}
 }

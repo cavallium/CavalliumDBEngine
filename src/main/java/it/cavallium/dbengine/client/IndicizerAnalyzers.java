@@ -1,19 +1,20 @@
 package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
+import it.cavallium.dbengine.rpc.current.serializers.IndicizerAnalyzersSerializer;
 import java.util.Map;
 
-public record IndicizerAnalyzers(TextFieldsAnalyzer defaultAnalyzer, Map<String, TextFieldsAnalyzer> fieldAnalyzer) {
+public class IndicizerAnalyzers {
 
-	public static IndicizerAnalyzers of() {
+	public static it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers of() {
 		return of(TextFieldsAnalyzer.ICUCollationKey);
 	}
 
-	public static IndicizerAnalyzers of(TextFieldsAnalyzer defaultAnalyzer) {
+	public static it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers of(TextFieldsAnalyzer defaultAnalyzer) {
 		return of(defaultAnalyzer, Map.of());
 	}
 
-	public static IndicizerAnalyzers of(TextFieldsAnalyzer defaultAnalyzer, Map<String, TextFieldsAnalyzer> fieldAnalyzer) {
-		return new IndicizerAnalyzers(defaultAnalyzer, fieldAnalyzer);
+	public static it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers of(TextFieldsAnalyzer defaultAnalyzer, Map<String, TextFieldsAnalyzer> fieldAnalyzer) {
+		return new it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers(defaultAnalyzer, fieldAnalyzer);
 	}
 }

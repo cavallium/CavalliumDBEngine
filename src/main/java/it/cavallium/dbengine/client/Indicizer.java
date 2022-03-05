@@ -8,6 +8,8 @@ import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import java.util.Map;
 import java.util.Set;
 import org.apache.lucene.util.BytesRef;

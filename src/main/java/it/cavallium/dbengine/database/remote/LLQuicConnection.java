@@ -1,35 +1,49 @@
 package it.cavallium.dbengine.database.remote;
 
+import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
 import io.net5.buffer.api.Send;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.client.MemoryStats;
+import it.cavallium.dbengine.client.query.current.data.Query;
+import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.remote.RPCCodecs.RPCEventCodec;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
+import it.cavallium.dbengine.lucene.collector.Buckets;
+import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.rpc.current.data.BinaryOptional;
 import it.cavallium.dbengine.rpc.current.data.ClientBoundRequest;
 import it.cavallium.dbengine.rpc.current.data.ClientBoundResponse;
+import it.cavallium.dbengine.rpc.current.data.CloseDatabase;
+import it.cavallium.dbengine.rpc.current.data.CloseLuceneIndex;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.GeneratedEntityId;
 import it.cavallium.dbengine.rpc.current.data.GetDatabase;
+import it.cavallium.dbengine.rpc.current.data.GetLuceneIndex;
 import it.cavallium.dbengine.rpc.current.data.GetSingleton;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.rpc.current.data.RPCEvent;
 import it.cavallium.dbengine.rpc.current.data.ServerBoundRequest;
 import it.cavallium.dbengine.rpc.current.data.ServerBoundResponse;
@@ -44,13 +58,13 @@ import java.io.File;
 import java.net.SocketAddress;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.logging.Level;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.Empty;
 import reactor.netty.incubator.quic.QuicClient;
 import reactor.netty.incubator.quic.QuicConnection;
 
@@ -142,6 +156,13 @@ public class LLQuicConnection implements LLDatabaseConnection {
 				RPCEventCodec::new,
 				serverBoundRequest
 		).map(event -> (T) event);
+	}
+
+	private Mono<Void> sendEvent(ServerBoundRequest serverBoundRequest) {
+		return QuicUtils.<RPCEvent>sendSimpleEvent(quicConnection,
+				RPCEventCodec::new,
+				serverBoundRequest
+		);
 	}
 
 	private <T extends ClientBoundResponse, U extends ClientBoundRequest> Mono<T> sendUpdateRequest(ServerBoundRequest serverBoundReq,
@@ -293,22 +314,22 @@ public class LLQuicConnection implements LLDatabaseConnection {
 
 					@Override
 					public BufferAllocator getAllocator() {
-						return null;
+						return allocator;
 					}
 
 					@Override
 					public MeterRegistry getMeterRegistry() {
-						return null;
+						return meterRegistry;
 					}
 
 					@Override
 					public Mono<Void> close() {
-						return null;
+						return sendRequest(new CloseDatabase(id)).then();
 					}
 
 					@Override
 					public String getDatabaseName() {
-						return null;
+						return databaseName;
 					}
 
 					@Override
@@ -333,19 +354,109 @@ public class LLQuicConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<? extends LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
-			@Nullable String shardName,
-			int instancesCount,
+	public Mono<? extends LLLuceneIndex> getLuceneIndex(String clusterName,
+			LuceneIndexStructure indexStructure,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
 			@Nullable LuceneHacks luceneHacks) {
-		return null;
+		return sendRequest(new GetLuceneIndex(clusterName, indexStructure, indicizerAnalyzers, indicizerSimilarities, luceneOptions))
+				.cast(GeneratedEntityId.class)
+				.map(GeneratedEntityId::id)
+				.map(id -> new LLLuceneIndex() {
+					@Override
+					public String getLuceneIndexName() {
+						return clusterName;
+					}
+
+					@Override
+					public Mono<Void> addDocument(LLTerm id, LLUpdateDocument doc) {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> deleteDocument(LLTerm id) {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> update(LLTerm id, LLIndexRequest request) {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> deleteAll() {
+						return null;
+					}
+
+					@Override
+					public Flux<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+							QueryParams queryParams,
+							@Nullable String keyFieldName,
+							Multimap<String, String> mltDocumentFields) {
+						return null;
+					}
+
+					@Override
+					public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
+							QueryParams queryParams,
+							@Nullable String keyFieldName) {
+						return null;
+					}
+
+					@Override
+					public Mono<Buckets> computeBuckets(@Nullable LLSnapshot snapshot,
+							@NotNull List<Query> queries,
+							@Nullable Query normalizationQuery,
+							BucketParams bucketParams) {
+						return null;
+					}
+
+					@Override
+					public boolean isLowMemoryMode() {
+						return false;
+					}
+
+					@Override
+					public Mono<Void> close() {
+						return sendRequest(new CloseLuceneIndex(id)).then();
+					}
+
+					@Override
+					public Mono<Void> flush() {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> refresh(boolean force) {
+						return null;
+					}
+
+					@Override
+					public Mono<LLSnapshot> takeSnapshot() {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
+						return null;
+					}
+				});
 	}
 
 	@Override
 	public Mono<Void> disconnect() {
-		return sendDisconnect().then(quicConnection.onDispose().timeout(Duration.ofMinutes(1)));
+		return sendDisconnect().then(Mono.fromRunnable(() -> quicConnection.dispose())).then(quicConnection.onDispose());
 	}
 
 	private Mono<Void> sendDisconnect() {

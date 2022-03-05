@@ -10,14 +10,16 @@ import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneDirectoryOptions.ByteBuffersDirectory;
-import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.memory.LLMemoryDatabaseConnection;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
+import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.unimi.dsi.fastutil.ints.IntList;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -63,17 +65,15 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 													Nullableboolean.empty()
 											)
 									),
-									conn.getLuceneIndex(null,
-											"testluceneindex1",
-											1,
+									conn.getLuceneIndex("testluceneindex1",
+											new LuceneIndexStructure(1, IntList.of(0)),
 											IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey),
 											IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 											LUCENE_OPTS,
 											luceneHacks
 									),
 									conn.getLuceneIndex("testluceneindex16",
-											null,
-											3,
+											new LuceneIndexStructure(3, IntList.of(0, 1, 2)),
 											IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey),
 											IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 											LUCENE_OPTS,

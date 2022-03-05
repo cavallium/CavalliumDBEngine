@@ -33,7 +33,9 @@ versions:
         SingletonSet,
         SingletonUpdateInit,
         SingletonUpdateEnd,
-        RPCCrash
+        RPCCrash,
+        CloseDatabase,
+        CloseLuceneIndex
       ]
       ServerBoundRequest: [
         GetDatabase,
@@ -42,7 +44,9 @@ versions:
         GetSingleton,
         SingletonGet,
         SingletonSet,
-        SingletonUpdateInit
+        SingletonUpdateInit,
+        CloseDatabase,
+        CloseLuceneIndex
       ]
       ClientBoundResponse: [
         Empty,
@@ -115,6 +119,9 @@ versions:
       String2FieldAnalyzerMap:
         javaClass: java.util.Map<java.lang.String, it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer>
         serializer: it.cavallium.dbengine.database.remote.String2FieldAnalyzerMapSerializer
+      String2FieldSimilarityMap:
+        javaClass: java.util.Map<java.lang.String, it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity>
+        serializer: it.cavallium.dbengine.database.remote.String2FieldSimilarityMapSerializer
       String2ColumnFamilyHandleMap:
         javaClass: java.util.Map<java.lang.String, org.rocksdb.ColumnFamilyHandle>
         serializer: it.cavallium.dbengine.database.remote.String2ColumnFamilyHandleMapSerializer
@@ -132,11 +139,11 @@ versions:
           databaseOptions: DatabaseOptions
       GetLuceneIndex:
         data:
-          clusterName: -String
-          shardName: -String
-          instancesCount: int
+          clusterName: String
+          structure: LuceneIndexStructure
           indicizerAnalyzers: IndicizerAnalyzers
           indicizerSimilarities: IndicizerSimilarities
+          luceneOptions: LuceneOptions
       Disconnect: { data: { } }
       GetSingleton:
         data:
@@ -160,6 +167,12 @@ versions:
         data:
           exist: boolean
           value: byte[]
+      CloseDatabase:
+        data:
+          databaseId: long
+      CloseLuceneIndex:
+        data:
+          luceneIndexId: long
 
       # Client-bound responses
 
@@ -183,6 +196,17 @@ versions:
 
       # Data
 
+      LuceneIndexStructure:
+        data:
+          totalShards: int
+          activeShards: int[]
+      SingleIndex:
+        data:
+          name: String
+      ClusteredShardIndex:
+        data:
+          clusterName: String
+          shard: int
       BinaryOptional:
         data:
           val: -Binary
@@ -216,13 +240,10 @@ versions:
         data:
           defaultAnalyzer: TextFieldsAnalyzer
           fieldAnalyzer: String2FieldAnalyzerMap
-          indicizerSimilarities: IndicizerSimilarities
-          luceneOptions: LuceneOptions
-          luceneHacks: LuceneHacks
       IndicizerSimilarities:
         data:
           defaultSimilarity: TextFieldsSimilarity
-          fieldSimilarity: String2FieldAnalyzerMap
+          fieldSimilarity: String2FieldSimilarityMap
       LuceneOptions:
         data:
           extraFlags: StringMap
@@ -253,8 +274,7 @@ versions:
           blockSize: int
       RocksDBSharedDirectory:
         data:
-          db: RocksDB
-          handles: String2ColumnFamilyHandleMap
+          managedPath: Path
           blockSize: int
       NRTCachingDirectory:
         data:

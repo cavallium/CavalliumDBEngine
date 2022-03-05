@@ -1,20 +1,26 @@
 package it.cavallium.dbengine.client;
 
+import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -49,12 +55,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Mono<Void> addDocuments(Flux<Entry<T, U>> entries) {
-		return luceneIndex
-				.addDocuments(entries
-						.flatMap(entry -> indicizer
-								.toDocument(entry.getKey(), entry.getValue())
-								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
-				);
+		return luceneIndex.addDocuments(entries.flatMap(entry -> indicizer
+				.toDocument(entry.getKey(), entry.getValue())
+				.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc))));
 	}
 
 	@Override
@@ -72,13 +75,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Mono<Void> updateDocuments(Flux<Entry<T, U>> entries) {
-		return luceneIndex
-				.updateDocuments(entries
-						.flatMap(entry -> indicizer
-								.toDocument(entry.getKey(), entry.getValue())
-								.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc)))
-						.collectMap(Entry::getKey, Entry::getValue)
-				);
+		return luceneIndex.updateDocuments(entries.flatMap(entry -> indicizer
+				.toDocument(entry.getKey(), entry.getValue())
+				.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc))));
 	}
 
 	@Override
@@ -99,6 +98,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
 				)
+				.collectList()
+				.flatMap(LuceneIndexImpl::mergeResults)
 				.map(this::mapResults)
 				.single();
 	}
@@ -110,6 +111,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()
 				)
+				.collectList()
+				.flatMap(LuceneIndexImpl::mergeResults)
 				.map(this::mapResults)
 				.single();
 	}
@@ -119,17 +122,12 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 			@NotNull List<Query> query,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
-		return luceneIndex
-				.computeBuckets(resolveSnapshot(snapshot),
-						query, normalizationQuery,
-						bucketParams
-				)
-				.single();
+		return luceneIndex.computeBuckets(resolveSnapshot(snapshot), query,
+				normalizationQuery, bucketParams).single();
 	}
 
 	private Hits<HitKey<T>> mapResults(LLSearchResultShard llSearchResult) {
-		var scoresWithKeysFlux = llSearchResult
-				.results()
+		var scoresWithKeysFlux = llSearchResult.results()
 				.map(hit -> new HitKey<>(indicizer.getKey(hit.key()), hit.score()));
 
 		return new Hits<>(scoresWithKeysFlux, llSearchResult.totalHitsCount(), llSearchResult::close);
@@ -181,5 +179,35 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return luceneIndex.releaseSnapshot(snapshot);
+	}
+
+	private static Mono<LLSearchResultShard> mergeResults(List<LLSearchResultShard> shards) {
+		return Mono.fromCallable(() -> {
+			TotalHitsCount count = null;
+			ObjectArrayList<Flux<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
+			ObjectArrayList<Resource<?>> resources = new ObjectArrayList<>(shards.size());
+			for (LLSearchResultShard shard : shards) {
+				if (count == null) {
+					count = shard.totalHitsCount();
+				} else {
+					count = LuceneUtils.sum(count, shard.totalHitsCount());
+				}
+				results.add(shard.results());
+				resources.add(shard);
+			}
+			Objects.requireNonNull(count);
+			var resultsFlux = Flux.zip(results, parts -> {
+				var arr = new ArrayList<LLKeyScore>(parts.length);
+				for (Object part : parts) {
+					arr.add((LLKeyScore) part);
+				}
+				return arr;
+			}).concatMapIterable(list -> list);
+			return new LLSearchResultShard(resultsFlux, count, () -> {
+				for (Resource<?> resource : resources) {
+					resource.close();
+				}
+			});
+		});
 	}
 }

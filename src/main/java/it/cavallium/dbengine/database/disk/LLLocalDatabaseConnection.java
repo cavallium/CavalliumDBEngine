@@ -2,15 +2,17 @@ package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.net5.buffer.api.BufferAllocator;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
-import it.cavallium.dbengine.client.LuceneOptions;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
+import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedList;
@@ -33,16 +35,19 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	private final MeterRegistry meterRegistry;
 	private final Path basePath;
 	private final boolean inMemory;
+	private final LuceneRocksDBManager rocksDBManager;
 	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
 
 	public LLLocalDatabaseConnection(BufferAllocator allocator,
 			MeterRegistry meterRegistry,
 			Path basePath,
-			boolean inMemory) {
+			boolean inMemory,
+			LuceneRocksDBManager rocksDBManager) {
 		this.allocator = allocator;
 		this.meterRegistry = meterRegistry;
 		this.basePath = basePath;
 		this.inMemory = inMemory;
+		this.rocksDBManager = rocksDBManager;
 	}
 
 	@Override
@@ -92,9 +97,8 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<LLLuceneIndex> getLuceneIndex(@Nullable String clusterName,
-			@Nullable String shardName,
-			int instancesCount,
+	public Mono<? extends LLLuceneIndex> getLuceneIndex(String clusterName,
+			LuceneIndexStructure indexStructure,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
@@ -102,32 +106,32 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		return Mono
 				.fromCallable(() -> {
 					var env = this.env.get();
-					if (clusterName == null && shardName == null) {
-						throw new IllegalArgumentException("Shard name and/or cluster name must be set");
+					if (clusterName == null) {
+						throw new IllegalArgumentException("Cluster name must be set");
 					}
-					if (instancesCount != 1) {
-						if (shardName != null && !shardName.equals(clusterName)) {
-							throw new IllegalArgumentException("You shouldn't use a shard name for clustered instances");
-						}
+					if (indexStructure.activeShards().size() != 1) {
 						Objects.requireNonNull(env, "Environment not set");
 						return new LLLocalMultiLuceneIndex(env,
 								meterRegistry,
 								clusterName,
-								instancesCount,
+								indexStructure.activeShards(),
+								indexStructure.totalShards(),
 								indicizerAnalyzers,
 								indicizerSimilarities,
 								luceneOptions,
-								luceneHacks
+								luceneHacks,
+								rocksDBManager
 						);
 					} else {
 						return new LLLocalLuceneIndex(env,
 								meterRegistry,
 								clusterName,
-								shardName,
+								indexStructure.activeShards().getInt(0),
 								indicizerAnalyzers,
 								indicizerSimilarities,
 								luceneOptions,
-								luceneHacks
+								luceneHacks,
+								rocksDBManager
 						);
 					}
 				})

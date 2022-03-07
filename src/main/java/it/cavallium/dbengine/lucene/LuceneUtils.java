@@ -31,14 +31,16 @@ import it.cavallium.dbengine.rpc.current.data.DirectIOFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneDirectoryOptions;
+import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
 import it.cavallium.dbengine.rpc.current.data.MemoryMappedFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NIOFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NRTCachingDirectory;
 import it.cavallium.dbengine.rpc.current.data.RocksDBSharedDirectory;
+import it.unimi.dsi.fastutil.ints.IntArrayList;
+import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.io.EOFException;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
@@ -136,6 +138,7 @@ public class LuceneUtils {
 	// TODO: remove this default page limits and make the limits configurable into QueryParams
 	private static final PageLimits DEFAULT_PAGE_LIMITS = new ExponentialPageLimits();
 	private static final CharArraySet ENGLISH_AND_ITALIAN_STOP_WORDS;
+	private static final LuceneIndexStructure SINGLE_STRUCTURE = new LuceneIndexStructure(1, IntList.of(0));
 
 	static {
 		var cas = new CharArraySet(
@@ -633,5 +636,21 @@ public class LuceneUtils {
 		} else {
 			throw new UnsupportedOperationException("Unsupported directory: " + directoryOptions);
 		}
+	}
+
+	public static IntList intListTo(int to) {
+		var il = new IntArrayList(to);
+		for (int i = 0; i < to; i++) {
+			il.add(i);
+		}
+		return il;
+	}
+
+	public static LuceneIndexStructure singleStructure() {
+		return SINGLE_STRUCTURE;
+	}
+
+	public static LuceneIndexStructure shardsStructure(int count) {
+		return new LuceneIndexStructure(count, intListTo(count));
 	}
 }

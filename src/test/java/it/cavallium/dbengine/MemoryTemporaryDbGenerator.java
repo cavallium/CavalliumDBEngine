@@ -13,6 +13,7 @@ import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.memory.LLMemoryDatabaseConnection;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
@@ -66,14 +67,14 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 											)
 									),
 									conn.getLuceneIndex("testluceneindex1",
-											new LuceneIndexStructure(1, IntList.of(0)),
+											LuceneUtils.singleStructure(),
 											IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey),
 											IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 											LUCENE_OPTS,
 											luceneHacks
 									),
 									conn.getLuceneIndex("testluceneindex16",
-											new LuceneIndexStructure(3, IntList.of(0, 1, 2)),
+											LuceneUtils.shardsStructure(3),
 											IndicizerAnalyzers.of(TextFieldsAnalyzer.ICUCollationKey),
 											IndicizerSimilarities.of(TextFieldsSimilarity.Boolean),
 											LUCENE_OPTS,

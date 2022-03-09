@@ -1,12 +1,18 @@
 package it.cavallium.dbengine.lucene.directory;
 
+import io.net5.buffer.Unpooled;
 import io.net5.buffer.api.Buffer;
 import io.net5.buffer.api.BufferAllocator;
-import java.io.EOFException;
-import java.io.IOException;
+import io.net5.buffer.api.BufferRef;
+import io.net5.buffer.api.adaptor.ByteBufAdaptor;
 import org.apache.lucene.store.IndexInput;
 
-public class RocksdbInputStream extends IndexInput {
+import java.io.EOFException;
+import java.io.IOException;
+
+public class RocksDBSliceInputStream extends IndexInput {
+
+	private static final BufferAllocator HEAP_UNPOOLED_BUFFER = BufferAllocator.onHeapUnpooled();
 
 	private final int bufferSize;
 
@@ -14,52 +20,34 @@ public class RocksdbInputStream extends IndexInput {
 
 	private final long length;
 
-	private Buffer currentBuffer;
+	private byte[] currentBuffer;
 
 	private int currentBufferIndex;
-
-	private boolean closed = false;
 
 	private final RocksdbFileStore store;
 
 	private final String name;
 
-	public RocksdbInputStream(String name, RocksdbFileStore store, int bufferSize) throws IOException {
+	public RocksDBSliceInputStream(String name, RocksdbFileStore store, int bufferSize) throws IOException {
 		this(name, store, bufferSize, store.getSize(name));
 	}
 
-	public RocksdbInputStream(String name, RocksdbFileStore store, int bufferSize, long length) {
-		this(name,
-				store,
-				bufferSize,
-				length,
-				null
-		);
-	}
-
-	private RocksdbInputStream(String name, RocksdbFileStore store, int bufferSize, long length, Buffer currentBuffer) {
-		super("RocksdbInputStream(name=" + name + ")");
+	public RocksDBSliceInputStream(String name, RocksdbFileStore store, int bufferSize, long length) {
+		super("RocksDBSliceInputStream(name=" + name + ")");
 		this.name = name;
 		this.store = store;
 		this.bufferSize = bufferSize;
-		this.currentBuffer = currentBuffer;
+		this.currentBuffer = new byte[this.bufferSize];
 		this.currentBufferIndex = bufferSize;
 		this.position = 0;
 		this.length = length;
-		if (currentBuffer != null && bufferSize > currentBuffer.capacity()) {
-			throw new IllegalArgumentException(
-					"BufferSize is " + bufferSize + " but the buffer has only a capacity of " + currentBuffer.capacity());
-		}
+
+
 	}
 
 	@Override
 	public void close() throws IOException {
-		if (!closed) {
-			closed = true;
-			if (currentBuffer != null) {
-				currentBuffer.close();
-			}
-		}
+		//store.close();
 	}
 
 	@Override
@@ -88,11 +76,7 @@ public class RocksdbInputStream extends IndexInput {
 			throw new IllegalArgumentException("slice() " + sliceDescription + " out of bounds: " + this);
 		}
 
-		return new RocksDBSliceInputStream(name,
-				store,
-				bufferSize,
-				offset + length
-		) {
+		return new RocksDBSliceInputStream(name, store, bufferSize, offset + length) {
 			{
 				seek(0L);
 			}
@@ -132,19 +116,19 @@ public class RocksdbInputStream extends IndexInput {
 			throw new EOFException("Read end");
 		}
 		loadBufferIfNeed();
-		byte b = currentBuffer.getByte(currentBufferIndex++);
+		byte b = currentBuffer[currentBufferIndex++];
 		position++;
 		return b;
 	}
 
 	protected void loadBufferIfNeed() throws IOException {
-		if (currentBuffer == null) {
-			currentBuffer = store.bufferAllocator.allocate(bufferSize).writerOffset(bufferSize);
-		}
 		if (this.currentBufferIndex == this.bufferSize) {
-			int n = store.load(name, position, currentBuffer, 0, bufferSize);
-			if (n == -1) {
-				throw new EOFException("Read end");
+			try (var editedBuffer = HEAP_UNPOOLED_BUFFER.copyOf(currentBuffer)) {
+				int n = store.load(name, position, editedBuffer, 0, bufferSize);
+				editedBuffer.copyInto(0, currentBuffer, 0, currentBuffer.length);
+				if (n == -1) {
+					throw new EOFException("Read end");
+				}
 			}
 			this.currentBufferIndex = 0;
 		}
@@ -164,7 +148,7 @@ public class RocksdbInputStream extends IndexInput {
 
 			int r = Math.min(bufferSize - currentBufferIndex, n);
 
-			currentBuffer.copyInto(currentBufferIndex, b, f, r);
+			System.arraycopy(currentBuffer, currentBufferIndex, b, f, r);
 
 			f += r;
 			position += r;
@@ -176,6 +160,9 @@ public class RocksdbInputStream extends IndexInput {
 
 	@Override
 	public IndexInput clone() {
-		return super.clone();
+		RocksDBSliceInputStream in = (RocksDBSliceInputStream) super.clone();
+		in.currentBuffer = new byte[bufferSize];
+		System.arraycopy(this.currentBuffer, 0, in.currentBuffer, 0, bufferSize);
+		return in;
 	}
 }

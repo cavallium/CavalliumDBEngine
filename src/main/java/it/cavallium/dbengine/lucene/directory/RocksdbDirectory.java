@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.directory;
 
 import com.google.common.util.concurrent.Striped;
+import io.net5.buffer.api.BufferAllocator;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;
@@ -34,27 +35,33 @@ public class RocksdbDirectory extends BaseDirectory implements Accountable {
 
 	private final AtomicLong nextTempFileCounter = new AtomicLong();
 
-	public RocksdbDirectory(Path path, int blockSize) throws IOException {
-		this(path, blockSize, new SingleInstanceLockFactory());
+	public RocksdbDirectory(BufferAllocator bufferAllocator, Path path, int blockSize) throws IOException {
+		this(bufferAllocator, path, blockSize, new SingleInstanceLockFactory());
 	}
 
-	public RocksdbDirectory(RocksDB db, Map<String, ColumnFamilyHandle> handles, @Nullable String name, int blockSize)
+	public RocksdbDirectory(BufferAllocator bufferAllocator,
+			RocksDB db,
+			Map<String, ColumnFamilyHandle> handles,
+			@Nullable String name,
+			int blockSize)
 			throws IOException {
-		this(db, handles, name, blockSize, new SingleInstanceLockFactory());
+		this(bufferAllocator, db, handles, name, blockSize, new SingleInstanceLockFactory());
 	}
 
-	protected RocksdbDirectory(Path path, int blockSize, LockFactory lockFactory) throws IOException {
+	protected RocksdbDirectory(BufferAllocator bufferAllocator, Path path, int blockSize, LockFactory lockFactory)
+			throws IOException {
 		super(lockFactory);
-		store = RocksdbFileStore.create(path, blockSize, metaLock);
+		store = RocksdbFileStore.create(bufferAllocator, path, blockSize, metaLock);
 	}
 
-	protected RocksdbDirectory(RocksDB db,
+	protected RocksdbDirectory(BufferAllocator bufferAllocator,
+			RocksDB db,
 			Map<String, ColumnFamilyHandle> handles,
 			@Nullable String name,
 			int blockSize,
 			LockFactory lockFactory) throws IOException {
 		super(lockFactory);
-		store = RocksdbFileStore.create(db, handles, name, blockSize, metaLock);
+		store = RocksdbFileStore.create(bufferAllocator, db, handles, name, blockSize, metaLock);
 	}
 
 	@Override

@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.directory;
 
 import io.net5.buffer.ByteBuf;
 import io.net5.buffer.ByteBufAllocator;
+import io.net5.buffer.api.Buffer;
 import org.apache.lucene.store.BufferedChecksum;
 import org.apache.lucene.store.IndexOutput;
 import org.apache.lucene.util.Accountable;
@@ -17,7 +18,7 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 
 	private long position;
 
-	private ByteBuf currentBuffer;
+	private Buffer currentBuffer;
 
 	private boolean dirty;
 
@@ -32,7 +33,7 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 		this.name = name;
 		this.store = store;
 		this.bufferSize = bufferSize;
-		this.currentBuffer = ByteBufAllocator.DEFAULT.ioBuffer(bufferSize, bufferSize);
+		this.currentBuffer = store.bufferAllocator.allocate(bufferSize);
 		this.position = 0;
 		this.dirty = false;
 		if (checksum) {
@@ -48,15 +49,15 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 			if (dirty) {
 				flush();
 			}
-			currentBuffer.release();
+			currentBuffer.close();
 			currentBuffer = null;
 		}
 	}
 
 
 	private void flush() throws IOException {
-		store.append(name, currentBuffer, 0, currentBuffer.writerIndex());
-		currentBuffer.writerIndex(0);
+		store.append(name, currentBuffer, 0, currentBuffer.writerOffset());
+		currentBuffer.writerOffset(0);
 		dirty = false;
 	}
 
@@ -81,7 +82,7 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 		if (crc != null) {
 			crc.update(b);
 		}
-		if (currentBuffer.writerIndex() == bufferSize) {
+		if (currentBuffer.writerOffset() == bufferSize) {
 			flush();
 		}
 		currentBuffer.writeByte(b);
@@ -98,10 +99,10 @@ public class RocksdbOutputStream extends IndexOutput implements Accountable {
 		int f = offset;
 		int n = length;
 		do {
-			if (currentBuffer.writerIndex() == bufferSize) {
+			if (currentBuffer.writerOffset() == bufferSize) {
 				flush();
 			}
-			int r = Math.min(bufferSize - currentBuffer.writerIndex(), n);
+			int r = Math.min(bufferSize - currentBuffer.writerOffset(), n);
 			currentBuffer.writeBytes(b, f, r);
 			f += r;
 			position += r;

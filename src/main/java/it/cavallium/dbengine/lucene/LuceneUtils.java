@@ -610,7 +610,8 @@ public class LuceneUtils {
 			);
 		} else if (directoryOptions instanceof RocksDBSharedDirectory rocksDBSharedDirectory) {
 			var dbInstance = rocksDBManager.getOrCreate(rocksDBSharedDirectory.managedPath());
-			return new RocksdbDirectory(dbInstance.db(),
+			return new RocksdbDirectory(rocksDBManager.getAllocator(),
+					dbInstance.db(),
 					dbInstance.handles(),
 					directoryName,
 					rocksDBSharedDirectory.blockSize()

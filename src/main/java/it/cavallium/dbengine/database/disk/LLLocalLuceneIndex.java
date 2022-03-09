@@ -175,23 +175,23 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		logger.trace("WriterSchedulerMaxThreadCount: {}", writerSchedulerMaxThreadCount);
 		indexWriterConfig.setMergeScheduler(mergeScheduler);
-		if (luceneOptions.indexWriterBufferSize() == -1) {
-			//todo: allow to configure maxbuffereddocs fallback
-			indexWriterConfig.setMaxBufferedDocs(80000);
-			// disable ram buffer size after enabling maxBufferedDocs
-			indexWriterConfig.setRAMBufferSizeMB(-1);
-		} else {
-			indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterBufferSize() / 1024D / 1024D);
+		if (luceneOptions.indexWriterRAMBufferSizeMB().isPresent()) {
+			indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterRAMBufferSizeMB().get());
 		}
-		indexWriterConfig.setReaderPooling(false);
+		if (luceneOptions.indexWriterMaxBufferedDocs().isPresent()) {
+			indexWriterConfig.setMaxBufferedDocs(luceneOptions.indexWriterMaxBufferedDocs().get());
+		}
+		if (luceneOptions.indexWriterReaderPooling().isPresent()) {
+			indexWriterConfig.setReaderPooling(luceneOptions.indexWriterReaderPooling().get());
+		}
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
 		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter);
 		this.searcherManager = new CachedIndexSearcherManager(indexWriter,
 				snapshotsManager,
 				getLuceneSimilarity(),
-				luceneOptions.applyAllDeletes(),
-				luceneOptions.writeAllDeletes(),
+				luceneOptions.applyAllDeletes().orElse(true),
+				luceneOptions.writeAllDeletes().orElse(false),
 				luceneOptions.queryRefreshDebounceTime()
 		);
 

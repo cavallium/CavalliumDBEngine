@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
+import io.net5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.lucene.directory.RocksDBInstance;
 import it.cavallium.dbengine.lucene.directory.RocksdbFileStore;
 import java.io.IOException;
@@ -16,6 +17,14 @@ public class LuceneRocksDBManager {
 
 	private static final Logger LOG = LogManager.getLogger(LuceneRocksDBManager.class);
 	private final List<Map.Entry<Path, RocksDBInstance>> dbs = new ArrayList<>();
+	private BufferAllocator bufferAllocator;
+
+	public synchronized BufferAllocator getAllocator() {
+		if (bufferAllocator == null) {
+			bufferAllocator = BufferAllocator.offHeapPooled();
+		}
+		return bufferAllocator;
+	}
 
 	public synchronized RocksDBInstance getOrCreate(Path path) {
 		try {
@@ -41,5 +50,9 @@ public class LuceneRocksDBManager {
 			}
 		}
 		dbs.clear();
+		if (bufferAllocator != null) {
+			bufferAllocator.close();
+		}
+		bufferAllocator = null;
 	}
 }

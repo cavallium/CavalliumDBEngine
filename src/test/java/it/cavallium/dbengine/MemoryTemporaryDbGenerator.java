@@ -4,6 +4,7 @@ import static it.cavallium.dbengine.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRIES;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import it.cavallium.data.generator.nativedata.Nullableboolean;
+import it.cavallium.data.generator.nativedata.Nullabledouble;
 import it.cavallium.data.generator.nativedata.Nullableint;
 import it.cavallium.data.generator.nativedata.Nullablelong;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
@@ -33,9 +34,11 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 			Duration.ofSeconds(5),
 			false,
 			new ByteBuffersDirectory(),
-			16 * 1024 * 1024,
-			true,
-			false,
+			Nullableboolean.empty(),
+			Nullabledouble.empty(),
+			Nullableint.empty(),
+			Nullableboolean.empty(),
+			Nullableboolean.empty(),
 			false,
 			MAX_IN_MEMORY_RESULT_ENTRIES
 	);

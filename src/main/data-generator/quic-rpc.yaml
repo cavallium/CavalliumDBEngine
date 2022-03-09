@@ -251,9 +251,11 @@ versions:
           commitDebounceTime: Duration
           lowMemory: boolean
           directoryOptions: LuceneDirectoryOptions
-          indexWriterBufferSize: long
-          applyAllDeletes: boolean
-          writeAllDeletes: boolean
+          indexWriterReaderPooling: -boolean
+          indexWriterRAMBufferSizeMB: -double
+          indexWriterMaxBufferedDocs: -int
+          applyAllDeletes: -boolean
+          writeAllDeletes: -boolean
           allowNonVolatileCollection: boolean
           maxInMemoryResultEntries: int
       ByteBuffersDirectory: { data: { } }

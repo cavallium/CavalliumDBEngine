@@ -2,11 +2,12 @@ package it.cavallium.dbengine.lucene.directory;
 
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Striped;
-import io.net5.buffer.ByteBuf;
-import io.net5.buffer.ByteBufAllocator;
+import io.net5.buffer.api.Buffer;
+import io.net5.buffer.api.BufferAllocator;
+import io.net5.buffer.api.ReadableComponent;
+import io.net5.buffer.api.WritableComponent;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,10 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import org.apache.lucene.store.AlreadyClosedException;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.ClockCache;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
@@ -60,6 +61,7 @@ public class RocksdbFileStore {
 	private static final ByteBuffer EMPTY_BYTE_BUF = ByteBuffer.allocateDirect(0);
 
 	private final RocksDB db;
+	public final BufferAllocator bufferAllocator;
 	private final int blockSize;
 	private final ColumnFamilyHandle headers;
 	private final ColumnFamilyHandle filename;
@@ -71,6 +73,7 @@ public class RocksdbFileStore {
 	private volatile boolean closed;
 
 	private RocksdbFileStore(RocksDB db,
+			BufferAllocator bufferAllocator,
 			ColumnFamilyHandle headers,
 			ColumnFamilyHandle filename,
 			ColumnFamilyHandle size,
@@ -80,6 +83,7 @@ public class RocksdbFileStore {
 			boolean closeDbOnClose) throws IOException {
 		try {
 			this.db = db;
+			this.bufferAllocator = bufferAllocator;
 			this.closeDbOnClose = closeDbOnClose;
 			this.blockSize = blockSize;
 			this.headers = headers;
@@ -110,11 +114,25 @@ public class RocksdbFileStore {
 		}
 	}
 
+	private static ByteBuffer readableNioBuffer(Buffer buffer) {
+		assert buffer.countReadableComponents() == 1 : "Readable components count: " + buffer.countReadableComponents();
+		return ((ReadableComponent) buffer).readableBuffer();
+	}
+
+	private static ByteBuffer writableNioBuffer(Buffer buffer, int newWriterOffset) {
+		assert buffer.countWritableComponents() == 1 : "Writable components count: " + buffer.countWritableComponents();
+		buffer.writerOffset(0).ensureWritable(newWriterOffset);
+		var byteBuf = ((WritableComponent) buffer).writableBuffer();
+		buffer.writerOffset(newWriterOffset);
+		assert buffer.capacity() >= newWriterOffset : "Returned capacity " + buffer.capacity() + " < " + newWriterOffset;
+		return byteBuf;
+	}
+
 	private static DBOptions getDBOptions() {
 		var options = new DBOptions();
 		options.setWalSizeLimitMB(256);
 		options.setMaxWriteBatchGroupSizeBytes(2 * SizeUnit.MB);
-		options.setAtomicFlush(false);
+		//options.setAtomicFlush(false);
 		options.setWalRecoveryMode(WALRecoveryMode.PointInTimeRecovery);
 		options.setCreateMissingColumnFamilies(true);
 		options.setCreateIfMissing(true);
@@ -122,32 +140,15 @@ public class RocksdbFileStore {
 		options.setAvoidUnnecessaryBlockingIO(true);
 		options.setSkipCheckingSstFileSizesOnDbOpen(true);
 		options.setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);
-		options.setAllowMmapReads(true);
-		options.setAllowMmapWrites(true);
+		//options.setAllowMmapReads(true);
+		//options.setAllowMmapWrites(true);
+		options.setUseDirectReads(true);
+		options.setUseDirectIoForFlushAndCompaction(true);
 		options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 		options.setDeleteObsoleteFilesPeriodMicros(Duration.ofMinutes(15).toNanos() / 1000L);
+		options.setRowCache(new ClockCache(512 * 1024 * 1024L));
+		options.setMaxOpenFiles(500);
 		return options;
-	}
-
-	private static List<ColumnFamilyDescriptor> getColumnFamilyDescriptors(@Nullable String name) {
-		String headersName, filenameName, sizeName, dataName;
-		if (name != null) {
-			headersName = (name + "_headers");
-			filenameName = (name + "_filename");
-			sizeName = (name + "_size");
-			dataName = (name + "_data");
-		} else {
-			headersName = DEFAULT_COLUMN_FAMILY_STRING;
-			filenameName = "filename";
-			sizeName = "size";
-			dataName = "data";
-		}
-		return List.of(
-				getColumnFamilyDescriptor(headersName),
-				getColumnFamilyDescriptor(filenameName),
-				getColumnFamilyDescriptor(sizeName),
-				getColumnFamilyDescriptor(dataName)
-		);
 	}
 
 	public static ColumnFamilyDescriptor getColumnFamilyDescriptor(String name) {
@@ -174,7 +175,29 @@ public class RocksdbFileStore {
 		return new ColumnFamilyDescriptor(name.getBytes(StandardCharsets.US_ASCII), opts);
 	}
 
-	public static RocksdbFileStore create(RocksDB db,
+	private static List<ColumnFamilyDescriptor> getColumnFamilyDescriptors(@Nullable String name) {
+		String headersName, filenameName, sizeName, dataName;
+		if (name != null) {
+			headersName = (name + "_headers");
+			filenameName = (name + "_filename");
+			sizeName = (name + "_size");
+			dataName = (name + "_data");
+		} else {
+			headersName = DEFAULT_COLUMN_FAMILY_STRING;
+			filenameName = "filename";
+			sizeName = "size";
+			dataName = "data";
+		}
+		return List.of(
+				getColumnFamilyDescriptor(headersName),
+				getColumnFamilyDescriptor(filenameName),
+				getColumnFamilyDescriptor(sizeName),
+				getColumnFamilyDescriptor(dataName)
+		);
+	}
+
+	public static RocksdbFileStore create(BufferAllocator bufferAllocator,
+			RocksDB db,
 			Map<String, ColumnFamilyHandle> existingHandles,
 			@Nullable String name,
 			int blockSize,
@@ -193,6 +216,7 @@ public class RocksdbFileStore {
 				handles.add(columnFamilyHandle);
 			}
 			return new RocksdbFileStore(db,
+					bufferAllocator,
 					handles.get(0),
 					handles.get(1),
 					handles.get(2),
@@ -206,7 +230,10 @@ public class RocksdbFileStore {
 		}
 	}
 
-	public static RocksdbFileStore create(Path path, int blockSize, Striped<ReadWriteLock> metaLock) throws IOException {
+	public static RocksdbFileStore create(BufferAllocator bufferAllocator,
+			Path path,
+			int blockSize,
+			Striped<ReadWriteLock> metaLock) throws IOException {
 		try {
 			DBOptions options = getDBOptions();
 			List<ColumnFamilyDescriptor> descriptors = getColumnFamilyDescriptors(null);
@@ -216,6 +243,7 @@ public class RocksdbFileStore {
 			var handles = new ArrayList<ColumnFamilyHandle>(4);
 			RocksDB db = RocksDB.open(options, path.toString(), descriptors, handles);
 			return new RocksdbFileStore(db,
+					bufferAllocator,
 					handles.get(0),
 					handles.get(1),
 					handles.get(2),
@@ -266,18 +294,13 @@ public class RocksdbFileStore {
 		if (id != null) {
 			return id;
 		} else {
-			var filenameKey = getFilenameKey(key);
-			var filenameValue = getFilenameValue();
-			try {
-				if (db.get(filename, DEFAULT_READ_OPTS, filenameKey.nioBuffer(), filenameValue.nioBuffer(0, Long.BYTES))
+			try (var filenameKey = getFilenameKey(key); var filenameValue = getFilenameValue()) {
+				if (db.get(filename, DEFAULT_READ_OPTS, readableNioBuffer(filenameKey), writableNioBuffer(filenameValue, Long.BYTES))
 						== RocksDB.NOT_FOUND) {
 					throw new IOException("File not found: " + key);
 				}
-				filenameValue.writerIndex(Long.BYTES);
-				return filenameValue.readLongLE();
-			} finally {
-				filenameKey.release();
-				filenameValue.release();
+				filenameValue.writerOffset(Long.BYTES);
+				return filenameValue.readLong();
 			}
 		}
 	}
@@ -288,18 +311,13 @@ public class RocksdbFileStore {
 		if (id != null) {
 			return id;
 		} else {
-			var filenameKey = getFilenameKey(key);
-			var filenameValue = getFilenameValue();
-			try {
-				if (db.get(filename, DEFAULT_READ_OPTS, filenameKey.nioBuffer(), filenameValue.nioBuffer(0, Long.BYTES))
+			try (var filenameKey = getFilenameKey(key); var filenameValue = getFilenameValue()) {
+				if (db.get(filename, DEFAULT_READ_OPTS, readableNioBuffer(filenameKey), writableNioBuffer(filenameValue, Long.BYTES))
 						== RocksDB.NOT_FOUND) {
 					return null;
 				}
-				filenameValue.writerIndex(Long.BYTES);
-				return filenameValue.readLongLE();
-			} finally {
-				filenameKey.release();
-				filenameValue.release();
+				filenameValue.writerOffset(Long.BYTES);
+				return filenameValue.readLong();
 			}
 		}
 	}
@@ -309,33 +327,24 @@ public class RocksdbFileStore {
 		if (id != null) {
 			return true;
 		} else {
-			var filenameKey = getFilenameKey(key);
-			try {
-				if (db.keyMayExist(filename, DEFAULT_READ_OPTS, filenameKey.nioBuffer())) {
-					return db.get(filename, DEFAULT_READ_OPTS, filenameKey.nioBuffer(), EMPTY_BYTE_BUF) != RocksDB.NOT_FOUND;
+			try (var filenameKey = getFilenameKey(key)) {
+				if (db.keyMayExist(filename, DEFAULT_READ_OPTS, readableNioBuffer(filenameKey))) {
+					return db.get(filename, DEFAULT_READ_OPTS, readableNioBuffer(filenameKey), EMPTY_BYTE_BUF) != RocksDB.NOT_FOUND;
 				} else {
 					return false;
 				}
-			} finally {
-				filenameKey.release();
 			}
 		}
 	}
 
 	private void moveFileId(long id, String oldKey, String newKey) throws RocksDBException {
-		var filenameOldKey = getFilenameKey(oldKey);
-		var filenameNewKey = getFilenameKey(newKey);
 		var filenameValue = getFilenameValue();
-		filenameValue.writeLongLE(id);
-		try {
-			db.delete(filename, DEFAULT_WRITE_OPTS, filenameOldKey.nioBuffer());
+		filenameValue.writeLong(id);
+		try (var filenameOldKey = getFilenameKey(oldKey); var filenameNewKey = getFilenameKey(newKey); filenameValue) {
+			db.delete(filename, DEFAULT_WRITE_OPTS, readableNioBuffer(filenameOldKey));
 			incFlush();
-			db.put(filename, DEFAULT_WRITE_OPTS, filenameNewKey.nioBuffer(), filenameValue.nioBuffer(0, Long.BYTES));
+			db.put(filename, DEFAULT_WRITE_OPTS, readableNioBuffer(filenameNewKey), readableNioBuffer(filenameValue));
 			incFlush();
-		} finally {
-			filenameOldKey.release();
-			filenameNewKey.release();
-			filenameValue.release();
 		}
 	}
 
@@ -352,45 +361,38 @@ public class RocksdbFileStore {
 		if (id != null) {
 			return id;
 		} else {
-			var filenameKey = getFilenameKey(key);
-			var filenameValue = getFilenameValue();
-			try {
-				if (db.get(filename, DEFAULT_READ_OPTS, filenameKey.nioBuffer(), filenameValue.nioBuffer(0, Long.BYTES))
+			try (var filenameKey = getFilenameKey(key); var filenameValue = getFilenameValue()) {
+				if (db.get(filename, DEFAULT_READ_OPTS, readableNioBuffer(filenameKey),
+						writableNioBuffer(filenameValue, Long.BYTES))
 						== RocksDB.NOT_FOUND) {
-					filenameValue.writerIndex(0);
-					filenameValue.readerIndex(0);
+					filenameValue.writerOffset(0);
+					filenameValue.readerOffset(0);
 					var newlyAllocatedId = this.nextId.getAndIncrement();
 					if (newlyAllocatedId % 100 == 99) {
-						db.put(headers, new byte[] {0x00}, Longs.toByteArray(newlyAllocatedId + 1 + 100));
+						db.put(headers, new byte[]{0x00}, Longs.toByteArray(newlyAllocatedId + 1 + 100));
 						incFlush();
 					}
-					filenameValue.writeLongLE(newlyAllocatedId);
+					filenameValue.writeLong(newlyAllocatedId);
 					db.put(filename,
 							DEFAULT_WRITE_OPTS,
-							filenameKey.nioBuffer(),
-							filenameValue.nioBuffer(0, filenameValue.writerIndex())
+							readableNioBuffer(filenameKey),
+							readableNioBuffer(filenameValue)
 					);
 					incFlush();
 					filenameToId.put(key, newlyAllocatedId);
 					return newlyAllocatedId;
 				}
-				filenameValue.readerIndex(0);
-				filenameValue.writerIndex(Long.BYTES);
-				return filenameValue.readLongLE();
-			} finally {
-				filenameKey.release();
-				filenameValue.release();
+				filenameValue.readerOffset(0);
+				filenameValue.writerOffset(Long.BYTES);
+				return filenameValue.readLong();
 			}
 		}
 	}
 
 	private void dellocateFilename(String key) throws RocksDBException {
-		var filenameKey = getFilenameKey(key);
-		try {
-			db.delete(filename, DEFAULT_WRITE_OPTS, filenameKey.nioBuffer());
+		try (var filenameKey = getFilenameKey(key)) {
+			db.delete(filename, DEFAULT_WRITE_OPTS, readableNioBuffer(filenameKey));
 			filenameToId.remove(key);
-		} finally {
-			filenameKey.release();
 		}
 	}
 
@@ -405,56 +407,54 @@ public class RocksdbFileStore {
 		}
 	}
 
-	private ByteBuf getMetaValueBuf() {
-		return ByteBufAllocator.DEFAULT.ioBuffer(Long.BYTES, Long.BYTES);
+	private Buffer getMetaValueBuf() {
+		return bufferAllocator.allocate(Long.BYTES);
 	}
 
-	private ByteBuf getDataValueBuf() {
-		return ByteBufAllocator.DEFAULT.ioBuffer(blockSize, blockSize);
+	private Buffer getDataValueBuf() {
+		return bufferAllocator.allocate(blockSize);
 	}
 
-	private ByteBuf getFilenameValue() {
-		return ByteBufAllocator.DEFAULT.ioBuffer(Long.BYTES, Long.BYTES);
+	private Buffer getFilenameValue() {
+		return bufferAllocator.allocate(Long.BYTES);
 	}
 
-	private ByteBuf getMetaKey(long id) {
-		ByteBuf buf = ByteBufAllocator.DEFAULT.ioBuffer(Long.BYTES);
-		buf.writeLongLE(id);
+	private Buffer getMetaKey(long id) {
+		Buffer buf = bufferAllocator.allocate(Long.BYTES);
+		buf.writeLong(id);
 		return buf;
 	}
 
-	private ByteBuf getFilenameKey(String key) {
-		ByteBuf buf = ByteBufAllocator.DEFAULT.ioBuffer(key.length());
+	private Buffer getFilenameKey(String key) {
+		Buffer buf = bufferAllocator.allocate(key.length());
 		buf.writeCharSequence(key, StandardCharsets.US_ASCII);
 		return buf;
 	}
 
-	private ByteBuf getDataKey(@Nullable ByteBuf buf, long id, int i) {
+	private Buffer getDataKey(@Nullable Buffer buf, long id, int i) {
 		if (buf == null) {
-			buf = ByteBufAllocator.DEFAULT.buffer(Long.BYTES + Integer.BYTES);
+			buf = bufferAllocator.allocate(Long.BYTES + Integer.BYTES);
 		}
-		buf.writeLongLE(id);
+		buf.writeLong(id);
 		buf.writeInt(i);
 		return buf;
 	}
 
-	private ByteBuf getDataKeyPrefix(long id) {
-		var buf = ByteBufAllocator.DEFAULT.buffer(Long.BYTES);
-		buf.writeLongLE(id);
+	private Buffer getDataKeyPrefix(long id) {
+		var buf = bufferAllocator.allocate(Long.BYTES);
+		buf.writeLong(id);
 		return buf;
 	}
 
 	private byte[] getDataKeyByteArray(long id, int i) {
 		ByteBuffer bb = ByteBuffer.wrap(new byte[Long.BYTES + Integer.BYTES]);
-		bb.order(ByteOrder.LITTLE_ENDIAN);
 		bb.putLong(id);
-		bb.order(ByteOrder.BIG_ENDIAN);
 		bb.putInt(i);
 		return bb.array();
 	}
 
 
-	public int load(String name, long position, ByteBuf buf, int offset, int len) throws IOException {
+	public int load(String name, long position, Buffer buf, int offset, int len) throws IOException {
 		var l = metaLock.get(name).readLock();
 		l.lock();
 		try {
@@ -477,15 +477,14 @@ public class RocksdbFileStore {
 			int f = offset;
 			int n = len;
 
-			ByteBuf valBuf = getDataValueBuf();
-			ByteBuffer valBuffer = valBuf.nioBuffer(0, blockSize);
-			try {
+			Buffer valBuf = getDataValueBuf();
+			try (valBuf) {
+				ByteBuffer valBuffer = writableNioBuffer(valBuf, blockSize);
 				boolean shouldSeekTo = true;
 				try (var ro = new ReadOptions(itReadOpts)) {
 					ro.setIgnoreRangeDeletions(true);
-					ByteBuf fileIdPrefix = getDataKeyPrefix(fileId);
-					try {
-						try (var lb = new DirectSlice(fileIdPrefix.internalNioBuffer(0, Long.BYTES), Long.BYTES)) {
+					try (Buffer fileIdPrefix = getDataKeyPrefix(fileId)) {
+						try (var lb = new DirectSlice(readableNioBuffer(fileIdPrefix), Long.BYTES)) {
 							ro.setIterateLowerBound(lb);
 							ro.setPrefixSameAsStart(true);
 							try (RocksIterator it = db.newIterator(data, itReadOpts)) {
@@ -501,11 +500,8 @@ public class RocksdbFileStore {
 
 									if (shouldSeekTo) {
 										shouldSeekTo = false;
-										ByteBuf dataKey = getDataKey(null, fileId, i);
-										try {
-											it.seek(dataKey.nioBuffer());
-										} finally {
-											dataKey.release();
+										try (Buffer dataKey = getDataKey(null, fileId, i)) {
+											it.seek(readableNioBuffer(dataKey));
 										}
 										if (!it.isValid()) {
 											throw new IOException("Block " + name + "(" + fileId + ")" + ":" + i + " not found");
@@ -518,12 +514,12 @@ public class RocksdbFileStore {
 									}
 									assert Arrays.equals(getDataKeyByteArray(fileId, i), it.key());
 									int dataRead = it.value(valBuffer);
-									valBuf.writerIndex(dataRead);
+									valBuf.writerOffset(dataRead);
 
-									valBuf.getBytes(m, buf, f, r);
+									valBuf.copyInto(m, buf, f, r);
 
-									valBuf.writerIndex(0);
-									valBuf.readerIndex(0);
+									valBuf.writerOffset(0);
+									valBuf.readerOffset(0);
 
 									p += r;
 									f += r;
@@ -533,12 +529,8 @@ public class RocksdbFileStore {
 								return (int) (p - position);
 							}
 						}
-					} finally {
-						fileIdPrefix.release();
 					}
 				}
-			} finally {
-				valBuf.release();
 			}
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
@@ -581,19 +573,14 @@ public class RocksdbFileStore {
 	 */
 	private long getSizeInternal(long fileId) throws IOException {
 		try {
-			ByteBuf metaKey = getMetaKey(fileId);
-			ByteBuf metaData = getMetaValueBuf();
-			try {
-				if (db.get(size, DEFAULT_READ_OPTS, metaKey.nioBuffer(), metaData.internalNioBuffer(0, Long.BYTES))
+			try (Buffer metaKey = getMetaKey(fileId); Buffer metaData = getMetaValueBuf()) {
+				if (db.get(size, DEFAULT_READ_OPTS, readableNioBuffer(metaKey), writableNioBuffer(metaData, Long.BYTES))
 						!= RocksDB.NOT_FOUND) {
-					metaData.writerIndex(Long.BYTES);
-					return metaData.readLongLE();
+					metaData.writerOffset(Long.BYTES);
+					return metaData.readLong();
 				} else {
 					return -1;
 				}
-			} finally {
-				metaData.release();
-				metaKey.release();
 			}
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);
@@ -615,27 +602,24 @@ public class RocksdbFileStore {
 			if (size == -1) {
 				return;
 			}
-			ByteBuf dataKey = null;
+			Buffer dataKey = null;
 			try {
 				int n = (int) ((size + blockSize - 1) / blockSize);
 				if (n == 1) {
 					dataKey = getDataKey(dataKey, fileId, 0);
-					db.delete(data, DEFAULT_WRITE_OPTS, dataKey.nioBuffer());
+					db.delete(data, DEFAULT_WRITE_OPTS, readableNioBuffer(dataKey));
 				} else if (n > 1) {
 					var dataKey1 = getDataKeyByteArray(fileId, 0);
 					var dataKey2 = getDataKeyByteArray(fileId, n - 1);
 					db.deleteRange(data, DEFAULT_WRITE_OPTS, dataKey1, dataKey2);
 				}
-				ByteBuf metaKey = getMetaKey(fileId);
-				try {
+				try (Buffer metaKey = getMetaKey(fileId)) {
 					dellocateFilename(key);
-					db.delete(this.size, DEFAULT_WRITE_OPTS, metaKey.nioBuffer());
-				} finally {
-					metaKey.release();
+					db.delete(this.size, DEFAULT_WRITE_OPTS, readableNioBuffer(metaKey));
 				}
 			} finally {
 				if (dataKey != null) {
-					dataKey.release();
+					dataKey.close();
 				}
 			}
 		} catch (RocksDBException ex) {
@@ -689,7 +673,7 @@ public class RocksdbFileStore {
 		return keys;
 	}
 
-	public void append(String name, ByteBuf buf, int offset, int len) throws IOException {
+	public void append(String name, Buffer buf, int offset, int len) throws IOException {
 		var l = metaLock.get(name).writeLock();
 		l.lock();
 		try {
@@ -707,57 +691,62 @@ public class RocksdbFileStore {
 			n = len;
 
 			fileId = getFileIdOrAllocate(name);
-			ByteBuf dataKey = null;
-			ByteBuf bb = getDataValueBuf();
+			Buffer dataKey = null;
+			Buffer bb = getDataValueBuf();
 			try {
-					do {
-						int m = (int) (size % (long) blockSize);
-						int r = Math.min(blockSize - m, n);
+				do {
+					int m = (int) (size % (long) blockSize);
+					int r = Math.min(blockSize - m, n);
 
-						int i = (int) ((size) / (long) blockSize);
-						dataKey = getDataKey(dataKey, fileId, i);
-						if (m != 0) {
-							int dataRead;
-							if ((dataRead = db.get(data, DEFAULT_READ_OPTS, dataKey.nioBuffer(), bb.internalNioBuffer(0, blockSize)))
-									== RocksDB.NOT_FOUND) {
-								throw new IOException("Block " + name + "(" + fileId + "):" + i + " not found");
-							}
-							bb.writerIndex(dataRead);
-							dataKey.readerIndex(0);
-						} else {
-							bb.writerIndex(0);
+					int i = (int) ((size) / (long) blockSize);
+					dataKey = getDataKey(dataKey, fileId, i);
+					if (m != 0) {
+						int dataRead;
+						if ((dataRead = db.get(data,
+								DEFAULT_READ_OPTS,
+								readableNioBuffer(dataKey),
+								writableNioBuffer(bb, blockSize)
+						)) == RocksDB.NOT_FOUND) {
+							throw new IOException("Block " + name + "(" + fileId + "):" + i + " not found");
 						}
+						bb.writerOffset(dataRead);
+						dataKey.readerOffset(0);
+					} else {
+						bb.writerOffset(0);
+					}
 
-						bb.ensureWritable(r);
-						bb.setBytes(m, buf, f, r);
+					bb.ensureWritable(r);
+					buf.copyInto(f, bb, m, r);
 
-					db.put(data, DEFAULT_WRITE_OPTS, dataKey.nioBuffer(), bb.internalNioBuffer(0, m + r));
-						incFlush();
-						size += r;
-						f += r;
-						n -= r;
+					var bbBuf = writableNioBuffer(bb, m + r);
 
-						dataKey.readerIndex(0);
-						dataKey.writerIndex(0);
-						bb.readerIndex(0);
-						bb.writerIndex(0);
-					} while (n != 0);
+					assert bbBuf.capacity() >= m + r : bbBuf.capacity() + " < " + (m + r);
+					assert bbBuf.position() == 0;
+					bbBuf.limit(m + r);
+					assert bbBuf.limit() == m + r;
+
+					db.put(data, DEFAULT_WRITE_OPTS, readableNioBuffer(dataKey), bbBuf);
+					incFlush();
+					size += r;
+					f += r;
+					n -= r;
+
+					dataKey.readerOffset(0);
+					dataKey.writerOffset(0);
+					bb.readerOffset(0);
+					bb.writerOffset(0);
+				} while (n != 0);
 			} finally {
 				if (dataKey != null) {
-					dataKey.release();
+					dataKey.close();
 				}
-				bb.release();
+				bb.close();
 			}
 
-			ByteBuf metaKey = getMetaKey(fileId);
-			ByteBuf metaValue = getMetaValueBuf();
-			try {
-				metaValue.writeLongLE(size);
-				db.put(this.size, DEFAULT_WRITE_OPTS, metaKey.nioBuffer(), metaValue.nioBuffer(0, Long.BYTES));
+			try (Buffer metaKey = getMetaKey(fileId); Buffer metaValue = getMetaValueBuf()) {
+				metaValue.writeLong(size);
+				db.put(this.size, DEFAULT_WRITE_OPTS, readableNioBuffer(metaKey), readableNioBuffer(metaValue));
 				incFlush();
-			} finally {
-				metaValue.release();
-				metaKey.release();
 			}
 		} catch (RocksDBException ex) {
 			throw new IOException(ex);

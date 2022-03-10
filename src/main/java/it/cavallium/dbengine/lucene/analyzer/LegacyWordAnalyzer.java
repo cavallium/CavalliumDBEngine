@@ -83,7 +83,7 @@ public class LegacyWordAnalyzer extends Analyzer {
 		return tokenStream;
 	}
 
-	public class EnglishItalianStopFilter extends StopFilter {
+	public static class EnglishItalianStopFilter extends StopFilter {
 
 		private static final CharArraySet stopWords;
 

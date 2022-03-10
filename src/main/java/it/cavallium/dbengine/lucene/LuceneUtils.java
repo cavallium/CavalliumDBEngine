@@ -198,7 +198,7 @@ public class LuceneUtils {
 	 * @throws IOException when an error occurs when reading the document
 	 */
 	@NotNull
-	public static BytesRef keyOfTopDoc(int docId, IndexReader indexReader,
+	public static IndexableField keyOfTopDoc(int docId, IndexReader indexReader,
 			String keyFieldName) throws IOException, NoSuchElementException {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called keyOfTopDoc in a nonblocking thread");
@@ -222,7 +222,7 @@ public class LuceneUtils {
 								.map(IndexableField::name)
 								.collect(Collectors.joining(",", "[", "]")));
 			} else {
-				return field.binaryValue();
+				return field;
 			}
 		}
 	}
@@ -412,7 +412,7 @@ public class LuceneUtils {
 			indexSearcher = indexSearchers.get(shardIndex);
 		}
 		try {
-			BytesRef collectedDoc;
+			IndexableField collectedDoc;
 			if (keyFieldName != null) {
 				collectedDoc = keyOfTopDoc(shardDocId, indexSearcher.getIndexReader(), keyFieldName);
 			} else {

@@ -4,20 +4,20 @@ import com.ibm.icu.text.Collator;
 import com.ibm.icu.util.ULocale;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.analysis.LowerCaseFilter;
+import org.apache.lucene.analysis.StopFilter;
 import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.Tokenizer;
-import org.apache.lucene.analysis.core.KeywordTokenizer;
+import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.en.EnglishMinimalStemFilter;
-import org.apache.lucene.analysis.en.EnglishMinimalStemFilterFactory;
+import org.apache.lucene.analysis.en.PorterStemFilter;
 import org.apache.lucene.analysis.icu.ICUCollationAttributeFactory;
-import org.apache.lucene.analysis.icu.ICUCollationKeyAnalyzer;
 import org.apache.lucene.analysis.icu.ICUFoldingFilter;
-import org.apache.lucene.analysis.icu.ICUFoldingFilterFactory;
+import org.apache.lucene.analysis.icu.segmentation.DefaultICUTokenizerConfig;
 import org.apache.lucene.analysis.icu.segmentation.ICUTokenizer;
 import org.apache.lucene.analysis.it.ItalianLightStemFilter;
-import org.apache.lucene.analysis.it.ItalianLightStemFilterFactory;
+import org.apache.lucene.analysis.miscellaneous.SetKeywordMarkerFilter;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.standard.StandardTokenizer;
+import org.apache.lucene.analysis.util.ElisionFilter;
 
 public class WordAnalyzer extends Analyzer {
 
@@ -40,8 +40,13 @@ public class WordAnalyzer extends Analyzer {
 	@Override
 	protected TokenStreamComponents createComponents(final String fieldName) {
 		if (icu) {
-			var tokenizer = new KeywordTokenizer(ROOT_ICU_ATTRIBUTE_FACTORY, KeywordTokenizer.DEFAULT_BUFFER_SIZE);
-			TokenStream tokenStream = tokenizer;
+			var tokenizer = new ICUTokenizer(new DefaultICUTokenizerConfig(false, false));
+			TokenStream tokenStream;
+			tokenStream = new ElisionFilter(tokenizer, ItaEngStopWords.ITA_DEFAULT_ARTICLES);
+			tokenStream = new LowerCaseFilter(tokenStream);
+			tokenStream = new StopFilter(tokenStream, ItaEngStopWords.STOP_WORDS_SET);
+			tokenStream = new ItalianLightStemFilter(tokenStream);
+			tokenStream = new PorterStemFilter(tokenStream);
 			tokenStream = new ICUFoldingFilter(tokenStream);
 			return new TokenStreamComponents(tokenizer, tokenStream);
 		} else {
@@ -61,11 +66,13 @@ public class WordAnalyzer extends Analyzer {
 	}
 
 	@Override
-	protected TokenStream normalize(String fieldName, TokenStream in) {
+	protected TokenStream normalize(String fieldName, TokenStream tokenStream) {
 		if (icu) {
-			return new ICUFoldingFilter(in);
+			tokenStream = new LowerCaseFilter(tokenStream);
+			tokenStream = new ElisionFilter(tokenStream, ItaEngStopWords.ITA_DEFAULT_ARTICLES);
+			return new ICUFoldingFilter(tokenStream);
 		} else {
-			return new LowerCaseFilter(in);
+			return new LowerCaseFilter(tokenStream);
 		}
 	}
 }

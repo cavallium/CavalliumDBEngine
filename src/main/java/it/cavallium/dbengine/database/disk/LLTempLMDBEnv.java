@@ -107,7 +107,12 @@ public class LLTempLMDBEnv implements Closeable {
 	}
 
 	public int countUsedDbs() {
-		var freeIds = this.freeIds.cardinality();
+		int freeIds;
+		if (this.freeIds == null) {
+			freeIds = MAX_DATABASES;
+		} else {
+			freeIds = this.freeIds.cardinality();
+		}
 		return MAX_DATABASES - freeIds;
 	}
 }

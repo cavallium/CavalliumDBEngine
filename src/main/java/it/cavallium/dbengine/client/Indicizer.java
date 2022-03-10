@@ -12,6 +12,7 @@ import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import java.util.Map;
 import java.util.Set;
+import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.util.BytesRef;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
@@ -43,7 +44,7 @@ public abstract class Indicizer<T, U> {
 
 	public abstract @NotNull String getKeyFieldName();
 
-	public abstract @NotNull T getKey(BytesRef key);
+	public abstract @NotNull T getKey(IndexableField key);
 
 	public abstract IndicizerAnalyzers getPerFieldAnalyzer();
 

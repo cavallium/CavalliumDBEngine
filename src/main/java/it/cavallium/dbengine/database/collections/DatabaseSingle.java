@@ -18,6 +18,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -28,15 +29,16 @@ import reactor.core.publisher.SynchronousSink;
 public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseSingle<U>> implements
 		DatabaseStageEntry<U> {
 
-	private static final Logger logger = LogManager.getLogger(DatabaseSingle.class);
+	private static final Logger LOG = LogManager.getLogger(DatabaseSingle.class);
 
+	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
 	private static final Drop<DatabaseSingle<?>> DROP = new Drop<>() {
 		@Override
 		public void drop(DatabaseSingle<?> obj) {
 			try {
 				obj.key.close();
 			} catch (Throwable ex) {
-				logger.error("Failed to close key", ex);
+				LOG.error("Failed to close key", ex);
 			}
 			if (obj.onClose != null) {
 				obj.onClose.run();
@@ -87,6 +89,15 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 				deserializedValue = serializer.deserialize(valueBuf);
 			}
 			sink.next(deserializedValue);
+		} catch (IndexOutOfBoundsException ex) {
+			var exMessage = ex.getMessage();
+			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
+				LOG.error("Unexpected zero-bytes value in column "
+						+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName());
+				sink.complete();
+			} else {
+				sink.error(ex);
+			}
 		} catch (SerializationException ex) {
 			sink.error(ex);
 		}

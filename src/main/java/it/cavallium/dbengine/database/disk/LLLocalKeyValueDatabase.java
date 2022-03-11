@@ -41,7 +41,6 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.rocksdb.AccessHint;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.Cache;
@@ -51,7 +50,6 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.CompactionPriority;
-import org.rocksdb.CompactionStyle;
 import org.rocksdb.CompressionOptions;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
@@ -60,7 +58,6 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.OptimisticTransactionDB;
-import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
@@ -545,10 +542,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			LinkedList<ColumnFamilyHandle> handles = new LinkedList<>();
 
-			this.db = RocksDB.open(options, dbPathString, descriptors, handles);
-			for (ColumnFamilyDescriptor columnFamilyDescriptor : descriptorsToCreate) {
-				handles.add(db.createColumnFamily(columnFamilyDescriptor));
-			}
+			this.db = RocksDB.open(new DBOptions(options).setCreateMissingColumnFamilies(true),
+					dbPathString,
+					descriptors,
+					handles
+			);
 
 			flushAndCloseDb(db, handles);
 			this.db = null;

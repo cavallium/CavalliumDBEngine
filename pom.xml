@@ -148,7 +148,7 @@
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
-      <version>1.7.35</version>
+      <version>1.7.36</version>
     </dependency>
     <dependency>
       <groupId>org.apache.logging.log4j</groupId>
@@ -565,7 +565,7 @@
             <annotationProcessorPath>
               <groupId>io.soabase.record-builder</groupId>
               <artifactId>record-builder-processor</artifactId>
-              <version>1.19</version>
+              <version>32</version>
             </annotationProcessorPath>
           </annotationProcessorPaths>
           <annotationProcessors>

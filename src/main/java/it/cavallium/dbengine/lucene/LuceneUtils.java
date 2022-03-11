@@ -36,6 +36,7 @@ import it.cavallium.dbengine.rpc.current.data.MemoryMappedFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NIOFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NRTCachingDirectory;
 import it.cavallium.dbengine.rpc.current.data.RocksDBSharedDirectory;
+import it.cavallium.dbengine.rpc.current.data.RocksDBStandaloneDirectory;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
@@ -616,7 +617,15 @@ public class LuceneUtils {
 					directoryName,
 					rocksDBSharedDirectory.blockSize()
 			);
-		} else {
+		} else if (directoryOptions instanceof RocksDBStandaloneDirectory rocksDBStandaloneDirectory) {
+			var dbInstance = rocksDBManager.getOrCreate(rocksDBStandaloneDirectory.managedPath());
+			return new RocksdbDirectory(rocksDBManager.getAllocator(),
+					dbInstance.db(),
+					dbInstance.handles(),
+					directoryName,
+					rocksDBStandaloneDirectory.blockSize()
+			);
+		}else {
 			throw new UnsupportedOperationException("Unsupported directory: " + directoryName + ", " + directoryOptions);
 		}
 	}
@@ -632,8 +641,30 @@ public class LuceneUtils {
 			return Optional.of(niofsDirectory.managedPath());
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
 			return getManagedPath(nrtCachingDirectory.delegate());
+		} else if (directoryOptions instanceof RocksDBStandaloneDirectory rocksDBStandaloneDirectory) {
+			return Optional.of(rocksDBStandaloneDirectory.managedPath());
 		} else if (directoryOptions instanceof RocksDBSharedDirectory rocksDBSharedDirectory) {
 			return Optional.of(rocksDBSharedDirectory.managedPath());
+		} else {
+			throw new UnsupportedOperationException("Unsupported directory: " + directoryOptions);
+		}
+	}
+
+	public static boolean getIsFilesystemCompressed(LuceneDirectoryOptions directoryOptions) {
+		if (directoryOptions instanceof ByteBuffersDirectory) {
+			return false;
+		} else if (directoryOptions instanceof DirectIOFSDirectory directIOFSDirectory) {
+			return getIsFilesystemCompressed(directIOFSDirectory.delegate());
+		} else if (directoryOptions instanceof MemoryMappedFSDirectory) {
+			return false;
+		} else if (directoryOptions instanceof NIOFSDirectory) {
+			return false;
+		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
+			return getIsFilesystemCompressed(nrtCachingDirectory.delegate());
+		} else if (directoryOptions instanceof RocksDBStandaloneDirectory) {
+			return true;
+		} else if (directoryOptions instanceof RocksDBSharedDirectory) {
+			return true;
 		} else {
 			throw new UnsupportedOperationException("Unsupported directory: " + directoryOptions);
 		}

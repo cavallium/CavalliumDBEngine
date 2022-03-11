@@ -1,10 +1,8 @@
 package it.cavallium.dbengine.client;
 
 import io.net5.buffer.api.Resource;
-import io.net5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
-import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
@@ -14,19 +12,17 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
-import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Set;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
@@ -136,7 +132,13 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	@Override
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return this
-				.search(ClientQueryParams.builder().snapshot(snapshot).query(query).limit(0).build())
+				.search(ClientQueryParams
+						.builder()
+						.snapshot(snapshot)
+						.query(query)
+						.timeout(Duration.ofSeconds(30))
+						.limit(0)
+						.build())
 				.single()
 				.map(searchResultKeys -> {
 					try (searchResultKeys) {

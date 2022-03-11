@@ -27,6 +27,9 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
@@ -39,6 +42,9 @@ import reactor.util.function.Tuple2;
  */
 public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> {
 
+	private static final Logger LOG = LogManager.getLogger(DatabaseMapDictionary.class);
+
+	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
 	private final Serializer<U> valueSerializer;
 
 	protected DatabaseMapDictionary(LLDictionary dictionary,
@@ -70,6 +76,20 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	private void deserializeValue(Send<Buffer> valueToReceive, SynchronousSink<U> sink) {
 		try (var value = valueToReceive.receive()) {
 			sink.next(valueSerializer.deserialize(value));
+		} catch (IndexOutOfBoundsException ex) {
+			var exMessage = ex.getMessage();
+			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
+				var totalZeroBytesErrors = this.totalZeroBytesErrors.incrementAndGet();
+				if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
+					LOG.error("Unexpected zero-bytes value in column "
+							+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName()
+							+ " total=" + totalZeroBytesErrors
+					);
+				}
+				sink.complete();
+			} else {
+				sink.error(ex);
+			}
 		} catch (Throwable ex) {
 			sink.error(ex);
 		}
@@ -445,7 +465,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 							assert keyBuf.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
 							// Remove prefix. Keep only the suffix and the ext
 							splitPrefix(keyBuf).close();
-							suffixKeyLengthConsistency(keyBuf.readableBytes());
+							assert suffixKeyLengthConsistency(keyBuf.readableBytes());
 							T keySuffix = deserializeSuffix(keyBuf);
 
 							assert serializedEntry.getValueUnsafe() != null;

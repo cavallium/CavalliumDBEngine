@@ -78,7 +78,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
 	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
-	static final boolean PREFER_SEEK_TO_FIRST = false;
+	static final boolean PREFER_SEEK_TO_FIRST = true;
 	/**
 	 * It used to be false,
 	 * now it's true to avoid crashes during iterations on completely corrupted files

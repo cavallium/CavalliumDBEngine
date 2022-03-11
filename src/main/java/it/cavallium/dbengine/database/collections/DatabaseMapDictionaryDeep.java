@@ -17,9 +17,7 @@ import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.apache.logging.log4j.LogManager;
@@ -34,7 +32,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		ResourceSupport<DatabaseStage<Object2ObjectSortedMap<T, U>>, DatabaseMapDictionaryDeep<T, U, US>> implements
 		DatabaseStageMap<T, U, US> {
 
-	private static final Logger logger = LogManager.getLogger(DatabaseMapDictionaryDeep.class);
+	private static final Logger LOG = LogManager.getLogger(DatabaseMapDictionaryDeep.class);
 
 	private static final Drop<DatabaseMapDictionaryDeep<?, ?, ?>> DROP = new Drop<>() {
 		@Override
@@ -44,21 +42,21 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 					obj.range.close();
 				}
 			} catch (Throwable ex) {
-				logger.error("Failed to close range", ex);
+				LOG.error("Failed to close range", ex);
 			}
 			try {
 				if (obj.keyPrefix != null) {
 					obj.keyPrefix.close();
 				}
 			} catch (Throwable ex) {
-				logger.error("Failed to close keyPrefix", ex);
+				LOG.error("Failed to close keyPrefix", ex);
 			}
 			try {
 				if (obj.onClose != null) {
 					obj.onClose.run();
 				}
 			} catch (Throwable ex) {
-				logger.error("Failed to close onClose", ex);
+				LOG.error("Failed to close onClose", ex);
 			}
 		}
 

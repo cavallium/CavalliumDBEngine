@@ -27,6 +27,7 @@ import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
+import it.cavallium.dbengine.lucene.directory.Lucene90CodecWithNoFieldCompression;
 import it.cavallium.dbengine.lucene.mlt.MoreLikeThisTransformer;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
@@ -133,7 +134,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.directory = LuceneUtils.createLuceneDirectory(luceneOptions.directoryOptions(),
 				LuceneUtils.getStandardName(clusterName, shardIndex),
 				rocksDBManager);
-		//boolean compressCodec = !luceneOptions.directoryOptions().isStorageCompressed();
+		boolean isFilesystemCompressed = LuceneUtils.getIsFilesystemCompressed(luceneOptions.directoryOptions());
 
 		this.shardName = clusterName;
 		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
@@ -172,6 +173,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			}
 			writerSchedulerMaxThreadCount = concurrentMergeScheduler.getMaxThreadCount();
 			mergeScheduler = concurrentMergeScheduler;
+		}
+		if (isFilesystemCompressed) {
+			indexWriterConfig.setUseCompoundFile(false);
+			indexWriterConfig.setCodec(new Lucene90CodecWithNoFieldCompression());
 		}
 		logger.trace("WriterSchedulerMaxThreadCount: {}", writerSchedulerMaxThreadCount);
 		indexWriterConfig.setMergeScheduler(mergeScheduler);

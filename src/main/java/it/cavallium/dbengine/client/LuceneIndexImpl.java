@@ -50,8 +50,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Flux<Entry<T, U>> entries) {
-		return luceneIndex.addDocuments(entries.flatMap(entry -> indicizer
+	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<T, U>> entries) {
+		return luceneIndex.addDocuments(atomic, entries.flatMap(entry -> indicizer
 				.toDocument(entry.getKey(), entry.getValue())
 				.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc))));
 	}

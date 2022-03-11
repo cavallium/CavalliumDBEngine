@@ -21,12 +21,7 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	Mono<Void> addDocument(LLTerm id, LLUpdateDocument doc);
 
-	/**
-	 * WARNING! This operation is atomic!
-	 * Please don't send infinite or huge documents fluxes, because they will
-	 * be kept in ram all at once.
-	 */
-	Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents);
+	Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents);
 
 	Mono<Void> deleteDocument(LLTerm id);
 

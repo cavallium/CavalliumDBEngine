@@ -375,7 +375,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
-					public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+					public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 						return null;
 					}
 

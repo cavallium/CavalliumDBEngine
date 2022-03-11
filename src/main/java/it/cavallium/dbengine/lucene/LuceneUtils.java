@@ -600,7 +600,7 @@ public class LuceneUtils {
 		} else if (directoryOptions instanceof MemoryMappedFSDirectory memoryMappedFSDirectory) {
 			return FSDirectory.open(memoryMappedFSDirectory.managedPath().resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NIOFSDirectory niofsDirectory) {
-			return org.apache.lucene.store.NIOFSDirectory.open(niofsDirectory
+			return new org.apache.lucene.store.NIOFSDirectory(niofsDirectory
 					.managedPath()
 					.resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {

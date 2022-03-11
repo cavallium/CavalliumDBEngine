@@ -84,12 +84,12 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
 				.groupBy(term -> LuceneUtils.getLuceneIndexId(term.getKey(), totalShards))
 				.flatMap(group -> {
 					var index = luceneIndicesById[group.key()];
-					return index.addDocuments(group);
+					return index.addDocuments(atomic, group);
 				})
 				.then();
 	}

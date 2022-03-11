@@ -272,22 +272,55 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return documents.collectList().flatMap(documentsList -> this.<Void>runSafe(() -> {
-			var count = documentsList.size();
-			StopWatch stopWatch = StopWatch.createStarted();
-			try {
-				startedDocIndexings.increment(count);
-				try {
-					indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
-				} finally {
-					endeddDocIndexings.increment(count);
-				}
-			} finally {
-				docIndexingTime.record(stopWatch.getTime(TimeUnit.MILLISECONDS) / Math.max(count, 1), TimeUnit.MILLISECONDS);
-			}
-			return null;
-		})).transform(this::ensureOpen);
+	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+		if (!atomic) {
+			return documents
+					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.handle((document, sink) -> {
+						LLUpdateDocument value = document.getValue();
+						startedDocIndexings.increment();
+						try {
+							docIndexingTime.recordCallable(() -> {
+								indexWriter.addDocument(toDocument(value));
+								return null;
+							});
+						} catch (Exception ex) {
+							sink.error(ex);
+							return;
+						} finally {
+							endeddDocIndexings.increment();
+						}
+						sink.complete();
+					})
+					.then()
+					.transform(this::ensureOpen);
+		} else {
+			return documents
+					.collectList()
+					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.handle((documentsList, sink) -> {
+						var count = documentsList.size();
+						StopWatch stopWatch = StopWatch.createStarted();
+						try {
+							startedDocIndexings.increment(count);
+							try {
+								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+							} finally {
+								endeddDocIndexings.increment(count);
+							}
+						} catch (IOException ex) {
+							sink.error(ex);
+							return;
+						} finally {
+							docIndexingTime.record(stopWatch.getTime(TimeUnit.MILLISECONDS) / Math.max(count, 1),
+									TimeUnit.MILLISECONDS
+							);
+						}
+						sink.complete();
+					})
+					.then()
+					.transform(this::ensureOpen);
+		}
 	}
 
 
@@ -330,28 +363,28 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
-				.collectMap(Entry::getKey, Entry::getValue)
-				.flatMap(this::updateDocuments).then();
+				.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.handle((document, sink) -> {
+					LLTerm key = document.getKey();
+					LLUpdateDocument value = document.getValue();
+					startedDocIndexings.increment();
+					try {
+						docIndexingTime.recordCallable(() -> {
+							indexWriter.updateDocument(LLUtils.toTerm(key), toDocument(value));
+							return null;
+						});
+					} catch (Exception ex) {
+						sink.error(ex);
+						return;
+					} finally {
+						endeddDocIndexings.increment();
+					}
+					sink.complete();
+				})
+				.then()
+				.transform(this::ensureOpen);
 	}
 
-	private Mono<Void> updateDocuments(Map<LLTerm, LLUpdateDocument> documentsMap) {
-		return this.<Void>runSafe(() -> {
-			for (Entry<LLTerm, LLUpdateDocument> entry : documentsMap.entrySet()) {
-				LLTerm key = entry.getKey();
-				LLUpdateDocument value = entry.getValue();
-				startedDocIndexings.increment();
-				try {
-					docIndexingTime.recordCallable(() -> {
-						indexWriter.updateDocument(LLUtils.toTerm(key), toDocument(value));
-						return null;
-					});
-				} finally {
-					endeddDocIndexings.increment();
-				}
-			}
-			return null;
-		}).transform(this::ensureOpen);
-	}
 
 	@Override
 	public Mono<Void> deleteAll() {

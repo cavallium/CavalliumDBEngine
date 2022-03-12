@@ -6,6 +6,7 @@ import io.net5.buffer.api.Drop;
 import io.net5.buffer.api.Owned;
 import io.net5.buffer.api.Resource;
 import io.net5.buffer.api.Send;
+import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -13,13 +14,14 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
-import io.net5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicLong;
+import org.apache.commons.lang3.function.TriFunction;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -73,6 +75,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	protected final LLDictionary dictionary;
 	private final BufferAllocator alloc;
+	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
 	protected final SubStageGetter<U, US> subStageGetter;
 	protected final SerializerFixedBinaryLength<T> keySuffixSerializer;
 	protected final int keyPrefixLength;
@@ -436,5 +439,51 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		this.keyPrefix = null;
 		this.range = null;
 		this.onClose = null;
+	}
+
+	public static <K1, K2, V, R> Flux<R> getAllLeaves2(DatabaseMapDictionaryDeep<K1, Object2ObjectSortedMap<K2, V>, DatabaseMapDictionary<K2, V>> deepMap,
+			CompositeSnapshot snapshot,
+			TriFunction<K1, K2, V, R> merger) {
+		if (deepMap.subStageGetter instanceof SubStageGetterMap<K2, V> subStageGetterMap) {
+			var keySuffix1Serializer = deepMap.keySuffixSerializer;
+			var keySuffix2Serializer = subStageGetterMap.keySerializer;
+			var valueSerializer = subStageGetterMap.valueSerializer;
+			return deepMap
+					.dictionary
+					.getRange(deepMap.resolveSnapshot(snapshot), deepMap.rangeMono)
+					.handle((entrySend, sink) -> {
+						try (var entry = entrySend.receive()) {
+							var keyBuf = entry.getKeyUnsafe();
+							var valueBuf = entry.getValueUnsafe();
+							assert keyBuf != null;
+							keyBuf.skipReadable(deepMap.keyPrefixLength);
+							K1 key1;
+							K2 key2;
+							try (var key1Buf = keyBuf.split(deepMap.keySuffixLength)) {
+								key1 = keySuffix1Serializer.deserialize(key1Buf);
+							}
+							key2 = keySuffix2Serializer.deserialize(keyBuf);
+							assert valueBuf != null;
+							var value = valueSerializer.deserialize(valueBuf);
+							sink.next(merger.apply(key1, key2, value));
+						} catch (IndexOutOfBoundsException ex) {
+							var exMessage = ex.getMessage();
+							if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
+								var totalZeroBytesErrors = deepMap.totalZeroBytesErrors.incrementAndGet();
+								if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
+									LOG.error("Unexpected zero-bytes value in column " + deepMap.dictionary.getDatabaseName() + ":"
+											+ deepMap.dictionary.getColumnName() + " total=" + totalZeroBytesErrors);
+								}
+								sink.complete();
+							} else {
+								sink.error(ex);
+							}
+						} catch (SerializationException ex) {
+							sink.error(ex);
+						}
+					});
+		} else {
+			throw new IllegalArgumentException();
+		}
 	}
 }

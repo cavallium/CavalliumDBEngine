@@ -130,6 +130,7 @@ public class RocksdbFileStore {
 
 	private static DBOptions getDBOptions() {
 		var options = new DBOptions();
+		options.setParanoidChecks(false);
 		options.setWalSizeLimitMB(256);
 		options.setMaxWriteBatchGroupSizeBytes(2 * SizeUnit.MB);
 		//options.setAtomicFlush(false);

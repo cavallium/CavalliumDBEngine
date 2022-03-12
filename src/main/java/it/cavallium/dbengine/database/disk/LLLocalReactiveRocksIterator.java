@@ -79,8 +79,8 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 		return Flux.generate(() -> {
 			var readOptions = new ReadOptions(this.readOptions);
 			if (!rangeShared.hasMin() || !rangeShared.hasMax()) {
-				readOptions.setReadaheadSize(32 * 1024); // 32KiB
-				readOptions.setFillCache(false);
+				//readOptions.setReadaheadSize(32 * 1024); // 32KiB
+				//readOptions.setFillCache(false);
 				readOptions.setVerifyChecksums(false);
 			}
 			if (logger.isTraceEnabled()) {

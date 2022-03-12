@@ -16,8 +16,8 @@ import reactor.core.publisher.Mono;
 public class SubStageGetterMap<T, U> implements
 		SubStageGetter<Object2ObjectSortedMap<T, U>, DatabaseMapDictionary<T, U>> {
 
-	private final SerializerFixedBinaryLength<T> keySerializer;
-	private final Serializer<U> valueSerializer;
+	final SerializerFixedBinaryLength<T> keySerializer;
+	final Serializer<U> valueSerializer;
 
 	public SubStageGetterMap(SerializerFixedBinaryLength<T> keySerializer,
 			Serializer<U> valueSerializer) {

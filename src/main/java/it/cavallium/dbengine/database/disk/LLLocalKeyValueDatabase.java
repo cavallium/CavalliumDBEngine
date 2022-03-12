@@ -137,7 +137,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			}
 		}
 
-		var optionsWithCache = openRocksDb(path, databaseOptions);
+		OptionsWithCache optionsWithCache = openRocksDb(path, databaseOptions);
 		var rocksdbOptions = optionsWithCache.options();
 		try {
 			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
@@ -175,7 +175,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions
 							.setIndexType(IndexType.kTwoLevelIndexSearch)
 							.setPartitionFilters(true)
-							.setBlockCache(optionsWithCache.cache())
 							.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse(true))
 							.setCacheIndexAndFilterBlocksWithHighPriority(true)
 							.setPinTopLevelIndexAndFilter(true)
@@ -185,7 +184,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions
 							.setIndexType(IndexType.kTwoLevelIndexSearch)
 							.setPartitionFilters(true)
-							.setBlockCache(optionsWithCache.cache())
 							.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse( true))
 							.setCacheIndexAndFilterBlocksWithHighPriority(true)
 							.setPinTopLevelIndexAndFilter(true)
@@ -195,7 +193,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions.setFilterPolicy(bloomFilter);
 					tableOptions.setOptimizeFiltersForMemory(true);
 				}
-				tableOptions.setBlockSize(16 * 1024); // 16KiB
+				tableOptions
+						.setBlockCacheCompressed(optionsWithCache.compressedCache())
+						.setBlockCache(optionsWithCache.standardCache())
+						.setBlockSize(16 * 1024); // 16KiB
 
 				columnOptions.setTableFormatConfig(tableOptions);
 				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
@@ -391,7 +392,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force compact
 	}
 
-	record OptionsWithCache(DBOptions options, Cache cache) {}
+	record OptionsWithCache(DBOptions options, Cache standardCache, Cache compressedCache) {}
 
 	private static OptionsWithCache openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions) throws IOException {
 		// Get databases directory path
@@ -409,6 +410,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// the Options class contains a set of configurable DB options
 		// that determines the behaviour of the database.
 		var options = new DBOptions();
+		options.setParanoidChecks(false);
 		options.setCreateIfMissing(true);
 		options.setCreateMissingColumnFamilies(true);
 		options.setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);
@@ -427,6 +429,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
 
 		Cache blockCache;
+		Cache compressedCache;
 		if (databaseOptions.lowMemory()) {
 			// LOW MEMORY
 			options
@@ -438,7 +441,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(0) // 16MB
 					.setMaxTotalWalSize(0) // automatic
 			;
-			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), -1, true);
+			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB) / 2, -1, true);
+			compressedCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB) / 2, -1, true);
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -460,7 +464,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(1024) // 1024MB
 					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
 			;
-			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB), -1, true);
+			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB) / 2);
+			compressedCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB) / 2);
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -491,7 +496,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			options.setUseDirectIoForFlushAndCompaction(true);
 		}
 
-		return new OptionsWithCache(options, blockCache);
+		return new OptionsWithCache(options, blockCache, compressedCache);
 	}
 
 	private static List<DbPath> convertPaths(Path databasesDirPath, Path path, List<DatabaseVolume> volumes) {

@@ -5,6 +5,8 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
+import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE;
+import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.Counter;
@@ -82,6 +84,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private static final ReentrantLock shutdownLock = new ReentrantLock();
 	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.single(Schedulers.boundedElastic()));
+	//todo: remove after https://github.com/reactor/reactor-core/issues/2960 is fixed
+	private static final Scheduler bulkScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
+			DEFAULT_BOUNDED_ELASTIC_SIZE, DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "bulkBoundedElastic", 60, true));
 
 	static {
 		LLUtils.initHooks();
@@ -275,7 +280,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		if (!atomic) {
 			return documents
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.publishOn(bulkScheduler)
 					.handle((document, sink) -> {
 						LLUpdateDocument value = document.getValue();
 						startedDocIndexings.increment();
@@ -297,7 +302,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		} else {
 			return documents
 					.collectList()
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.publishOn(bulkScheduler)
 					.handle((documentsList, sink) -> {
 						var count = documentsList.size();
 						StopWatch stopWatch = StopWatch.createStarted();
@@ -363,7 +368,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
-				.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(bulkScheduler)
 				.handle((document, sink) -> {
 					LLTerm key = document.getKey();
 					LLUpdateDocument value = document.getValue();

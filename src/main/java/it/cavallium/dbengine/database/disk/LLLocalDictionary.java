@@ -1565,7 +1565,7 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 		try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 			readOpts.setFillCache(false);
-			readOpts.setReadaheadSize(32 * 1024); // 32KiB
+			readOpts.setReadaheadSize(128 * 1024); // 128KiB
 			readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 			if (PARALLEL_EXACT_SIZE) {

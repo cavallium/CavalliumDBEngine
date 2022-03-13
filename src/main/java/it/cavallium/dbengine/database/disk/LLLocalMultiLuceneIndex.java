@@ -33,7 +33,6 @@ import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -43,6 +42,9 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.jetbrains.annotations.NotNull;
@@ -52,6 +54,12 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
+
+	private static final Logger LOG = LogManager.getLogger(LLLuceneIndex.class);
+	private static final boolean BYPASS_GROUPBY_BUG = Boolean.parseBoolean(System.getProperty(
+			"it.cavallium.dbengine.bypassGroupByBug",
+			"false"
+	));
 
 	static {
 		LLUtils.initHooks();
@@ -156,10 +164,43 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return documents
-				.groupBy(term -> getLuceneIndex(term.getKey()))
-				.flatMap(group -> group.key().addDocuments(atomic, group))
-				.then();
+		if (BYPASS_GROUPBY_BUG) {
+			return documents
+					.buffer(8192)
+					.flatMap(inputEntries -> {
+						List<Entry<LLTerm, LLUpdateDocument>>[] sortedEntries = new List[totalShards];
+						Mono<Void>[] results = new Mono[totalShards];
+
+						// Sort entries
+						for(var inputEntry : inputEntries) {
+							int luceneIndexId = LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards);
+							if (sortedEntries[luceneIndexId] == null) {
+								sortedEntries[luceneIndexId] = new ArrayList<>();
+							}
+							sortedEntries[luceneIndexId].add(inputEntry);
+						}
+
+						// Add documents
+						int luceneIndexId = 0;
+						for (List<Entry<LLTerm, LLUpdateDocument>> docs : sortedEntries) {
+							if (docs != null && !docs.isEmpty()) {
+								LLLocalLuceneIndex luceneIndex = Objects.requireNonNull(luceneIndicesById[luceneIndexId]);
+								results[luceneIndexId] = luceneIndex.addDocuments(atomic, Flux.fromIterable(docs));
+							} else {
+								results[luceneIndexId] = Mono.empty();
+							}
+							luceneIndexId++;
+						}
+
+						return Mono.when(results);
+					})
+					.then();
+		} else {
+			return documents
+					.groupBy(term -> getLuceneIndex(term.getKey()))
+					.flatMap(group -> group.key().addDocuments(atomic, group))
+					.then();
+		}
 	}
 
 	@Override
@@ -174,10 +215,43 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return documents
-				.groupBy(term -> getLuceneIndex(term.getKey()))
-				.flatMap(group -> group.key().updateDocuments(group))
-				.then();
+		if (BYPASS_GROUPBY_BUG) {
+			return documents
+					.buffer(8192)
+					.flatMap(inputEntries -> {
+						List<Entry<LLTerm, LLUpdateDocument>>[] sortedEntries = new List[totalShards];
+						Mono<Void>[] results = new Mono[totalShards];
+
+						// Sort entries
+						for(var inputEntry : inputEntries) {
+							int luceneIndexId = LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards);
+							if (sortedEntries[luceneIndexId] == null) {
+								sortedEntries[luceneIndexId] = new ArrayList<>();
+							}
+							sortedEntries[luceneIndexId].add(inputEntry);
+						}
+
+						// Add documents
+						int luceneIndexId = 0;
+						for (List<Entry<LLTerm, LLUpdateDocument>> docs : sortedEntries) {
+							if (docs != null && !docs.isEmpty()) {
+								LLLocalLuceneIndex luceneIndex = Objects.requireNonNull(luceneIndicesById[luceneIndexId]);
+								results[luceneIndexId] = luceneIndex.updateDocuments(Flux.fromIterable(docs));
+							} else {
+								results[luceneIndexId] = Mono.empty();
+							}
+							luceneIndexId++;
+						}
+
+						return Mono.when(results);
+					})
+					.then();
+		} else {
+			return documents
+					.groupBy(term -> getLuceneIndex(term.getKey()))
+					.flatMap(group -> group.key().updateDocuments(group))
+					.then();
+		}
 	}
 
 	@Override

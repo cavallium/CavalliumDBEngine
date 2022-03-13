@@ -62,8 +62,6 @@ public class UninterruptibleScheduler {
 
 					@Override
 					public void dispose() {
-						//todo: check if we need to remove this line
-						worker.dispose();
 					}
 
 					@Override

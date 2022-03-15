@@ -184,6 +184,11 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	private static Mono<LLSearchResultShard> mergeResults(List<LLSearchResultShard> shards) {
+		if (shards.size() == 0) {
+			return Mono.empty();
+		} else if (shards.size() == 1) {
+			return Mono.just(shards.get(0));
+		}
 		return Mono.fromCallable(() -> {
 			TotalHitsCount count = null;
 			ObjectArrayList<Flux<LLKeyScore>> results = new ObjectArrayList<>(shards.size());

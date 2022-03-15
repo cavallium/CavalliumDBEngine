@@ -5,7 +5,6 @@ import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRIT
 
 import io.net5.buffer.api.Send;
 import io.net5.buffer.api.internal.ResourceSupport;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
@@ -16,7 +15,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveLocalSearcher implements LocalSearcher {
 
-	private static final OfficialSearcher officialSearcher = new OfficialSearcher();
+	private static final StandardSearcher standardSearcher = new StandardSearcher();
 
 	private static final LocalSearcher scoredPaged = new PagedLocalSearcher();
 
@@ -83,6 +82,8 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 
 		if (queryParams.limitLong() == 0) {
 			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
+		} else if (realLimit <= maxInMemoryResultEntries) {
+			return standardSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
 		} else if (queryParams.isSorted()) {
 			if (realLimit <= maxAllowedInMemoryLimit) {
 				return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);

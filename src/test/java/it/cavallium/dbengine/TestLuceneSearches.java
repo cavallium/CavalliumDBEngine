@@ -35,7 +35,7 @@ import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.CountMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
-import it.cavallium.dbengine.lucene.searcher.OfficialSearcher;
+import it.cavallium.dbengine.lucene.searcher.StandardSearcher;
 import it.cavallium.dbengine.lucene.searcher.ScoredPagedMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.PagedLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.SortedScoredFullMultiSearcher;
@@ -278,8 +278,8 @@ public class TestLuceneSearches {
 					Assertions.assertTrue(keys.size() >= hits.value());
 				}
 
-				var officialSearcher = new OfficialSearcher();
-				luceneIndex = getLuceneIndex(expectedQueryType.shard(), officialSearcher);
+				var standardSearcher = new StandardSearcher();
+				luceneIndex = getLuceneIndex(expectedQueryType.shard(), standardSearcher);
 				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
 				try (var officialResults = run(luceneIndex.search(officialQuery))) {
 					var officialHits = officialResults.totalHitsCount();

@@ -14,7 +14,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveMultiSearcher implements MultiSearcher {
 
-	private static final OfficialSearcher officialSearcher = new OfficialSearcher();
+	private static final StandardSearcher standardSearcher = new StandardSearcher();
 
 	private static final MultiSearcher count = new CountMultiSearcher();
 
@@ -73,6 +73,8 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 			if (queryParams.limitLong() == 0) {
 				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+			} else if (realLimit <= maxInMemoryResultEntries) {
+				return standardSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			} else if (queryParams.isSorted()) {
 				if (realLimit <= maxAllowedInMemoryLimit) {
 					return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);

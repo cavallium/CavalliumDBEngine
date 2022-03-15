@@ -144,6 +144,14 @@ public class LLItem {
 		}
 	}
 
+	public static LLItem newStringField(String name, BytesRef bytesRef, Field.Store store) {
+		if (store == Field.Store.YES) {
+			return new LLItem(LLType.StringFieldStored, name, bytesRef);
+		} else {
+			return new LLItem(LLType.StringField, name, bytesRef);
+		}
+	}
+
 	public static LLItem newSortedNumericDocValuesField(String name, long data) {
 		return new LLItem(LLType.SortedNumericDocValuesField, name, data);
 	}

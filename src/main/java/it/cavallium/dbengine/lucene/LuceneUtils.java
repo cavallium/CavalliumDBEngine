@@ -419,13 +419,13 @@ public class LuceneUtils {
 			} else {
 				collectedDoc = null;
 			}
-			return new LLKeyScore(shardDocId, score, collectedDoc);
+			return new LLKeyScore(shardDocId, shardIndex, score, collectedDoc);
 		} catch (NoSuchElementException ex) {
 			logger.debug("Error: document {} key is not present!", shardDocId);
 			return null;
 		} catch (Exception ex) {
 			logger.error("Failed to read document {}", shardDocId, ex);
-			return new LLKeyScore(shardDocId, score, null);
+			return new LLKeyScore(shardDocId, shardIndex, score, null);
 		}
 	}
 

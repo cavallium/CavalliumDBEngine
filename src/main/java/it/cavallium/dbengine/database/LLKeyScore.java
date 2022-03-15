@@ -7,4 +7,4 @@ import org.apache.lucene.util.BytesRef;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
-public record LLKeyScore(int docId, float score, @Nullable IndexableField key) {}
+public record LLKeyScore(int docId, int shardId, float score, @Nullable IndexableField key) {}

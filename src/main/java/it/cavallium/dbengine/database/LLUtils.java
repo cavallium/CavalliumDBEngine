@@ -224,7 +224,13 @@ public class LLUtils {
 			case SortedNumericDocValuesField -> new SortedNumericDocValuesField(item.getName(), item.longData());
 			case NumericDocValuesField -> new NumericDocValuesField(item.getName(), item.longData());
 			case StringField -> new StringField(item.getName(), item.stringValue(), Store.NO);
-			case StringFieldStored -> new StringField(item.getName(), item.stringValue(), Store.YES);
+			case StringFieldStored -> {
+				if (item.getData() instanceof BytesRef bytesRef) {
+					yield new StringField(item.getName(), bytesRef, Store.YES);
+				} else {
+					yield new StringField(item.getName(), item.stringValue(), Store.YES);
+				}
+			}
 		};
 	}
 
@@ -259,7 +265,7 @@ public class LLUtils {
 	}
 
 	public static it.cavallium.dbengine.database.LLKeyScore toKeyScore(LLKeyScore hit) {
-		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.score(), hit.key());
+		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.shardId(), hit.score(), hit.key());
 	}
 
 	public static String toStringSafe(@Nullable Buffer key) {

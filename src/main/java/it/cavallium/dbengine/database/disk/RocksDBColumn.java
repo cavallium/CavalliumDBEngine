@@ -28,11 +28,12 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 		var allocator = getAllocator();
 		try (var keyBuf = allocator.allocate(key.length)) {
 			keyBuf.writeBytes(key);
-			var result = this.get(readOptions, keyBuf);
-			if (result == null) {
-				return null;
+			try (var result = this.get(readOptions, keyBuf)) {
+				if (result == null) {
+					return null;
+				}
+				return LLUtils.toArray(result);
 			}
-			return LLUtils.toArray(result);
 		}
 	}
 

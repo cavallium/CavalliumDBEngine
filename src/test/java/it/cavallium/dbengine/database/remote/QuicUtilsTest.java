@@ -11,10 +11,8 @@ import io.netty.incubator.codec.quic.InsecureQuicTokenHandler;
 import io.netty.incubator.codec.quic.QuicConnectionIdGenerator;
 import io.netty.incubator.codec.quic.QuicSslContext;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
-import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.dbengine.database.remote.RPCCodecs.RPCEventCodec;
 import it.cavallium.dbengine.rpc.current.data.Empty;
-import it.cavallium.dbengine.rpc.current.data.RPCCrash;
 import it.cavallium.dbengine.rpc.current.data.RPCEvent;
 import it.cavallium.dbengine.rpc.current.data.SingletonGet;
 import it.cavallium.dbengine.rpc.current.data.nullables.NullableLLSnapshot;
@@ -222,28 +220,36 @@ class QuicUtilsTest {
 
 	@Test
 	void sendUpdateServerFail1() {
-		RPCEvent results = QuicUtils.<RPCEvent>sendUpdate(clientConn,
-				RPCEventCodec::new,
-				new SingletonGet(FAIL_IMMEDIATELY, NullableLLSnapshot.empty()),
-				serverData -> Mono.fromCallable(() -> {
-					fail("Called update");
-					return new SingletonGet(NORMAL, NullableLLSnapshot.empty());
-				})
-		).blockOptional().orElseThrow();
-		assertEquals(RPCCrash.of(500, NullableString.of("Expected error")), results);
+		assertThrows(RPCException.class,
+				() -> QuicUtils
+						.<RPCEvent>sendUpdate(clientConn,
+								RPCEventCodec::new,
+								new SingletonGet(FAIL_IMMEDIATELY, NullableLLSnapshot.empty()),
+								serverData -> Mono.fromCallable(() -> {
+									fail("Called update");
+									return new SingletonGet(NORMAL, NullableLLSnapshot.empty());
+								})
+						)
+						.blockOptional()
+						.orElseThrow()
+		);
 	}
 
 	@Test
 	void sendUpdateServerFail2() {
-		RPCEvent results = QuicUtils.<RPCEvent>sendUpdate(clientConn,
-				RPCEventCodec::new,
-				new SingletonGet(NORMAL, NullableLLSnapshot.empty()),
-				serverData -> Mono.fromCallable(() -> {
-					assertEquals(Empty.of(), serverData);
-					return new SingletonGet(FAIL_IMMEDIATELY, NullableLLSnapshot.empty());
-				})
-		).blockOptional().orElseThrow();
-		assertEquals(RPCCrash.of(500, NullableString.of("Expected error")), results);
+		assertThrows(RPCException.class,
+				() -> QuicUtils
+						.<RPCEvent>sendUpdate(clientConn,
+								RPCEventCodec::new,
+								new SingletonGet(NORMAL, NullableLLSnapshot.empty()),
+								serverData -> Mono.fromCallable(() -> {
+									assertEquals(Empty.of(), serverData);
+									return new SingletonGet(FAIL_IMMEDIATELY, NullableLLSnapshot.empty());
+								})
+						)
+						.blockOptional()
+						.orElseThrow()
+		);
 	}
 
 	@Test
@@ -265,12 +271,16 @@ class QuicUtilsTest {
 
 	@Test
 	void sendFailedRequest() {
-		RPCEvent response = QuicUtils.<RPCEvent, RPCEvent>sendSimpleRequest(clientConn,
-				RPCEventCodec::new,
-				RPCEventCodec::new,
-				new SingletonGet(FAIL_IMMEDIATELY, NullableLLSnapshot.empty())
-		).blockOptional().orElseThrow();
-		assertEquals(RPCCrash.of(500, NullableString.of("Expected error")), response);
+		assertThrows(RPCException.class,
+				() -> QuicUtils
+						.<RPCEvent, RPCEvent>sendSimpleRequest(clientConn,
+								RPCEventCodec::new,
+								RPCEventCodec::new,
+								new SingletonGet(FAIL_IMMEDIATELY, NullableLLSnapshot.empty())
+						)
+						.blockOptional()
+						.orElseThrow()
+		);
 	}
 
 	@Test

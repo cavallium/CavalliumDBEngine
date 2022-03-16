@@ -67,6 +67,15 @@ public abstract class TestSingletons {
 	}
 
 	@Test
+	public void testCreateIntegerNoop() {
+		StepVerifier
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempInt(db, "test", 0)
+						.then()
+				))
+				.verifyComplete();
+	}
+
+	@Test
 	public void testCreateLong() {
 		StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempLong(db, "test", 0)

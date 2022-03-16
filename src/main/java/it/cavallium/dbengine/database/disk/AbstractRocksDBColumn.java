@@ -9,10 +9,14 @@ import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.DefaultBufferAllocators;
+import io.netty5.buffer.api.MemoryManager;
+import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
+import it.cavallium.dbengine.lucene.DirectNIOFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.nio.ByteBuffer;
 import java.util.List;
@@ -99,20 +103,26 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 		if (nettyDirect) {
 			// Get the key nio buffer to pass to RocksDB
-			ByteBuffer keyNioBuffer = LLUtils.asReadOnlyDirect(key);
+			ByteBuffer keyNioBuffer;
 			boolean mustCloseKey;
-			if (keyNioBuffer == null) {
-				mustCloseKey = true;
-				// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-				keyNioBuffer = LLUtils.copyToNewDirectBuffer(key);
-			} else {
+			{
+				if (!LLUtils.isReadOnlyDirect(key)) {
+					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+					mustCloseKey = true;
+					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+					key = directKey;
+				} else {
+					mustCloseKey = false;
+				}
+				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
 				assert keyNioBuffer.isDirect();
-				mustCloseKey = false;
+				assert keyNioBuffer.limit() == key.readableBytes();
 			}
-			assert keyNioBuffer.limit() == key.readableBytes();
+
 			try {
 				// Create a direct result buffer because RocksDB works only with direct buffers
-				var resultBuffer = LLUtils.allocateShared(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
+				var resultBuffer = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
 				try {
 					assert resultBuffer.readerOffset() == 0;
 					assert resultBuffer.writerOffset() == 0;
@@ -170,7 +180,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				}
 			} finally {
 				if (mustCloseKey) {
-					PlatformDependent.freeDirectBuffer(keyNioBuffer);
+					key.close();
 				}
 			}
 		} else {
@@ -219,36 +229,51 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			assert value.isAccessible();
 			if (nettyDirect) {
 				// Get the key nio buffer to pass to RocksDB
-				ByteBuffer keyNioBuffer = LLUtils.asReadOnlyDirect(key);
+				ByteBuffer keyNioBuffer;
 				boolean mustCloseKey;
-				if (keyNioBuffer == null) {
-					mustCloseKey = true;
-					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-					keyNioBuffer = LLUtils.copyToNewDirectBuffer(key);
-				} else {
-					mustCloseKey = false;
+				{
+					if (!LLUtils.isReadOnlyDirect(key)) {
+						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+						mustCloseKey = true;
+						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+						key = directKey;
+					} else {
+						mustCloseKey = false;
+					}
+					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					assert keyNioBuffer.isDirect();
+					assert keyNioBuffer.limit() == key.readableBytes();
 				}
 				try {
 					// Get the value nio buffer to pass to RocksDB
-					ByteBuffer valueNioBuffer = LLUtils.asReadOnlyDirect(value);
+					ByteBuffer valueNioBuffer;
 					boolean mustCloseValue;
-					if (valueNioBuffer == null) {
-						mustCloseValue = true;
-						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-						valueNioBuffer = LLUtils.copyToNewDirectBuffer(value);
-					} else {
-						mustCloseValue = false;
+					{
+						if (!LLUtils.isReadOnlyDirect(value)) {
+							// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+							mustCloseValue = true;
+							var directValue = DefaultBufferAllocators.offHeapAllocator().allocate(value.readableBytes());
+							value.copyInto(value.readerOffset(), directValue, 0, value.readableBytes());
+							value = directValue;
+						} else {
+							mustCloseValue = false;
+						}
+						valueNioBuffer = ((ReadableComponent) value).readableBuffer();
+						assert valueNioBuffer.isDirect();
+						assert valueNioBuffer.limit() == value.readableBytes();
 					}
+
 					try {
 						db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
 					} finally {
 						if (mustCloseValue) {
-							PlatformDependent.freeDirectBuffer(valueNioBuffer);
+							value.close();
 						}
 					}
 				} finally {
 					if (mustCloseKey) {
-						PlatformDependent.freeDirectBuffer(keyNioBuffer);
+						key.close();
 					}
 				}
 			} else {
@@ -277,14 +302,21 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 		if (nettyDirect) {
 			// Get the key nio buffer to pass to RocksDB
-			ByteBuffer keyNioBuffer = LLUtils.asReadOnlyDirect(key);
+			ByteBuffer keyNioBuffer;
 			boolean mustCloseKey;
-			if (keyNioBuffer == null) {
-				mustCloseKey = true;
-				// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-				keyNioBuffer = LLUtils.copyToNewDirectBuffer(key);
-			} else {
-				mustCloseKey = false;
+			{
+				if (!LLUtils.isReadOnlyDirect(key)) {
+					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+					mustCloseKey = true;
+					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+					key = directKey;
+				} else {
+					mustCloseKey = false;
+				}
+				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+				assert keyNioBuffer.isDirect();
+				assert keyNioBuffer.limit() == key.readableBytes();
 			}
 			try {
 				if (db.keyMayExist(cfh, keyNioBuffer)) {
@@ -295,7 +327,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				}
 			} finally {
 				if (mustCloseKey) {
-					PlatformDependent.freeDirectBuffer(keyNioBuffer);
+					key.close();
 				}
 			}
 		} else {
@@ -332,20 +364,27 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 		if (nettyDirect) {
 			// Get the key nio buffer to pass to RocksDB
-			ByteBuffer keyNioBuffer = LLUtils.asReadOnlyDirect(key);
+			ByteBuffer keyNioBuffer;
 			boolean mustCloseKey;
-			if (keyNioBuffer == null) {
-				mustCloseKey = true;
-				// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-				keyNioBuffer = LLUtils.copyToNewDirectBuffer(key);
-			} else {
-				mustCloseKey = false;
+			{
+				if (!LLUtils.isReadOnlyDirect(key)) {
+					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+					mustCloseKey = true;
+					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+					key = directKey;
+				} else {
+					mustCloseKey = false;
+				}
+				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+				assert keyNioBuffer.isDirect();
+				assert keyNioBuffer.limit() == key.readableBytes();
 			}
 			try {
 				db.delete(cfh, writeOptions, keyNioBuffer);
 			} finally {
 				if (mustCloseKey) {
-					PlatformDependent.freeDirectBuffer(keyNioBuffer);
+					key.close();
 				}
 			}
 		} else {

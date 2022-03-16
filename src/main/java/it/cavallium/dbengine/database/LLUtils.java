@@ -9,6 +9,8 @@ import io.netty5.buffer.api.AllocatorControl;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.CompositeBuffer;
+import io.netty5.buffer.api.DefaultBufferAllocators;
+import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.Resource;
@@ -80,8 +82,6 @@ public class LLUtils {
 
 	public static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
 	public static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0).asReadOnlyBuffer();
-	@Nullable
-	private static final MemoryManager UNSAFE_MEMORY_MANAGER;
 	private static final AllocatorControl NO_OP_ALLOCATION_CONTROL = (AllocatorControl) BufferAllocator.offHeapUnpooled();
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE = new byte[]{0};
@@ -91,13 +91,6 @@ public class LLUtils {
 	public static final AtomicBoolean hookRegistered = new AtomicBoolean();
 
 	static {
-		MemoryManager unsafeMemoryManager;
-		try {
-			unsafeMemoryManager = new UnsafeMemoryManager();
-		} catch (UnsupportedOperationException ignored) {
-			unsafeMemoryManager = new ByteBufferMemoryManager();
-		}
-		UNSAFE_MEMORY_MANAGER = unsafeMemoryManager;
 		for (int i1 = 0; i1 < 256; i1++) {
 			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
 			b[0] = (byte) i1;
@@ -493,13 +486,17 @@ public class LLUtils {
 	 */
 	@Nullable
 	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		var directBuffer = allocateShared(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
-		assert directBuffer.readerOffset() == 0;
-		assert directBuffer.writerOffset() == 0;
-		var directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
-		assert directBufferWriter.position() == 0;
-		assert directBufferWriter.isDirect();
+		if (alloc.getAllocationType() != OFF_HEAP) {
+			throw new UnsupportedOperationException("Allocator type is not direct: " + alloc);
+		}
+		var directBuffer = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
 		try {
+			assert directBuffer.readerOffset() == 0;
+			assert directBuffer.writerOffset() == 0;
+			var directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
+			assert directBufferWriter.position() == 0;
+			assert directBufferWriter.capacity() >= directBuffer.capacity();
+			assert directBufferWriter.isDirect();
 			int trueSize = reader.applyAsInt(directBufferWriter);
 			if (trueSize == RocksDB.NOT_FOUND) {
 				directBuffer.close();
@@ -728,58 +725,18 @@ public class LLUtils {
 		return ByteBuffer.allocateDirect(size);
 	}
 
-	/**
-	 * The returned object will be also of type {@link WritableComponent} {@link ReadableComponent}
-	 */
-	public static Buffer allocateShared(int size) {
-		return LLUtils.UNSAFE_MEMORY_MANAGER.allocateShared(NO_OP_ALLOCATION_CONTROL, size, Statics.NO_OP_DROP, OFF_HEAP);
+	private static Drop<Buffer> drop() {
+		// We cannot reliably drop unsafe memory. We have to rely on the cleaner to do that.
+		return Statics.NO_OP_DROP;
 	}
 
-	/**
-	 * Get the internal byte buffer, if present
-	 */
-	@Nullable
-	public static ByteBuffer asReadOnlyDirect(Buffer inputBuffer) {
-		var bytes = inputBuffer.readableBytes();
-		if (bytes == 0) {
-			return EMPTY_BYTE_BUFFER;
-		}
-		if (inputBuffer instanceof ReadableComponent rc) {
-			var componentBuffer = rc.readableBuffer();
-			if (componentBuffer != null && componentBuffer.isDirect()) {
-				assert componentBuffer.isReadOnly();
-				assert componentBuffer.isDirect();
-				return componentBuffer;
-			}
-		} else if (inputBuffer.countReadableComponents() == 1) {
-			AtomicReference<ByteBuffer> bufferRef = new AtomicReference<>();
-			inputBuffer.forEachReadable(0, (index, comp) -> {
-				var compBuffer = comp.readableBuffer();
-				if (compBuffer != null && compBuffer.isDirect()) {
-					bufferRef.setPlain(compBuffer);
-				}
-				return false;
-			});
-			var buffer = bufferRef.getPlain();
-			if (buffer != null) {
-				assert buffer.isReadOnly();
-				assert buffer.isDirect();
-				return buffer;
-			}
-		}
-
-		return null;
+	public static boolean isReadOnlyDirect(Buffer inputBuffer) {
+		return inputBuffer.isDirect() && inputBuffer instanceof ReadableComponent;
 	}
 
-	/**
-	 * Copy the buffer into a newly allocated direct buffer
-	 */
-	@NotNull
-	public static ByteBuffer copyToNewDirectBuffer(Buffer inputBuffer) {
-		int bytes = inputBuffer.readableBytes();
-		var directBuffer = ByteBuffer.allocateDirect(bytes);
-		inputBuffer.copyInto(inputBuffer.readerOffset(), directBuffer, 0, bytes);
-		return directBuffer.asReadOnlyBuffer();
+	public static ByteBuffer getReadOnlyDirect(Buffer inputBuffer) {
+		assert isReadOnlyDirect(inputBuffer);
+		return ((ReadableComponent) inputBuffer).readableBuffer();
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {

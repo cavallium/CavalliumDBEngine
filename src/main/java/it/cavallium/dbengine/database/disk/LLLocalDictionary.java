@@ -2,8 +2,8 @@ package it.cavallium.dbengine.database.disk;
 
 import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
-import static it.cavallium.dbengine.database.LLUtils.asReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
+import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static java.util.Objects.requireNonNull;
 import static java.util.Objects.requireNonNullElse;
@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
@@ -299,9 +300,9 @@ public class LLLocalDictionary implements LLDictionary {
 								readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 								readOpts.setFillCache(fillCache);
 								if (range.hasMin()) {
-									var rangeMinInternalByteBuffer = asReadOnlyDirect(range.getMinUnsafe());
-									if (nettyDirect && rangeMinInternalByteBuffer != null) {
-										readOpts.setIterateLowerBound(slice1 = new DirectSlice(rangeMinInternalByteBuffer,
+									if (nettyDirect && isReadOnlyDirect(range.getMinUnsafe())) {
+										readOpts.setIterateLowerBound(slice1 = new DirectSlice(
+												((ReadableComponent) range.getMinUnsafe()).readableBuffer(),
 												range.getMinUnsafe().readableBytes()
 										));
 									} else {
@@ -309,9 +310,9 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 								if (range.hasMax()) {
-									var rangeMaxInternalByteBuffer = asReadOnlyDirect(range.getMaxUnsafe());
-									if (nettyDirect && rangeMaxInternalByteBuffer != null) {
-										readOpts.setIterateUpperBound(slice2 = new DirectSlice(rangeMaxInternalByteBuffer,
+									if (nettyDirect && isReadOnlyDirect(range.getMaxUnsafe())) {
+										readOpts.setIterateUpperBound(slice2 = new DirectSlice(
+												((ReadableComponent) range.getMaxUnsafe()).readableBuffer(),
 												range.getMaxUnsafe().readableBytes()
 										));
 									} else {
@@ -320,9 +321,8 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
 									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
-										var rangeMinInternalByteBuffer = asReadOnlyDirect(range.getMinUnsafe());
-										if (nettyDirect && rangeMinInternalByteBuffer != null) {
-											rocksIterator.seek(rangeMinInternalByteBuffer);
+										if (nettyDirect && isReadOnlyDirect(range.getMinUnsafe())) {
+											rocksIterator.seek(((ReadableComponent) range.getMinUnsafe()).readableBuffer());
 										} else {
 											rocksIterator.seek(LLUtils.toArray(range.getMinUnsafe()));
 										}
@@ -1226,8 +1226,8 @@ public class LLLocalDictionary implements LLDictionary {
 	@Nullable
 	private static SafeCloseable rocksIterSeekTo(boolean allowNettyDirect,
 			RocksIterator rocksIterator, Buffer key) {
-		ByteBuffer keyInternalByteBuffer;
-		if (allowNettyDirect && (keyInternalByteBuffer = asReadOnlyDirect(key)) != null) {
+		if (allowNettyDirect && isReadOnlyDirect(key)) {
+			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
 			rocksIterator.seek(keyInternalByteBuffer);
 			// This is useful to retain the key buffer in memory and avoid deallocations
@@ -1245,9 +1245,9 @@ public class LLLocalDictionary implements LLDictionary {
 			ReadOptions readOpts, IterateBound boundType, Buffer key) {
 		requireNonNull(key);
 		AbstractSlice<?> slice;
-		ByteBuffer keyInternalByteBuffer;
 		if (allowNettyDirect && LLLocalDictionary.USE_DIRECT_BUFFER_BOUNDS
-				&& (keyInternalByteBuffer = asReadOnlyDirect(key)) != null) {
+				&& (isReadOnlyDirect(key))) {
+			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
 			slice = new DirectSlice(keyInternalByteBuffer, key.readableBytes());
 			assert slice.size() == key.readableBytes();

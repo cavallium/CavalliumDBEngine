@@ -2,9 +2,9 @@ package it.cavallium.dbengine.database.remote;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
 import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import it.cavallium.dbengine.client.MemoryStats;

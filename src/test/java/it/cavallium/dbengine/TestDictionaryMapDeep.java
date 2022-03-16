@@ -12,7 +12,7 @@ import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 import static it.cavallium.dbengine.SyncUtils.*;
 import static org.assertj.core.api.Assertions.*;
 
-import io.net5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;

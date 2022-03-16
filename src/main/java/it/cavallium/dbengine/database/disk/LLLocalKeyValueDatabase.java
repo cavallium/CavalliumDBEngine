@@ -1,13 +1,13 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.util.internal.PlatformDependent;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-import io.net5.buffer.ByteBuf;
+import io.netty5.buffer.ByteBuf;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import java.io.Closeable;

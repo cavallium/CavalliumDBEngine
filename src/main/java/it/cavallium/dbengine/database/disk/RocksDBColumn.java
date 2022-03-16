@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;

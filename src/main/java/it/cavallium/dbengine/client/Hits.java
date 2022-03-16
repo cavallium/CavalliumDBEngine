@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.client;
 
-import io.net5.buffer.api.Drop;
-import io.net5.buffer.api.Owned;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Drop;
+import io.netty5.buffer.api.Owned;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import io.net5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
 import java.util.Map.Entry;

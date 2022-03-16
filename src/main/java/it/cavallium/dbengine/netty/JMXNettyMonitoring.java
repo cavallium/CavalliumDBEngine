@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.netty;
 
-import io.net5.buffer.api.pool.BufferAllocatorMetric;
+import io.netty5.buffer.api.pool.BufferAllocatorMetric;
 
 public class JMXNettyMonitoring implements JMXNettyMonitoringMBean {
 

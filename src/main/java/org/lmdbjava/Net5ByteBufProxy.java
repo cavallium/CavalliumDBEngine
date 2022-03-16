@@ -20,15 +20,15 @@
 
 package org.lmdbjava;
 
-import static io.net5.buffer.PooledByteBufAllocator.DEFAULT;
+import static io.netty5.buffer.PooledByteBufAllocator.DEFAULT;
 import static java.lang.Class.forName;
 import static org.lmdbjava.UnsafeAccess.UNSAFE;
 
-import io.net5.buffer.ByteBuf;
+import io.netty5.buffer.ByteBuf;
 import java.lang.reflect.Field;
 
-import io.net5.buffer.ByteBuf;
-import io.net5.buffer.PooledByteBufAllocator;
+import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.PooledByteBufAllocator;
 import jnr.ffi.Pointer;
 
 /**
@@ -50,7 +50,7 @@ public final class Net5ByteBufProxy extends BufferProxy<ByteBuf> {
 	private static final int BUFFER_RETRIES = 10;
 	private static final String FIELD_NAME_ADDRESS = "memoryAddress";
 	private static final String FIELD_NAME_LENGTH = "length";
-	private static final String NAME = "io.net5.buffer.PooledUnsafeDirectByteBuf";
+	private static final String NAME = "io.netty5.buffer.PooledUnsafeDirectByteBuf";
 	private final long lengthOffset;
 	private final long addressOffset;
 

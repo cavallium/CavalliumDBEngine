@@ -1,23 +1,23 @@
 package it.cavallium.dbengine.database;
 
-import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.net5.buffer.api.AllocatorControl;
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.CompositeBuffer;
-import io.net5.buffer.api.MemoryManager;
-import io.net5.buffer.api.ReadableComponent;
-import io.net5.buffer.api.Resource;
-import io.net5.buffer.api.Send;
-import io.net5.buffer.api.WritableComponent;
-import io.net5.buffer.api.bytebuffer.ByteBufferMemoryManager;
-import io.net5.buffer.api.internal.Statics;
-import io.net5.buffer.api.unsafe.UnsafeMemoryManager;
-import io.net5.util.IllegalReferenceCountException;
+import io.netty5.buffer.api.AllocatorControl;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.CompositeBuffer;
+import io.netty5.buffer.api.MemoryManager;
+import io.netty5.buffer.api.ReadableComponent;
+import io.netty5.buffer.api.Resource;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.WritableComponent;
+import io.netty5.buffer.api.bytebuffer.ByteBufferMemoryManager;
+import io.netty5.buffer.api.internal.Statics;
+import io.netty5.buffer.api.unsafe.UnsafeMemoryManager;
+import io.netty5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import io.net5.buffer.api.Resource;
+import io.netty5.buffer.api.Resource;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;

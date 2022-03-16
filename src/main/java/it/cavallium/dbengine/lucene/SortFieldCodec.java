@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.lucene;
 
-import io.net5.buffer.ByteBuf;
-import io.net5.buffer.PooledByteBufAllocator;
+import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.PooledByteBufAllocator;
 import java.io.IOException;
 import java.util.function.Function;
 import org.apache.lucene.search.SortField;

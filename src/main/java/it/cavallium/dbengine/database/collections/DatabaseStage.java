@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.net5.buffer.api.Resource;
+import io.netty5.buffer.api.Resource;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;

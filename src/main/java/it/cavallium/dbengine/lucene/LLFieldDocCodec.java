@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-import io.net5.buffer.ByteBuf;
+import io.netty5.buffer.ByteBuf;
 import java.util.ArrayList;
 import java.util.function.Function;
 

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.asReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
@@ -10,9 +10,9 @@ import static java.util.Objects.requireNonNullElse;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;

@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.Resource;
-import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Resource;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;

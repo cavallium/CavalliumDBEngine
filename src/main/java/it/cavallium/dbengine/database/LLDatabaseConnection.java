@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.rpc.current.data.Column;

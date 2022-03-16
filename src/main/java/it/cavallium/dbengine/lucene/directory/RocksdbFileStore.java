@@ -2,10 +2,10 @@ package it.cavallium.dbengine.lucene.directory;
 
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Striped;
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.ReadableComponent;
-import io.net5.buffer.api.WritableComponent;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.ReadableComponent;
+import io.netty5.buffer.api.WritableComponent;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

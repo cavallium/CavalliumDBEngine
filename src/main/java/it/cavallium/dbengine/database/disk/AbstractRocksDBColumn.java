@@ -1,16 +1,16 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.net5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES;
 import static java.util.Objects.requireNonNull;
 import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithValue;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.WritableComponent;
-import io.net5.util.internal.PlatformDependent;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.WritableComponent;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;

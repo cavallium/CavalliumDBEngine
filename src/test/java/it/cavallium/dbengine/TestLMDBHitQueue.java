@@ -3,7 +3,7 @@ package it.cavallium.dbengine;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import com.google.common.collect.Lists;
-import io.net5.buffer.ByteBuf;
+import io.netty5.buffer.ByteBuf;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
 import it.cavallium.dbengine.lucene.LLScoreDoc;

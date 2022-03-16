@@ -1,4 +1,4 @@
-package io.net5.buffer.api.pool;
+package io.netty5.buffer.api.pool;
 
 import java.util.List;
 

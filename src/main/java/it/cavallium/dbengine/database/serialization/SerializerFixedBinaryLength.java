@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.BufferAllocator;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;

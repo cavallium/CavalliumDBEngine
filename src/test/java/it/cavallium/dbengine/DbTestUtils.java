@@ -2,13 +2,13 @@ package it.cavallium.dbengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.MemoryManager;
-import io.net5.buffer.api.Send;
-import io.net5.buffer.api.pool.MetricUtils;
-import io.net5.buffer.api.pool.PoolArenaMetric;
-import io.net5.buffer.api.pool.PooledBufferAllocator;
-import io.net5.util.internal.PlatformDependent;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.MemoryManager;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.pool.MetricUtils;
+import io.netty5.buffer.api.pool.PoolArenaMetric;
+import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.database.LLDatabaseConnection;

@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.net5.buffer.api.Drop;
-import io.net5.buffer.api.Owned;
-import io.net5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.api.Drop;
+import io.netty5.buffer.api.Owned;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexReader;

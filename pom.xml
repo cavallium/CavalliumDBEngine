@@ -81,8 +81,8 @@
       <artifactId>common-utils</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.net5</groupId>
-      <artifactId>netty-buffer</artifactId>
+      <groupId>io.netty</groupId>
+      <artifactId>netty5-buffer</artifactId>
     </dependency>
     <dependency>
       <groupId>org.yaml</groupId>
@@ -352,9 +352,9 @@
         <version>1.1.8</version>
       </dependency>
       <dependency>
-        <groupId>io.net5</groupId>
-        <artifactId>netty-buffer</artifactId>
-        <version>5.0.0.Final-SNAPSHOT</version>
+        <groupId>io.netty</groupId>
+        <artifactId>netty5-buffer</artifactId>
+        <version>5.0.0.Alpha1</version>
       </dependency>
       <dependency>
         <groupId>org.yaml</groupId>

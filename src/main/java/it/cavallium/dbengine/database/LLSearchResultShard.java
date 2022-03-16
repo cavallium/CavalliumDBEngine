@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database;
 
-import io.net5.buffer.api.Drop;
-import io.net5.buffer.api.Owned;
-import io.net5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.api.Drop;
+import io.netty5.buffer.api.Owned;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import java.util.Objects;
 import org.apache.logging.log4j.LogManager;

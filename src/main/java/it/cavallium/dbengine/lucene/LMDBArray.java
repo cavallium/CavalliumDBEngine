@@ -2,8 +2,8 @@ package it.cavallium.dbengine.lucene;
 
 import static org.lmdbjava.DbiFlags.MDB_CREATE;
 
-import io.net5.buffer.ByteBuf;
-import io.net5.buffer.PooledByteBufAllocator;
+import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;

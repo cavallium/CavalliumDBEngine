@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import org.rocksdb.ReadOptions;
 

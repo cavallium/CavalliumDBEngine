@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart.ConnectionPartLucene;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart.ConnectionPartRocksDB;

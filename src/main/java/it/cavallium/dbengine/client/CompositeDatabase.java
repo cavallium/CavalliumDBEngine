@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.client;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.net5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 

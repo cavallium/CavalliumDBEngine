@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.net5.buffer.api.Drop;
-import io.net5.buffer.api.Owned;
-import io.net5.buffer.api.Resource;
-import io.net5.buffer.api.Send;
-import io.net5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.api.Drop;
+import io.netty5.buffer.api.Owned;
+import io.netty5.buffer.api.Resource;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.IOException;
 import java.io.UncheckedIOException;

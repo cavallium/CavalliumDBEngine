@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.net5.buffer.api.Buffer;
-import io.net5.buffer.api.ReadableComponent;
-import io.net5.buffer.api.ReadableComponentProcessor;
-import io.net5.buffer.api.Send;
-import io.net5.buffer.api.adaptor.ByteBufAdaptor;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.ReadableComponent;
+import io.netty5.buffer.api.ReadableComponentProcessor;
+import io.netty5.buffer.api.Send;
+import io.netty5.buffer.api.adaptor.ByteBufAdaptor;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.io.DataInput;
 import java.lang.invoke.MethodHandle;

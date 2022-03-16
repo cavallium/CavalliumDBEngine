@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.net5.buffer.ByteBuf;
+import io.netty5.buffer.ByteBuf;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;

@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.lucene.directory;
 
 import com.google.common.util.concurrent.Striped;
-import io.net5.buffer.api.BufferAllocator;
+import io.netty5.buffer.api.BufferAllocator;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.file.Path;

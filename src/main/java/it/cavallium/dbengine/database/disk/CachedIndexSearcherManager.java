@@ -5,7 +5,7 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import io.net5.buffer.api.Send;
+import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
 import java.io.IOException;
 import java.time.Duration;

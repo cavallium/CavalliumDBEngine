@@ -92,8 +92,8 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 		} catch (IndexOutOfBoundsException ex) {
 			var exMessage = ex.getMessage();
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-				LOG.error("Unexpected zero-bytes value in column "
-						+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName());
+				LOG.error("Unexpected zero-bytes value at "
+						+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName() + ":" + LLUtils.toStringSafe(key));
 				sink.complete();
 			} else {
 				sink.error(ex);

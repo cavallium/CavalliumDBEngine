@@ -4,6 +4,7 @@ import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES;
 import static java.util.Objects.requireNonNull;
 import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithValue;
+import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithoutValue;
 
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -138,17 +139,32 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 							resultBuffer.close();
 							return null;
 						}
+						// todo: kExistsWithValue is not reliable (read below),
+						//  in some cases it should be treated as kExistsWithoutValue
+						case kExistsWithValue:
 						case kExistsWithoutValue: {
-							assert keyMayExistValueLength == 0;
-							resultWritable.clear();
-							// real data size
-							size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
-							if (size == RocksDB.NOT_FOUND) {
-								resultBuffer.close();
-								return null;
+							boolean isKExistsWithoutValue = false;
+							if (keyMayExistState == kExistsWithoutValue) {
+								isKExistsWithoutValue = true;
+							} else {
+								// todo: "size == 0 || resultWritable.limit() == 0" is checked because keyMayExist is broken,
+								//  and sometimes it returns an empty array, as if it exists
+								if (size == 0 || resultWritable.limit() == 0) {
+									isKExistsWithoutValue = true;
+								}
+							}
+							if (isKExistsWithoutValue) {
+								assert keyMayExistValueLength == 0;
+								resultWritable.clear();
+								// real data size
+								size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
+								if (size == RocksDB.NOT_FOUND) {
+									resultBuffer.close();
+									return null;
+								}
 							}
 						}
-						case kExistsWithValue: {
+						default: {
 							// real data size
 							this.lastDataSizeMetric.set(size);
 							assert size >= 0;
@@ -170,9 +186,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 								return resultBuffer.writerOffset(resultWritable.limit());
 							}
 						}
-						default: {
-							throw new IllegalStateException();
-						}
 					}
 				} catch (Throwable t) {
 					resultBuffer.close();
@@ -189,7 +202,9 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				requireNonNull(keyArray);
 				Holder<byte[]> data = new Holder<>();
 				if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
-					if (data.getValue() != null) {
+					// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
+					//  returns an empty array, as if it exists
+					if (data.getValue() != null && data.getValue().length > 0) {
 						return LLUtils.fromByteArray(alloc, data.getValue());
 					} else {
 						byte[] result = db.get(cfh, readOptions, keyArray);

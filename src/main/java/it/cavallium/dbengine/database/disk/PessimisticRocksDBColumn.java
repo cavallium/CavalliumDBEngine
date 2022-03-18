@@ -62,67 +62,74 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 					Send<Buffer> sentPrevData;
 					Send<Buffer> sentCurData;
 					boolean changed;
-					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
 					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB,
-								"Reading {}: {} (before update)",
-								LLUtils.toStringSafe(key),
-								LLUtils.toStringSafe(prevDataArray)
-						);
+						logger.trace(MARKER_ROCKSDB, "Reading {} (before update lock)", LLUtils.toStringSafe(key));
 					}
-					Buffer prevData;
-					if (prevDataArray != null) {
-						prevData = MemoryManager.unsafeWrap(prevDataArray);
-					} else {
-						prevData = null;
-					}
-					try (prevData) {
-						Buffer prevDataToSendToUpdater;
-						if (prevData != null) {
-							prevDataToSendToUpdater = prevData.copy();
+					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
+					try {
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB,
+									"Reading {}: {} (before update)",
+									LLUtils.toStringSafe(key),
+									LLUtils.toStringSafe(prevDataArray)
+							);
+						}
+						Buffer prevData;
+						if (prevDataArray != null) {
+							prevData = MemoryManager.unsafeWrap(prevDataArray);
 						} else {
-							prevDataToSendToUpdater = null;
+							prevData = null;
 						}
-
-						@Nullable Buffer newData;
-						try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-							newData = updater.apply(sentData);
-						}
-						try (newData) {
-							var newDataArray = newData == null ? null : LLUtils.toArray(newData);
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB,
-										"Updating {}. previous data: {}, updated data: {}",
-										LLUtils.toStringSafe(key),
-										LLUtils.toStringSafe(prevDataArray),
-										LLUtils.toStringSafe(newDataArray)
-								);
+						try (prevData) {
+							Buffer prevDataToSendToUpdater;
+							if (prevData != null) {
+								prevDataToSendToUpdater = prevData.copy();
+							} else {
+								prevDataToSendToUpdater = null;
 							}
-							if (prevData != null && newData == null) {
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-								}
-								tx.delete(cfh, keyArray, true);
-								changed = true;
-								tx.commit();
-							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
+
+							@Nullable Buffer newData;
+							try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
+								newData = updater.apply(sentData);
+							}
+							try (newData) {
+								var newDataArray = newData == null ? null : LLUtils.toArray(newData);
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB,
-											"Writing {}: {} (after update)",
+											"Updating {}. previous data: {}, updated data: {}",
 											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(newData)
+											LLUtils.toStringSafe(prevDataArray),
+											LLUtils.toStringSafe(newDataArray)
 									);
 								}
-								tx.put(cfh, keyArray, newDataArray);
-								changed = true;
-								tx.commit();
-							} else {
-								changed = false;
-								tx.rollback();
+								if (prevData != null && newData == null) {
+									if (logger.isTraceEnabled()) {
+										logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
+									}
+									tx.delete(cfh, keyArray, true);
+									changed = true;
+									tx.commit();
+								} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
+									if (logger.isTraceEnabled()) {
+										logger.trace(MARKER_ROCKSDB,
+												"Writing {}: {} (after update)",
+												LLUtils.toStringSafe(key),
+												LLUtils.toStringSafe(newData)
+										);
+									}
+									tx.put(cfh, keyArray, newDataArray);
+									changed = true;
+									tx.commit();
+								} else {
+									changed = false;
+									tx.rollback();
+								}
+								sentPrevData = prevData == null ? null : prevData.send();
+								sentCurData = newData == null ? null : newData.send();
 							}
-							sentPrevData = prevData == null ? null : prevData.send();
-							sentCurData = newData == null ? null : newData.send();
 						}
+					} finally {
+						tx.undoGetForUpdate(cfh, keyArray);
 					}
 					return switch (returnMode) {
 						case NOTHING -> {

@@ -502,31 +502,36 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 					.dictionary
 					.getRange(deepMap.resolveSnapshot(snapshot), deepMap.rangeMono)
 					.handle((entrySend, sink) -> {
+						K1 key1 = null;
+						K2 key2 = null;
 						try (var entry = entrySend.receive()) {
 							var keyBuf = entry.getKeyUnsafe();
 							var valueBuf = entry.getValueUnsafe();
-							assert keyBuf != null;
-							keyBuf.skipReadable(deepMap.keyPrefixLength);
-							K1 key1;
-							K2 key2;
-							try (var key1Buf = keyBuf.split(deepMap.keySuffixLength)) {
-								key1 = keySuffix1Serializer.deserialize(key1Buf);
-							}
-							key2 = keySuffix2Serializer.deserialize(keyBuf);
-							assert valueBuf != null;
-							var value = valueSerializer.deserialize(valueBuf);
-							sink.next(merger.apply(key1, key2, value));
-						} catch (IndexOutOfBoundsException ex) {
-							var exMessage = ex.getMessage();
-							if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-								var totalZeroBytesErrors = deepMap.totalZeroBytesErrors.incrementAndGet();
-								if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
-									LOG.error("Unexpected zero-bytes value in column " + deepMap.dictionary.getDatabaseName() + ":"
-											+ deepMap.dictionary.getColumnName() + " total=" + totalZeroBytesErrors);
+							try {
+								assert keyBuf != null;
+								keyBuf.skipReadable(deepMap.keyPrefixLength);
+								try (var key1Buf = keyBuf.split(deepMap.keySuffixLength)) {
+									key1 = keySuffix1Serializer.deserialize(key1Buf);
 								}
-								sink.complete();
-							} else {
-								sink.error(ex);
+								key2 = keySuffix2Serializer.deserialize(keyBuf);
+								assert valueBuf != null;
+								var value = valueSerializer.deserialize(valueBuf);
+								sink.next(merger.apply(key1, key2, value));
+							} catch (IndexOutOfBoundsException ex) {
+								var exMessage = ex.getMessage();
+								if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
+									var totalZeroBytesErrors = deepMap.totalZeroBytesErrors.incrementAndGet();
+									if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
+										LOG.error("Unexpected zero-bytes value at " + deepMap.dictionary.getDatabaseName()
+												+ ":" + deepMap.dictionary.getColumnName()
+												+ ":[" + key1
+												+ ":" + key2
+												+ "](" + LLUtils.toStringSafe(keyBuf) + ") total=" + totalZeroBytesErrors);
+									}
+									sink.complete();
+								} else {
+									sink.error(ex);
+								}
 							}
 						} catch (SerializationException ex) {
 							sink.error(ex);

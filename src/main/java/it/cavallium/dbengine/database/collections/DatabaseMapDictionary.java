@@ -3,7 +3,6 @@ package it.cavallium.dbengine.database.collections;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -22,7 +21,6 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
 import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -35,7 +33,6 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
-import reactor.util.function.Tuple2;
 
 /**
  * Optimized implementation of "DatabaseMapDictionary with SubStageGetterSingle"
@@ -73,25 +70,34 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer, onClose);
 	}
 
-	private void deserializeValue(Send<Buffer> valueToReceive, SynchronousSink<U> sink) {
+	private void deserializeValue(T keySuffix, Send<Buffer> valueToReceive, SynchronousSink<U> sink) {
 		try (var value = valueToReceive.receive()) {
-			sink.next(valueSerializer.deserialize(value));
-		} catch (IndexOutOfBoundsException ex) {
-			var exMessage = ex.getMessage();
-			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-				var totalZeroBytesErrors = this.totalZeroBytesErrors.incrementAndGet();
-				if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
-					LOG.error("Unexpected zero-bytes value in column "
-							+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName()
-							+ " total=" + totalZeroBytesErrors
-					);
+			try {
+				sink.next(valueSerializer.deserialize(value));
+			} catch (IndexOutOfBoundsException ex) {
+				var exMessage = ex.getMessage();
+				if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
+					var totalZeroBytesErrors = this.totalZeroBytesErrors.incrementAndGet();
+					if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
+						try (var keySuffixBytes = serializeKeySuffixToKey(keySuffix)) {
+							LOG.error("Unexpected zero-bytes value at " + dictionary.getDatabaseName()
+									+ ":" + dictionary.getColumnName()
+									+ ":" + LLUtils.toStringSafe(this.keyPrefix)
+									+ ":" + keySuffix + "(" + LLUtils.toStringSafe(keySuffixBytes) + ") total=" + totalZeroBytesErrors);
+						} catch (SerializationException e) {
+							LOG.error("Unexpected zero-bytes value at " + dictionary.getDatabaseName()
+									+ ":" + dictionary.getColumnName()
+									+ ":" + LLUtils.toStringSafe(this.keyPrefix)
+									+ ":" + keySuffix + "(?) total=" + totalZeroBytesErrors);
+						}
+					}
+					sink.complete();
+				} else {
+					sink.error(ex);
 				}
-				sink.complete();
-			} else {
+			} catch (Throwable ex) {
 				sink.error(ex);
 			}
-		} catch (Throwable ex) {
-			sink.error(ex);
 		}
 	}
 
@@ -227,7 +233,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix).send()),
 						existsAlmostCertainly
 				)
-				.handle(this::deserializeValue);
+				.handle((valueToReceive, sink) -> deserializeValue(keySuffix, valueToReceive, sink));
 	}
 
 	@Override
@@ -252,7 +258,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix).send());
 		return dictionary
 				.update(keyMono, getSerializedUpdater(updater), updateReturnMode)
-				.handle(this::deserializeValue);
+				.handle((valueToReceive, sink) -> deserializeValue(keySuffix, valueToReceive, sink));
 	}
 
 	@Override
@@ -314,7 +320,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<U> putValueAndGetPrevious(T keySuffix, U value) {
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix).send());
 		var valueMono = Mono.fromCallable(() -> serializeValue(value).send());
-		return dictionary.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE).handle(this::deserializeValue);
+		return dictionary
+				.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE)
+				.handle((valueToReceive, sink) -> deserializeValue(keySuffix, valueToReceive, sink));
 	}
 
 	@Override
@@ -323,7 +331,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var valueMono = Mono.fromCallable(() -> serializeValue(value).send());
 		return dictionary
 				.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE)
-				.handle(this::deserializeValue)
+				.handle((Send<Buffer> valueToReceive, SynchronousSink<U> sink) -> deserializeValue(keySuffix,
+						valueToReceive,
+						sink
+				))
 				.map(oldValue -> !Objects.equals(oldValue, value))
 				.defaultIfEmpty(value != null);
 	}
@@ -340,7 +351,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<U> removeAndGetPrevious(T keySuffix) {
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix).send());
-		return dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE).handle(this::deserializeValue);
+		return dictionary
+				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE)
+				.handle((valueToReceive, sink) -> deserializeValue(keySuffix, valueToReceive, sink));
 	}
 
 	@Override

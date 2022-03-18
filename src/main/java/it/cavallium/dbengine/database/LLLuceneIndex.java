@@ -21,13 +21,13 @@ public interface LLLuceneIndex extends LLSnapshottable {
 
 	Mono<Void> addDocument(LLTerm id, LLUpdateDocument doc);
 
-	Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents);
+	Mono<Long> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents);
 
 	Mono<Void> deleteDocument(LLTerm id);
 
 	Mono<Void> update(LLTerm id, LLIndexRequest request);
 
-	Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents);
+	Mono<Long> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents);
 
 	Mono<Void> deleteAll();
 

@@ -22,13 +22,13 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> addDocument(T key, U value);
 
-	Mono<Void> addDocuments(boolean atomic, Flux<Entry<T, U>> entries);
+	Mono<Long> addDocuments(boolean atomic, Flux<Entry<T, U>> entries);
 
 	Mono<Void> deleteDocument(T key);
 
 	Mono<Void> updateDocument(T key, @NotNull U value);
 
-	Mono<Void> updateDocuments(Flux<Entry<T, U>> entries);
+	Mono<Long> updateDocuments(Flux<Entry<T, U>> entries);
 
 	default Mono<Void> updateOrDeleteDocument(T key, @Nullable U value) {
 		if (value == null) {

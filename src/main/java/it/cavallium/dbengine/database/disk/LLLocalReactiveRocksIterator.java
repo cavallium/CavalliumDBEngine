@@ -155,7 +155,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	@Override
 	protected Owned<LLLocalReactiveRocksIterator<T>> prepareSend() {
 		var range = this.rangeShared.send();
-		var readOptions = new ReadOptions(this.readOptions);
+		var readOptions = this.readOptions;
 		return drop -> new LLLocalReactiveRocksIterator<>(db, range, allowNettyDirect, readOptions, readValues) {
 			@Override
 			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {

@@ -22,10 +22,12 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 public class LLMultiLuceneIndex implements LLLuceneIndex {
 
@@ -84,14 +86,14 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
 				.groupBy(term -> LuceneUtils.getLuceneIndexId(term.getKey(), totalShards))
 				.flatMap(group -> {
 					var index = luceneIndicesById[group.key()];
 					return index.addDocuments(atomic, group);
 				})
-				.then();
+				.reduce(0L, Long::sum);
 	}
 
 	@Override
@@ -105,14 +107,12 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Long> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
-				.groupBy(term -> LuceneUtils.getLuceneIndexId(term.getKey(), totalShards))
-				.flatMap(group -> {
-					var index = luceneIndicesById[group.key()];
-					return index.updateDocuments(group);
-				})
-				.then();
+				.log("multi-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE)
+				.groupBy(term -> getLuceneIndex(term.getKey()))
+				.flatMap(groupFlux -> groupFlux.key().updateDocuments(groupFlux))
+				.reduce(0L, Long::sum);
 	}
 
 	@Override

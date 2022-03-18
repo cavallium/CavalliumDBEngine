@@ -44,11 +44,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Level;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -70,6 +72,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
@@ -135,12 +138,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			logger.debug("Lucene MMap is supported");
 		}
 		this.lowMemory = luceneOptions.lowMemory();
+		this.shardName = LuceneUtils.getStandardName(clusterName, shardIndex);
 		this.directory = LuceneUtils.createLuceneDirectory(luceneOptions.directoryOptions(),
-				LuceneUtils.getStandardName(clusterName, shardIndex),
+				shardName,
 				rocksDBManager);
 		boolean isFilesystemCompressed = LuceneUtils.getIsFilesystemCompressed(luceneOptions.directoryOptions());
 
-		this.shardName = clusterName;
 		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
@@ -264,19 +267,23 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> addDocument(LLTerm key, LLUpdateDocument doc) {
-		return this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
-			startedDocIndexings.increment();
-			try {
-				indexWriter.addDocument(toDocument(doc));
-			} finally {
-				endeddDocIndexings.increment();
-			}
+		return this.<Void>runSafe(() -> {
+			docIndexingTime.recordCallable(() -> {
+				startedDocIndexings.increment();
+				try {
+					indexWriter.addDocument(toDocument(doc));
+				} finally {
+					endeddDocIndexings.increment();
+				}
+				return null;
+			});
+			logger.trace(MARKER_LUCENE, "Added document {}: {}", key, doc);
 			return null;
-		})).transform(this::ensureOpen);
+		}).transform(this::ensureOpen);
 	}
 
 	@Override
-	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		if (!atomic) {
 			return documents
 					.publishOn(bulkScheduler)
@@ -294,15 +301,16 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						} finally {
 							endeddDocIndexings.increment();
 						}
-						sink.complete();
+						logger.trace(MARKER_LUCENE, "Added document: {}", document);
+						sink.next(true);
 					})
-					.then()
+					.count()
 					.transform(this::ensureOpen);
 		} else {
 			return documents
 					.collectList()
 					.publishOn(bulkScheduler)
-					.handle((documentsList, sink) -> {
+					.<Long>handle((documentsList, sink) -> {
 						var count = documentsList.size();
 						StopWatch stopWatch = StopWatch.createStarted();
 						try {
@@ -320,9 +328,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 									TimeUnit.MILLISECONDS
 							);
 						}
-						sink.complete();
+						sink.next((long) documentsList.size());
 					})
-					.then()
 					.transform(this::ensureOpen);
 		}
 	}
@@ -343,30 +350,36 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
-		return this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
-			startedDocIndexings.increment();
-			try {
-				if (request instanceof LLUpdateDocument updateDocument) {
-					indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
-				} else if (request instanceof LLSoftUpdateDocument softUpdateDocument) {
-					indexWriter.softUpdateDocument(LLUtils.toTerm(id),
-							toDocument(softUpdateDocument.items()),
-							toFields(softUpdateDocument.softDeleteItems()));
-				} else if (request instanceof LLUpdateFields updateFields) {
-					indexWriter.updateDocValues(LLUtils.toTerm(id), toFields(updateFields.items()));
-				} else {
-					throw new UnsupportedOperationException("Unexpected request type: " + request);
+		return this.<Void>runSafe(() -> {
+			docIndexingTime.recordCallable(() -> {
+				startedDocIndexings.increment();
+				try {
+					if (request instanceof LLUpdateDocument updateDocument) {
+						indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
+					} else if (request instanceof LLSoftUpdateDocument softUpdateDocument) {
+						indexWriter.softUpdateDocument(LLUtils.toTerm(id),
+								toDocument(softUpdateDocument.items()),
+								toFields(softUpdateDocument.softDeleteItems())
+						);
+					} else if (request instanceof LLUpdateFields updateFields) {
+						indexWriter.updateDocValues(LLUtils.toTerm(id), toFields(updateFields.items()));
+					} else {
+						throw new UnsupportedOperationException("Unexpected request type: " + request);
+					}
+				} finally {
+					endeddDocIndexings.increment();
 				}
-			} finally {
-				endeddDocIndexings.increment();
-			}
+				return null;
+			});
+			logger.trace(MARKER_LUCENE, "Updated document {}: {}", id, request);
 			return null;
-		})).transform(this::ensureOpen);
+		}).transform(this::ensureOpen);
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Long> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		return documents
+				.log("local-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE)
 				.publishOn(bulkScheduler)
 				.handle((document, sink) -> {
 					LLTerm key = document.getKey();
@@ -384,9 +397,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					} finally {
 						endeddDocIndexings.increment();
 					}
-					sink.complete();
+					sink.next(true);
 				})
-				.then()
+				.count()
 				.transform(this::ensureOpen);
 	}
 
@@ -589,4 +602,22 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		return lowMemory;
 	}
 
+	@Override
+	public boolean equals(Object o) {
+		if (this == o) {
+			return true;
+		}
+		if (o == null || getClass() != o.getClass()) {
+			return false;
+		}
+
+		LLLocalLuceneIndex that = (LLLocalLuceneIndex) o;
+
+		return Objects.equals(shardName, that.shardName);
+	}
+
+	@Override
+	public int hashCode() {
+		return shardName.hashCode();
+	}
 }

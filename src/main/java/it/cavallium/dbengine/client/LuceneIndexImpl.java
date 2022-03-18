@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
@@ -19,10 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.logging.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
@@ -50,7 +53,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<T, U>> entries) {
+	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<T, U>> entries) {
 		return luceneIndex.addDocuments(atomic, entries.flatMap(entry -> indicizer
 				.toDocument(entry.getKey(), entry.getValue())
 				.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc))));
@@ -70,12 +73,17 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Flux<Entry<T, U>> entries) {
-		return luceneIndex.updateDocuments(entries.flatMap(entry -> Mono.zip(
-				Mono.just(indicizer.toIndex(entry.getKey())),
-				indicizer.toDocument(entry.getKey(), entry.getValue()).single(),
-				Map::entry
-		)));
+	public Mono<Long> updateDocuments(Flux<Entry<T, U>> entries) {
+		Flux<Entry<LLTerm, LLUpdateDocument>> mappedEntries = entries
+				.flatMap(entry -> Mono
+						.zip(Mono.just(indicizer.toIndex(entry.getKey())),
+								indicizer.toDocument(entry.getKey(), entry.getValue()).single(),
+								Map::entry
+						)
+						.single()
+				)
+				.log("impl-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE);
+		return luceneIndex.updateDocuments(mappedEntries);
 	}
 
 	@Override

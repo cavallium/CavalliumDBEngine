@@ -44,6 +44,7 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.Cache;
+import org.rocksdb.ChecksumType;
 import org.rocksdb.ClockCache;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
@@ -194,6 +195,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions.setOptimizeFiltersForMemory(true);
 				}
 				tableOptions
+						.setChecksumType(ChecksumType.kxxHash64)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
 						.setBlockSize(16 * 1024); // 16KiB

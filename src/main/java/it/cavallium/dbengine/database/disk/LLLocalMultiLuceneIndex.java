@@ -42,6 +42,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.logging.Level;
 import java.util.stream.Collectors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -51,7 +52,9 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
+import reactor.math.MathFlux;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
@@ -163,13 +166,13 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		if (BYPASS_GROUPBY_BUG) {
 			return documents
 					.buffer(8192)
 					.flatMap(inputEntries -> {
 						List<Entry<LLTerm, LLUpdateDocument>>[] sortedEntries = new List[totalShards];
-						Mono<Void>[] results = new Mono[totalShards];
+						Mono<Long>[] results = new Mono[totalShards];
 
 						// Sort entries
 						for(var inputEntry : inputEntries) {
@@ -192,14 +195,14 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 							luceneIndexId++;
 						}
 
-						return Mono.when(results);
+						return Flux.merge(results).reduce(0L, Long::sum);
 					})
-					.then();
+					.reduce(0L, Long::sum);
 		} else {
 			return documents
 					.groupBy(term -> getLuceneIndex(term.getKey()))
 					.flatMap(group -> group.key().addDocuments(atomic, group))
-					.then();
+					.reduce(0L, Long::sum);
 		}
 	}
 
@@ -214,7 +217,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+	public Mono<Long> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
+		documents = documents
+				.log("local-multi-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE);
 		if (BYPASS_GROUPBY_BUG) {
 			int bufferSize = 8192;
 			return documents
@@ -222,20 +227,19 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					.flatMap(bufferFlux -> bufferFlux
 							.collect(Collectors.groupingBy(inputEntry -> LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards),
 									Collectors.collectingAndThen(Collectors.toList(), docs -> {
-										int luceneIndexId = LuceneUtils.getLuceneIndexId(docs.get(0).getKey(), totalShards);
-										LLLocalLuceneIndex luceneIndex = Objects.requireNonNull(luceneIndicesById[luceneIndexId]);
+										var luceneIndex = getLuceneIndex(docs.get(0).getKey());
 										return luceneIndex.updateDocuments(Flux.fromIterable(docs));
 									}))
 							)
 							.map(Map::values)
-							.flatMap(Mono::whenDelayError)
+							.flatMap(parts -> Flux.merge(parts).reduce(0L, Long::sum))
 					)
-					.then();
+					.reduce(0L, Long::sum);
 		} else {
 			return documents
 					.groupBy(term -> getLuceneIndex(term.getKey()))
 					.flatMap(group -> group.key().updateDocuments(group))
-					.then();
+					.reduce(0L, Long::sum);
 		}
 	}
 

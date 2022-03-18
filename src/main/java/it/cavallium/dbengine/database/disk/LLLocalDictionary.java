@@ -1725,6 +1725,6 @@ public class LLLocalDictionary implements LLDictionary {
 			seekTo = () -> {};
 			rocksIterator.seekToFirst();
 		}
-		return new RocksIteratorTuple(rocksIterator, sliceMin, sliceMax, seekTo);
+		return new RocksIteratorTuple(List.of(readOptions), rocksIterator, sliceMin, sliceMax, seekTo);
 	}
 }

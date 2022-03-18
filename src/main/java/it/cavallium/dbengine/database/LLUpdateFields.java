@@ -1,3 +1,5 @@
 package it.cavallium.dbengine.database;
 
-public record LLUpdateFields(LLItem[] items) implements LLIndexRequest {}
+import java.util.List;
+
+public record LLUpdateFields(List<LLItem> items) implements LLIndexRequest {}

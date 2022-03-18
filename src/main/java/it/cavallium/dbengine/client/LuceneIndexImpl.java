@@ -71,9 +71,11 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Mono<Void> updateDocuments(Flux<Entry<T, U>> entries) {
-		return luceneIndex.updateDocuments(entries.flatMap(entry -> indicizer
-				.toDocument(entry.getKey(), entry.getValue())
-				.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc))));
+		return luceneIndex.updateDocuments(entries.flatMap(entry -> Mono.zip(
+				Mono.just(indicizer.toIndex(entry.getKey())),
+				indicizer.toDocument(entry.getKey(), entry.getValue()).single(),
+				Map::entry
+		)));
 	}
 
 	@Override

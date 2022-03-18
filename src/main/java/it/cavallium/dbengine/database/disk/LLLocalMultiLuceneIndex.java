@@ -29,11 +29,11 @@ import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -216,35 +216,20 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	@Override
 	public Mono<Void> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
 		if (BYPASS_GROUPBY_BUG) {
+			int bufferSize = 8192;
 			return documents
-					.buffer(8192)
-					.flatMap(inputEntries -> {
-						List<Entry<LLTerm, LLUpdateDocument>>[] sortedEntries = new List[totalShards];
-						Mono<Void>[] results = new Mono[totalShards];
-
-						// Sort entries
-						for(var inputEntry : inputEntries) {
-							int luceneIndexId = LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards);
-							if (sortedEntries[luceneIndexId] == null) {
-								sortedEntries[luceneIndexId] = new ArrayList<>();
-							}
-							sortedEntries[luceneIndexId].add(inputEntry);
-						}
-
-						// Add documents
-						int luceneIndexId = 0;
-						for (List<Entry<LLTerm, LLUpdateDocument>> docs : sortedEntries) {
-							if (docs != null && !docs.isEmpty()) {
-								LLLocalLuceneIndex luceneIndex = Objects.requireNonNull(luceneIndicesById[luceneIndexId]);
-								results[luceneIndexId] = luceneIndex.updateDocuments(Flux.fromIterable(docs));
-							} else {
-								results[luceneIndexId] = Mono.empty();
-							}
-							luceneIndexId++;
-						}
-
-						return Mono.when(results);
-					})
+					.window(bufferSize)
+					.flatMap(bufferFlux -> bufferFlux
+							.collect(Collectors.groupingBy(inputEntry -> LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards),
+									Collectors.collectingAndThen(Collectors.toList(), docs -> {
+										int luceneIndexId = LuceneUtils.getLuceneIndexId(docs.get(0).getKey(), totalShards);
+										LLLocalLuceneIndex luceneIndex = Objects.requireNonNull(luceneIndicesById[luceneIndexId]);
+										return luceneIndex.updateDocuments(Flux.fromIterable(docs));
+									}))
+							)
+							.map(Map::values)
+							.flatMap(Mono::whenDelayError)
+					)
 					.then();
 		} else {
 			return documents

@@ -1,3 +1,5 @@
 package it.cavallium.dbengine.database;
 
-public record LLSoftUpdateDocument(LLItem[] items, LLItem[] softDeleteItems) implements LLIndexRequest {}
+import java.util.List;
+
+public record LLSoftUpdateDocument(List<LLItem> items, List<LLItem> softDeleteItems) implements LLIndexRequest {}

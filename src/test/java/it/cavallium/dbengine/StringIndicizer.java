@@ -38,7 +38,7 @@ public class StringIndicizer extends Indicizer<String, String> {
 				fields.add(LLItem.newLongPoint("longpoint", numLong));
 				fields.add(LLItem.newNumericDocValuesField("longsort", numLong));
 			}
-			return new LLUpdateDocument(fields.toArray(LLItem[]::new));
+			return new LLUpdateDocument(fields);
 		});
 	}
 

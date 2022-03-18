@@ -158,7 +158,7 @@ public class LLUtils {
 		return toDocument(document.items());
 	}
 
-	public static Document toDocument(LLItem[] document) {
+	public static Document toDocument(List<LLItem> document) {
 		Document d = new Document();
 		for (LLItem item : document) {
 			if (item != null) {
@@ -168,10 +168,10 @@ public class LLUtils {
 		return d;
 	}
 
-	public static Field[] toFields(LLItem... fields) {
-		Field[] d = new Field[fields.length];
-		for (int i = 0; i < fields.length; i++) {
-			d[i] = LLUtils.toField(fields[i]);
+	public static Field[] toFields(List<LLItem> fields) {
+		Field[] d = new Field[fields.size()];
+		for (int i = 0; i < fields.size(); i++) {
+			d[i] = LLUtils.toField(fields.get(i));
 		}
 		return d;
 	}

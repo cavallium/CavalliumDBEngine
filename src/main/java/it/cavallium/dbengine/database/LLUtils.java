@@ -9,16 +9,12 @@ import io.netty5.buffer.api.AllocatorControl;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.CompositeBuffer;
-import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.WritableComponent;
-import io.netty5.buffer.api.bytebuffer.ByteBufferMemoryManager;
 import io.netty5.buffer.api.internal.Statics;
-import io.netty5.buffer.api.unsafe.UnsafeMemoryManager;
 import io.netty5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
@@ -28,7 +24,6 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -38,7 +33,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.logging.log4j.LogManager;
@@ -67,6 +61,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
@@ -715,6 +710,33 @@ public class LLUtils {
 		} else {
 			return buf.copy().send();
 		}
+	}
+
+	public static boolean isClosedRange(LLRange rangeShared) {
+		return rangeShared.hasMin() && rangeShared.hasMax();
+	}
+
+	/**
+	 * Generate a copy of the passed ReadOptions, with some parameters modified to help with bulk iterations
+	 * @param readOptions the read options to copy
+	 * @param canFillCache true to fill the cache. If closedRange is false, this field will be ignored
+	 * @param closedRange true if the range is closed
+	 * @return a new instance of ReadOptions
+	 */
+	public static ReadOptions generateCustomReadOptions(@Nullable ReadOptions readOptions, boolean canFillCache, boolean closedRange) {
+		if (readOptions != null) {
+			readOptions = new ReadOptions(readOptions);
+		} else {
+			readOptions = new ReadOptions();
+		}
+		if (!closedRange) {
+			readOptions.setReadaheadSize(32 * 1024); // 32KiB
+			readOptions.setFillCache(false);
+			readOptions.setVerifyChecksums(false);
+		} else {
+			readOptions.setFillCache(canFillCache);
+		}
+		return readOptions;
 	}
 
 	@Deprecated

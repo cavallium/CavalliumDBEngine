@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
+import static it.cavallium.dbengine.database.LLUtils.isClosedRange;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
@@ -86,8 +88,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	public final Flux<List<T>> flux() {
 		return Flux
 				.generate(() -> {
-					var readOptions = new ReadOptions(this.readOptions);
-					readOptions.setFillCache(canFillCache && range.hasMin() && range.hasMax());
+					var readOptions = generateCustomReadOptions(this.readOptions, true, isClosedRange(range));
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 					}

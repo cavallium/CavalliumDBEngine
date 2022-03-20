@@ -1,12 +1,16 @@
 package it.cavallium.dbengine.database.remote;
 
 import io.netty.handler.codec.ByteToMessageCodec;
+import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Send;
 import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.dbengine.rpc.current.data.RPCCrash;
 import it.cavallium.dbengine.rpc.current.data.RPCEvent;
+import it.cavallium.dbengine.rpc.current.data.nullables.NullableBytes;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
@@ -36,6 +40,29 @@ public class QuicUtils {
 
 	public static String toString(ByteList b) {
 		return new String(QuicUtils.toArrayNoCopy(b), StandardCharsets.UTF_8);
+	}
+
+	@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
+	public static NullableBytes toBytes(Optional<Send<Buffer>> valueSendOpt) {
+		if (valueSendOpt.isPresent()) {
+			try (var value = valueSendOpt.get().receive()) {
+				var bytes = new byte[value.readableBytes()];
+				value.copyInto(value.readerOffset(), bytes, 0, bytes.length);
+				return NullableBytes.ofNullable(ByteList.of(bytes));
+			}
+		} else {
+			return NullableBytes.empty();
+		}
+	}
+
+	public static Mono<NullableBytes> toBytes(Mono<Send<Buffer>> valueSendOptMono) {
+		return valueSendOptMono.map(valueSendOpt -> {
+			try (var value = valueSendOpt.receive()) {
+				var bytes = new byte[value.readableBytes()];
+				value.copyInto(value.readerOffset(), bytes, 0, bytes.length);
+				return NullableBytes.ofNullable(ByteList.of(bytes));
+			}
+		}).defaultIfEmpty(NullableBytes.empty());
 	}
 
 	public record QuicStream(NettyInbound in, NettyOutbound out) {}

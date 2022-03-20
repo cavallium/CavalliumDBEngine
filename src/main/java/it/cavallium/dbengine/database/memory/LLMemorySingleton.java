@@ -8,30 +8,21 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResult;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResultMode;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import java.io.IOException;
-import java.util.concurrent.Callable;
-import java.util.concurrent.atomic.AtomicReference;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class LLMemorySingleton implements LLSingleton {
 
 	private final LLMemoryDictionary dict;
+	private final String columnNameString;
 	private final byte[] singletonName;
 	private final Mono<Send<Buffer>> singletonNameBufMono;
 
-	public LLMemorySingleton(LLMemoryDictionary dict, byte[] singletonName) {
+	public LLMemorySingleton(LLMemoryDictionary dict, String columnNameString, byte[] singletonName) {
 		this.dict = dict;
+		this.columnNameString = columnNameString;
 		this.singletonName = singletonName;
 		this.singletonNameBufMono = Mono.fromCallable(() -> dict
 				.getAllocator()
@@ -51,22 +42,15 @@ public class LLMemorySingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<byte[]> get(@Nullable LLSnapshot snapshot) {
-		return dict
-				.get(snapshot, singletonNameBufMono, false)
-				.map(b -> {
-					try (var buf = b.receive()) {
-						return LLUtils.toArray(buf);
-					}
-				});
+	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
+		return dict.get(snapshot, singletonNameBufMono, false);
 	}
 
 	@Override
-	public Mono<Void> set(byte[] value) {
+	public Mono<Void> set(Mono<Send<Buffer>> value) {
 		var bbKey = singletonNameBufMono;
-		var bbVal = Mono.fromCallable(() -> dict.getAllocator().allocate(value.length).writeBytes(value).send());
 		return dict
-				.put(bbKey, bbVal, LLDictionaryResultType.VOID)
+				.put(bbKey, value, LLDictionaryResultType.VOID)
 				.then();
 	}
 
@@ -74,5 +58,20 @@ public class LLMemorySingleton implements LLSingleton {
 	public Mono<Send<Buffer>> update(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
 			UpdateReturnMode updateReturnMode) {
 		return dict.update(singletonNameBufMono, updater, updateReturnMode);
+	}
+
+	@Override
+	public Mono<Send<LLDelta>> updateAndGetDelta(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+		return dict.updateAndGetDelta(singletonNameBufMono, updater);
+	}
+
+	@Override
+	public String getColumnName() {
+		return columnNameString;
+	}
+
+	@Override
+	public String getName() {
+		return new String(singletonName);
 	}
 }

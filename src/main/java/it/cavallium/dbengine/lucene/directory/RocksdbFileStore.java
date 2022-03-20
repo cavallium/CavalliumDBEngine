@@ -6,6 +6,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.WritableComponent;
+import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -105,9 +106,11 @@ public class RocksdbFileStore {
 				db.put(headers, NEXT_ID_KEY, Longs.toByteArray(100));
 				incFlush();
 			}
-			this.itReadOpts = new ReadOptions()
-					.setReadaheadSize(blockSize * 4L)
-					.setVerifyChecksums(false)
+			this.itReadOpts = new ReadOptions();
+			if (LLUtils.MANUAL_READAHEAD) {
+				itReadOpts.setReadaheadSize(blockSize * 4L);
+			}
+			itReadOpts.setVerifyChecksums(false)
 					.setIgnoreRangeDeletions(true);
 		} catch (RocksDBException e) {
 			throw new IOException("Failed to open RocksDB meta file store", e);

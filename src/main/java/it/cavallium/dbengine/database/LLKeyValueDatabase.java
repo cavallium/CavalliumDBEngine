@@ -7,13 +7,14 @@ import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
-import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.database.collections.DatabaseSingleton;
 import java.nio.charset.StandardCharsets;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure {
 
-	Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue);
+	Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte @Nullable[] defaultValue);
 
 	Mono<? extends LLDictionary> getDictionary(byte[] columnName, UpdateMode updateMode);
 
@@ -24,6 +25,13 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	default Mono<? extends LLDictionary> getDictionary(String name, UpdateMode updateMode) {
 		return getDictionary(ColumnUtils.dictionary(name).name().getBytes(StandardCharsets.US_ASCII), updateMode);
+	}
+
+	default Mono<? extends LLSingleton> getSingleton(String singletonListName, String name) {
+		return getSingleton(ColumnUtils.special(singletonListName).name().getBytes(StandardCharsets.US_ASCII),
+				name.getBytes(StandardCharsets.US_ASCII),
+				null
+		);
 	}
 
 	default Mono<DatabaseInt> getInteger(String singletonListName, String name, int defaultValue) {

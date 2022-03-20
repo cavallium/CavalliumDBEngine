@@ -16,11 +16,17 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.commons.lang3.function.TriFunction;
 import org.apache.logging.log4j.LogManager;
@@ -82,7 +88,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	};
 
 	protected final LLDictionary dictionary;
-	private final BufferAllocator alloc;
+	protected final BufferAllocator alloc;
 	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
 	protected final SubStageGetter<U, US> subStageGetter;
 	protected final SerializerFixedBinaryLength<T> keySuffixSerializer;
@@ -491,54 +497,110 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		this.onClose = null;
 	}
 
-	public static <K1, K2, V, R> Flux<R> getAllLeaves2(DatabaseMapDictionaryDeep<K1, Object2ObjectSortedMap<K2, V>, DatabaseMapDictionary<K2, V>> deepMap,
+	public static <K1, K2, V, R> Flux<R> getAllLeaves2(DatabaseMapDictionaryDeep<K1, Object2ObjectSortedMap<K2, V>, ? extends DatabaseStageMap<K2, V, DatabaseStageEntry<V>>> deepMap,
 			CompositeSnapshot snapshot,
-			TriFunction<K1, K2, V, R> merger) {
-		if (deepMap.subStageGetter instanceof SubStageGetterMap<K2, V> subStageGetterMap) {
-			var keySuffix1Serializer = deepMap.keySuffixSerializer;
-			var keySuffix2Serializer = subStageGetterMap.keySerializer;
-			var valueSerializer = subStageGetterMap.valueSerializer;
-			return deepMap
-					.dictionary
-					.getRange(deepMap.resolveSnapshot(snapshot), deepMap.rangeMono)
-					.handle((entrySend, sink) -> {
-						K1 key1 = null;
-						K2 key2 = null;
-						try (var entry = entrySend.receive()) {
-							var keyBuf = entry.getKeyUnsafe();
-							var valueBuf = entry.getValueUnsafe();
-							try {
-								assert keyBuf != null;
-								keyBuf.skipReadable(deepMap.keyPrefixLength);
-								try (var key1Buf = keyBuf.split(deepMap.keySuffixLength)) {
-									key1 = keySuffix1Serializer.deserialize(key1Buf);
-								}
-								key2 = keySuffix2Serializer.deserialize(keyBuf);
-								assert valueBuf != null;
-								var value = valueSerializer.deserialize(valueBuf);
-								sink.next(merger.apply(key1, key2, value));
-							} catch (IndexOutOfBoundsException ex) {
-								var exMessage = ex.getMessage();
-								if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-									var totalZeroBytesErrors = deepMap.totalZeroBytesErrors.incrementAndGet();
-									if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
-										LOG.error("Unexpected zero-bytes value at " + deepMap.dictionary.getDatabaseName()
-												+ ":" + deepMap.dictionary.getColumnName()
-												+ ":[" + key1
-												+ ":" + key2
-												+ "](" + LLUtils.toStringSafe(keyBuf) + ") total=" + totalZeroBytesErrors);
-									}
-									sink.complete();
-								} else {
-									sink.error(ex);
-								}
-							}
-						} catch (SerializationException ex) {
-							sink.error(ex);
-						}
-					});
+			TriFunction<K1, K2, V, R> merger,
+			@NotNull Mono<K1> savedProgressKey1) {
+		var keySuffix1Serializer = deepMap.keySuffixSerializer;
+		SerializerFixedBinaryLength<?> keySuffix2Serializer;
+		Serializer<?> valueSerializer;
+		boolean isHashed;
+		boolean isHashedSet;
+		if (deepMap.subStageGetter instanceof SubStageGetterMap subStageGetterMap) {
+			isHashed = false;
+			isHashedSet = false;
+			keySuffix2Serializer = subStageGetterMap.keySerializer;
+			valueSerializer = subStageGetterMap.valueSerializer;
+		} else if (deepMap.subStageGetter instanceof SubStageGetterHashMap subStageGetterHashMap) {
+			isHashed = true;
+			isHashedSet = false;
+			keySuffix2Serializer = subStageGetterHashMap.keyHashSerializer;
+
+			//noinspection unchecked
+			ValueWithHashSerializer<K2, V> valueWithHashSerializer = new ValueWithHashSerializer<>(
+					(Serializer<K2>) subStageGetterHashMap.keySerializer,
+					(Serializer<V>) subStageGetterHashMap.valueSerializer
+			);
+			valueSerializer = new ValuesSetSerializer<>(valueWithHashSerializer);
+		} else if (deepMap.subStageGetter instanceof SubStageGetterHashSet subStageGetterHashSet) {
+			isHashed = true;
+			isHashedSet = true;
+			keySuffix2Serializer = subStageGetterHashSet.keyHashSerializer;
+
+			//noinspection unchecked
+			valueSerializer = new ValuesSetSerializer<K2>(subStageGetterHashSet.keySerializer);
 		} else {
 			throw new IllegalArgumentException();
 		}
+
+		var savedProgressKey1Opt = savedProgressKey1.map(Optional::of).defaultIfEmpty(Optional.empty());
+
+		return deepMap
+				.dictionary
+				.getRange(deepMap.resolveSnapshot(snapshot), Mono.zip(savedProgressKey1Opt, deepMap.rangeMono).handle((tuple, sink) -> {
+					var firstKey = tuple.getT1();
+					try (var fullRange = tuple.getT2().receive()) {
+						if (firstKey.isPresent()) {
+							try (var key1Buf = deepMap.alloc.allocate(keySuffix1Serializer.getSerializedBinaryLength())) {
+								keySuffix1Serializer.serialize(firstKey.get(), key1Buf);
+								sink.next(LLRange.of(key1Buf.send(), fullRange.getMax()).send());
+							} catch (SerializationException e) {
+								sink.error(e);
+							}
+						} else {
+							sink.next(fullRange.send());
+						}
+					}
+				}))
+				.concatMapIterable(entrySend -> {
+					K1 key1 = null;
+					Object key2 = null;
+					try (var entry = entrySend.receive()) {
+						var keyBuf = entry.getKeyUnsafe();
+						var valueBuf = entry.getValueUnsafe();
+						try {
+							assert keyBuf != null;
+							keyBuf.skipReadable(deepMap.keyPrefixLength);
+							try (var key1Buf = keyBuf.split(deepMap.keySuffixLength)) {
+								key1 = keySuffix1Serializer.deserialize(key1Buf);
+							}
+							key2 = keySuffix2Serializer.deserialize(keyBuf);
+							assert valueBuf != null;
+							Object value = valueSerializer.deserialize(valueBuf);
+							if (isHashedSet) {
+								//noinspection unchecked
+								Set<K2> set = (Set<K2>) value;
+								K1 finalKey1 = key1;
+								//noinspection unchecked
+								return set.stream().map(e -> merger.apply(finalKey1, e, (V) Nothing.INSTANCE)).toList();
+							} else if (isHashed) {
+								//noinspection unchecked
+								Set<Entry<K2, V>> set = (Set<Entry<K2, V>>) value;
+								K1 finalKey1 = key1;
+								return set.stream().map(e -> merger.apply(finalKey1, e.getKey(), e.getValue())).toList();
+							} else {
+								//noinspection unchecked
+								return List.of(merger.apply(key1, (K2) key2, (V) value));
+							}
+						} catch (IndexOutOfBoundsException ex) {
+							var exMessage = ex.getMessage();
+							if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
+								var totalZeroBytesErrors = deepMap.totalZeroBytesErrors.incrementAndGet();
+								if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
+									LOG.error("Unexpected zero-bytes value at " + deepMap.dictionary.getDatabaseName()
+											+ ":" + deepMap.dictionary.getColumnName()
+											+ ":[" + key1
+											+ ":" + key2
+											+ "](" + LLUtils.toStringSafe(keyBuf) + ") total=" + totalZeroBytesErrors);
+								}
+								return List.of();
+							} else {
+								throw ex;
+							}
+						}
+					} catch (SerializationException ex) {
+						throw new CompletionException(ex);
+					}
+				});
 	}
 }

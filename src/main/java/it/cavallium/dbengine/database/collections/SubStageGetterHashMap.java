@@ -18,10 +18,10 @@ import reactor.core.publisher.Mono;
 public class SubStageGetterHashMap<T, U, TH> implements
 		SubStageGetter<Object2ObjectSortedMap<T, U>, DatabaseMapDictionaryHashed<T, U, TH>> {
 
-	private final Serializer<T> keySerializer;
-	private final Serializer<U> valueSerializer;
-	private final Function<T, TH> keyHashFunction;
-	private final SerializerFixedBinaryLength<TH> keyHashSerializer;
+	final Serializer<T> keySerializer;
+	final Serializer<U> valueSerializer;
+	final Function<T, TH> keyHashFunction;
+	final SerializerFixedBinaryLength<TH> keyHashSerializer;
 
 	public SubStageGetterHashMap(Serializer<T> keySerializer,
 			Serializer<U> valueSerializer,

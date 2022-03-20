@@ -84,7 +84,7 @@ public class LLLocalDictionary implements LLDictionary {
 	 * It used to be false,
 	 * now it's true to avoid crashes during iterations on completely corrupted files
 	 */
-	static final boolean VERIFY_CHECKSUMS_WHEN_NOT_NEEDED = true;
+	static final boolean VERIFY_CHECKSUMS_WHEN_NOT_NEEDED = false;
 	/**
 	 * Default: true. Use false to debug problems with windowing.
 	 */
@@ -874,7 +874,9 @@ public class LLLocalDictionary implements LLDictionary {
 							try (var ro = new ReadOptions(getReadOptions(null))) {
 								ro.setFillCache(false);
 								if (!range.isSingle()) {
-									ro.setReadaheadSize(32 * 1024);
+									if (LLUtils.MANUAL_READAHEAD) {
+										ro.setReadaheadSize(32 * 1024);
+									}
 								}
 								ro.setVerifyChecksums(true);
 								try (var rocksIteratorTuple = getRocksIterator(nettyDirect, ro, range, db)) {
@@ -1294,7 +1296,9 @@ public class LLLocalDictionary implements LLDictionary {
 
 						// readOpts.setIgnoreRangeDeletions(true);
 						readOpts.setFillCache(false);
-						readOpts.setReadaheadSize(32 * 1024); // 32KiB
+						if (LLUtils.MANUAL_READAHEAD) {
+							readOpts.setReadaheadSize(32 * 1024); // 32KiB
+						}
 						try (CappedWriteBatch writeBatch = new CappedWriteBatch(db,
 								alloc,
 								CAPPED_WRITE_BATCH_CAP,
@@ -1565,7 +1569,9 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 		try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
 			readOpts.setFillCache(false);
-			readOpts.setReadaheadSize(128 * 1024); // 128KiB
+			if (LLUtils.MANUAL_READAHEAD) {
+				readOpts.setReadaheadSize(128 * 1024); // 128KiB
+			}
 			readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 			if (PARALLEL_EXACT_SIZE) {

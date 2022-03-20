@@ -84,6 +84,7 @@ public class LLUtils {
 	private static final byte[] RESPONSE_FALSE_BUF = new byte[]{0};
 	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
 	public static final AtomicBoolean hookRegistered = new AtomicBoolean();
+	public static final boolean MANUAL_READAHEAD = false;
 
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
@@ -730,7 +731,9 @@ public class LLUtils {
 			readOptions = new ReadOptions();
 		}
 		if (!closedRange) {
-			readOptions.setReadaheadSize(32 * 1024); // 32KiB
+			if (LLUtils.MANUAL_READAHEAD) {
+				readOptions.setReadaheadSize(32 * 1024); // 32KiB
+			}
 			readOptions.setFillCache(false);
 			readOptions.setVerifyChecksums(false);
 		} else {

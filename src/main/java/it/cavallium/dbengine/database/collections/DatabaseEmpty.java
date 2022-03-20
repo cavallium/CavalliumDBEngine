@@ -2,14 +2,9 @@ package it.cavallium.dbengine.database.collections;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public class DatabaseEmpty {
 
@@ -40,7 +35,7 @@ public class DatabaseEmpty {
 	}
 
 	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Buffer key, Runnable onClose) {
-		return new DatabaseSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()), onClose);
+		return new DatabaseMapSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()), onClose);
 	}
 
 	public static final class Nothing {

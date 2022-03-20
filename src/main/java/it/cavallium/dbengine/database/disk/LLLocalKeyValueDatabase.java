@@ -195,7 +195,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions.setOptimizeFiltersForMemory(true);
 				}
 				tableOptions
-						.setChecksumType(ChecksumType.kxxHash64)
+						.setChecksumType(ChecksumType.kCRC32c)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
 						.setBlockSize(16 * 1024); // 16KiB
@@ -561,13 +561,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<LLLocalSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte[] defaultValue) {
+	public Mono<LLLocalSingleton> getSingleton(byte[] singletonListColumnName,
+			byte[] name,
+			byte @Nullable[] defaultValue) {
 		return Mono
 				.fromCallable(() -> new LLLocalSingleton(
 						getRocksDBColumn(db, getCfh(singletonListColumnName)),
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						LLLocalKeyValueDatabase.this.name,
 						name,
+						ColumnUtils.toString(singletonListColumnName),
 						dbScheduler,
 						defaultValue
 				))

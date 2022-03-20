@@ -13,6 +13,8 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
+import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
+import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.analyzer.LegacyWordAnalyzer;
@@ -230,7 +232,7 @@ public class LuceneUtils {
 
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
 			CompositeSnapshot snapshot,
-			DatabaseMapDictionaryDeep<T, Object2ObjectSortedMap<U, V>, DatabaseMapDictionary<U, V>> dictionaryDeep) {
+			DatabaseMapDictionaryDeep<T, Object2ObjectSortedMap<U, V>, ? extends DatabaseStageMap<U, V, ? extends DatabaseStageEntry<V>>> dictionaryDeep) {
 		return entry -> LLUtils.usingResource(dictionaryDeep
 				.at(snapshot, entry.getKey()), sub -> sub.getValue(snapshot, entry.getValue()), true);
 	}

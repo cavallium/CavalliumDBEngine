@@ -10,7 +10,6 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
-import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
@@ -26,15 +25,15 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 
-public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseSingle<U>> implements
+public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseMapSingle<U>> implements
 		DatabaseStageEntry<U> {
 
-	private static final Logger LOG = LogManager.getLogger(DatabaseSingle.class);
+	private static final Logger LOG = LogManager.getLogger(DatabaseMapSingle.class);
 
 	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
-	private static final Drop<DatabaseSingle<?>> DROP = new Drop<>() {
+	private static final Drop<DatabaseMapSingle<?>> DROP = new Drop<>() {
 		@Override
-		public void drop(DatabaseSingle<?> obj) {
+		public void drop(DatabaseMapSingle<?> obj) {
 			try {
 				obj.key.close();
 			} catch (Throwable ex) {
@@ -46,12 +45,12 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 		}
 
 		@Override
-		public Drop<DatabaseSingle<?>> fork() {
+		public Drop<DatabaseMapSingle<?>> fork() {
 			return this;
 		}
 
 		@Override
-		public void attach(DatabaseSingle<?> obj) {
+		public void attach(DatabaseMapSingle<?> obj) {
 
 		}
 	};
@@ -64,9 +63,9 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 	private Runnable onClose;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	public DatabaseSingle(LLDictionary dictionary, Buffer key, Serializer<U> serializer,
+	public DatabaseMapSingle(LLDictionary dictionary, Buffer key, Serializer<U> serializer,
 			Runnable onClose) {
-		super((Drop<DatabaseSingle<U>>) (Drop) DROP);
+		super((Drop<DatabaseMapSingle<U>>) (Drop) DROP);
 		this.dictionary = dictionary;
 		this.key = key;
 		this.keyMono = LLUtils.lazyRetain(this.key);
@@ -211,12 +210,12 @@ public class DatabaseSingle<U> extends ResourceSupport<DatabaseStage<U>, Databas
 	}
 
 	@Override
-	protected Owned<DatabaseSingle<U>> prepareSend() {
+	protected Owned<DatabaseMapSingle<U>> prepareSend() {
 		var keySend = this.key.send();
 		var onClose = this.onClose;
 		return drop -> {
 			var key = keySend.receive();
-			var instance = new DatabaseSingle<>(dictionary, key, serializer, onClose);
+			var instance = new DatabaseMapSingle<>(dictionary, key, serializer, onClose);
 			drop.attach(instance);
 			return instance;
 		};

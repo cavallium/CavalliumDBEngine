@@ -5,10 +5,14 @@ import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 
+import it.cavallium.data.generator.nativedata.StringSerializer;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
+import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
+import it.cavallium.dbengine.database.collections.DatabaseSingleton;
+import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,6 +89,15 @@ public abstract class TestSingletons {
 				.verifyComplete();
 	}
 
+	@Test
+	public void testCreateSingleton() {
+		StepVerifier
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempSingleton(db, "testsingleton")
+						.flatMap(dbSingleton -> dbSingleton.get(null))
+				))
+				.verifyComplete();
+	}
+
 	@ParameterizedTest
 	@ValueSource(ints = {Integer.MIN_VALUE, -192, -2, -1, 0, 1, 2, 1292, Integer.MAX_VALUE})
 	public void testDefaultValueInteger(int i) {
@@ -137,6 +150,21 @@ public abstract class TestSingletons {
 				.verifyComplete();
 	}
 
+	@ParameterizedTest
+	@MethodSource("provideLongNumberWithRepeats")
+	public void testSetSingleton(Long i, Integer repeats) {
+		StepVerifier
+				.create(tempDb(getTempDbGenerator(), allocator, db -> tempSingleton(db, "test")
+						.flatMap(dbSingleton -> Mono
+								.defer(() -> dbSingleton.set(Long.toString(System.currentTimeMillis())))
+								.repeat(repeats)
+								.then(dbSingleton.set(Long.toString(i)))
+								.then(dbSingleton.get(null)))
+				))
+				.expectNext(Long.toString(i))
+				.verifyComplete();
+	}
+
 	public static Mono<DatabaseInt> tempInt(LLKeyValueDatabase database, String name, int defaultValue) {
 		return database
 				.getInteger("ints", name, defaultValue);
@@ -145,5 +173,11 @@ public abstract class TestSingletons {
 	public static Mono<DatabaseLong> tempLong(LLKeyValueDatabase database, String name, long defaultValue) {
 		return database
 				.getLong("longs", name, defaultValue);
+	}
+
+	public static Mono<DatabaseSingleton<String>> tempSingleton(LLKeyValueDatabase database, String name) {
+		return database
+				.getSingleton("longs", name)
+				.map(singleton -> new DatabaseSingleton<>(singleton, Serializer.UTF8_SERIALIZER, null));
 	}
 }

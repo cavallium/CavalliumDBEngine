@@ -6,23 +6,33 @@ import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public class DatabaseLong implements LLKeyValueDatabaseStructure {
 
 	private final LLSingleton singleton;
+	private final SerializerFixedBinaryLength<Long> serializer;
+	private final SerializerFixedBinaryLength<Integer> bugSerializer;
 
 	public DatabaseLong(LLSingleton singleton) {
 		this.singleton = singleton;
+		this.serializer = SerializerFixedBinaryLength.longSerializer(singleton.getAllocator());
+		this.bugSerializer = SerializerFixedBinaryLength.intSerializer(singleton.getAllocator());
 	}
 
 	public Mono<Long> get(@Nullable LLSnapshot snapshot) {
-		return singleton.get(snapshot).map(array -> {
-			if (array.length == 4) {
-				return (long) Ints.fromByteArray(array);
-			} else {
-				return Longs.fromByteArray(array);
+		return singleton.get(snapshot).handle((dataSend, sink) -> {
+			try (var data = dataSend.receive()) {
+				if (data.readableBytes() == 4) {
+					sink.next((long) (int) bugSerializer.deserialize(data));
+				} else {
+					sink.next(serializer.deserialize(data));
+				}
+			} catch (SerializationException e) {
+				sink.error(e);
 			}
 		});
 	}
@@ -75,7 +85,12 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	}
 
 	public Mono<Void> set(long value) {
-		return singleton.set(Longs.toByteArray(value));
+		return singleton.set(Mono.fromCallable(() -> {
+			try (var buf = singleton.getAllocator().allocate(Long.BYTES)) {
+				serializer.serialize(value, buf);
+				return buf.send();
+			}
+		}));
 	}
 
 	@Override

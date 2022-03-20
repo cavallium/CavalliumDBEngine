@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
+import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 
 public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
@@ -48,7 +49,9 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] singletonName, byte[] defaultValue) {
+	public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName,
+			byte[] singletonName,
+			byte @Nullable[] defaultValue) {
 		var columnNameString = new String(singletonListColumnName, StandardCharsets.UTF_8);
 		var dict = singletons.computeIfAbsent(columnNameString, _unused -> new LLMemoryDictionary(allocator,
 				name,
@@ -58,9 +61,17 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 				mainDb
 		));
 		return Mono
-				.fromCallable(() -> new LLMemorySingleton(dict, singletonName)).flatMap(singleton -> singleton
+				.fromCallable(() -> new LLMemorySingleton(dict, columnNameString, singletonName)).flatMap(singleton -> singleton
 						.get(null)
-						.switchIfEmpty(singleton.set(defaultValue).then(Mono.empty()))
+						.transform(mono -> {
+							if (defaultValue != null) {
+								return mono.switchIfEmpty(singleton
+										.set(Mono.fromSupplier(() -> allocator.copyOf(defaultValue).send()))
+										.then(Mono.empty()));
+							} else {
+								return mono;
+							}
+						})
 						.thenReturn(singleton)
 				);
 	}

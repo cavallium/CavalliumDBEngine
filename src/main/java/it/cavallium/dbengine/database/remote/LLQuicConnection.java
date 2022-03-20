@@ -2,15 +2,16 @@ package it.cavallium.dbengine.database.remote;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
+import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Send;
-import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
-import io.netty.incubator.codec.quic.QuicSslContextBuilder;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
+import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
@@ -26,7 +27,6 @@ import it.cavallium.dbengine.database.remote.RPCCodecs.RPCEventCodec;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneHacks;
-import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.rpc.current.data.BinaryOptional;
@@ -52,6 +52,7 @@ import it.cavallium.dbengine.rpc.current.data.SingletonSet;
 import it.cavallium.dbengine.rpc.current.data.SingletonUpdateEnd;
 import it.cavallium.dbengine.rpc.current.data.SingletonUpdateInit;
 import it.cavallium.dbengine.rpc.current.data.SingletonUpdateOldData;
+import it.cavallium.dbengine.rpc.current.data.nullables.NullableBytes;
 import it.cavallium.dbengine.rpc.current.data.nullables.NullableLLSnapshot;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.io.File;
@@ -226,11 +227,11 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					@Override
 					public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName,
 							byte[] name,
-							byte[] defaultValue) {
+							byte @Nullable[] defaultValue) {
 						return sendRequest(new GetSingleton(id,
 								ByteList.of(singletonListColumnName),
 								ByteList.of(name),
-								ByteList.of(defaultValue)
+								defaultValue == null ? NullableBytes.empty() : NullableBytes.of(ByteList.of(defaultValue))
 						)).cast(GeneratedEntityId.class).map(GeneratedEntityId::id).map(singletonId -> new LLSingleton() {
 
 							@Override
@@ -239,17 +240,22 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
-							public Mono<byte[]> get(@Nullable LLSnapshot snapshot) {
+							public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
 								return sendRequest(new SingletonGet(singletonId, NullableLLSnapshot.ofNullable(snapshot)))
 										.cast(BinaryOptional.class)
-										.mapNotNull(b -> b.val().getNullable())
-										.map(binary -> QuicUtils.toArrayNoCopy(binary.val()));
+										.mapNotNull(result -> {
+											if (result.val().isPresent()) {
+												return allocator.copyOf(QuicUtils.toArrayNoCopy(result.val().get().val())).send();
+											} else {
+												return null;
+											}
+										});
 							}
 
 							@Override
-							public Mono<Void> set(byte[] value) {
-								return sendRequest(new SingletonSet(singletonId, ByteList.of(value)))
-										.then();
+							public Mono<Void> set(Mono<Send<Buffer>> valueMono) {
+								return QuicUtils.toBytes(valueMono)
+										.flatMap(valueSendOpt -> sendRequest(new SingletonSet(singletonId, valueSendOpt)).then());
 							}
 
 							@Override
@@ -286,8 +292,23 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
+							public Mono<Send<LLDelta>> updateAndGetDelta(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+								return Mono.error(new UnsupportedOperationException());
+							}
+
+							@Override
 							public String getDatabaseName() {
 								return databaseName;
+							}
+
+							@Override
+							public String getColumnName() {
+								return new String(singletonListColumnName);
+							}
+
+							@Override
+							public String getName() {
+								return new String(name);
 							}
 						});
 					}

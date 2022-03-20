@@ -70,6 +70,20 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer, onClose);
 	}
 
+	public static <K, V> Flux<Entry<K, V>> getLeavesFrom(DatabaseMapDictionary<K, V> databaseMapDictionary,
+			CompositeSnapshot snapshot,
+			Mono<K> prevMono) {
+		Mono<Optional<K>> prevOptMono = prevMono.map(Optional::of).defaultIfEmpty(Optional.empty());
+
+		return prevOptMono.flatMapMany(prevOpt -> {
+			if (prevOpt.isPresent()) {
+				return databaseMapDictionary.getAllValues(snapshot, prevOpt.get());
+			} else {
+				return databaseMapDictionary.getAllValues(snapshot);
+			}
+		});
+	}
+
 	private void deserializeValue(T keySuffix, Send<Buffer> valueToReceive, SynchronousSink<U> sink) {
 		try (var value = valueToReceive.receive()) {
 			try {
@@ -213,7 +227,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono.fromCallable(() ->
-				new DatabaseSingle<>(dictionary, serializeKeySuffixToKey(keySuffix), valueSerializer, null));
+				new DatabaseMapSingle<>(dictionary, serializeKeySuffixToKey(keySuffix), valueSerializer, null));
 	}
 
 	@Override
@@ -456,7 +470,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						try (var keyBufCopy = keyBuf.copy()) {
 							keySuffix = deserializeSuffix(keyBufCopy);
 						}
-						var subStage = new DatabaseSingle<>(dictionary, toKey(keyBuf), valueSerializer, null);
+						var subStage = new DatabaseMapSingle<>(dictionary, toKey(keyBuf), valueSerializer, null);
 						sink.next(Map.entry(keySuffix, subStage));
 					} catch (Throwable ex) {
 						keyBuf.close();
@@ -467,8 +481,30 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
+		return getAllValues(snapshot, rangeMono);
+	}
+
+	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, @Nullable T from) {
+		if (from == null) {
+			return getAllValues(snapshot);
+		} else {
+			Mono<Send<LLRange>> boundedRangeMono = rangeMono.flatMap(fullRangeSend -> Mono.fromCallable(() -> {
+				try (var fullRange = fullRangeSend.receive()) {
+					try (var keyWithoutExtBuf = keyPrefix == null ? alloc.allocate(keySuffixLength + keyExtLength)
+							: keyPrefix.copy()) {
+						keyWithoutExtBuf.ensureWritable(keySuffixLength + keyExtLength);
+						serializeSuffix(from, keyWithoutExtBuf);
+						return LLRange.of(keyWithoutExtBuf.send(), fullRange.getMax()).send();
+					}
+				}
+			}));
+			return getAllValues(snapshot, boundedRangeMono);
+		}
+	}
+
+	private Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, Mono<Send<LLRange>> sliceRangeMono) {
 		return dictionary
-				.getRange(resolveSnapshot(snapshot), rangeMono)
+				.getRange(resolveSnapshot(snapshot), sliceRangeMono)
 				.<Entry<T, U>>handle((serializedEntryToReceive, sink) -> {
 					try {
 						Entry<T, U> entry;

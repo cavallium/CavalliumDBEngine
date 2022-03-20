@@ -107,6 +107,11 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 	}
 
 	@Override
+	public Mono<Void> set(U value) {
+		return singleton.set(Mono.fromCallable(() -> serializeValue(value)));
+	}
+
+	@Override
 	public Mono<U> setAndGetPrevious(U value) {
 		return Flux
 				.concat(singleton.get(null), singleton.set(Mono.fromCallable(() -> serializeValue(value))).then(Mono.empty()))
@@ -166,6 +171,11 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 						return serializer.deserialize(valueBuf);
 					}
 				}));
+	}
+
+	@Override
+	public Mono<Void> clear() {
+		return singleton.set(Mono.empty());
 	}
 
 	@Override

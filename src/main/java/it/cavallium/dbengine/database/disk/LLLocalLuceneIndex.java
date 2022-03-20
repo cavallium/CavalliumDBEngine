@@ -87,8 +87,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 */
 	private static final ReentrantLock shutdownLock = new ReentrantLock();
 	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.single(Schedulers.boundedElastic()));
-	//todo: remove after https://github.com/reactor/reactor-core/issues/2960 is fixed
-	private static final Scheduler bulkScheduler = Schedulers.boundedElastic();
+	private static final Scheduler bulkScheduler =  uninterruptibleScheduler(Schedulers.newBoundedElastic(
+			DEFAULT_BOUNDED_ELASTIC_SIZE, DEFAULT_BOUNDED_ELASTIC_QUEUESIZE, "bulkBoundedElastic", 60, true));
 
 	static {
 		LLUtils.initHooks();

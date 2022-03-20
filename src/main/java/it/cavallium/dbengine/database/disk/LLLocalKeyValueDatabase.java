@@ -219,17 +219,20 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 			int threadCap;
 			if (databaseOptions.lowMemory()) {
-				threadCap = Runtime.getRuntime().availableProcessors();
+				threadCap = Math.max(1, Runtime.getRuntime().availableProcessors());
+
+				this.dbScheduler = Schedulers.boundedElastic();
 			} else {
 				// 8 or more
 				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
+
+				this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
+						Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+						"db-" + name,
+						60,
+						true
+				);
 			}
-			this.dbScheduler = Schedulers.boundedElastic(); /*Schedulers.newBoundedElastic(threadCap,
-					Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-					"db-" + name,
-					60,
-					true
-			);*/
 			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
 			createIfNotExists(descriptors, rocksdbOptions, inMemory, dbPath, dbPathString);

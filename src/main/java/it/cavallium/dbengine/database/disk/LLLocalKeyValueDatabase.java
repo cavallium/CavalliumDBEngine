@@ -147,6 +147,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 			for (Column column : columns) {
 				var columnOptions = new ColumnFamilyOptions();
+				columnOptions.setTargetFileSizeBase(16 * SizeUnit.MB);
+				columnOptions.setTargetFileSizeMultiplier(2);
 
 				//noinspection ConstantConditions
 				if (databaseOptions.memtableMemoryBudgetBytes() != null) {
@@ -157,18 +159,44 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 
 				if (!databaseOptions.volumes().isEmpty()) {
-					int btmIndex = databaseOptions.volumes().size() - 1;
-					columnOptions.setCompressionType(databaseOptions.volumes().get(0).compression().getType());
-					columnOptions.setCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
-					columnOptions.setBottommostCompressionType(databaseOptions.volumes().get(btmIndex).compression().getType());
-					columnOptions.setBottommostCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
+					columnOptions.setCompressionPerLevel(databaseOptions
+							.volumes()
+							.stream()
+							.map(v -> v.compression().getType())
+							.toList());
 
-					columnOptions.setCompressionPerLevel(databaseOptions.volumes().stream().map(v -> v.compression().getType()).toList());
+					int btmIndex = databaseOptions.volumes().size() - 1;
+					var volumeOptions = databaseOptions.volumes().get(0);
+					var ctype = volumeOptions.compression().getType();
+					var copts = new CompressionOptions();
+					if (ctype != CompressionType.NO_COMPRESSION) {
+						copts.setEnabled(true);
+						copts.setMaxDictBytes(volumeOptions.maxDictBytes());
+					} else {
+						copts.setEnabled(false);
+					}
+					columnOptions.setCompressionType(ctype);
+					columnOptions.setCompressionOptions(copts);
+
+					var btmVolumeOptions = databaseOptions.volumes().get(btmIndex);
+					var btmCtype = btmVolumeOptions.compression().getType();
+					var btmCopts = new CompressionOptions();
+					if (btmCtype != CompressionType.NO_COMPRESSION) {
+						btmCopts.setEnabled(true);
+						btmCopts.setMaxDictBytes(btmVolumeOptions.maxDictBytes());
+					} else {
+						btmCopts.setEnabled(false);
+					}
+
+					columnOptions.setBottommostCompressionType(btmCtype);
+					columnOptions.setBottommostCompressionOptions(btmCopts);
 				} else {
 					columnOptions.setCompressionType(CompressionType.LZ4_COMPRESSION);
-					columnOptions.setCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
-					columnOptions.setBottommostCompressionType(CompressionType.LZ4HC_COMPRESSION);
-					columnOptions.setBottommostCompressionOptions(new CompressionOptions().setMaxDictBytes((int) (512L * SizeUnit.MB)));
+					columnOptions.setCompressionOptions(new CompressionOptions().setEnabled(true).setMaxDictBytes(32768));
+					columnOptions.setBottommostCompressionType(CompressionType.LZ4_COMPRESSION);
+					columnOptions.setBottommostCompressionOptions(new CompressionOptions()
+							.setEnabled(true)
+							.setMaxDictBytes(32768));
 				}
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
@@ -195,7 +223,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions.setOptimizeFiltersForMemory(true);
 				}
 				tableOptions
-						.setChecksumType(ChecksumType.kCRC32c)
+						.setFormatVersion(5)
+						.setChecksumType(ChecksumType.kxxHash)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
 						.setBlockSize(16 * 1024); // 16KiB
@@ -224,14 +253,18 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				this.dbScheduler = Schedulers.boundedElastic();
 			} else {
 				// 8 or more
-				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
-
-				this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
-						Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-						"db-" + name,
-						60,
-						true
-				);
+				threadCap = Math.max(8, Math.max(Runtime.getRuntime().availableProcessors(),
+						Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.threads", "0"))));
+				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.shared", "true"))) {
+					this.dbScheduler = Schedulers.boundedElastic();
+				} else {
+					this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
+							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+							"db-" + name,
+							60,
+							true
+					);
+				}
 			}
 			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
@@ -419,8 +452,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCreateIfMissing(true);
 		options.setCreateMissingColumnFamilies(true);
 		options.setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);
-		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
-		options.setAvoidFlushDuringRecovery(false); // Flush all WALs during startup
+		options.setAvoidFlushDuringShutdown(true); // Flush all WALs during shutdown
+		options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
 		options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
 				? WALRecoveryMode.AbsoluteConsistency
 				: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted.Default: TolerateCorruptedTailRecords

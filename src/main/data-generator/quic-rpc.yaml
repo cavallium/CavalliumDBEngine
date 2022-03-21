@@ -238,6 +238,7 @@ versions:
         data:
           volumePath: Path
           targetSizeBytes: long
+          maxDictBytes: int
           compression: Compression
       IndicizerAnalyzers:
         data:

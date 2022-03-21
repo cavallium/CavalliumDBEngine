@@ -74,6 +74,8 @@ import reactor.core.scheduler.Schedulers;
 
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
+	private static final boolean DELETE_LOG_FILES = false;
+
 	static {
 		RocksDB.loadLibrary();
 		LLUtils.initHooks();
@@ -147,8 +149,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 			for (Column column : columns) {
 				var columnOptions = new ColumnFamilyOptions();
-				columnOptions.setTargetFileSizeBase(16 * SizeUnit.MB);
-				columnOptions.setTargetFileSizeMultiplier(2);
+				columnOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
+				columnOptions.setTargetFileSizeMultiplier(1);
 
 				//noinspection ConstantConditions
 				if (databaseOptions.memtableMemoryBudgetBytes() != null) {
@@ -229,8 +231,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setBlockCache(optionsWithCache.standardCache())
 						.setBlockSize(16 * 1024); // 16KiB
 
+				//columnOptions.setLevelCompactionDynamicLevelBytes(true);
 				columnOptions.setTableFormatConfig(tableOptions);
-				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
+				columnOptions.setCompactionPriority(CompactionPriority.OldestSmallestSeqFirst);
 
 				descriptors
 						.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
@@ -448,11 +451,15 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// the Options class contains a set of configurable DB options
 		// that determines the behaviour of the database.
 		var options = new DBOptions();
+		options.setMaxSubcompactions(2);
+		options.setMaxFileOpeningThreads(16);
+		options.setNewTableReaderForCompactionInputs(true);
 		options.setParanoidChecks(false);
 		options.setCreateIfMissing(true);
+		options.setSkipStatsUpdateOnDbOpen(true);
 		options.setCreateMissingColumnFamilies(true);
-		options.setInfoLogLevel(InfoLogLevel.ERROR_LEVEL);
-		options.setAvoidFlushDuringShutdown(true); // Flush all WALs during shutdown
+		options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
+		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
 		options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
 				? WALRecoveryMode.AbsoluteConsistency
@@ -741,6 +748,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	 */
 	@SuppressWarnings("unused")
 	private void deleteUnusedOldLogFiles() {
+		if (!DELETE_LOG_FILES) {
+			return;
+		}
 		Path basePath = dbPath;
 		try {
 			Files

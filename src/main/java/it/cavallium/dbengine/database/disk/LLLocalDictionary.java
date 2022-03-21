@@ -31,6 +31,7 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -79,7 +80,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
 	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
-	static final boolean PREFER_SEEK_TO_FIRST = true;
+	static final boolean PREFER_SEEK_TO_FIRST = false;
 	/**
 	 * It used to be false,
 	 * now it's true to avoid crashes during iterations on completely corrupted files
@@ -255,8 +256,9 @@ public class LLLocalDictionary implements LLDictionary {
 			boolean existsAlmostCertainly) {
 		return keyMono
 				.publishOn(dbScheduler)
-				.handle((keySend, sink) -> {
+				.<Send<Buffer>>handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
+						logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
 						try {
 							var readOptions = requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
 							Buffer result;

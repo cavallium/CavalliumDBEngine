@@ -105,7 +105,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						mltDocumentFields
 				)
 				.collectList()
-				.flatMap(LuceneIndexImpl::mergeResults)
+				.flatMap(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
 				.single();
 	}
@@ -118,7 +118,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						indicizer.getKeyFieldName()
 				)
 				.collectList()
-				.flatMap(LuceneIndexImpl::mergeResults)
+				.flatMap(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
 				.single();
 	}
@@ -193,7 +193,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex.releaseSnapshot(snapshot);
 	}
 
-	private static Mono<LLSearchResultShard> mergeResults(List<LLSearchResultShard> shards) {
+	private static Mono<LLSearchResultShard> mergeResults(ClientQueryParams queryParams,
+			List<LLSearchResultShard> shards) {
 		if (shards.size() == 0) {
 			return Mono.empty();
 		} else if (shards.size() == 1) {
@@ -209,17 +210,19 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				} else {
 					count = LuceneUtils.sum(count, shard.totalHitsCount());
 				}
-				results.add(shard.results());
+				var maxLimit = queryParams.offset() + queryParams.limit();
+				results.add(shard.results().take(maxLimit, true));
 				resources.add(shard);
 			}
 			Objects.requireNonNull(count);
-			var resultsFlux = Flux.zip(results, parts -> {
-				var arr = new ArrayList<LLKeyScore>(parts.length);
-				for (Object part : parts) {
-					arr.add((LLKeyScore) part);
-				}
-				return arr;
-			}).concatMapIterable(list -> list);
+			Flux<LLKeyScore> resultsFlux;
+			if (results.size() == 0) {
+				resultsFlux = Flux.empty();
+			} else if (results.size() == 1) {
+				resultsFlux = results.get(0);
+			} else {
+				resultsFlux = Flux.merge(results);
+			}
 			return new LLSearchResultShard(resultsFlux, count, () -> {
 				for (Resource<?> resource : resources) {
 					resource.close();

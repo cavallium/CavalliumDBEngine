@@ -318,6 +318,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		registerGauge(meterRegistry, name, "rocksdb.block-cache-pinned-usage");
 	}
 
+	public Map<Column, ColumnFamilyHandle> getAllColumnFamilyHandles() {
+		return this.handles;
+	}
+
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
 	private RocksLevelOptions getRocksLevelOptions(DatabaseLevel levelOptions) {
 		var compressionType = levelOptions.compression().getType();
@@ -638,6 +642,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						databaseOptions
 				))
 				.subscribeOn(dbScheduler);
+	}
+
+	public RocksDBColumn getRocksDBColumn(byte[] columnName) {
+		ColumnFamilyHandle cfh;
+		try {
+			cfh = getCfh(columnName);
+		} catch (RocksDBException e) {
+			throw new UnsupportedOperationException("Column family doesn't exist: " + Arrays.toString(columnName), e);
+		}
+		return getRocksDBColumn(db, cfh);
 	}
 
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {

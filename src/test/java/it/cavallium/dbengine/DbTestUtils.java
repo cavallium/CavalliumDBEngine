@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.MemoryManager;
-import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.pool.MetricUtils;
 import io.netty5.buffer.api.pool.PoolArenaMetric;
 import io.netty5.buffer.api.pool.PooledBufferAllocator;
@@ -23,17 +22,14 @@ import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
-import it.cavallium.dbengine.database.disk.MemorySegmentUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.nio.file.Path;
-import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -47,7 +43,7 @@ public class DbTestUtils {
 		return "0123456789".repeat(1024);
 	}
 
-	public static record TestAllocator(PooledBufferAllocator allocator) {}
+	public record TestAllocator(PooledBufferAllocator allocator) {}
 
 	public static TestAllocator newAllocator() {
 		return new TestAllocator(new PooledBufferAllocator(MemoryManager.instance(), true, 1, 8192, 9, 0, 0, true));
@@ -85,34 +81,24 @@ public class DbTestUtils {
 			Function<LLKeyValueDatabase, Publisher<U>> action) {
 		return Flux.usingWhen(
 				temporaryDbGenerator.openTempDb(alloc),
-				tempDb -> Flux.from(action.apply(tempDb.db())).doOnDiscard(Object.class, o -> {
-					System.out.println("Discarded: " + o.getClass().getName() + ", " + o);
-				}),
+				tempDb -> Flux
+						.from(action.apply(tempDb.db()))
+						.doOnDiscard(Object.class, o -> System.out.println("Discarded: " + o.getClass().getName() + ", " + o)),
 				temporaryDbGenerator::closeTempDb
 		);
 	}
 
-	public static record TempDb(TestAllocator allocator, LLDatabaseConnection connection, LLKeyValueDatabase db,
-															LLLuceneIndex luceneSingle,
-															LLLuceneIndex luceneMulti,
-															SwappableLuceneSearcher swappableLuceneSearcher,
-															Path path) {}
+	public record TempDb(TestAllocator allocator, LLDatabaseConnection connection, LLKeyValueDatabase db,
+											 LLLuceneIndex luceneSingle,
+											 LLLuceneIndex luceneMulti,
+											 SwappableLuceneSearcher swappableLuceneSearcher,
+											 Path path) {}
 
 	static boolean computeCanUseNettyDirect() {
 		boolean canUse = true;
 		if (!PlatformDependent.hasUnsafe()) {
 			System.err.println("Warning! Unsafe is not available!"
 					+ " Netty direct buffers will not be used in tests!");
-			canUse = false;
-		}
-		if (!MemorySegmentUtils.isSupported()) {
-			System.err.println("Warning! Foreign Memory Access API is not available!"
-					+ " Netty direct buffers will not be used in tests!"
-					+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"");
-			if (MemorySegmentUtils.getUnsupportedCause() != null) {
-				System.err.println("\tCause: " + MemorySegmentUtils.getUnsupportedCause().getClass().getName()
-						+ ":" + MemorySegmentUtils.getUnsupportedCause().getLocalizedMessage());
-			}
 			canUse = false;
 		}
 		return canUse;
@@ -173,14 +159,13 @@ public class DbTestUtils {
 						}
 
 						@Override
-						public @NotNull Short deserialize(@NotNull Buffer serialized) throws SerializationException {
+						public @NotNull Short deserialize(@NotNull Buffer serialized) {
 							Objects.requireNonNull(serialized);
-							var val = serialized.readShort();
-							return val;
+							return serialized.readShort();
 						}
 
 						@Override
-						public void serialize(@NotNull Short deserialized, Buffer output) throws SerializationException {
+						public void serialize(@NotNull Short deserialized, Buffer output) {
 							output.writeShort(deserialized);
 						}
 					},

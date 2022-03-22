@@ -133,12 +133,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						PlatformDependent.getUnsafeUnavailabilityCause()
 				);
 			}
-			if (!MemorySegmentUtils.isSupported()) {
-				throw new UnsupportedOperationException("Foreign Memory Access API support is disabled."
-						+ " Please set \"" + MemorySegmentUtils.getSuggestedArgs() + "\"",
-						MemorySegmentUtils.getUnsupportedCause()
-				);
-			}
 		}
 
 		OptionsWithCache optionsWithCache = openRocksDb(path, databaseOptions);

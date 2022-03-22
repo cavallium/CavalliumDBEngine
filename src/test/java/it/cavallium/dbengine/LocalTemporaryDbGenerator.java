@@ -85,6 +85,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 										conn.getDatabase("testdb",
 												List.of(ColumnUtils.dictionary("testmap"), ColumnUtils.special("ints"), ColumnUtils.special("longs")),
 												new DatabaseOptions(List.of(),
+														List.of(),
 														Map.of(),
 														true,
 														false,

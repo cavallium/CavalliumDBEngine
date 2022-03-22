@@ -79,7 +79,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 
 	public final Flux<T> flux() {
 		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions, true, isClosedRange(rangeShared));
+			var readOptions = generateCustomReadOptions(this.readOptions, true, isClosedRange(rangeShared), true);
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}

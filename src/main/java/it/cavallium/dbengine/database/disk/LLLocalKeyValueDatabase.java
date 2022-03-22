@@ -15,6 +15,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.rpc.current.data.DatabaseLevel;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
 import java.io.File;
@@ -143,14 +144,17 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		OptionsWithCache optionsWithCache = openRocksDb(path, databaseOptions);
 		var rocksdbOptions = optionsWithCache.options();
 		try {
-			List<ColumnFamilyDescriptor> descriptors = new LinkedList<>();
+			List<ColumnFamilyDescriptor> descriptors = new ArrayList<>();
 
-			descriptors
-					.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
+			descriptors.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 			for (Column column : columns) {
 				var columnOptions = new ColumnFamilyOptions();
-				columnOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
-				columnOptions.setTargetFileSizeMultiplier(1);
+				columnOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
+				columnOptions.setMaxBytesForLevelMultiplier(10);
+				columnOptions.setLevelCompactionDynamicLevelBytes(true);
+				columnOptions.setLevel0FileNumCompactionTrigger(2);
+				columnOptions.setLevel0SlowdownWritesTrigger(20);
+				columnOptions.setLevel0StopWritesTrigger(36);
 
 				//noinspection ConstantConditions
 				if (databaseOptions.memtableMemoryBudgetBytes() != null) {
@@ -160,83 +164,63 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							.orElse(databaseOptions.lowMemory() ? 16L * SizeUnit.MB : 128L * SizeUnit.MB));
 				}
 
-				if (!databaseOptions.volumes().isEmpty()) {
+				if (!databaseOptions.levels().isEmpty()) {
+					var firstLevelOptions = getRocksLevelOptions(databaseOptions.levels().get(0));
+					columnOptions.setCompressionType(firstLevelOptions.compressionType);
+					columnOptions.setCompressionOptions(firstLevelOptions.compressionOptions);
+
+					var lastLevelOptions = getRocksLevelOptions(databaseOptions
+							.levels()
+							.get(databaseOptions.levels().size() - 1));
+					columnOptions.setBottommostCompressionType(lastLevelOptions.compressionType);
+					columnOptions.setBottommostCompressionOptions(lastLevelOptions.compressionOptions);
+
 					columnOptions.setCompressionPerLevel(databaseOptions
-							.volumes()
+							.levels()
 							.stream()
 							.map(v -> v.compression().getType())
 							.toList());
-
-					int btmIndex = databaseOptions.volumes().size() - 1;
-					var volumeOptions = databaseOptions.volumes().get(0);
-					var ctype = volumeOptions.compression().getType();
-					var copts = new CompressionOptions();
-					if (ctype != CompressionType.NO_COMPRESSION) {
-						copts.setEnabled(true);
-						copts.setMaxDictBytes(volumeOptions.maxDictBytes());
-					} else {
-						copts.setEnabled(false);
-					}
-					columnOptions.setCompressionType(ctype);
-					columnOptions.setCompressionOptions(copts);
-
-					var btmVolumeOptions = databaseOptions.volumes().get(btmIndex);
-					var btmCtype = btmVolumeOptions.compression().getType();
-					var btmCopts = new CompressionOptions();
-					if (btmCtype != CompressionType.NO_COMPRESSION) {
-						btmCopts.setEnabled(true);
-						btmCopts.setMaxDictBytes(btmVolumeOptions.maxDictBytes());
-					} else {
-						btmCopts.setEnabled(false);
-					}
-
-					columnOptions.setBottommostCompressionType(btmCtype);
-					columnOptions.setBottommostCompressionOptions(btmCopts);
 				} else {
-					columnOptions.setCompressionType(CompressionType.LZ4_COMPRESSION);
-					columnOptions.setCompressionOptions(new CompressionOptions().setEnabled(true).setMaxDictBytes(32768));
+					columnOptions.setNumLevels(7);
+					List<CompressionType> compressionTypes = new ArrayList<>(7);
+					for (int i = 0; i < 7; i++) {
+						if (i < 2) {
+							compressionTypes.add(CompressionType.NO_COMPRESSION);
+						} else {
+							compressionTypes.add(CompressionType.LZ4_COMPRESSION);
+						}
+					}
 					columnOptions.setBottommostCompressionType(CompressionType.LZ4_COMPRESSION);
 					columnOptions.setBottommostCompressionOptions(new CompressionOptions()
 							.setEnabled(true)
 							.setMaxDictBytes(32768));
+					columnOptions.setCompressionPerLevel(compressionTypes);
 				}
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
-				if (databaseOptions.lowMemory()) {
-					tableOptions
-							.setIndexType(IndexType.kTwoLevelIndexSearch)
-							.setPartitionFilters(true)
-							.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse(true))
-							.setCacheIndexAndFilterBlocksWithHighPriority(true)
-							.setPinTopLevelIndexAndFilter(true)
-							.setPinL0FilterAndIndexBlocksInCache(true)
-					;
-				} else {
-					tableOptions
-							.setIndexType(IndexType.kTwoLevelIndexSearch)
-							.setPartitionFilters(true)
-							.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse( true))
-							.setCacheIndexAndFilterBlocksWithHighPriority(true)
-							.setPinTopLevelIndexAndFilter(true)
-							.setPinL0FilterAndIndexBlocksInCache(true)
-					;
+				if (!databaseOptions.lowMemory()) {
 					final BloomFilter bloomFilter = new BloomFilter(3, false);
 					tableOptions.setFilterPolicy(bloomFilter);
 					tableOptions.setOptimizeFiltersForMemory(true);
 				}
 				tableOptions
+						.setPinTopLevelIndexAndFilter(true)
+						.setPinL0FilterAndIndexBlocksInCache(true)
+						.setCacheIndexAndFilterBlocksWithHighPriority(true)
+						.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse(true))
+						.setPartitionFilters(true)
+						.setIndexType(IndexType.kTwoLevelIndexSearch)
 						.setFormatVersion(5)
 						.setChecksumType(ChecksumType.kxxHash)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
-						.setBlockSize(16 * 1024); // 16KiB
+						.setBlockSize(512 * 1024); // 512KiB
 
 				//columnOptions.setLevelCompactionDynamicLevelBytes(true);
 				columnOptions.setTableFormatConfig(tableOptions);
 				columnOptions.setCompactionPriority(CompactionPriority.OldestSmallestSeqFirst);
 
-				descriptors
-						.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
+				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
 			}
 
 			// Get databases directory path
@@ -332,6 +316,19 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		registerGauge(meterRegistry, name, "rocksdb.estimate-num-keys");
 		registerGauge(meterRegistry, name, "rocksdb.block-cache-usage");
 		registerGauge(meterRegistry, name, "rocksdb.block-cache-pinned-usage");
+	}
+
+	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
+	private RocksLevelOptions getRocksLevelOptions(DatabaseLevel levelOptions) {
+		var compressionType = levelOptions.compression().getType();
+		var compressionOptions = new CompressionOptions();
+		if (compressionType != CompressionType.NO_COMPRESSION) {
+			compressionOptions.setEnabled(true);
+			compressionOptions.setMaxDictBytes(levelOptions.maxDictBytes());
+		} else {
+			compressionOptions.setEnabled(false);
+		}
+		return new RocksLevelOptions(compressionType, compressionOptions);
 	}
 
 	private void registerGauge(MeterRegistry meterRegistry, String name, String propertyName) {
@@ -433,7 +430,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// end force compact
 	}
 
-	record OptionsWithCache(DBOptions options, Cache standardCache, Cache compressedCache) {}
+	record OptionsWithCache(DBOptions options, @Nullable Cache standardCache, @Nullable Cache compressedCache) {}
 
 	private static OptionsWithCache openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions) throws IOException {
 		// Get databases directory path
@@ -451,10 +448,15 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// the Options class contains a set of configurable DB options
 		// that determines the behaviour of the database.
 		var options = new DBOptions();
+		options.setEnablePipelinedWrite(true);
 		options.setMaxSubcompactions(2);
-		options.setMaxFileOpeningThreads(16);
+		var customWriteRate = Long.parseLong(System.getProperty("it.cavallium.dbengine.write.delayedrate", "-1"));
+		if (customWriteRate >= 0) {
+			options.setDelayedWriteRate(customWriteRate);
+		} else {
+			options.setDelayedWriteRate(64 * SizeUnit.MB);
+		}
 		options.setNewTableReaderForCompactionInputs(true);
-		options.setParanoidChecks(false);
 		options.setCreateIfMissing(true);
 		options.setSkipStatsUpdateOnDbOpen(true);
 		options.setCreateMissingColumnFamilies(true);
@@ -487,7 +489,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(0) // automatic
 			;
 			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB) / 2, -1, true);
-			compressedCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB) / 2, -1, true);
+			compressedCache = null;
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -502,15 +504,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			// HIGH MEMORY
 			options
 					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
-					.setBytesPerSync(8 * SizeUnit.KB)
-					.setWalBytesPerSync(8 * SizeUnit.KB)
+					.setDbWriteBufferSize(64 * SizeUnit.MB)
+					.setBytesPerSync(64 * SizeUnit.KB)
+					.setWalBytesPerSync(64 * SizeUnit.KB)
 
 					.setWalTtlSeconds(30) // flush wal after 30 seconds
 					.setWalSizeLimitMB(1024) // 1024MB
 					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
 			;
 			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB) / 2);
-			compressedCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB) / 2);
+			compressedCache = null;
 
 			if (databaseOptions.useDirectIO()) {
 				options

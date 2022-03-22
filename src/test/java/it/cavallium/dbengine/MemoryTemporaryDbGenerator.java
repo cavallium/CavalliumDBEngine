@@ -56,6 +56,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 									conn.getDatabase("testdb",
 											List.of(ColumnUtils.dictionary("testmap"), ColumnUtils.special("ints"), ColumnUtils.special("longs")),
 											DatabaseOptions.of(List.of(),
+													List.of(),
 													Map.of(),
 													true,
 													false,

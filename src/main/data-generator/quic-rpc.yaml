@@ -223,6 +223,7 @@ versions:
       DatabaseOptions:
         data:
           volumes: DatabaseVolume[]
+          levels: DatabaseLevel[]
           extraFlags: StringMap
           absoluteConsistency: boolean
           lowMemory: boolean
@@ -238,6 +239,8 @@ versions:
         data:
           volumePath: Path
           targetSizeBytes: long
+      DatabaseLevel:
+        data:
           maxDictBytes: int
           compression: Compression
       IndicizerAnalyzers:

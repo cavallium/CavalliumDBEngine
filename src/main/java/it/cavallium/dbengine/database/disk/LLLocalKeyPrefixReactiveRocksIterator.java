@@ -80,7 +80,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 
 	public Flux<Send<Buffer>> flux() {
 		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions, canFillCache, isClosedRange(rangeShared));
+			var readOptions = generateCustomReadOptions(this.readOptions, canFillCache, isClosedRange(rangeShared), true);
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}

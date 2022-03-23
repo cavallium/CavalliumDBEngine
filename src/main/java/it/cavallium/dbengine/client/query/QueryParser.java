@@ -34,6 +34,8 @@ import it.cavallium.dbengine.client.query.current.data.LongPointSetQuery;
 import it.cavallium.dbengine.client.query.current.data.LongTermQuery;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.PhraseQuery;
+import it.cavallium.dbengine.client.query.current.data.PointConfig;
+import it.cavallium.dbengine.client.query.current.data.PointType;
 import it.cavallium.dbengine.client.query.current.data.SortedDocFieldExistsQuery;
 import it.cavallium.dbengine.client.query.current.data.SortedNumericDocValuesFieldSlowRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.SynonymQuery;
@@ -42,6 +44,9 @@ import it.cavallium.dbengine.client.query.current.data.TermPosition;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import java.text.DecimalFormat;
+import java.text.NumberFormat;
+import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.FloatPoint;
@@ -51,6 +56,7 @@ import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
+import org.apache.lucene.queryparser.flexible.standard.config.PointsConfig;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.DocValuesFieldExistsQuery;
@@ -64,22 +70,37 @@ import org.apache.lucene.search.SortField.Type;
 import org.apache.lucene.search.SortedNumericSortField;
 
 public class QueryParser {
+
 	public static Query toQuery(it.cavallium.dbengine.client.query.current.data.Query query, Analyzer analyzer) {
-		if (query == null) return null;
+		if (query == null) {
+			return null;
+		}
 		switch (query.getBasicType$()) {
 			case StandardQuery:
 				var standardQuery = (it.cavallium.dbengine.client.query.current.data.StandardQuery) query;
 				var standardQueryParser = new StandardQueryParser(analyzer);
+				standardQueryParser.setPointsConfigMap(standardQuery
+						.pointsConfig()
+						.stream()
+						.collect(Collectors.toMap(
+								PointConfig::field,
+								pointConfig -> new PointsConfig(
+										toNumberFormat(pointConfig.data().numberFormat()),
+										toType(pointConfig.data().type())
+								)
+						)));
 				var defaultFields = standardQuery.defaultFields();
 				try {
+					Query parsed;
 					if (defaultFields.size() > 1) {
 						standardQueryParser.setMultiFields(defaultFields.toArray(String[]::new));
-						return standardQueryParser.parse(standardQuery.query(), null);
+						parsed = standardQueryParser.parse(standardQuery.query(), null);
 					} else if (defaultFields.size() == 1) {
-						return standardQueryParser.parse(standardQuery.query(), defaultFields.get(0));
+						parsed = standardQueryParser.parse(standardQuery.query(), defaultFields.get(0));
 					} else {
 						throw new IllegalStateException("Can't parse a standard query expression that has 0 default fields");
 					}
+					return parsed;
 				} catch (QueryNodeException e) {
 					throw new IllegalStateException("Can't parse query expression \"" + standardQuery.query() + "\"", e);
 				}
@@ -199,10 +220,7 @@ public class QueryParser {
 				);
 			case IntPointRangeQuery:
 				var intPointRangeQuery = (IntPointRangeQuery) query;
-				return IntPoint.newRangeQuery(intPointRangeQuery.field(),
-						intPointRangeQuery.min(),
-						intPointRangeQuery.max()
-				);
+				return IntPoint.newRangeQuery(intPointRangeQuery.field(), intPointRangeQuery.min(), intPointRangeQuery.max());
 			case IntNDPointRangeQuery:
 				var intndPointRangeQuery = (IntNDPointRangeQuery) query;
 				return IntPoint.newRangeQuery(intndPointRangeQuery.field(),
@@ -279,6 +297,23 @@ public class QueryParser {
 			default:
 				throw new IllegalStateException("Unexpected value: " + query.getBasicType$());
 		}
+	}
+
+	private static NumberFormat toNumberFormat(it.cavallium.dbengine.client.query.current.data.NumberFormat numberFormat) {
+		return switch (numberFormat.getBasicType$()) {
+			case NumberFormatDecimal -> new DecimalFormat();
+			default -> throw new UnsupportedOperationException("Unsupported type: " + numberFormat.getBasicType$());
+		};
+	}
+
+	private static Class<? extends Number> toType(PointType type) {
+		return switch (type.getBasicType$()) {
+			case PointTypeInt -> Integer.class;
+			case PointTypeLong -> Long.class;
+			case PointTypeFloat -> Float.class;
+			case PointTypeDouble -> Double.class;
+			default -> throw new UnsupportedOperationException("Unsupported type: " + type.getBasicType$());
+		};
 	}
 
 	private static Term toTerm(it.cavallium.dbengine.client.query.current.data.Term term) {

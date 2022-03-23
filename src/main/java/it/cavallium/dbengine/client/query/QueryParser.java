@@ -6,29 +6,36 @@ import it.cavallium.dbengine.client.query.current.data.BoxedQuery;
 import it.cavallium.dbengine.client.query.current.data.ConstantScoreQuery;
 import it.cavallium.dbengine.client.query.current.data.DoubleNDPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.DoubleNDPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.DoubleNDTermQuery;
 import it.cavallium.dbengine.client.query.current.data.DoublePointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.DoublePointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.DoublePointSetQuery;
+import it.cavallium.dbengine.client.query.current.data.DoubleTermQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatNDPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatNDPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatNDTermQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatPointSetQuery;
+import it.cavallium.dbengine.client.query.current.data.FloatTermQuery;
 import it.cavallium.dbengine.client.query.current.data.IntNDPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.IntNDPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.IntNDTermQuery;
 import it.cavallium.dbengine.client.query.current.data.IntPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.IntPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.IntPointSetQuery;
+import it.cavallium.dbengine.client.query.current.data.IntTermQuery;
 import it.cavallium.dbengine.client.query.current.data.LongNDPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.LongNDPointRangeQuery;
+import it.cavallium.dbengine.client.query.current.data.LongNDTermQuery;
 import it.cavallium.dbengine.client.query.current.data.LongPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.LongPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.LongPointSetQuery;
+import it.cavallium.dbengine.client.query.current.data.LongTermQuery;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.PhraseQuery;
 import it.cavallium.dbengine.client.query.current.data.SortedDocFieldExistsQuery;
 import it.cavallium.dbengine.client.query.current.data.SortedNumericDocValuesFieldSlowRangeQuery;
-import it.cavallium.dbengine.client.query.current.data.StandardQuery;
 import it.cavallium.dbengine.client.query.current.data.SynonymQuery;
 import it.cavallium.dbengine.client.query.current.data.TermAndBoost;
 import it.cavallium.dbengine.client.query.current.data.TermPosition;
@@ -36,7 +43,6 @@ import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
@@ -44,7 +50,6 @@ import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.document.SortedNumericDocValuesField;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
-import org.apache.lucene.queryparser.flexible.standard.QueryParserUtil;
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
@@ -136,6 +141,46 @@ public class QueryParser {
 			case TermQuery:
 				var termQuery = (TermQuery) query;
 				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.term()));
+			case IntTermQuery:
+				var intTermQuery = (IntTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(intTermQuery.field(),
+						IntPoint.pack(intTermQuery.value())
+				));
+			case IntNDTermQuery:
+				var intNDTermQuery = (IntNDTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(intNDTermQuery.field(),
+						IntPoint.pack(intNDTermQuery.value().toIntArray())
+				));
+			case LongTermQuery:
+				var longTermQuery = (LongTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(longTermQuery.field(),
+						LongPoint.pack(longTermQuery.value())
+				));
+			case LongNDTermQuery:
+				var longNDTermQuery = (LongNDTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(longNDTermQuery.field(),
+						LongPoint.pack(longNDTermQuery.value().toLongArray())
+				));
+			case FloatTermQuery:
+				var floatTermQuery = (FloatTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(floatTermQuery.field(),
+						FloatPoint.pack(floatTermQuery.value())
+				));
+			case FloatNDTermQuery:
+				var floatNDTermQuery = (FloatNDTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(floatNDTermQuery.field(),
+						FloatPoint.pack(floatNDTermQuery.value().toFloatArray())
+				));
+			case DoubleTermQuery:
+				var doubleTermQuery = (DoubleTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(doubleTermQuery.field(),
+						DoublePoint.pack(doubleTermQuery.value())
+				));
+			case DoubleNDTermQuery:
+				var doubleNDTermQuery = (DoubleNDTermQuery) query;
+				return new org.apache.lucene.search.TermQuery(new Term(doubleNDTermQuery.field(),
+						DoublePoint.pack(doubleNDTermQuery.value().toDoubleArray())
+				));
 			case BoostQuery:
 				var boostQuery = (BoostQuery) query;
 				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.query(), analyzer), boostQuery.scoreBoost());

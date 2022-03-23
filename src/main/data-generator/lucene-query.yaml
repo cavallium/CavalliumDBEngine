@@ -9,8 +9,10 @@ versions:
       changelog: "First version"
     superTypes:
       Query: [
-          BoxedQuery, TermQuery, PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery,
-          MatchNoDocsQuery, BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
+          BoxedQuery, TermQuery, IntTermQuery, IntNDTermQuery, LongTermQuery, LongNDTermQuery, FloatTermQuery,
+          FloatNDTermQuery, DoubleTermQuery, DoubleNDTermQuery,
+          PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery, MatchNoDocsQuery,
+          BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
           ConstantScoreQuery, BoostQuery, IntPointRangeQuery, IntNDPointRangeQuery, LongPointRangeQuery,
           FloatPointRangeQuery, DoublePointRangeQuery, LongNDPointRangeQuery, FloatNDPointRangeQuery,
           DoubleNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, FloatPointExactQuery,
@@ -20,6 +22,8 @@ versions:
       ]
       Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
       Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
+      NumberFormat: [NumberFormatDecimal]
+      PointType: [PointTypeInt, PointTypeLong, PointTypeFloat, PointTypeDouble]
     customTypes: {}
     classes:
 
@@ -64,6 +68,20 @@ versions:
           query: String
           # Should be at least one field!
           defaultFields: String[]
+          pointsConfig: PointConfig[]
+      PointConfig:
+        data:
+          field: String
+          data: PointConfigData
+      PointConfigData:
+        data:
+          numberFormat: NumberFormat
+          type: PointType
+      NumberFormatDecimal: { data: { } }
+      PointTypeInt: { data: { } }
+      PointTypeLong: { data: { } }
+      PointTypeFloat: { data: { } }
+      PointTypeDouble: { data: { } }
 
       # Text queries
       # ============
@@ -72,6 +90,45 @@ versions:
       TermQuery:
         data:
           term: Term
+      # Query that matches a term.
+      LongTermQuery:
+        data:
+          field: String
+          value: long
+      LongNDTermQuery:
+        data:
+          field: String
+          value: long[]
+      # Query that matches a term.
+      IntTermQuery:
+        data:
+          field: String
+          value: int
+      # Query that matches a term.
+      IntNDTermQuery:
+        data:
+          field: String
+          value: int[]
+      # Query that matches a term.
+      FloatTermQuery:
+        data:
+          field: String
+          value: float
+      # Query that matches a term.
+      FloatNDTermQuery:
+        data:
+          field: String
+          value: float[]
+      # Query that matches a term.
+      DoubleTermQuery:
+        data:
+          field: String
+          value: double
+      # Query that matches a term.
+      DoubleNDTermQuery:
+        data:
+          field: String
+          value: double[]
       # Query that matches a phrase.
       PhraseQuery:
         data:

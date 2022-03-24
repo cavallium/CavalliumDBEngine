@@ -31,7 +31,6 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -80,7 +79,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
 	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
 	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
-	static final boolean PREFER_SEEK_TO_FIRST = false;
+	static final boolean PREFER_AUTO_SEEK_BOUND = false;
 	/**
 	 * It used to be false,
 	 * now it's true to avoid crashes during iterations on completely corrupted files
@@ -251,9 +250,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot,
-			Mono<Send<Buffer>> keyMono,
-			boolean existsAlmostCertainly) {
+	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return keyMono
 				.publishOn(dbScheduler)
 				.<Send<Buffer>>handle((keySend, sink) -> {
@@ -322,7 +319,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 								try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
-									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+									if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 										if (nettyDirect && isReadOnlyDirect(range.getMinUnsafe())) {
 											rocksIterator.seek(((ReadableComponent) range.getMinUnsafe()).readableBuffer());
 										} else {
@@ -382,7 +379,7 @@ public class LLLocalDictionary implements LLDictionary {
 		// Zip the entry to write to the database
 		var entryMono = Mono.zip(keyMono, valueMono, Map::entry);
 		// Obtain the previous value from the database
-		var previousDataMono = this.getPreviousData(keyMono, resultType, false);
+		var previousDataMono = this.getPreviousData(keyMono, resultType);
 		// Write the new entry to the database
 		Mono<Send<Buffer>> putMono = entryMono
 				.publishOn(dbScheduler)
@@ -511,7 +508,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Mono<Send<Buffer>> remove(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType) {
 		// Obtain the previous value from the database
-		Mono<Send<Buffer>> previousDataMono = this.getPreviousData(keyMono, resultType, true);
+		Mono<Send<Buffer>> previousDataMono = this.getPreviousData(keyMono, resultType);
 		// Delete the value from the database
 		Mono<Send<Buffer>> removeMono = keyMono
 				.publishOn(dbScheduler)
@@ -538,8 +535,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return Flux.concat(previousDataMono, removeMono).singleOrEmpty();
 	}
 
-	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType,
-			boolean existsAlmostCertainly) {
+	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType) {
 		return switch (resultType) {
 			case PREVIOUS_VALUE_EXISTENCE -> keyMono
 					.publishOn(dbScheduler)
@@ -572,9 +568,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Send<Buffer>> keys,
-			boolean existsAlmostCertainly) {
+	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys) {
 		return keys
 				.buffer(MULTI_GET_WINDOW)
 				.publishOn(dbScheduler)
@@ -774,16 +768,14 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> rangeMono,
-			boolean existsAlmostCertainly) {
+	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
 		return rangeMono.flatMapMany(rangeSend -> {
 			try (var range = rangeSend.receive()) {
 				if (range.isSingle()) {
 					var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
-					return getRangeSingle(snapshot, rangeSingleMono, existsAlmostCertainly);
+					return getRangeSingle(snapshot, rangeSingleMono);
 				} else {
-					return getRangeMulti(snapshot, rangeMono);
+					return getRangeMulti(snapshot, rangeMono, reverse);
 				}
 			}
 		});
@@ -792,13 +784,12 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength,
-			boolean existsAlmostCertainly) {
+			int prefixLength) {
 		return rangeMono.flatMapMany(rangeSend -> {
 			try (var range = rangeSend.receive()) {
 				if (range.isSingle()) {
 					var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
-					return getRangeSingle(snapshot, rangeSingleMono, existsAlmostCertainly).map(List::of);
+					return getRangeSingle(snapshot, rangeSingleMono).map(List::of);
 				} else {
 					return getRangeMultiGrouped(snapshot, rangeMono, prefixLength);
 				}
@@ -806,19 +797,17 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 	}
 
-	private Flux<Send<LLEntry>> getRangeSingle(LLSnapshot snapshot,
-			Mono<Send<Buffer>> keyMono,
-			boolean existsAlmostCertainly) {
+	private Flux<Send<LLEntry>> getRangeSingle(LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return Mono
-				.zip(keyMono, this.get(snapshot, keyMono, existsAlmostCertainly))
+				.zip(keyMono, this.get(snapshot, keyMono))
 				.map(result -> LLEntry.of(result.getT1(), result.getT2()).send())
 				.flux();
 	}
 
-	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
+	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
 		Mono<LLLocalEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot);
+			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot, reverse);
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
@@ -840,13 +829,13 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
+	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
 		return rangeMono.flatMapMany(rangeSend -> {
 			try (var range = rangeSend.receive()) {
 				if (range.isSingle()) {
 					return this.getRangeKeysSingle(snapshot, rangeMono.map(r -> r.receive().getSingle()));
 				} else {
-					return this.getRangeKeysMulti(snapshot, rangeMono);
+					return this.getRangeKeysMulti(snapshot, rangeMono, reverse);
 				}
 			}
 		});
@@ -881,7 +870,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 								ro.setVerifyChecksums(true);
-								try (var rocksIteratorTuple = getRocksIterator(nettyDirect, ro, range, db)) {
+								try (var rocksIteratorTuple = getRocksIterator(nettyDirect, ro, range, db, false)) {
 									var rocksIterator = rocksIteratorTuple.iterator();
 									rocksIterator.seekToFirst();
 									rocksIterator.status();
@@ -938,10 +927,10 @@ public class LLLocalDictionary implements LLDictionary {
 				.flux();
 	}
 
-	private Flux<Send<Buffer>> getRangeKeysMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
+	private Flux<Send<Buffer>> getRangeKeysMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
 		Mono<LLLocalKeyReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot);
+			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot, reverse);
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
@@ -977,7 +966,7 @@ public class LLLocalDictionary implements LLDictionary {
 										assert opts.isOwningHandle();
 										SafeCloseable seekTo;
 										try (RocksIterator it = db.newIterator(opts)) {
-											if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
+											if (!PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 												seekTo = rocksIterSeekTo(nettyDirect, it, range.getMinUnsafe());
 											} else {
 												seekTo = null;
@@ -1149,7 +1138,7 @@ public class LLLocalDictionary implements LLDictionary {
 				}
 				try (var rocksIterator = db.newIterator(readOpts)) {
 					SafeCloseable seekTo;
-					if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+					if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 						seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 					} else {
 						seekTo = null;
@@ -1199,7 +1188,7 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					try (var rocksIterator = db.newIterator(readOpts)) {
 						SafeCloseable seekTo;
-						if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+						if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 							seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 						} else {
 							seekTo = null;
@@ -1227,6 +1216,27 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	/**
+	 * Useful for reverse iterations
+	 */
+	@Nullable
+	private static SafeCloseable rocksIterSeekFrom(boolean allowNettyDirect,
+			RocksIterator rocksIterator, Buffer key) {
+		if (allowNettyDirect && isReadOnlyDirect(key)) {
+			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
+			assert keyInternalByteBuffer.position() == 0;
+			rocksIterator.seekForPrev(keyInternalByteBuffer);
+			// This is useful to retain the key buffer in memory and avoid deallocations
+			return key::isAccessible;
+		} else {
+			rocksIterator.seekForPrev(LLUtils.toArray(key));
+			return null;
+		}
+	}
+
+	/**
+	 * Useful for forward iterations
+	 */
 	@Nullable
 	private static SafeCloseable rocksIterSeekTo(boolean allowNettyDirect,
 			RocksIterator rocksIterator, Buffer key) {
@@ -1391,7 +1401,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 								try (var rocksIterator = db.newIterator(readOpts)) {
 									SafeCloseable seekTo;
-									if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+									if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 										seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 									} else {
 										seekTo = null;
@@ -1447,7 +1457,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try (var rocksIterator = db.newIterator(readOpts)) {
 							SafeCloseable seekTo;
-							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+							if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 								seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 							} else {
 								seekTo = null;
@@ -1503,7 +1513,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try (var rocksIterator = db.newIterator(readOpts)) {
 							SafeCloseable seekTo;
-							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+							if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 								seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 							} else {
 								seekTo = null;
@@ -1668,7 +1678,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						try (RocksIterator rocksIterator = db.newIterator(readOpts)) {
 							SafeCloseable seekTo;
-							if (!LLLocalDictionary.PREFER_SEEK_TO_FIRST && range.hasMin()) {
+							if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 								seekTo = rocksIterSeekTo(nettyDirect, rocksIterator, range.getMinUnsafe());
 							} else {
 								seekTo = null;
@@ -1706,11 +1716,11 @@ public class LLLocalDictionary implements LLDictionary {
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
 	@NotNull
-	public static RocksIteratorTuple getRocksIterator(
-			boolean allowNettyDirect,
+	public static RocksIteratorTuple getRocksIterator(boolean allowNettyDirect,
 			ReadOptions readOptions,
 			LLRange range,
-			RocksDBColumn db) {
+			RocksDBColumn db,
+			boolean reverse) {
 		assert !Schedulers.isInNonBlockingThread() : "Called getRocksIterator in a nonblocking thread";
 		ReleasableSlice sliceMin;
 		ReleasableSlice sliceMax;
@@ -1725,14 +1735,24 @@ public class LLLocalDictionary implements LLDictionary {
 			sliceMax = emptyReleasableSlice();
 		}
 		var rocksIterator = db.newIterator(readOptions);
-		SafeCloseable seekTo;
-		if (!PREFER_SEEK_TO_FIRST && range.hasMin()) {
-			seekTo = Objects.requireNonNullElseGet(rocksIterSeekTo(allowNettyDirect, rocksIterator, range.getMinUnsafe()),
-					() -> ((SafeCloseable) () -> {}));
+		SafeCloseable seekFromOrTo;
+		if (reverse) {
+			if (!PREFER_AUTO_SEEK_BOUND && range.hasMax()) {
+				seekFromOrTo = Objects.requireNonNullElseGet(rocksIterSeekFrom(allowNettyDirect, rocksIterator, range.getMaxUnsafe()),
+						() -> ((SafeCloseable) () -> {}));
+			} else {
+				seekFromOrTo = () -> {};
+				rocksIterator.seekToLast();
+			}
 		} else {
-			seekTo = () -> {};
-			rocksIterator.seekToFirst();
+			if (!PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
+				seekFromOrTo = Objects.requireNonNullElseGet(rocksIterSeekTo(allowNettyDirect, rocksIterator, range.getMinUnsafe()),
+						() -> ((SafeCloseable) () -> {}));
+			} else {
+				seekFromOrTo = () -> {};
+				rocksIterator.seekToFirst();
+			}
 		}
-		return new RocksIteratorTuple(List.of(readOptions), rocksIterator, sliceMin, sliceMax, seekTo);
+		return new RocksIteratorTuple(List.of(readOptions), rocksIterator, sliceMin, sliceMax, seekFromOrTo);
 	}
 }

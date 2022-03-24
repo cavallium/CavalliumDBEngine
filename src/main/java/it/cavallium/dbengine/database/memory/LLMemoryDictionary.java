@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.memory;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.LLDelta;
@@ -18,19 +17,19 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.io.IOException;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SortedMap;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
-import reactor.util.function.Tuples;
 
 public class LLMemoryDictionary implements LLDictionary {
 
@@ -133,7 +132,7 @@ public class LLMemoryDictionary implements LLDictionary {
 		}
 	}
 
-	private Map<ByteList, ByteList> mapSlice(LLSnapshot snapshot, Send<LLRange> rangeToReceive) {
+	private ConcurrentNavigableMap<ByteList, ByteList> mapSlice(LLSnapshot snapshot, Send<LLRange> rangeToReceive) {
 		try (var range = rangeToReceive.receive()) {
 			if (range.isAll()) {
 				return snapshots.get(resolveSnapshot(snapshot));
@@ -143,15 +142,15 @@ public class LLMemoryDictionary implements LLDictionary {
 						.get(resolveSnapshot(snapshot))
 						.get(key);
 				if (value != null) {
-					return Map.of(key, value);
+					return new ConcurrentSkipListMap<>(Map.of(key, value));
 				} else {
-					return Map.of();
+					return new ConcurrentSkipListMap<>(Map.of());
 				}
 			} else if (range.hasMin() && range.hasMax()) {
 				var min = k(range.getMin());
 				var max = k(range.getMax());
 				if (min.compareTo(max) > 0) {
-					return Map.of();
+					return new ConcurrentSkipListMap<>(Map.of());
 				}
 				return snapshots
 						.get(resolveSnapshot(snapshot))
@@ -169,7 +168,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono, boolean existsAlmostCertainly) {
+	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono
 						.fromCallable(() -> snapshots.get(resolveSnapshot(snapshot)).get(k(key)))
@@ -263,8 +262,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys,
-			boolean existsAlmostCertainly) {
+	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys) {
 		return keys.map(key -> {
 			try (var t2 = key.receive()) {
 				ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(t2.copy().send()));
@@ -298,9 +296,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> rangeMono,
-			boolean existsAlmostCertainly) {
+	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
 		return Flux.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				if (range.isSingle()) {
@@ -319,7 +315,13 @@ public class LLMemoryDictionary implements LLDictionary {
 					var rangeToReceive2 = range.send();
 					return Mono
 							.fromCallable(() -> mapSlice(snapshot, rangeToReceive2))
-							.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
+							.flatMapIterable(map -> {
+								if (reverse) {
+									return map.descendingMap().entrySet();
+								} else {
+									return map.entrySet();
+								}
+							})
 							.map(entry -> LLEntry.of(kk(entry.getKey()), kk(entry.getValue())).send());
 				}
 			}
@@ -329,8 +331,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength,
-			boolean existsAlmostCertainly) {
+			int prefixLength) {
 		return Flux.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				if (range.isSingle()) {
@@ -349,7 +350,7 @@ public class LLMemoryDictionary implements LLDictionary {
 					var rangeToReceive2 = range.send();
 					return Mono
 							.fromCallable(() -> mapSlice(snapshot, rangeToReceive2))
-							.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
+							.flatMapIterable(SortedMap::entrySet)
 							.groupBy(k -> k.getKey().subList(0, prefixLength))
 							.flatMap(groupedFlux -> groupedFlux
 									.map(entry -> LLEntry.of(kk(entry.getKey()), kk(entry.getValue())).send())
@@ -361,7 +362,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
+	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
 		return Flux.usingWhen(rangeMono,
 				rangeToReceive -> {
 					try (var range = rangeToReceive.receive()) {
@@ -377,8 +378,14 @@ public class LLMemoryDictionary implements LLDictionary {
 							var rangeToReceive2 = range.send();
 							return Mono
 									.fromCallable(() -> mapSlice(snapshot, rangeToReceive2))
-									.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
-									.map(entry -> kk(entry.getKey()));
+									.<ByteList>flatMapIterable(map -> {
+										if (reverse) {
+											return map.descendingMap().keySet();
+										} else {
+											return map.keySet();
+										}
+									})
+									.map(this::kk);
 						}
 					}
 				},
@@ -408,7 +415,7 @@ public class LLMemoryDictionary implements LLDictionary {
 					var rangeToReceive2 = range.send();
 					return Mono
 							.fromCallable(() -> mapSlice(snapshot, rangeToReceive2))
-							.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
+							.flatMapIterable(SortedMap::entrySet)
 							.groupBy(k -> k.getKey().subList(0, prefixLength))
 							.flatMap(groupedFlux -> groupedFlux
 									.map(entry -> kk(entry.getKey()))
@@ -443,7 +450,7 @@ public class LLMemoryDictionary implements LLDictionary {
 					var rangeToReceive2 = range.send();
 					return Mono
 							.fromCallable(() -> mapSlice(snapshot, rangeToReceive2))
-							.flatMapMany(map -> Flux.fromIterable(map.entrySet()))
+							.flatMapIterable(SortedMap::entrySet)
 							.map(k -> (ByteList) k.getKey().subList(0, prefixLength))
 							.distinctUntilChanged()
 							.map(this::kk);
@@ -513,7 +520,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean fillCache) {
-		return getRangeKeys(snapshot, rangeMono)
+		return getRangeKeys(snapshot, rangeMono, false)
 				.doOnNext(buf -> buf.receive().close())
 				.count()
 				.map(count -> count == 0);
@@ -529,14 +536,14 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<LLEntry>> getOne(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return getRange(snapshot, rangeMono)
+		return getRange(snapshot, rangeMono, false)
 				.take(1, true)
 				.singleOrEmpty();
 	}
 
 	@Override
 	public Mono<Send<Buffer>> getOneKey(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return getRangeKeys(snapshot, rangeMono)
+		return getRangeKeys(snapshot, rangeMono, false)
 				.take(1, true)
 				.singleOrEmpty();
 	}

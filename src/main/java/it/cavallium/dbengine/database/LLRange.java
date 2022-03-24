@@ -13,7 +13,7 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * Range of data, from min (inclusive),to max (exclusive)
+ * Range of data, from min (inclusive), to max (exclusive)
  */
 public class LLRange extends ResourceSupport<LLRange, LLRange> {
 
@@ -137,8 +137,10 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	public Send<Buffer> getMin() {
 		ensureOwned();
 		if (min != null) {
+			// todo: use a read-only copy
 			return min.copy().send();
 		} else if (single != null) {
+			// todo: use a read-only copy
 			return single.copy().send();
 		} else {
 			return null;
@@ -164,8 +166,10 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	public Send<Buffer> getMax() {
 		ensureOwned();
 		if (max != null) {
+			// todo: use a read-only copy
 			return max.copy().send();
 		} else if (single != null) {
+			// todo: use a read-only copy
 			return single.copy().send();
 		} else {
 			return null;
@@ -186,6 +190,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	public Send<Buffer> getSingle() {
 		ensureOwned();
 		assert isSingle();
+		// todo: use a read-only copy
 		return single != null ? single.copy().send() : null;
 	}
 
@@ -235,6 +240,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 
 	public LLRange copy() {
 		ensureOwned();
+		// todo: use a read-only copy
 		return new LLRange(min != null ? min.copy().send() : null,
 				max != null ? max.copy().send() : null,
 				single != null ? single.copy().send(): null

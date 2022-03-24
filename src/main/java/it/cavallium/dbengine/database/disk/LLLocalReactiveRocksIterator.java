@@ -60,13 +60,15 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	private final boolean allowNettyDirect;
 	private ReadOptions readOptions;
 	private final boolean readValues;
+	private final boolean reverse;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalReactiveRocksIterator(RocksDBColumn db,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
-			boolean readValues) {
+			boolean readValues,
+			boolean reverse) {
 		super((Drop<LLLocalReactiveRocksIterator<T>>) (Drop) DROP);
 		try (range) {
 			this.db = db;
@@ -74,6 +76,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			this.allowNettyDirect = allowNettyDirect;
 			this.readOptions = readOptions;
 			this.readValues = readValues;
+			this.reverse = reverse;
 		}
 	}
 
@@ -83,7 +86,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return getRocksIterator(allowNettyDirect, readOptions, rangeShared, db);
+			return getRocksIterator(allowNettyDirect, readOptions, rangeShared, db, reverse);
 		}, (tuple, sink) -> {
 			try {
 				var rocksIterator = tuple.iterator();
@@ -117,7 +120,11 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 						}
 
 						try {
-							rocksIterator.next();
+							if (reverse) {
+								rocksIterator.prev();
+							} else {
+								rocksIterator.next();
+							}
 							rocksIterator.status();
 							sink.next(getEntry(key.send(), value == null ? null : value.send()));
 						} finally {
@@ -153,7 +160,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	protected Owned<LLLocalReactiveRocksIterator<T>> prepareSend() {
 		var range = this.rangeShared.send();
 		var readOptions = this.readOptions;
-		return drop -> new LLLocalReactiveRocksIterator<>(db, range, allowNettyDirect, readOptions, readValues) {
+		return drop -> new LLLocalReactiveRocksIterator<>(db, range, allowNettyDirect, readOptions, readValues, reverse) {
 			@Override
 			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {
 				return LLLocalReactiveRocksIterator.this.getEntry(key, value);

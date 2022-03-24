@@ -20,11 +20,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	BufferAllocator getAllocator();
 
-	Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> key, boolean existsAlmostCertainly);
-
-	default Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> key) {
-		return get(snapshot, key, false);
-	}
+	Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> key);
 
 	Mono<Send<Buffer>> put(Mono<Send<Buffer>> key, Mono<Send<Buffer>> value, LLDictionaryResultType resultType);
 
@@ -45,38 +41,18 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Send<Buffer>> remove(Mono<Send<Buffer>> key, LLDictionaryResultType resultType);
 
-	Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Send<Buffer>> keys,
-			boolean existsAlmostCertainly);
-
-	default Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot,
-			Flux<Send<Buffer>> keys) {
-		return getMulti(snapshot, keys, false);
-	}
+	Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys);
 
 	Mono<Void> putMulti(Flux<Send<LLEntry>> entries);
 
 	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
 			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction);
 
-	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean existsAlmostCertainly);
+	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean reverse);
 
-	default Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range) {
-		return getRange(snapshot, range, false);
-	}
+	Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
 
-	Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
-			int prefixLength,
-			boolean existsAlmostCertainly);
-
-	default Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
-			int prefixLength) {
-		return getRangeGrouped(snapshot, range, prefixLength, false);
-	}
-
-	Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
+	Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean reverse);
 
 	Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
 
@@ -94,11 +70,11 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 			if (canKeysChange) {
 				return this
 						.setRange(range, this
-								.getRange(null, range, existsAlmostCertainly)
+								.getRange(null, range, false)
 								.flatMap(entriesReplacer)
 						);
 			} else {
-				return this.putMulti(this.getRange(null, range, existsAlmostCertainly).flatMap(entriesReplacer));
+				return this.putMulti(this.getRange(null, range, false).flatMap(entriesReplacer));
 			}
 		});
 	}

@@ -7,7 +7,6 @@ import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import org.jetbrains.annotations.Nullable;
@@ -43,7 +42,7 @@ public class LLMemorySingleton implements LLSingleton {
 
 	@Override
 	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
-		return dict.get(snapshot, singletonNameBufMono, false);
+		return dict.get(snapshot, singletonNameBufMono);
 	}
 
 	@Override

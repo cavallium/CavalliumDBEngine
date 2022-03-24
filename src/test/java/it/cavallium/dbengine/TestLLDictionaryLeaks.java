@@ -14,7 +14,6 @@ import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import java.nio.charset.StandardCharsets;
@@ -134,8 +133,8 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test"));
 		runVoid(dict.get(null, key).then());
-		runVoid(dict.get(null, key, true).then());
-		runVoid(dict.get(null, key, false).then());
+		runVoid(dict.get(null, key).then());
+		runVoid(dict.get(null, key).then());
 	}
 
 	@ParameterizedTest

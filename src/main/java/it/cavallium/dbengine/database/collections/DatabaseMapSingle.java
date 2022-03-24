@@ -114,7 +114,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	@Override
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
-				.get(resolveSnapshot(snapshot), keyMono, existsAlmostCertainly)
+				.get(resolveSnapshot(snapshot), keyMono)
 				.handle(this::deserializeValue);
 	}
 

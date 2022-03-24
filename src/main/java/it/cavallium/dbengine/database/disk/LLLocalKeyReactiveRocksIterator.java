@@ -1,20 +1,18 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
-import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
-import org.rocksdb.RocksDB;
 
 public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterator<Send<Buffer>> {
 
 	public LLLocalKeyReactiveRocksIterator(RocksDBColumn db,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
-			ReadOptions readOptions) {
-		super(db, range, allowNettyDirect, readOptions, false);
+			ReadOptions readOptions,
+			boolean reverse) {
+		super(db, range, allowNettyDirect, readOptions, false, reverse);
 	}
 
 	@Override

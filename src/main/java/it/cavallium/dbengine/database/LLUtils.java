@@ -713,7 +713,7 @@ public class LLUtils {
 		}
 	}
 
-	public static boolean isClosedRange(LLRange rangeShared) {
+	public static boolean isBoundedRange(LLRange rangeShared) {
 		return rangeShared.hasMin() && rangeShared.hasMax();
 	}
 
@@ -721,28 +721,25 @@ public class LLUtils {
 	 * Generate a copy of the passed ReadOptions, with some parameters modified to help with bulk iterations
 	 * @param readOptions the read options to copy
 	 * @param canFillCache true to fill the cache. If closedRange is false, this field will be ignored
-	 * @param closedRange true if the range is closed
-	 * @param prefixSameAsStart true if the prefix is same as start
+	 * @param boundedRange true if the range is bounded from both sides
+	 * @param smallRange true if the range is small
 	 * @return a new instance of ReadOptions
 	 */
 	public static ReadOptions generateCustomReadOptions(@Nullable ReadOptions readOptions,
 			boolean canFillCache,
-			boolean closedRange,
-			boolean prefixSameAsStart) {
+			boolean boundedRange,
+			boolean smallRange) {
 		if (readOptions != null) {
 			readOptions = new ReadOptions(readOptions);
 		} else {
 			readOptions = new ReadOptions();
 		}
-		if (closedRange) {
+		if (boundedRange || smallRange) {
 			readOptions.setFillCache(canFillCache);
-			readOptions.setPrefixSameAsStart(prefixSameAsStart);
-			readOptions.setTotalOrderSeek(!prefixSameAsStart);
 		} else {
 			readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
 			readOptions.setFillCache(false);
 			readOptions.setVerifyChecksums(false);
-			readOptions.setTotalOrderSeek(true);
 		}
 
 		return readOptions;

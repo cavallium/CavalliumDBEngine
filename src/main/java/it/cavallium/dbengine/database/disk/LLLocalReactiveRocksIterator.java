@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
-import static it.cavallium.dbengine.database.LLUtils.isClosedRange;
+import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
 
 import io.netty5.buffer.api.Buffer;
@@ -61,6 +61,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	private ReadOptions readOptions;
 	private final boolean readValues;
 	private final boolean reverse;
+	private final boolean smallRange;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalReactiveRocksIterator(RocksDBColumn db,
@@ -68,7 +69,8 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean readValues,
-			boolean reverse) {
+			boolean reverse,
+			boolean smallRange) {
 		super((Drop<LLLocalReactiveRocksIterator<T>>) (Drop) DROP);
 		try (range) {
 			this.db = db;
@@ -77,12 +79,13 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			this.readOptions = readOptions;
 			this.readValues = readValues;
 			this.reverse = reverse;
+			this.smallRange = smallRange;
 		}
 	}
 
 	public final Flux<T> flux() {
 		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions, true, isClosedRange(rangeShared), true);
+			var readOptions = generateCustomReadOptions(this.readOptions, true, isBoundedRange(rangeShared), smallRange);
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
@@ -160,7 +163,14 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	protected Owned<LLLocalReactiveRocksIterator<T>> prepareSend() {
 		var range = this.rangeShared.send();
 		var readOptions = this.readOptions;
-		return drop -> new LLLocalReactiveRocksIterator<>(db, range, allowNettyDirect, readOptions, readValues, reverse) {
+		return drop -> new LLLocalReactiveRocksIterator<>(db,
+				range,
+				allowNettyDirect,
+				readOptions,
+				readValues,
+				reverse,
+				smallRange
+		) {
 			@Override
 			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {
 				return LLLocalReactiveRocksIterator.this.getEntry(key, value);

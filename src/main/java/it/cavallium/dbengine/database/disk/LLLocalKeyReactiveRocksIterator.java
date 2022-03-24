@@ -11,8 +11,9 @@ public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterato
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
-			boolean reverse) {
-		super(db, range, allowNettyDirect, readOptions, false, reverse);
+			boolean reverse,
+			boolean smallRange) {
+		super(db, range, allowNettyDirect, readOptions, false, reverse, smallRange);
 	}
 
 	@Override

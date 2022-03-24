@@ -73,14 +73,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public static <K, V> Flux<Entry<K, V>> getLeavesFrom(DatabaseMapDictionary<K, V> databaseMapDictionary,
 			CompositeSnapshot snapshot,
 			Mono<K> key,
-			boolean reverse) {
+			boolean reverse, boolean smallRange) {
 		Mono<Optional<K>> keyOptMono = key.map(Optional::of).defaultIfEmpty(Optional.empty());
 
 		return keyOptMono.flatMapMany(keyOpt -> {
 			if (keyOpt.isPresent()) {
-				return databaseMapDictionary.getAllValues(snapshot, keyOpt.get(), reverse);
+				return databaseMapDictionary.getAllValues(snapshot, keyOpt.get(), reverse, smallRange);
 			} else {
-				return databaseMapDictionary.getAllValues(snapshot);
+				return databaseMapDictionary.getAllValues(snapshot, smallRange);
 			}
 		});
 	}
@@ -88,16 +88,16 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public static <K> Flux<K> getKeyLeavesFrom(DatabaseMapDictionary<K, ?> databaseMapDictionary,
 			CompositeSnapshot snapshot,
 			Mono<K> key,
-			boolean reverse) {
+			boolean reverse, boolean smallRange) {
 		Mono<Optional<K>> keyOptMono = key.map(Optional::of).defaultIfEmpty(Optional.empty());
 
 		return keyOptMono.flatMapMany(keyOpt -> {
 			Flux<? extends Entry<K, ? extends DatabaseStageEntry<?>>> stagesFlux;
 			if (keyOpt.isPresent()) {
 				stagesFlux = databaseMapDictionary
-						.getAllStages(snapshot, keyOpt.get(), reverse);
+						.getAllStages(snapshot, keyOpt.get(), reverse, smallRange);
 			} else {
-				stagesFlux = databaseMapDictionary.getAllStages(snapshot);
+				stagesFlux = databaseMapDictionary.getAllStages(snapshot, smallRange);
 			}
 			return stagesFlux.doOnNext(e -> e.getValue().close())
 					.doOnDiscard(Entry.class, e -> {
@@ -195,7 +195,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
-				.getRange(resolveSnapshot(snapshot), rangeMono, false)
+				.getRange(resolveSnapshot(snapshot), rangeMono, false, true)
 				.<Entry<T, U>>handle((entrySend, sink) -> {
 					Entry<T, U> deserializedEntry;
 					try {
@@ -228,8 +228,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.get(null, false)
 				.concatWith(dictionary.setRange(rangeMono, Flux
 						.fromIterable(Collections.unmodifiableMap(value).entrySet())
-						.handle(this::serializeEntrySink)
-				).then(Mono.empty()))
+						.handle(this::serializeEntrySink), true).then(Mono.empty()))
 				.singleOrEmpty();
 	}
 
@@ -480,21 +479,22 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
-		return getAllStages(snapshot, rangeMono, false);
+	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllStages(snapshot, rangeMono, false, smallRange);
 	}
 
 	/**
 	 * Get all stages
 	 * @param key from/to the specified key, if not null
 	 * @param reverse if true, the results will go backwards from the specified key (inclusive)
-	 *                if false, the results will go forward from the specified key (inclusive)
+	 * @param smallRange
 	 */
 	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot,
 			@Nullable T key,
-			boolean reverse) {
+			boolean reverse,
+			boolean smallRange) {
 		if (key == null) {
-			return getAllStages(snapshot);
+			return getAllStages(snapshot, smallRange);
 		} else {
 			Mono<Send<LLRange>> boundedRangeMono = rangeMono.flatMap(fullRangeSend -> Mono.fromCallable(() -> {
 				try (var fullRange = fullRangeSend.receive()) {
@@ -511,14 +511,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					}
 				}
 			}));
-			return getAllStages(snapshot, boundedRangeMono, reverse);
+			return getAllStages(snapshot, boundedRangeMono, reverse, smallRange);
 		}
 	}
 
 	private Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot,
-			Mono<Send<LLRange>> sliceRangeMono, boolean reverse) {
+			Mono<Send<LLRange>> sliceRangeMono, boolean reverse, boolean smallRange) {
 		return dictionary
-				.getRangeKeys(resolveSnapshot(snapshot), sliceRangeMono, reverse)
+				.getRangeKeys(resolveSnapshot(snapshot), sliceRangeMono, reverse, smallRange)
 				.handle((keyBufToReceive, sink) -> {
 					var keyBuf = keyBufToReceive.receive();
 					try {
@@ -540,19 +540,22 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
-		return getAllValues(snapshot, rangeMono, false);
+	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllValues(snapshot, rangeMono, false, smallRange);
 	}
 
 	/**
 	 * Get all values
 	 * @param key from/to the specified key, if not null
 	 * @param reverse if true, the results will go backwards from the specified key (inclusive)
-	 *                if false, the results will go forward from the specified key (inclusive)
+	 * @param smallRange
 	 */
-	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, @Nullable T key, boolean reverse) {
+	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot,
+			@Nullable T key,
+			boolean reverse,
+			boolean smallRange) {
 		if (key == null) {
-			return getAllValues(snapshot);
+			return getAllValues(snapshot, smallRange);
 		} else {
 			Mono<Send<LLRange>> boundedRangeMono = rangeMono.flatMap(fullRangeSend -> Mono.fromCallable(() -> {
 				try (var fullRange = fullRangeSend.receive()) {
@@ -569,15 +572,15 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					}
 				}
 			}));
-			return getAllValues(snapshot, boundedRangeMono, reverse);
+			return getAllValues(snapshot, boundedRangeMono, reverse, smallRange);
 		}
 	}
 
 	private Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot,
 			Mono<Send<LLRange>> sliceRangeMono,
-			boolean reverse) {
+			boolean reverse, boolean smallRange) {
 		return dictionary
-				.getRange(resolveSnapshot(snapshot), sliceRangeMono, reverse)
+				.getRange(resolveSnapshot(snapshot), sliceRangeMono, reverse, smallRange)
 				.<Entry<T, U>>handle((serializedEntryToReceive, sink) -> {
 					try {
 						Entry<T, U> entry;
@@ -604,8 +607,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return Flux.concat(
-				this.getAllValues(null),
-				dictionary.setRange(rangeMono, entries.handle(this::serializeEntrySink)).then(Mono.empty())
+				this.getAllValues(null, false),
+				dictionary.setRange(rangeMono, entries.handle(this::serializeEntrySink), false).then(Mono.empty())
 		);
 	}
 
@@ -619,7 +622,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					.doOnNext(Send::close)
 					.then();
 		} else {
-			return dictionary.setRange(rangeMono, Flux.empty());
+			return dictionary.setRange(rangeMono, Flux.empty(), false);
 		}
 	}
 

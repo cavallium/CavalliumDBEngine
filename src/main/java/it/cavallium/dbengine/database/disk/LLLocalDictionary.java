@@ -768,14 +768,17 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
+	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> rangeMono,
+			boolean reverse,
+			boolean smallRange) {
 		return rangeMono.flatMapMany(rangeSend -> {
 			try (var range = rangeSend.receive()) {
 				if (range.isSingle()) {
 					var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
 					return getRangeSingle(snapshot, rangeSingleMono);
 				} else {
-					return getRangeMulti(snapshot, rangeMono, reverse);
+					return getRangeMulti(snapshot, rangeMono, reverse, smallRange);
 				}
 			}
 		});
@@ -784,14 +787,15 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength,
+			boolean smallRange) {
 		return rangeMono.flatMapMany(rangeSend -> {
 			try (var range = rangeSend.receive()) {
 				if (range.isSingle()) {
 					var rangeSingleMono = rangeMono.map(r -> r.receive().getSingle());
 					return getRangeSingle(snapshot, rangeSingleMono).map(List::of);
 				} else {
-					return getRangeMultiGrouped(snapshot, rangeMono, prefixLength);
+					return getRangeMultiGrouped(snapshot, rangeMono, prefixLength, smallRange);
 				}
 			}
 		});
@@ -804,10 +808,13 @@ public class LLLocalDictionary implements LLDictionary {
 				.flux();
 	}
 
-	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
+	private Flux<Send<LLEntry>> getRangeMulti(LLSnapshot snapshot,
+			Mono<Send<LLRange>> rangeMono,
+			boolean reverse,
+			boolean smallRange) {
 		Mono<LLLocalEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot, reverse);
+			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot, reverse, smallRange);
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
@@ -816,10 +823,16 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<List<Send<LLEntry>>> getRangeMultiGrouped(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength, boolean smallRange) {
 		Mono<LLLocalGroupedEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalGroupedEntryReactiveRocksIterator(db, prefixLength, rangeSend, nettyDirect, resolvedSnapshot);
+			return new LLLocalGroupedEntryReactiveRocksIterator(db,
+					prefixLength,
+					rangeSend,
+					nettyDirect,
+					resolvedSnapshot,
+					smallRange
+			);
 		});
 		return Flux.usingWhen(
 				iteratorMono,
@@ -829,13 +842,16 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
+	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> rangeMono,
+			boolean reverse,
+			boolean smallRange) {
 		return rangeMono.flatMapMany(rangeSend -> {
 			try (var range = rangeSend.receive()) {
 				if (range.isSingle()) {
 					return this.getRangeKeysSingle(snapshot, rangeMono.map(r -> r.receive().getSingle()));
 				} else {
-					return this.getRangeKeysMulti(snapshot, rangeMono, reverse);
+					return this.getRangeKeysMulti(snapshot, rangeMono, reverse, smallRange);
 				}
 			}
 		});
@@ -844,10 +860,17 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength,
+			boolean smallRange) {
 		Mono<LLLocalGroupedKeyReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalGroupedKeyReactiveRocksIterator(db, prefixLength, rangeSend, nettyDirect, resolvedSnapshot);
+			return new LLLocalGroupedKeyReactiveRocksIterator(db,
+					prefixLength,
+					rangeSend,
+					nettyDirect,
+					resolvedSnapshot,
+					smallRange
+			);
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
@@ -899,10 +922,12 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength, boolean smallRange) {
 		Mono<LLLocalKeyPrefixReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalKeyPrefixReactiveRocksIterator(db, prefixLength, range, nettyDirect, resolvedSnapshot, true);
+			return new LLLocalKeyPrefixReactiveRocksIterator(db, prefixLength, range, nettyDirect, resolvedSnapshot, true,
+					smallRange
+			);
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbScheduler),
@@ -927,10 +952,13 @@ public class LLLocalDictionary implements LLDictionary {
 				.flux();
 	}
 
-	private Flux<Send<Buffer>> getRangeKeysMulti(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
+	private Flux<Send<Buffer>> getRangeKeysMulti(LLSnapshot snapshot,
+			Mono<Send<LLRange>> rangeMono,
+			boolean reverse,
+			boolean smallRange) {
 		Mono<LLLocalKeyReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
 			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
-			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot, reverse);
+			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot, reverse, smallRange);
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
@@ -939,7 +967,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Void> setRange(Mono<Send<LLRange>> rangeMono, Flux<Send<LLEntry>> entries) {
+	public Mono<Void> setRange(Mono<Send<LLRange>> rangeMono, Flux<Send<LLEntry>> entries, boolean smallRange) {
 		if (USE_WINDOW_IN_SET_RANGE) {
 			return rangeMono
 					.publishOn(dbScheduler)
@@ -1087,7 +1115,7 @@ public class LLLocalDictionary implements LLDictionary {
 						"Can't use write batches in setRange without window. Please fix the parameters"));
 			}
 			var deleteMono = this
-					.getRange(null, rangeMono, false)
+					.getRange(null, rangeMono, false, smallRange)
 					.publishOn(dbScheduler)
 					.handle((oldValueSend, sink) -> {
 						try (var oldValue = oldValueSend.receive()) {

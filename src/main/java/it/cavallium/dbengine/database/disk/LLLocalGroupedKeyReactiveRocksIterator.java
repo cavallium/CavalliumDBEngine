@@ -11,8 +11,9 @@ public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReacti
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
-			ReadOptions readOptions) {
-		super(db, prefixLength, range, allowNettyDirect, readOptions, true, false);
+			ReadOptions readOptions,
+			boolean smallRange) {
+		super(db, prefixLength, range, allowNettyDirect, readOptions, true, false, smallRange);
 	}
 
 	@Override

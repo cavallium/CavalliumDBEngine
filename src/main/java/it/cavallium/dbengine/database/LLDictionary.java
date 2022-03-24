@@ -48,41 +48,49 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
 			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction);
 
-	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean reverse);
+	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
+			boolean reverse,
+			boolean smallRange);
 
-	Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
+	Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
+			int prefixLength,
+			boolean smallRange);
 
-	Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean reverse);
+	Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
+			boolean reverse,
+			boolean smallRange);
 
-	Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
+	Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
+			int prefixLength,
+			boolean smallRange);
 
-	Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, int prefixLength);
+	Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> range,
+			int prefixLength,
+			boolean smallRange);
 
 	Flux<BadBlock> badBlocks(Mono<Send<LLRange>> range);
 
-	Mono<Void> setRange(Mono<Send<LLRange>> range, Flux<Send<LLEntry>> entries);
+	Mono<Void> setRange(Mono<Send<LLRange>> range, Flux<Send<LLEntry>> entries, boolean smallRange);
 
 	default Mono<Void> replaceRange(Mono<Send<LLRange>> range,
 			boolean canKeysChange,
 			Function<Send<LLEntry>, Mono<Send<LLEntry>>> entriesReplacer,
-			boolean existsAlmostCertainly) {
+			boolean smallRange) {
 		return Mono.defer(() -> {
 			if (canKeysChange) {
 				return this
 						.setRange(range, this
-								.getRange(null, range, false)
-								.flatMap(entriesReplacer)
-						);
+								.getRange(null, range, false, smallRange)
+								.flatMap(entriesReplacer), smallRange);
 			} else {
-				return this.putMulti(this.getRange(null, range, false).flatMap(entriesReplacer));
+				return this.putMulti(this.getRange(null, range, false, smallRange).flatMap(entriesReplacer));
 			}
 		});
-	}
-
-	default Mono<Void> replaceRange(Mono<Send<LLRange>> range,
-			boolean canKeysChange,
-			Function<Send<LLEntry>, Mono<Send<LLEntry>>> entriesReplacer) {
-		return replaceRange(range, canKeysChange, entriesReplacer, false);
 	}
 
 	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean fillCache);

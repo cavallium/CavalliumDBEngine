@@ -369,9 +369,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	}
 
 	@Override
-	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return dictionary
-				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength)
+				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength, smallRange)
 				.flatMapSequential(groupKeyWithoutExtSend_ -> Mono.using(
 						groupKeyWithoutExtSend_::receive,
 						groupKeyWithoutExtSend -> this.subStageGetter
@@ -418,7 +418,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return this
-				.getAllValues(null)
+				.getAllValues(null, false)
 				.concatWith(this
 						.clear()
 						.then(this.putMulti(entries))
@@ -438,7 +438,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 								.doOnNext(Send::close)
 								.then();
 					} else {
-						return dictionary.setRange(rangeMono, Flux.empty());
+						return dictionary.setRange(rangeMono, Flux.empty(), false);
 					}
 				});
 	}
@@ -551,7 +551,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 							sink.next(fullRange.send());
 						}
 					}
-				}), false)
+				}), false, false)
 				.concatMapIterable(entrySend -> {
 					K1 key1 = null;
 					Object key2 = null;

@@ -17,7 +17,6 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.io.IOException;
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -296,7 +295,10 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
+	public Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> rangeMono,
+			boolean reverse,
+			boolean smallRange) {
 		return Flux.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				if (range.isSingle()) {
@@ -331,7 +333,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength, boolean smallRange) {
 		return Flux.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				if (range.isSingle()) {
@@ -362,7 +364,10 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean reverse) {
+	public Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot,
+			Mono<Send<LLRange>> rangeMono,
+			boolean reverse,
+			boolean smallRange) {
 		return Flux.usingWhen(rangeMono,
 				rangeToReceive -> {
 					try (var range = rangeToReceive.receive()) {
@@ -396,7 +401,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength, boolean smallRange) {
 		return Flux.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				if (range.isSingle()) {
@@ -430,7 +435,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
 			Mono<Send<LLRange>> rangeMono,
-			int prefixLength) {
+			int prefixLength, boolean smallRange) {
 		return Flux.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				if (range.isSingle()) {
@@ -465,7 +470,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Void> setRange(Mono<Send<LLRange>> rangeMono, Flux<Send<LLEntry>> entries) {
+	public Mono<Void> setRange(Mono<Send<LLRange>> rangeMono, Flux<Send<LLEntry>> entries, boolean smallRange) {
 		return Mono.usingWhen(rangeMono, rangeToReceive -> {
 			try (var range = rangeToReceive.receive()) {
 				Mono<Void> clearMono;
@@ -520,7 +525,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean fillCache) {
-		return getRangeKeys(snapshot, rangeMono, false)
+		return getRangeKeys(snapshot, rangeMono, false, false)
 				.doOnNext(buf -> buf.receive().close())
 				.count()
 				.map(count -> count == 0);
@@ -536,14 +541,14 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<LLEntry>> getOne(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return getRange(snapshot, rangeMono, false)
+		return getRange(snapshot, rangeMono, false, false)
 				.take(1, true)
 				.singleOrEmpty();
 	}
 
 	@Override
 	public Mono<Send<Buffer>> getOneKey(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return getRangeKeys(snapshot, rangeMono, false)
+		return getRangeKeys(snapshot, rangeMono, false, false)
 				.take(1, true)
 				.singleOrEmpty();
 	}

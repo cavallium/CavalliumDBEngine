@@ -6,7 +6,6 @@ import static it.cavallium.dbengine.DbTestUtils.isCIMode;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
-import static it.cavallium.dbengine.DbTestUtils.tempDatabaseMapDictionaryMap;
 import static it.cavallium.dbengine.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 import static it.cavallium.dbengine.SyncUtils.*;
@@ -14,12 +13,9 @@ import static org.assertj.core.api.Assertions.*;
 
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
-import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +38,6 @@ import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import reactor.test.StepVerifier.FirstStep;
 import reactor.test.StepVerifier.Step;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuple3;
@@ -245,7 +240,7 @@ public abstract class TestDictionaryMapDeep {
 						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
 						.flatMapMany(map -> map
 								.putValue(key, value)
-								.thenMany(map.getAllValues(null))
+								.thenMany(map.getAllValues(null, false))
 								.doFinally(s -> map.close())
 						)
 				));
@@ -285,9 +280,9 @@ public abstract class TestDictionaryMapDeep {
 										))
 								)
 								.thenMany(map
-										.getAllStages(null)
+										.getAllStages(null, false)
 										.flatMap(v -> v.getValue()
-												.getAllValues(null)
+												.getAllValues(null, false)
 												.map(result -> Tuples.of(v.getKey(), result.getKey(), result.getValue()))
 												.doFinally(s -> v.getValue().close())
 										)
@@ -1017,7 +1012,7 @@ public abstract class TestDictionaryMapDeep {
 						.flatMapMany(map -> Flux
 								.concat(
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.getAllValues(null)
+										map.getAllValues(null, false)
 								)
 								.doFinally(s -> map.close())
 						)
@@ -1075,7 +1070,7 @@ public abstract class TestDictionaryMapDeep {
 								.concat(
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map
-												.getAllStages(null)
+												.getAllStages(null, false)
 												.flatMap(stage -> stage
 														.getValue()
 														.get(null)

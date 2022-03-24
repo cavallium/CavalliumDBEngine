@@ -15,7 +15,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -29,8 +28,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 import reactor.test.StepVerifier.Step;
-import reactor.test.util.TestLogger;
-import reactor.util.Loggers;
 import reactor.util.function.Tuple2;
 import reactor.util.function.Tuples;
 
@@ -609,7 +606,7 @@ public abstract class TestDictionaryMap {
 						.flatMapMany(map -> Flux
 								.concat(
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.getAllValues(null)
+										map.getAllValues(null, false)
 								)
 								.doFinally(s -> map.close())
 						)
@@ -666,7 +663,7 @@ public abstract class TestDictionaryMap {
 								.concat(
 										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
 										map
-												.getAllStages(null)
+												.getAllStages(null, false)
 												.flatMap(stage -> stage
 														.getValue()
 														.get(null)

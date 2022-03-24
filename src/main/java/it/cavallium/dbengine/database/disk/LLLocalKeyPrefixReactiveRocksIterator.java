@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
-import static it.cavallium.dbengine.database.LLUtils.isClosedRange;
+import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
@@ -59,13 +59,15 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 	private final boolean allowNettyDirect;
 	private ReadOptions readOptions;
 	private final boolean canFillCache;
+	private final boolean smallRange;
 
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
-			boolean canFillCache) {
+			boolean canFillCache,
+			boolean smallRange) {
 		super(DROP);
 		try (range) {
 			this.db = db;
@@ -74,13 +76,18 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 			this.allowNettyDirect = allowNettyDirect;
 			this.readOptions = readOptions;
 			this.canFillCache = canFillCache;
+			this.smallRange = smallRange;
 		}
 	}
 
 
 	public Flux<Send<Buffer>> flux() {
 		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions, canFillCache, isClosedRange(rangeShared), true);
+			var readOptions = generateCustomReadOptions(this.readOptions,
+					canFillCache,
+					isBoundedRange(rangeShared),
+					smallRange
+			);
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
@@ -163,7 +170,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 				range,
 				allowNettyDirect,
 				readOptions,
-				canFillCache
+				canFillCache, smallRange
 		);
 	}
 

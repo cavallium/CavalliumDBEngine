@@ -192,8 +192,8 @@ public abstract class TestLLDictionary {
 		var afterSize = run(dict.sizeRange(null, Mono.fromCallable(() -> LLRange.all().send()), false));
 		Assertions.assertEquals(1, afterSize - beforeSize);
 
-		Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, false).map(this::toString).collectList()).contains("test-nonexistent"));
-		Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, true).map(this::toString).collectList()).contains("test-nonexistent"));
+		Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, false, false).map(this::toString).collectList()).contains("test-nonexistent"));
+		Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, true, false).map(this::toString).collectList()).contains("test-nonexistent"));
 	}
 
 	@ParameterizedTest
@@ -252,9 +252,9 @@ public abstract class TestLLDictionary {
 		assertEquals(expected, afterSize - beforeSize);
 
 		if (updateMode != UpdateMode.DISALLOW) {
-			Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, false).map(this::toString).collectList()).contains(
+			Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, false, false).map(this::toString).collectList()).contains(
 					"test-nonexistent"));
-			Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, true).map(this::toString).collectList()).contains(
+			Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, true, false).map(this::toString).collectList()).contains(
 					"test-nonexistent"));
 		}
 	}

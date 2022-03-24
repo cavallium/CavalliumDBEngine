@@ -4,7 +4,6 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -18,7 +17,6 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -212,9 +210,9 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	}
 
 	@Override
-	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot) {
+	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return subDictionary
-				.getAllValues(snapshot)
+				.getAllValues(snapshot, smallRange)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
 				.flatMap(bucket -> Flux
@@ -225,9 +223,9 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	}
 
 	@Override
-	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot) {
+	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return subDictionary
-				.getAllValues(snapshot)
+				.getAllValues(snapshot, smallRange)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
 				.concatMapIterable(list -> list);

@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
-import static it.cavallium.dbengine.database.LLUtils.isClosedRange;
+import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
@@ -63,6 +63,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	private ReadOptions readOptions;
 	private final boolean canFillCache;
 	private final boolean readValues;
+	private final boolean smallRange;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalGroupedReactiveRocksIterator(RocksDBColumn db,
@@ -71,7 +72,8 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			boolean allowNettyDirect,
 			ReadOptions readOptions,
 			boolean canFillCache,
-			boolean readValues) {
+			boolean readValues,
+			boolean smallRange) {
 		super((Drop<LLLocalGroupedReactiveRocksIterator<T>>) (Drop) DROP);
 		try (range) {
 			this.db = db;
@@ -81,6 +83,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			this.readOptions = readOptions;
 			this.canFillCache = canFillCache;
 			this.readValues = readValues;
+			this.smallRange = smallRange;
 		}
 	}
 
@@ -88,7 +91,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	public final Flux<List<T>> flux() {
 		return Flux
 				.generate(() -> {
-					var readOptions = generateCustomReadOptions(this.readOptions, true, isClosedRange(range), true);
+					var readOptions = generateCustomReadOptions(this.readOptions, true, isBoundedRange(range), smallRange);
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 					}
@@ -176,7 +179,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 				allowNettyDirect,
 				readOptions,
 				canFillCache,
-				readValues
+				readValues, smallRange
 		) {
 			@Override
 			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {

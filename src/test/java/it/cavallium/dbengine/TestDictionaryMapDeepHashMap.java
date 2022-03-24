@@ -11,14 +11,8 @@ import static it.cavallium.dbengine.DbTestUtils.tempDictionary;
 
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,11 +20,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
-import reactor.test.StepVerifier.Step;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuple3;
 import reactor.util.function.Tuple4;
 import reactor.util.function.Tuples;
 
@@ -123,7 +113,7 @@ public abstract class TestDictionaryMapDeepHashMap {
 						.flatMapMany(map -> map
 								.at(null, key1).flatMap(v -> v.putValue(key2, value).doFinally(s -> v.close()))
 								.thenMany(map
-										.getAllValues(null)
+										.getAllValues(null, false)
 										.map(Entry::getValue)
 										.flatMap(maps -> Flux.fromIterable(maps.entrySet()))
 										.map(Entry::getValue)

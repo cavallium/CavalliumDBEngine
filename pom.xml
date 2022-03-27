@@ -136,11 +136,6 @@
         <scope>test</scope>
       </dependency>
       <dependency>
-        <groupId>org.rocksdb</groupId>
-        <artifactId>rocksdbjni</artifactId>
-        <version>6.28.2</version>
-      </dependency>
-      <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-core</artifactId>
         <version>9.0.0</version>
@@ -335,6 +330,7 @@
     <dependency>
       <groupId>org.rocksdb</groupId>
       <artifactId>rocksdbjni</artifactId>
+      <version>7.0.3</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>

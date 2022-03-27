@@ -142,20 +142,6 @@ public class CappedWriteBatch extends WriteBatch {
 		flushIfNeeded(false);
 	}
 
-	@Deprecated
-	@Override
-	public synchronized void remove(byte[] key) throws RocksDBException {
-		super.remove(key);
-		flushIfNeeded(false);
-	}
-
-	@Deprecated
-	@Override
-	public synchronized void remove(ColumnFamilyHandle columnFamilyHandle, byte[] key) throws RocksDBException {
-		super.remove(columnFamilyHandle, key);
-		flushIfNeeded(false);
-	}
-
 	@Override
 	public synchronized void delete(byte[] key) throws RocksDBException {
 		super.delete(key);
@@ -173,7 +159,7 @@ public class CappedWriteBatch extends WriteBatch {
 		if (USE_FAST_DIRECT_BUFFERS && isReadOnlyDirect(key)) {
 			ByteBuffer keyNioBuffer = ((ReadableComponent) key).readableBuffer();
 			buffersToRelease.add(key);
-			remove(columnFamilyHandle, keyNioBuffer);
+			delete(columnFamilyHandle, keyNioBuffer);
 		} else {
 			try {
 				super.delete(columnFamilyHandle, LLUtils.toArray(key));
@@ -197,14 +183,14 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	@Override
-	public synchronized void remove(ByteBuffer key) throws RocksDBException {
-		super.remove(key);
+	public synchronized void delete(ByteBuffer key) throws RocksDBException {
+		super.delete(key);
 		flushIfNeeded(false);
 	}
 
 	@Override
-	public synchronized void remove(ColumnFamilyHandle columnFamilyHandle, ByteBuffer key) throws RocksDBException {
-		super.remove(columnFamilyHandle, key);
+	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, ByteBuffer key) throws RocksDBException {
+		super.delete(columnFamilyHandle, key);
 		flushIfNeeded(false);
 	}
 

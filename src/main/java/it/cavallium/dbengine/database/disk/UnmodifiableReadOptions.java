@@ -93,11 +93,6 @@ public class UnmodifiableReadOptions extends ReadOptions {
 	}
 
 	@Override
-	public ReadOptions setIterStartSeqnum(long l) {
-		throw uoe();
-	}
-
-	@Override
 	public ReadOptions setTableFilter(AbstractTableFilter abstractTableFilter) {
 		throw uoe();
 	}

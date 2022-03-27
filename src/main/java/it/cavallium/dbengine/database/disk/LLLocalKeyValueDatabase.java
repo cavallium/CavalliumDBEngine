@@ -454,7 +454,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} else {
 			options.setDelayedWriteRate(64 * SizeUnit.MB);
 		}
-		options.setNewTableReaderForCompactionInputs(true);
 		options.setCreateIfMissing(true);
 		options.setSkipStatsUpdateOnDbOpen(true);
 		options.setCreateMissingColumnFamilies(true);

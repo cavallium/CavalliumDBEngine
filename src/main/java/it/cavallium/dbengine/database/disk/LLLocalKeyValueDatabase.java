@@ -205,6 +205,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setPartitionFilters(true)
 						.setIndexType(IndexType.kTwoLevelIndexSearch)
 						.setFormatVersion(5)
+						//todo: replace with kxxhash3
 						.setChecksumType(ChecksumType.kxxHash)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())

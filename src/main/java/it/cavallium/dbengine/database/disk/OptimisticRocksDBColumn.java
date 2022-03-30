@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
+import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
@@ -20,6 +21,7 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.ReadOptions;
+import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Status.Code;
 import org.rocksdb.Transaction;
@@ -31,13 +33,23 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 
 	private static final boolean ALWAYS_PRINT_OPTIMISTIC_RETRIES = false;
 
+	private final DistributionSummary optimisticAttempts;
+
 	public OptimisticRocksDBColumn(OptimisticTransactionDB db,
 			DatabaseOptions databaseOptions,
 			BufferAllocator alloc,
-			String dbName,
+			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry) {
-		super(db, databaseOptions, alloc, dbName, cfh, meterRegistry);
+		super(db, databaseOptions, alloc, databaseName, cfh, meterRegistry);
+		this.optimisticAttempts = DistributionSummary
+				.builder("db.optimistic.attempts.distribution")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.baseUnit("times")
+				.scale(1)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
 	}
 
 	@Override
@@ -184,6 +196,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 					if (retries > 5) {
 						logger.warn(MARKER_ROCKSDB, "Took {} retries to update key {}", retries, LLUtils.toStringSafe(key));
 					}
+					optimisticAttempts.record(retries);
 					return switch (returnMode) {
 						case NOTHING -> {
 							if (sentPrevData != null) {

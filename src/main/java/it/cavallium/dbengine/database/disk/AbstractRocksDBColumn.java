@@ -69,7 +69,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 
-	private final MeterRegistry meterRegistry;
+	protected final MeterRegistry meterRegistry;
+	protected final String columnName;
 
 	protected final DistributionSummary keyBufferSize;
 	protected final DistributionSummary readValueNotFoundWithoutBloomBufferSize;
@@ -99,14 +100,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		this.nettyDirect = opts.allowNettyDirect() && alloc.getAllocationType() == OFF_HEAP;
 		this.alloc = alloc;
 		this.cfh = cfh;
-
 		String columnName;
 		try {
 			columnName = new String(cfh.getName(), StandardCharsets.UTF_8);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
-
+		this.columnName = columnName;
 		this.meterRegistry = meterRegistry;
 
 		this.keyBufferSize = DistributionSummary

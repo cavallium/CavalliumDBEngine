@@ -30,8 +30,9 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 	public PessimisticRocksDBColumn(TransactionDB db,
 			DatabaseOptions databaseOptions,
 			BufferAllocator alloc,
+			String dbName,
 			ColumnFamilyHandle cfh, MeterRegistry meterRegistry) {
-		super(db, databaseOptions, alloc, cfh, meterRegistry);
+		super(db, databaseOptions, alloc, dbName, cfh, meterRegistry);
 	}
 
 	@Override
@@ -46,11 +47,11 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
 			Send<Buffer> keySend,
 			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-			UpdateAtomicResultMode returnMode) throws IOException, RocksDBException {
+			UpdateAtomicResultMode returnMode) throws IOException {
 		try (Buffer key = keySend.receive()) {
 			try {
 				var cfh = getCfh();

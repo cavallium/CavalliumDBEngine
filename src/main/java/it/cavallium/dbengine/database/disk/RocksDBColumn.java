@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Send;
+import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
@@ -20,6 +21,15 @@ import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 
 public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
+
+	/**
+	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
+	 */
+	@NotNull
+	RocksIteratorTuple getRocksIterator(boolean allowNettyDirect,
+			ReadOptions readOptions,
+			LLRange range,
+			boolean reverse) throws RocksDBException;
 
 	default byte @Nullable [] get(@NotNull ReadOptions readOptions,
 			byte[] key,
@@ -58,7 +68,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 		}
 	}
 
-	@NotNull RocksIterator newIterator(@NotNull ReadOptions readOptions);
+	@NotNull RocksDBIterator newIterator(@NotNull ReadOptions readOptions);
 
 	@NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions, @NotNull WriteOptions writeOptions,
 			Send<Buffer> keySend, SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,

@@ -91,11 +91,10 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return LLLocalDictionary.getRocksIterator(allowNettyDirect, readOptions, rangeShared, db, false);
+			return db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, false);
 		}, (tuple, sink) -> {
 			try {
 				var rocksIterator = tuple.iterator();
-				rocksIterator.status();
 				Buffer firstGroupKey = null;
 				try {
 					while (rocksIterator.isValid()) {
@@ -117,7 +116,6 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 								break;
 							}
 							rocksIterator.next();
-							rocksIterator.status();
 						}
 					}
 

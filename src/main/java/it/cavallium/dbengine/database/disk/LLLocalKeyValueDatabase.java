@@ -650,11 +650,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
-			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, cfh, meterRegistry);
+			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, name, cfh, meterRegistry);
 		} else if (db instanceof TransactionDB transactionDB) {
-			return new PessimisticRocksDBColumn(transactionDB, databaseOptions, allocator, cfh, meterRegistry);
+			return new PessimisticRocksDBColumn(transactionDB, databaseOptions, allocator, name, cfh, meterRegistry);
 		} else {
-			return new StandardRocksDBColumn(db, databaseOptions, allocator, cfh, meterRegistry);
+			return new StandardRocksDBColumn(db, databaseOptions, allocator, name, cfh, meterRegistry);
 		}
 	}
 

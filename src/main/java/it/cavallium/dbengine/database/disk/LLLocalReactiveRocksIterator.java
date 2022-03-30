@@ -3,7 +3,6 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
-import static it.cavallium.dbengine.database.disk.LLLocalDictionary.getRocksIterator;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
@@ -89,11 +88,10 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return getRocksIterator(allowNettyDirect, readOptions, rangeShared, db, reverse);
+			return db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, reverse);
 		}, (tuple, sink) -> {
 			try {
 				var rocksIterator = tuple.iterator();
-				rocksIterator.status();
 				if (rocksIterator.isValid()) {
 					Buffer key;
 					if (allowNettyDirect) {
@@ -128,7 +126,6 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 							} else {
 								rocksIterator.next();
 							}
-							rocksIterator.status();
 							sink.next(getEntry(key.send(), value == null ? null : value.send()));
 						} finally {
 							if (value != null) {

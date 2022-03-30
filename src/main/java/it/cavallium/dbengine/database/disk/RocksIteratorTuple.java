@@ -8,7 +8,7 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksIterator;
 import org.rocksdb.RocksObject;
 
-public record RocksIteratorTuple(List<RocksObject> refs, @NotNull RocksIterator iterator,
+public record RocksIteratorTuple(List<RocksObject> refs, @NotNull RocksDBIterator iterator,
 																 @NotNull ReleasableSlice sliceMin, @NotNull ReleasableSlice sliceMax,
 																 @NotNull SafeCloseable seekTo) implements
 		SafeCloseable {

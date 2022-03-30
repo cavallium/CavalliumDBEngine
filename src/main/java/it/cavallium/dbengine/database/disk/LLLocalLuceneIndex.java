@@ -40,6 +40,7 @@ import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
@@ -85,7 +86,13 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	 * There is only a single thread globally to not overwhelm the disk with
 	 * concurrent commits or concurrent refreshes.
 	 */
-	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.single(Schedulers.boundedElastic()));
+	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
+			DEFAULT_BOUNDED_ELASTIC_SIZE,
+			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+			"heavy-tasks",
+			Math.toIntExact(Duration.ofHours(1).toSeconds()),
+			true
+	));
 	private static final Scheduler bulkScheduler = uninterruptibleScheduler(Schedulers.boundedElastic());
 
 	static {

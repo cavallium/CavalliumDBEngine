@@ -193,9 +193,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
-					final BloomFilter bloomFilter = new BloomFilter(3, false);
+					final BloomFilter bloomFilter = new BloomFilter(10);
 					tableOptions.setFilterPolicy(bloomFilter);
 					tableOptions.setOptimizeFiltersForMemory(true);
+					tableOptions.setVerifyCompression(false);
 				}
 				tableOptions
 						.setPinTopLevelIndexAndFilter(true)
@@ -209,7 +210,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setChecksumType(ChecksumType.kxxHash)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
-						.setBlockSize(512 * 1024); // 512KiB
+						.setBlockSize(16 * 1024); // 16KiB
 
 				//columnOptions.setLevelCompactionDynamicLevelBytes(true);
 				columnOptions.setTableFormatConfig(tableOptions);
@@ -483,7 +484,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(1)
 					.setDbWriteBufferSize(8 * SizeUnit.MB)
 					.setWalTtlSeconds(0)
-					.setWalSizeLimitMB(0) // 16MB
+					.setWalSizeLimitMB(0)
 					.setMaxTotalWalSize(0) // automatic
 			;
 			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB) / 2, -1, true);
@@ -501,14 +502,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} else {
 			// HIGH MEMORY
 			options
-					.setIncreaseParallelism(Runtime.getRuntime().availableProcessors())
 					.setDbWriteBufferSize(64 * SizeUnit.MB)
 					.setBytesPerSync(64 * SizeUnit.KB)
 					.setWalBytesPerSync(64 * SizeUnit.KB)
 
-					.setWalTtlSeconds(30) // flush wal after 30 seconds
-					.setWalSizeLimitMB(1024) // 1024MB
-					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
+					.setWalTtlSeconds(0)
+					.setWalSizeLimitMB(0)
+					.setMaxTotalWalSize(80 * SizeUnit.MB) // 80MiB max wal directory size
 			;
 			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB) / 2);
 			compressedCache = null;
@@ -522,6 +522,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setWritableFileMaxBufferSize(4 * 1024 * 1024)
 				;
 			}
+			options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 		}
 
 		options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, blockCache));

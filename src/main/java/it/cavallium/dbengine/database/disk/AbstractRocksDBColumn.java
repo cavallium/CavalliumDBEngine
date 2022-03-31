@@ -15,7 +15,6 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.buffer.api.ReadableComponent;
-import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.WritableComponent;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
@@ -23,13 +22,14 @@ import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSliceImplWithRelease;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSliceImplWithoutRelease;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -44,7 +44,6 @@ import org.rocksdb.KeyMayExist.KeyMayExistEnum;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
-import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
 import org.rocksdb.Transaction;
 import org.rocksdb.WriteBatch;
@@ -75,10 +74,11 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	protected final DistributionSummary keyBufferSize;
 	protected final DistributionSummary readValueNotFoundWithoutBloomBufferSize;
 	protected final DistributionSummary readValueNotFoundWithBloomBufferSize;
+	protected final DistributionSummary readValueNotFoundWithMayExistBloomBufferSize;
 	protected final DistributionSummary readValueFoundWithBloomUncachedBufferSize;
 	protected final DistributionSummary readValueFoundWithBloomCacheBufferSize;
 	protected final DistributionSummary readValueFoundWithBloomSimpleBufferSize;
-	protected final DistributionSummary readValueNotFoundWithMayExistBloomBufferSize;
+	protected final DistributionSummary readValueFoundWithoutBloomBufferSize;
 	protected final DistributionSummary writeValueBufferSize;
 	protected final DistributionSummary readAttempts;
 
@@ -88,6 +88,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final Counter startedIterNext;
 	private final Counter endedIterNext;
 	private final Timer iterNextTime;
+
+	private final Counter startedUpdate;
+	private final Counter endedUpdate;
+	private final Timer updateAddedTime;
+	private final Timer updateReplacedTime;
+	private final Timer updateRemovedTime;
+	private final Timer updateUnchangedTime;
 
 	public AbstractRocksDBColumn(T db,
 			DatabaseOptions databaseOptions,
@@ -123,7 +130,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "no")
 				.register(meterRegistry);
 		this.readValueNotFoundWithBloomBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -132,6 +139,14 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.scale(1)
 				.publishPercentileHistogram()
 				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "hit.notfound")
+				.register(meterRegistry);
+		this.readValueNotFoundWithMayExistBloomBufferSize = DistributionSummary
+				.builder("buffer.size.distribution")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.baseUnit("bytes")
+				.scale(1)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "hit.wrong")
 				.register(meterRegistry);
 		this.readValueFoundWithBloomUncachedBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -157,13 +172,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.publishPercentileHistogram()
 				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "hit")
 				.register(meterRegistry);
-		this.readValueNotFoundWithMayExistBloomBufferSize = DistributionSummary
+		this.readValueFoundWithoutBloomBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
 				.publishPercentiles(0.2, 0.5, 0.95)
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "hit.wrong")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "no")
 				.register(meterRegistry);
 		this.writeValueBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -197,6 +212,33 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.publishPercentiles(0.2, 0.5, 0.95)
 				.publishPercentileHistogram()
 				.tags("db.name", databaseName, "db.column", columnName)
+				.register(meterRegistry);
+
+		this.startedUpdate = meterRegistry.counter("db.write.update.started.counter", "db.name", databaseName, "db.column", columnName);
+		this.endedUpdate = meterRegistry.counter("db.write.update.ended.counter", "db.name", databaseName, "db.column", columnName);
+		this.updateAddedTime = Timer
+				.builder("db.write.update.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName, "update.type", "added")
+				.register(meterRegistry);
+		this.updateReplacedTime = Timer
+				.builder("db.write.update.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName, "update.type", "replaced")
+				.register(meterRegistry);
+		this.updateRemovedTime = Timer
+				.builder("db.write.update.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName, "update.type", "removed")
+				.register(meterRegistry);
+		this.updateUnchangedTime = Timer
+				.builder("db.write.update.timer")
+				.publishPercentiles(0.2, 0.5, 0.95)
+				.publishPercentileHistogram()
+				.tags("db.name", databaseName, "db.column", columnName, "update.type", "unchanged")
 				.register(meterRegistry);
 	}
 
@@ -775,16 +817,44 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Send<Buffer> keySend,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			Buffer key,
+			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
-		return updateAtomicImpl(readOptions, writeOptions, keySend, updater, returnMode);
+		try {
+			keyBufferSize.record(key.readableBytes());
+			startedUpdate.increment();
+			return updateAtomicImpl(readOptions, writeOptions, key, updater, returnMode);
+		} catch (IOException e) {
+			throw e;
+		} catch (Exception e) {
+			throw new IOException(e);
+		} finally {
+			endedUpdate.increment();
+		}
+	}
+
+	protected final void recordAtomicUpdateTime(boolean changed, boolean prevSet, boolean newSet, long initTime) {
+		long duration = System.nanoTime() - initTime;
+		Timer timer;
+		if (changed) {
+			if (prevSet && newSet) {
+				timer = updateReplacedTime;
+			} else if (newSet) {
+				timer = updateAddedTime;
+			} else {
+				timer = updateRemovedTime;
+			}
+		} else {
+			timer = updateUnchangedTime;
+		}
+
+		timer.record(duration, TimeUnit.NANOSECONDS);
 	}
 
 	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Send<Buffer> keySend,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			Buffer key,
+			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException;
 
 	@Override
@@ -808,6 +878,20 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				this.endedIterNext,
 				this.iterNextTime
 		);
+	}
+
+	protected final Buffer applyUpdateAndCloseIfNecessary(BinarySerializationFunction updater,
+			@Nullable Buffer prevDataToSendToUpdater)
+			throws SerializationException {
+		@Nullable Buffer newData = null;
+		try {
+			newData = updater.apply(prevDataToSendToUpdater);
+		} finally {
+			if (prevDataToSendToUpdater != newData && prevDataToSendToUpdater != null) {
+				prevDataToSendToUpdater.close();
+			}
+		}
+		return newData;
 	}
 
 	@Override

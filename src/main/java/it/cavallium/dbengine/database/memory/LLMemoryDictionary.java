@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -194,8 +195,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono, BinarySerializationFunction updater) {
 		return Mono.usingWhen(keyMono,
 				key -> Mono.fromCallable(() -> {
 					try (key) {
@@ -208,7 +208,7 @@ public class LLMemoryDictionary implements LLDictionary {
 								oldRef.set(kk(old));
 							}
 							Buffer v;
-							try (var oldToSend = old != null ? kk(old) : null) {
+							try (var oldToSend = old != null ? kk(old).receive() : null) {
 								v = updater.apply(oldToSend);
 							} catch (SerializationException e) {
 								throw new IllegalStateException(e);

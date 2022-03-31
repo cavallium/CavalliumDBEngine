@@ -129,10 +129,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 						if (oldValueSer == null) {
 							result = updater.apply(null);
 						} else {
-							U deserializedValue;
-							try (var valueBuf = oldValueSer.receive()) {
-								deserializedValue = serializer.deserialize(valueBuf);
-							}
+							U deserializedValue = serializer.deserialize(oldValueSer);
 							result = updater.apply(deserializedValue);
 						}
 						if (result == null) {
@@ -154,10 +151,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 						if (oldValueSer == null) {
 							result = updater.apply(null);
 						} else {
-							U deserializedValue;
-							try (var valueBuf = oldValueSer.receive()) {
-								deserializedValue = serializer.deserialize(valueBuf);
-							}
+							U deserializedValue = serializer.deserialize(oldValueSer);
 							result = updater.apply(deserializedValue);
 						}
 						if (result == null) {

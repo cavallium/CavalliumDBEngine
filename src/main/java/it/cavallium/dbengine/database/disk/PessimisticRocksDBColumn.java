@@ -49,118 +49,119 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 	@Override
 	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Send<Buffer> keySend,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			Buffer key,
+			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
-		try (Buffer key = keySend.receive()) {
-			try {
-				var cfh = getCfh();
-				var keyArray = LLUtils.toArray(key);
-				if (Schedulers.isInNonBlockingThread()) {
-					throw new UnsupportedOperationException("Called update in a nonblocking thread");
+		long initNanoTime = System.nanoTime();
+		try {
+			var cfh = getCfh();
+			var keyArray = LLUtils.toArray(key);
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called update in a nonblocking thread");
+			}
+			try (var tx = beginTransaction(writeOptions)) {
+				Send<Buffer> sentPrevData;
+				Send<Buffer> sentCurData;
+				boolean changed;
+				if (logger.isTraceEnabled()) {
+					logger.trace(MARKER_ROCKSDB, "Reading {} (before update lock)", LLUtils.toStringSafe(key));
 				}
-				try (var tx = beginTransaction(writeOptions)) {
-					Send<Buffer> sentPrevData;
-					Send<Buffer> sentCurData;
-					boolean changed;
+				var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
+				try {
 					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB, "Reading {} (before update lock)", LLUtils.toStringSafe(key));
+						logger.trace(MARKER_ROCKSDB,
+								"Reading {}: {} (before update)",
+								LLUtils.toStringSafe(key),
+								LLUtils.toStringSafe(prevDataArray)
+						);
 					}
-					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
-					try {
-						if (logger.isTraceEnabled()) {
-							logger.trace(MARKER_ROCKSDB,
-									"Reading {}: {} (before update)",
-									LLUtils.toStringSafe(key),
-									LLUtils.toStringSafe(prevDataArray)
-							);
-						}
-						Buffer prevData;
-						if (prevDataArray != null) {
-							prevData = MemoryManager.unsafeWrap(prevDataArray);
+					Buffer prevData;
+					if (prevDataArray != null) {
+						readValueFoundWithoutBloomBufferSize.record(prevDataArray.length);
+						prevData = MemoryManager.unsafeWrap(prevDataArray);
+					} else {
+						readValueNotFoundWithoutBloomBufferSize.record(0);
+						prevData = null;
+					}
+					try (prevData) {
+						Buffer prevDataToSendToUpdater;
+						if (prevData != null) {
+							prevDataToSendToUpdater = prevData.copy().makeReadOnly();
 						} else {
-							prevData = null;
+							prevDataToSendToUpdater = null;
 						}
-						try (prevData) {
-							Buffer prevDataToSendToUpdater;
-							if (prevData != null) {
-								prevDataToSendToUpdater = prevData.copy();
-							} else {
-								prevDataToSendToUpdater = null;
-							}
 
-							@Nullable Buffer newData;
-							try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-								newData = updater.apply(sentData);
+						@Nullable Buffer newData = applyUpdateAndCloseIfNecessary(updater, prevDataToSendToUpdater);
+						try (newData) {
+							var newDataArray = newData == null ? null : LLUtils.toArray(newData);
+							if (logger.isTraceEnabled()) {
+								logger.trace(MARKER_ROCKSDB,
+										"Updating {}. previous data: {}, updated data: {}",
+										LLUtils.toStringSafe(key),
+										LLUtils.toStringSafe(prevDataArray),
+										LLUtils.toStringSafe(newDataArray)
+								);
 							}
-							try (newData) {
-								var newDataArray = newData == null ? null : LLUtils.toArray(newData);
+							if (prevData != null && newData == null) {
+								if (logger.isTraceEnabled()) {
+									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
+								}
+								writeValueBufferSize.record(0);
+								tx.delete(cfh, keyArray, true);
+								changed = true;
+								tx.commit();
+							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB,
-											"Updating {}. previous data: {}, updated data: {}",
+											"Writing {}: {} (after update)",
 											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(prevDataArray),
-											LLUtils.toStringSafe(newDataArray)
+											LLUtils.toStringSafe(newData)
 									);
 								}
-								if (prevData != null && newData == null) {
-									if (logger.isTraceEnabled()) {
-										logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-									}
-									tx.delete(cfh, keyArray, true);
-									changed = true;
-									tx.commit();
-								} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
-									if (logger.isTraceEnabled()) {
-										logger.trace(MARKER_ROCKSDB,
-												"Writing {}: {} (after update)",
-												LLUtils.toStringSafe(key),
-												LLUtils.toStringSafe(newData)
-										);
-									}
-									tx.put(cfh, keyArray, newDataArray);
-									changed = true;
-									tx.commit();
-								} else {
-									changed = false;
-									tx.rollback();
-								}
-								sentPrevData = prevData == null ? null : prevData.send();
-								sentCurData = newData == null ? null : newData.send();
+								writeValueBufferSize.record(newDataArray.length);
+								tx.put(cfh, keyArray, newDataArray);
+								changed = true;
+								tx.commit();
+							} else {
+								changed = false;
+								tx.rollback();
 							}
+							sentPrevData = prevData == null ? null : prevData.send();
+							sentCurData = newData == null ? null : newData.send();
 						}
-					} finally {
-						tx.undoGetForUpdate(cfh, keyArray);
 					}
-					return switch (returnMode) {
-						case NOTHING -> {
-							if (sentPrevData != null) {
-								sentPrevData.close();
-							}
-							if (sentCurData != null) {
-								sentCurData.close();
-							}
-							yield RESULT_NOTHING;
-						}
-						case CURRENT -> {
-							if (sentPrevData != null) {
-								sentPrevData.close();
-							}
-							yield new UpdateAtomicResultCurrent(sentCurData);
-						}
-						case PREVIOUS -> {
-							if (sentCurData != null) {
-								sentCurData.close();
-							}
-							yield new UpdateAtomicResultPrevious(sentPrevData);
-						}
-						case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
-						case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData).send());
-					};
+				} finally {
+					tx.undoGetForUpdate(cfh, keyArray);
 				}
-			} catch (Throwable ex) {
-				throw new IOException("Failed to update key " + LLUtils.toStringSafe(key), ex);
+				recordAtomicUpdateTime(changed, sentPrevData != null, sentCurData != null, initNanoTime);
+				return switch (returnMode) {
+					case NOTHING -> {
+						if (sentPrevData != null) {
+							sentPrevData.close();
+						}
+						if (sentCurData != null) {
+							sentCurData.close();
+						}
+						yield RESULT_NOTHING;
+					}
+					case CURRENT -> {
+						if (sentPrevData != null) {
+							sentPrevData.close();
+						}
+						yield new UpdateAtomicResultCurrent(sentCurData);
+					}
+					case PREVIOUS -> {
+						if (sentCurData != null) {
+							sentCurData.close();
+						}
+						yield new UpdateAtomicResultPrevious(sentPrevData);
+					}
+					case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
+					case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData).send());
+				};
 			}
+		} catch (Throwable ex) {
+			throw new IOException("Failed to update key " + LLUtils.toStringSafe(key), ex);
 		}
 	}
 

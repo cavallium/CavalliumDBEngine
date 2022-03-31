@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Send;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.util.function.Function;
@@ -18,14 +19,14 @@ public interface LLSingleton extends LLKeyValueDatabaseStructure {
 
 	Mono<Void> set(Mono<Send<Buffer>> value);
 
-	default Mono<Send<Buffer>> update(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+	default Mono<Send<Buffer>> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return this
 				.updateAndGetDelta(updater)
 				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
 	}
 
-	Mono<Send<LLDelta>> updateAndGetDelta(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater);
+	Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater);
 
 	String getColumnName();
 

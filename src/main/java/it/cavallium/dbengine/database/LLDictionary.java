@@ -4,6 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.List;
@@ -27,15 +28,14 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Mono<UpdateMode> getUpdateMode();
 
 	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return this
 				.updateAndGetDelta(key, updater)
 				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
 	}
 
-	Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater);
+	Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key, BinarySerializationFunction updater);
 
 	Mono<Void> clear();
 

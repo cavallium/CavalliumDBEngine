@@ -43,106 +43,103 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 	@Override
 	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Send<Buffer> keySend,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			Buffer key,
+			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
-		try (Buffer key = keySend.receive()) {
-			try {
-				@Nullable Buffer prevData = this.get(readOptions, key);
-				try (prevData) {
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB,
-								"Reading {}: {} (before update)",
-								LLUtils.toStringSafe(key),
-								LLUtils.toStringSafe(prevData)
-						);
-					}
-					@Nullable Buffer newData;
-					try (Buffer prevDataToSendToUpdater = prevData == null ? null : prevData.copy()) {
-						try (var sentData = prevDataToSendToUpdater == null ? null : prevDataToSendToUpdater.send()) {
-							try (var newDataToReceive = updater.apply(sentData)) {
-								newData = newDataToReceive;
-							}
-						}
-					}
+		long initNanoTime = System.nanoTime();
+		try {
+			@Nullable Buffer prevData = this.get(readOptions, key);
+			try (prevData) {
+				if (logger.isTraceEnabled()) {
+					logger.trace(MARKER_ROCKSDB,
+							"Reading {}: {} (before update)",
+							LLUtils.toStringSafe(key),
+							LLUtils.toStringSafe(prevData)
+					);
+				}
+
+				Buffer prevDataToSendToUpdater;
+				if (prevData != null) {
+					prevDataToSendToUpdater = prevData.copy().makeReadOnly();
+				} else {
+					prevDataToSendToUpdater = null;
+				}
+
+				@Nullable Buffer newData = applyUpdateAndCloseIfNecessary(updater, prevDataToSendToUpdater);
+				try (newData) {
 					boolean changed;
 					assert newData == null || newData.isAccessible();
-					try {
+					if (logger.isTraceEnabled()) {
+						logger.trace(MARKER_ROCKSDB,
+								"Updating {}. previous data: {}, updated data: {}",
+								LLUtils.toStringSafe(key),
+								LLUtils.toStringSafe(prevData),
+								LLUtils.toStringSafe(newData)
+						);
+					}
+					if (prevData != null && newData == null) {
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
+						}
+						this.delete(writeOptions, key);
+						changed = true;
+					} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 						if (logger.isTraceEnabled()) {
 							logger.trace(MARKER_ROCKSDB,
-									"Updating {}. previous data: {}, updated data: {}",
+									"Writing {}: {} (after update)",
 									LLUtils.toStringSafe(key),
-									LLUtils.toStringSafe(prevData),
 									LLUtils.toStringSafe(newData)
 							);
 						}
-						if (prevData != null && newData == null) {
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-							}
-							this.delete(writeOptions, key);
-							changed = true;
-						} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB,
-										"Writing {}: {} (after update)",
-										LLUtils.toStringSafe(key),
-										LLUtils.toStringSafe(newData)
-								);
-							}
-							Buffer dataToPut;
-							if (returnMode == UpdateAtomicResultMode.CURRENT) {
-								dataToPut = newData.copy();
-							} else {
-								dataToPut = newData;
-							}
-							try {
-								this.put(writeOptions, key, dataToPut);
-								changed = true;
-							} finally {
-								if (dataToPut != newData) {
-									dataToPut.close();
-								}
-							}
+						Buffer dataToPut;
+						if (returnMode == UpdateAtomicResultMode.CURRENT) {
+							dataToPut = newData.copy();
 						} else {
-							changed = false;
+							dataToPut = newData;
 						}
-						return switch (returnMode) {
-							case NOTHING -> {
-								if (prevData != null) {
-									prevData.close();
-								}
-								if (newData != null) {
-									newData.close();
-								}
-								yield RESULT_NOTHING;
+						try {
+							this.put(writeOptions, key, dataToPut);
+							changed = true;
+						} finally {
+							if (dataToPut != newData) {
+								dataToPut.close();
 							}
-							case CURRENT -> {
-								if (prevData != null) {
-									prevData.close();
-								}
-								yield new UpdateAtomicResultCurrent(newData != null ? newData.send() : null);
-							}
-							case PREVIOUS -> {
-								if (newData != null) {
-									newData.close();
-								}
-								yield new UpdateAtomicResultPrevious(prevData != null ? prevData.send() : null);
-							}
-							case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
-							case DELTA -> new UpdateAtomicResultDelta(LLDelta
-									.of(prevData != null ? prevData.send() : null, newData != null ? newData.send() : null)
-									.send());
-						};
-					} finally {
-						if (newData != null) {
-							newData.close();
 						}
+					} else {
+						changed = false;
 					}
+					recordAtomicUpdateTime(changed, prevData != null, newData != null, initNanoTime);
+					return switch (returnMode) {
+						case NOTHING -> {
+							if (prevData != null) {
+								prevData.close();
+							}
+							if (newData != null) {
+								newData.close();
+							}
+							yield RESULT_NOTHING;
+						}
+						case CURRENT -> {
+							if (prevData != null) {
+								prevData.close();
+							}
+							yield new UpdateAtomicResultCurrent(newData != null ? newData.send() : null);
+						}
+						case PREVIOUS -> {
+							if (newData != null) {
+								newData.close();
+							}
+							yield new UpdateAtomicResultPrevious(prevData != null ? prevData.send() : null);
+						}
+						case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
+						case DELTA -> new UpdateAtomicResultDelta(LLDelta
+								.of(prevData != null ? prevData.send() : null, newData != null ? newData.send() : null)
+								.send());
+					};
 				}
-			} catch (Throwable ex) {
-				throw new IOException("Failed to update key " + LLUtils.toStringSafe(key), ex);
 			}
+		} catch (Throwable ex) {
+			throw new IOException("Failed to update key " + LLUtils.toStringSafe(key), ex);
 		}
 	}
 

@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
@@ -54,13 +55,13 @@ public class LLMemorySingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> update(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+	public Mono<Send<Buffer>> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return dict.update(singletonNameBufMono, updater, updateReturnMode);
 	}
 
 	@Override
-	public Mono<Send<LLDelta>> updateAndGetDelta(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+	public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
 		return dict.updateAndGetDelta(singletonNameBufMono, updater);
 	}
 

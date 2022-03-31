@@ -169,8 +169,8 @@ public abstract class TestLLDictionaryLeaks {
 		);
 	}
 
-	private Buffer pass(@Nullable Send<Buffer> old) {
-		return old == null ? null : old.receive();
+	private Buffer pass(@Nullable Buffer old) {
+		return old;
 	}
 
 	@ParameterizedTest

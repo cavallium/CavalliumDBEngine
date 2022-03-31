@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
+
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Send;
@@ -122,39 +124,43 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> update(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+	public Mono<Send<Buffer>> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return Mono.usingWhen(nameMono, keySend -> runOnDb(() -> {
-					if (Schedulers.isInNonBlockingThread()) {
-						throw new UnsupportedOperationException("Called update in a nonblocking thread");
-					}
-					UpdateAtomicResultMode returnMode = switch (updateReturnMode) {
-						case NOTHING -> UpdateAtomicResultMode.NOTHING;
-						case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
-						case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
-					};
-					UpdateAtomicResult result
-							= db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater, returnMode);
-					return switch (updateReturnMode) {
-						case NOTHING -> null;
-						case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
-						case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
-					};
-				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-				keySend -> Mono.fromRunnable(keySend::close));
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called update in a nonblocking thread");
+			}
+			UpdateAtomicResultMode returnMode = switch (updateReturnMode) {
+				case NOTHING -> UpdateAtomicResultMode.NOTHING;
+				case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
+				case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
+			};
+			UpdateAtomicResult result;
+			try (var key = keySend.receive()) {
+				result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, key, updater, returnMode);
+			}
+			return switch (updateReturnMode) {
+				case NOTHING -> null;
+				case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
+				case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
+			};
+		}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
+		keySend -> Mono.fromRunnable(keySend::close));
 	}
 
 	@Override
-	public Mono<Send<LLDelta>> updateAndGetDelta(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+	public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
 		return Mono.usingWhen(nameMono, keySend -> runOnDb(() -> {
-					if (Schedulers.isInNonBlockingThread()) {
-						throw new UnsupportedOperationException("Called update in a nonblocking thread");
-					}
-					UpdateAtomicResult result
-							= db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, keySend, updater, UpdateAtomicResultMode.DELTA);
-					return ((UpdateAtomicResultDelta) result).delta();
-				}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-				keySend -> Mono.fromRunnable(keySend::close));
+			if (Schedulers.isInNonBlockingThread()) {
+				throw new UnsupportedOperationException("Called update in a nonblocking thread");
+			}
+			UpdateAtomicResult result;
+			try (var key = keySend.receive()) {
+				result = db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, key, updater, DELTA);
+			}
+			return ((UpdateAtomicResultDelta) result).delta();
+		}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
+		keySend -> Mono.fromRunnable(keySend::close));
 	}
 
 	@Override

@@ -5,6 +5,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
 import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
+import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static java.util.Objects.requireNonNull;
 import static java.util.Objects.requireNonNullElse;
 
@@ -426,12 +427,12 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<Buffer>> update(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return keyMono
 				.publishOn(dbScheduler)
 				.handle((keySend, sink) -> {
-					try (keySend) {
+					try (var key = keySend.receive()) {
 						assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
 						if (updateMode == UpdateMode.DISALLOW) {
 							sink.error(new UnsupportedOperationException("update() is disallowed"));
@@ -446,7 +447,7 @@ public class LLLocalDictionary implements LLDictionary {
 						startedUpdates.increment();
 						try {
 							result = updateTime.recordCallable(() -> db.updateAtomic(EMPTY_READ_OPTIONS,
-									EMPTY_WRITE_OPTIONS, keySend, updater, returnMode));
+									EMPTY_WRITE_OPTIONS, key, updater, returnMode));
 						} finally {
 							endedUpdates.increment();
 						}
@@ -470,11 +471,11 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
-			SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+			BinarySerializationFunction updater) {
 		return keyMono
 				.publishOn(dbScheduler)
 				.handle((keySend, sink) -> {
-					try (keySend) {
+					try (var key = keySend.receive()) {
 						assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
 						if (updateMode == UpdateMode.DISALLOW) {
 							sink.error(new UnsupportedOperationException("update() is disallowed"));
@@ -489,8 +490,8 @@ public class LLLocalDictionary implements LLDictionary {
 						UpdateAtomicResult result;
 						startedUpdates.increment();
 						try {
-							result = updateTime.recordCallable(() -> db.updateAtomic(EMPTY_READ_OPTIONS,
-									EMPTY_WRITE_OPTIONS, keySend, updater, UpdateAtomicResultMode.DELTA));
+							result = updateTime.recordCallable(() ->
+									db.updateAtomic(EMPTY_READ_OPTIONS, EMPTY_WRITE_OPTIONS, key, updater, DELTA));
 						} finally {
 							endedUpdates.increment();
 						}

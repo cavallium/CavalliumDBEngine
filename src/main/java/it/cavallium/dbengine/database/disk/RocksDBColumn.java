@@ -71,7 +71,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	@NotNull RocksDBIterator newIterator(@NotNull ReadOptions readOptions);
 
 	@NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions, @NotNull WriteOptions writeOptions,
-			Send<Buffer> keySend, SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
+			Buffer key, BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws RocksDBException, IOException;
 
 	void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException;

@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -324,23 +325,19 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				}));
 	}
 
-	public SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> getSerializedUpdater(
+	public BinarySerializationFunction getSerializedUpdater(
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return oldSerialized -> {
-			try (oldSerialized) {
-				U result;
-				if (oldSerialized == null) {
-					result = updater.apply(null);
-				} else {
-					try (var oldSerializedReceived = oldSerialized.receive()) {
-						result = updater.apply(valueSerializer.deserialize(oldSerializedReceived));
-					}
-				}
-				if (result == null) {
-					return null;
-				} else {
-					return serializeValue(result);
-				}
+			U result;
+			if (oldSerialized == null) {
+				result = updater.apply(null);
+			} else {
+				result = updater.apply(valueSerializer.deserialize(oldSerialized));
+			}
+			if (result == null) {
+				return null;
+			} else {
+				return serializeValue(result);
 			}
 		};
 	}

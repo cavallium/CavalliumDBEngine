@@ -64,13 +64,11 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	private Mono<Long> addAnd(long count, UpdateReturnMode updateReturnMode) {
 		return singleton.update(prev -> {
 			if (prev != null) {
-				try (var prevBuf = prev.receive()) {
-					var prevLong = prevBuf.readLong();
-					var alloc = singleton.getAllocator();
-					var buf = alloc.allocate(Long.BYTES);
-					buf.writeLong(prevLong + count);
-					return buf;
-				}
+				var prevLong = prev.readLong();
+				var alloc = singleton.getAllocator();
+				var buf = alloc.allocate(Long.BYTES);
+				buf.writeLong(prevLong + count);
+				return buf;
 			} else {
 				var alloc = singleton.getAllocator();
 				var buf = alloc.allocate(Long.BYTES);

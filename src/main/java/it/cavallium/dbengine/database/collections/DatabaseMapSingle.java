@@ -130,22 +130,17 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 			UpdateReturnMode updateReturnMode) {
 		return dictionary
 				.update(keyMono, (oldValueSer) -> {
-					try (oldValueSer) {
-						U result;
-						if (oldValueSer == null) {
-							result = updater.apply(null);
-						} else {
-							U deserializedValue;
-							try (var valueBuf = oldValueSer.receive()) {
-								deserializedValue = serializer.deserialize(valueBuf);
-							}
-							result = updater.apply(deserializedValue);
-						}
-						if (result == null) {
-							return null;
-						} else {
-							return serializeValue(result).receive();
-						}
+					U result;
+					if (oldValueSer == null) {
+						result = updater.apply(null);
+					} else {
+						U deserializedValue = serializer.deserialize(oldValueSer);
+						result = updater.apply(deserializedValue);
+					}
+					if (result == null) {
+						return null;
+					} else {
+						return serializeValue(result).receive();
 					}
 				}, updateReturnMode)
 				.handle(this::deserializeValue);
@@ -155,22 +150,17 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	public Mono<Delta<U>> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return dictionary
 				.updateAndGetDelta(keyMono, (oldValueSer) -> {
-					try (oldValueSer) {
-						U result;
-						if (oldValueSer == null) {
-							result = updater.apply(null);
-						} else {
-							U deserializedValue;
-							try (var valueBuf = oldValueSer.receive()) {
-								deserializedValue = serializer.deserialize(valueBuf);
-							}
-							result = updater.apply(deserializedValue);
-						}
-						if (result == null) {
-							return null;
-						} else {
-							return serializeValue(result).receive();
-						}
+					U result;
+					if (oldValueSer == null) {
+						result = updater.apply(null);
+					} else {
+						U deserializedValue = serializer.deserialize(oldValueSer);
+						result = updater.apply(deserializedValue);
+					}
+					if (result == null) {
+						return null;
+					} else {
+						return serializeValue(result).receive();
 					}
 				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
 					try (var valueBuf = serialized.receive()) {

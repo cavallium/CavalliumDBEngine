@@ -23,6 +23,7 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.remote.RPCCodecs.RPCEventCodec;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -259,13 +260,12 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
-							public Mono<Send<Buffer>> update(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater,
-									UpdateReturnMode updateReturnMode) {
+							public Mono<Send<Buffer>> update(BinarySerializationFunction updater, UpdateReturnMode updateReturnMode) {
 								return LLQuicConnection.this.<BinaryOptional, SingletonUpdateOldData>sendUpdateRequest(new SingletonUpdateInit(singletonId, updateReturnMode), prev -> {
 									byte[] oldData = toArrayNoCopy(prev);
-									Send<Buffer> oldDataBuf;
+									Buffer oldDataBuf;
 									if (oldData != null) {
-										oldDataBuf = allocator.copyOf(oldData).send();
+										oldDataBuf = allocator.copyOf(oldData);
 									} else {
 										oldDataBuf = null;
 									}
@@ -292,7 +292,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
-							public Mono<Send<LLDelta>> updateAndGetDelta(SerializationFunction<@Nullable Send<Buffer>, @Nullable Buffer> updater) {
+							public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
 								return Mono.error(new UnsupportedOperationException());
 							}
 

@@ -42,7 +42,6 @@ public class CountMultiSearcher implements MultiSearcher {
 		return queryParamsMono.flatMap(queryParams2 -> LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
 			var localQueryParams = getLocalQueryParams(queryParams2);
 			return Mono.fromRunnable(() -> {
-				LLUtils.ensureBlocking();
 				if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
 					throw new UnsupportedOperationException(
 							"Sorted queries are not supported by SimpleUnsortedUnscoredLuceneMultiSearcher");

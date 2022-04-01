@@ -78,7 +78,9 @@ public class StandardSearcher implements MultiSearcher {
 					} else {
 						return TopScoreDocCollector.createSharedManager(queryParams.limitInt(), null, totalHitsThreshold);
 					}
-				}).flatMap(sharedManager -> Flux.fromIterable(indexSearchers).<TopDocsCollector<?>>handle((shard, sink) -> {
+				})
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.flatMap(sharedManager -> Flux.fromIterable(indexSearchers).<TopDocsCollector<?>>handle((shard, sink) -> {
 					LLUtils.ensureBlocking();
 					try {
 						var collector = sharedManager.newCollector();

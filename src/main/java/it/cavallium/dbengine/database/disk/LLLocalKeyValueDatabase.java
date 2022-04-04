@@ -204,7 +204,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
-					final BloomFilter bloomFilter = new BloomFilter(10);
+					final BloomFilter bloomFilter = new BloomFilter(3);
 					tableOptions.setFilterPolicy(bloomFilter);
 					tableOptions.setOptimizeFiltersForMemory(true);
 					tableOptions.setVerifyCompression(false);

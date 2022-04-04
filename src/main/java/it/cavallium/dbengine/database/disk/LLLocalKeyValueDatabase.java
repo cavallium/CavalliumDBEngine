@@ -69,6 +69,7 @@ import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.rocksdb.util.SizeUnit;
+import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
@@ -257,9 +258,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				} else {
 					this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
 							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-							"db-" + name,
-							60,
-							true
+							new ShortNamedThreadFactory("db-" + name).setDaemon(true).withGroup(new ThreadGroup("database-threads")),
+							60
 					);
 				}
 			}

@@ -70,6 +70,7 @@ import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.InfoStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.warp.commonutils.type.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
@@ -89,9 +90,8 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
 			DEFAULT_BOUNDED_ELASTIC_SIZE,
 			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			"heavy-tasks",
-			Math.toIntExact(Duration.ofHours(1).toSeconds()),
-			true
+			new ShortNamedThreadFactory("heavy-tasks").setDaemon(true).withGroup(new ThreadGroup("lucene-heavy-tasks")),
+			Math.toIntExact(Duration.ofHours(1).toSeconds())
 	));
 	private static final Scheduler bulkScheduler = uninterruptibleScheduler(Schedulers.boundedElastic());
 

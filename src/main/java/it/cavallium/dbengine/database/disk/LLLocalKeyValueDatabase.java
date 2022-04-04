@@ -210,7 +210,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setChecksumType(ChecksumType.kxxHash)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
-						.setBlockSize(16 * 1024); // 16KiB
+						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
+						.setBlockSize(256 * 1024);
 
 				//columnOptions.setLevelCompactionDynamicLevelBytes(true);
 				columnOptions.setTableFormatConfig(tableOptions);

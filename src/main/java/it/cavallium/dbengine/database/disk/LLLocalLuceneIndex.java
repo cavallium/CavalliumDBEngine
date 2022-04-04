@@ -206,6 +206,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter);
 		this.searcherManager = new CachedIndexSearcherManager(indexWriter,
 				snapshotsManager,
+				luceneHeavyTasksScheduler,
 				getLuceneSimilarity(),
 				luceneOptions.applyAllDeletes().orElse(true),
 				luceneOptions.writeAllDeletes().orElse(false),

@@ -96,7 +96,8 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 														Nullableint.of(-1),
 														Nullablelong.empty(),
 														Nullablelong.empty(),
-														Nullableboolean.empty()
+														Nullableboolean.empty(),
+														false
 												)
 										),
 										conn.getLuceneIndex("testluceneindex1",

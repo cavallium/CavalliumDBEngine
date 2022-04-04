@@ -235,6 +235,7 @@ versions:
           memtableMemoryBudgetBytes: -long
           blockCache: -long
           setCacheIndexAndFilterBlocks: -boolean
+          spinning: boolean
       DatabaseVolume:
         data:
           volumePath: Path

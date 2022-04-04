@@ -143,12 +143,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			descriptors.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
 			for (Column column : columns) {
 				var columnOptions = new ColumnFamilyOptions();
-				columnOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
-				columnOptions.setMaxBytesForLevelMultiplier(10);
-				columnOptions.setLevelCompactionDynamicLevelBytes(true);
-				columnOptions.setLevel0FileNumCompactionTrigger(2);
-				columnOptions.setLevel0SlowdownWritesTrigger(20);
-				columnOptions.setLevel0StopWritesTrigger(36);
 
 				//noinspection ConstantConditions
 				if (databaseOptions.memtableMemoryBudgetBytes() != null) {
@@ -157,6 +151,20 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							.memtableMemoryBudgetBytes()
 							.orElse(databaseOptions.lowMemory() ? 16L * SizeUnit.MB : 128L * SizeUnit.MB));
 				}
+
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				columnOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				columnOptions.setMaxBytesForLevelMultiplier(10);
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+				columnOptions.setLevelCompactionDynamicLevelBytes(true);
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				columnOptions.setLevel0FileNumCompactionTrigger(2);
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				columnOptions.setLevel0SlowdownWritesTrigger(20);
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				columnOptions.setLevel0StopWritesTrigger(36);
 
 				if (!databaseOptions.levels().isEmpty()) {
 					var firstLevelOptions = getRocksLevelOptions(databaseOptions.levels().get(0));
@@ -198,11 +206,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					tableOptions.setOptimizeFiltersForMemory(true);
 					tableOptions.setVerifyCompression(false);
 				}
+				boolean cacheIndexAndFilterBlocks = databaseOptions.setCacheIndexAndFilterBlocks().orElse(true);
+				if (databaseOptions.spinning()) {
+					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+					cacheIndexAndFilterBlocks = true;
+				}
 				tableOptions
 						.setPinTopLevelIndexAndFilter(true)
 						.setPinL0FilterAndIndexBlocksInCache(true)
 						.setCacheIndexAndFilterBlocksWithHighPriority(true)
-						.setCacheIndexAndFilterBlocks(databaseOptions.setCacheIndexAndFilterBlocks().orElse(true))
+						.setCacheIndexAndFilterBlocks(cacheIndexAndFilterBlocks)
 						.setPartitionFilters(true)
 						.setIndexType(IndexType.kTwoLevelIndexSearch)
 						.setFormatVersion(5)
@@ -211,11 +224,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
-						.setBlockSize(256 * 1024);
+						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+						.setBlockSize((databaseOptions.spinning() ? 256 : 16) * SizeUnit.KB);
 
-				//columnOptions.setLevelCompactionDynamicLevelBytes(true);
 				columnOptions.setTableFormatConfig(tableOptions);
-				columnOptions.setCompactionPriority(CompactionPriority.OldestSmallestSeqFirst);
+				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
 			}

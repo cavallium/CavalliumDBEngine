@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
@@ -147,10 +148,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				//noinspection ConstantConditions
 				if (databaseOptions.memtableMemoryBudgetBytes() != null) {
-					// 16MiB/256MiB of ram will be used for level style compaction
-					columnOptions.optimizeLevelStyleCompaction(databaseOptions
-							.memtableMemoryBudgetBytes()
-							.orElse(databaseOptions.lowMemory() ? 16L * SizeUnit.MB : 128L * SizeUnit.MB));
+					// about 512MB of ram will be used for level style compaction
+					columnOptions.optimizeLevelStyleCompaction(databaseOptions.memtableMemoryBudgetBytes().orElse(
+							databaseOptions.lowMemory()
+									? (DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET / 4)
+									: DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET));
 				}
 
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html

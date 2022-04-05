@@ -90,7 +90,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
-	private final Scheduler dbScheduler;
+	private final Scheduler dbWScheduler;
+	private final Scheduler dbRScheduler;
 
 	private final Timer snapshotTime;
 
@@ -204,34 +205,40 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
-					final BloomFilter bloomFilter = new BloomFilter(3);
+					final BloomFilter bloomFilter = new BloomFilter(10);
 					tableOptions.setFilterPolicy(bloomFilter);
 					tableOptions.setOptimizeFiltersForMemory(true);
 					tableOptions.setVerifyCompression(false);
 				}
-				boolean cacheIndexAndFilterBlocks = databaseOptions.setCacheIndexAndFilterBlocks().orElse(true);
+				boolean cacheIndexAndFilterBlocks = databaseOptions.setCacheIndexAndFilterBlocks()
+						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+						.orElse(true);
 				if (databaseOptions.spinning()) {
 					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 					cacheIndexAndFilterBlocks = true;
 				}
 				tableOptions
+						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setPinTopLevelIndexAndFilter(true)
+						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setPinL0FilterAndIndexBlocksInCache(true)
+						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setCacheIndexAndFilterBlocksWithHighPriority(true)
 						.setCacheIndexAndFilterBlocks(cacheIndexAndFilterBlocks)
-						.setPartitionFilters(true)
+						//.setPartitionFilters(true)
 						.setIndexType(IndexType.kTwoLevelIndexSearch)
-						.setFormatVersion(5)
 						//todo: replace with kxxhash3
 						.setChecksumType(ChecksumType.kxxHash)
 						.setBlockCacheCompressed(optionsWithCache.compressedCache())
 						.setBlockCache(optionsWithCache.standardCache())
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-						.setBlockSize((databaseOptions.spinning() ? 256 : 16) * SizeUnit.KB);
+						.setBlockSize((databaseOptions.spinning() ? 512 : 16) * SizeUnit.KB);
 
 				columnOptions.setTableFormatConfig(tableOptions);
 				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
+				// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+				columnOptions.setOptimizeFiltersForHits(true);
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
 			}
@@ -250,17 +257,24 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			if (databaseOptions.lowMemory()) {
 				threadCap = Math.max(1, Runtime.getRuntime().availableProcessors());
 
-				this.dbScheduler = Schedulers.boundedElastic();
+				this.dbWScheduler = Schedulers.boundedElastic();
+				this.dbRScheduler = Schedulers.boundedElastic();
 			} else {
 				// 8 or more
 				threadCap = Math.max(8, Math.max(Runtime.getRuntime().availableProcessors(),
 						Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.threads", "0"))));
 				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.shared", "true"))) {
-					this.dbScheduler = Schedulers.boundedElastic();
+					this.dbWScheduler = Schedulers.boundedElastic();
+					this.dbRScheduler = Schedulers.boundedElastic();
 				} else {
-					this.dbScheduler = Schedulers.newBoundedElastic(threadCap,
+					this.dbWScheduler = Schedulers.newBoundedElastic(threadCap,
 							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-							new ShortNamedThreadFactory("db-" + name).setDaemon(true).withGroup(new ThreadGroup("database-threads")),
+							new ShortNamedThreadFactory("db-write-" + name).setDaemon(true).withGroup(new ThreadGroup("database-write")),
+							60
+					);
+					this.dbRScheduler = Schedulers.newBoundedElastic(threadCap,
+							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+							new ShortNamedThreadFactory("db-write-" + name).setDaemon(true).withGroup(new ThreadGroup("database-read")),
 							60
 					);
 				}
@@ -503,16 +517,23 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(0)
 					.setMaxTotalWalSize(0) // automatic
 			;
-			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB) / 2, -1, true);
-			compressedCache = null;
+			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), 6, false);
+			compressedCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), 6, false);
 
+			if (databaseOptions.spinning()) {
+				options
+						// method documentation
+						.setCompactionReadaheadSize(16 * SizeUnit.MB)
+						// guessed
+						.setWritableFileMaxBufferSize(16 * SizeUnit.MB);
+			}
 			if (databaseOptions.useDirectIO()) {
 				options
 						// Option to enable readahead in compaction
 						// If not set, it will be set to 2MB internally
-						.setCompactionReadaheadSize(2 * 1024 * 1024) // recommend at least 2MB
+						.setCompactionReadaheadSize(2 * SizeUnit.MB) // recommend at least 2MB
 						// Option to tune write buffer for direct writes
-						.setWritableFileMaxBufferSize(1024 * 1024)
+						.setWritableFileMaxBufferSize(2 * SizeUnit.MB)
 				;
 			}
 		} else {
@@ -632,11 +653,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						LLLocalKeyValueDatabase.this.name,
 						name,
 						ColumnUtils.toString(singletonListColumnName),
-						dbScheduler,
-						defaultValue
+						dbWScheduler, dbRScheduler, defaultValue
 				))
 				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	@Override
@@ -647,12 +667,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						getRocksDBColumn(db, getCfh(columnName)),
 						name,
 						ColumnUtils.toString(columnName),
-						dbScheduler,
+						dbWScheduler,
+						dbRScheduler,
 						(snapshot) -> snapshotsHandles.get(snapshot.getSequenceNumber()),
 						updateMode,
 						databaseOptions
 				))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	public RocksDBColumn getRocksDBColumn(byte[] columnName) {
@@ -689,7 +710,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public Mono<Long> getProperty(String propertyName) {
 		return Mono.fromCallable(() -> db.getAggregatedLongProperty(propertyName))
 				.onErrorMap(cause -> new IOException("Failed to read " + propertyName, cause))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	@Override
@@ -703,7 +724,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage")
 				))
 				.onErrorMap(cause -> new IOException("Failed to read memory stats", cause))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	@Override
@@ -715,7 +736,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				})
 				.onErrorMap(cause -> new IOException("Failed to verify checksum of database \""
 						+ getDatabaseName() + "\"", cause))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	@Override
@@ -737,7 +758,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
 					return new LLSnapshot(currentSnapshotSequenceNumber);
 				}))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	@Override
@@ -751,7 +772,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					db.releaseSnapshot(dbSnapshot);
 					return null;
 				})
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbRScheduler);
 	}
 
 	@Override
@@ -768,7 +789,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					return null;
 				})
 				.onErrorMap(cause -> new IOException("Failed to close", cause))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbWScheduler);
 	}
 
 	/**

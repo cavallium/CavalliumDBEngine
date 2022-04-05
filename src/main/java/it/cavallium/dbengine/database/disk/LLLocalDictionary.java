@@ -28,10 +28,8 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -57,7 +55,6 @@ import org.rocksdb.DirectSlice;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
-import org.rocksdb.RocksIterator;
 import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
@@ -119,7 +116,8 @@ public class LLLocalDictionary implements LLDictionary {
 	private final ColumnFamilyHandle cfh;
 	private final String databaseName;
 	private final String columnName;
-	private final Scheduler dbScheduler;
+	private final Scheduler dbWScheduler;
+	private final Scheduler dbRScheduler;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final UpdateMode updateMode;
 	private final boolean nettyDirect;
@@ -141,12 +139,12 @@ public class LLLocalDictionary implements LLDictionary {
 	private final Counter endedRemove;
 	private final Timer removeTime;
 
-	public LLLocalDictionary(
-			BufferAllocator allocator,
+	public LLLocalDictionary(BufferAllocator allocator,
 			@NotNull RocksDBColumn db,
 			String databaseName,
 			String columnName,
-			Scheduler dbScheduler,
+			Scheduler dbWScheduler,
+			Scheduler dbRScheduler,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			UpdateMode updateMode,
 			DatabaseOptions databaseOptions) {
@@ -155,7 +153,8 @@ public class LLLocalDictionary implements LLDictionary {
 		this.cfh = db.getColumnFamilyHandle();
 		this.databaseName = databaseName;
 		this.columnName = columnName;
-		this.dbScheduler = dbScheduler;
+		this.dbWScheduler = dbWScheduler;
+		this.dbRScheduler = dbRScheduler;
 		this.snapshotResolver = snapshotResolver;
 		this.updateMode = updateMode;
 		alloc = allocator;
@@ -242,14 +241,14 @@ public class LLLocalDictionary implements LLDictionary {
 		return alloc;
 	}
 
-	private <T> @NotNull Mono<T> runOnDb(Callable<@Nullable T> callable) {
-		return Mono.fromCallable(callable).subscribeOn(dbScheduler);
+	private <T> @NotNull Mono<T> runOnDb(boolean write, Callable<@Nullable T> callable) {
+		return Mono.fromCallable(callable).subscribeOn(write ? dbWScheduler : dbRScheduler);
 	}
 
 	@Override
 	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return keyMono
-				.publishOn(dbScheduler)
+				.publishOn(dbRScheduler)
 				.<Send<Buffer>>handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
@@ -279,7 +278,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean fillCache) {
-		return rangeMono.publishOn(dbScheduler).handle((rangeSend, sink) -> {
+		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called isRangeEmpty in a nonblocking thread";
 				startedContains.increment();
@@ -380,7 +379,7 @@ public class LLLocalDictionary implements LLDictionary {
 		var previousDataMono = this.getPreviousData(keyMono, resultType);
 		// Write the new entry to the database
 		Mono<Send<Buffer>> putMono = entryMono
-				.publishOn(dbScheduler)
+				.publishOn(dbWScheduler)
 				.handle((entry, sink) -> {
 					try (var key = entry.getKey().receive()) {
 						try (var value = entry.getValue().receive()) {
@@ -430,7 +429,7 @@ public class LLLocalDictionary implements LLDictionary {
 			BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return keyMono
-				.publishOn(dbScheduler)
+				.publishOn(dbWScheduler)
 				.handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
@@ -473,7 +472,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> keyMono,
 			BinarySerializationFunction updater) {
 		return keyMono
-				.publishOn(dbScheduler)
+				.publishOn(dbWScheduler)
 				.handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
@@ -509,7 +508,7 @@ public class LLLocalDictionary implements LLDictionary {
 		Mono<Send<Buffer>> previousDataMono = this.getPreviousData(keyMono, resultType);
 		// Delete the value from the database
 		Mono<Send<Buffer>> removeMono = keyMono
-				.publishOn(dbScheduler)
+				.publishOn(dbWScheduler)
 				.handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						logger.trace(MARKER_ROCKSDB, "Deleting {}", () -> toStringSafe(key));
@@ -536,7 +535,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private Mono<Send<Buffer>> getPreviousData(Mono<Send<Buffer>> keyMono, LLDictionaryResultType resultType) {
 		return switch (resultType) {
 			case PREVIOUS_VALUE_EXISTENCE -> keyMono
-					.publishOn(dbScheduler)
+					.publishOn(dbRScheduler)
 					.handle((keySend, sink) -> {
 						try (var key = keySend.receive()) {
 							var contained = containsKey(null, key);
@@ -546,7 +545,7 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					});
 			case PREVIOUS_VALUE -> keyMono
-					.publishOn(dbScheduler)
+					.publishOn(dbRScheduler)
 					.handle((keySend, sink) -> {
 						try (var key = keySend.receive()) {
 							assert !Schedulers.isInNonBlockingThread() : "Called getPreviousData in a nonblocking thread";
@@ -569,7 +568,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys) {
 		return keys
 				.buffer(MULTI_GET_WINDOW)
-				.publishOn(dbScheduler)
+				.publishOn(dbRScheduler)
 				.<ArrayList<Optional<Buffer>>>handle((keysWindow, sink) -> {
 					List<Buffer> keyBufsWindow = new ArrayList<>(keysWindow.size());
 					for (Send<Buffer> bufferSend : keysWindow) {
@@ -609,7 +608,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Void> putMulti(Flux<Send<LLEntry>> entries) {
 		return entries
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.publishOn(dbScheduler)
+				.publishOn(dbWScheduler)
 				.handle((entriesWindowList, sink) -> {
 					var entriesWindow = new ArrayList<LLEntry>(entriesWindowList.size());
 					for (Send<LLEntry> entrySend : entriesWindowList) {
@@ -662,7 +661,7 @@ public class LLLocalDictionary implements LLDictionary {
 			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction) {
 		return Flux.zip(keys, serializedKeys)
 				.buffer(Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.flatMapSequential(ew -> this.<List<Boolean>>runOnDb(() -> {
+				.flatMapSequential(ew -> this.<List<Boolean>>runOnDb(true, () -> {
 					List<Tuple2<K, Buffer>> entriesWindow = new ArrayList<>(ew.size());
 					for (Tuple2<K, Send<Buffer>> tuple : ew) {
 						entriesWindow.add(tuple.mapT2(Send::receive));
@@ -815,7 +814,7 @@ public class LLLocalDictionary implements LLDictionary {
 			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot, reverse, smallRange);
 		});
 		return Flux.usingWhen(iteratorMono,
-				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
 				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
@@ -834,7 +833,7 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 		return Flux.usingWhen(
 				iteratorMono,
-				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
 				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
@@ -871,7 +870,7 @@ public class LLLocalDictionary implements LLDictionary {
 			);
 		});
 		return Flux.usingWhen(iteratorMono,
-				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
 				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
@@ -909,7 +908,7 @@ public class LLLocalDictionary implements LLDictionary {
 								sink.error(ex);
 							}
 						})
-						.subscribeOn(dbScheduler),
+						.subscribeOn(dbRScheduler),
 				rangeSend -> Mono.fromRunnable(rangeSend::close)
 		);
 	}
@@ -924,14 +923,14 @@ public class LLLocalDictionary implements LLDictionary {
 			);
 		});
 		return Flux.usingWhen(iteratorMono,
-				iterator -> iterator.flux().subscribeOn(dbScheduler),
+				iterator -> iterator.flux().subscribeOn(dbRScheduler),
 				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
 
 	private Flux<Send<Buffer>> getRangeKeysSingle(LLSnapshot snapshot, Mono<Send<Buffer>> keyMono) {
 		return keyMono
-				.publishOn(dbScheduler)
+				.publishOn(dbRScheduler)
 				.<Send<Buffer>>handle((keySend, sink) -> {
 					try (var key = keySend.receive()) {
 						if (containsKey(snapshot, key)) {
@@ -955,7 +954,7 @@ public class LLLocalDictionary implements LLDictionary {
 			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot, reverse, smallRange);
 		});
 		return Flux.usingWhen(iteratorMono,
-				iterator -> iterator.flux().subscribeOn(dbScheduler, false),
+				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
 				iterator -> Mono.fromRunnable(iterator::close)
 		);
 	}
@@ -964,7 +963,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Void> setRange(Mono<Send<LLRange>> rangeMono, Flux<Send<LLEntry>> entries, boolean smallRange) {
 		if (USE_WINDOW_IN_SET_RANGE) {
 			return rangeMono
-					.publishOn(dbScheduler)
+					.publishOn(dbWScheduler)
 					.<Void>handle((rangeSend, sink) -> {
 						try (var range = rangeSend.receive()) {
 							assert !Schedulers.isInNonBlockingThread() : "Called setRange in a nonblocking thread";
@@ -1046,7 +1045,7 @@ public class LLLocalDictionary implements LLDictionary {
 					.flatMap(keysWindowFlux -> keysWindowFlux
 							.collectList()
 							.flatMap(entriesListSend -> this
-									.<Void>runOnDb(() -> {
+									.<Void>runOnDb(true, () -> {
 										List<LLEntry> entriesList = new ArrayList<>(entriesListSend.size());
 										for (Send<LLEntry> entrySend : entriesListSend) {
 											entriesList.add(entrySend.receive());
@@ -1108,7 +1107,7 @@ public class LLLocalDictionary implements LLDictionary {
 			}
 			var deleteMono = this
 					.getRange(null, rangeMono, false, smallRange)
-					.publishOn(dbScheduler)
+					.publishOn(dbWScheduler)
 					.handle((oldValueSend, sink) -> {
 						try (var oldValue = oldValueSend.receive()) {
 							db.delete(EMPTY_WRITE_OPTIONS, oldValue.getKeyUnsafe());
@@ -1120,7 +1119,7 @@ public class LLLocalDictionary implements LLDictionary {
 					.then(Mono.<Void>empty());
 
 			var putMono = entries
-					.publishOn(dbScheduler)
+					.publishOn(dbWScheduler)
 					.handle((entrySend, sink) -> {
 						try (var entry = entrySend.receive()) {
 							if (entry.getKeyUnsafe() != null && entry.getValueUnsafe() != null) {
@@ -1313,13 +1312,13 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 				})
 				.onErrorMap(cause -> new IOException("Failed to clear", cause))
-				.subscribeOn(dbScheduler);
+				.subscribeOn(dbWScheduler);
 
 	}
 
 	@Override
 	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono, boolean fast) {
-		return rangeMono.publishOn(dbScheduler).handle((rangeSend, sink) -> {
+		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called sizeRange in a nonblocking thread";
 				if (range.isAll()) {
@@ -1383,7 +1382,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<LLEntry>> getOne(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return rangeMono.publishOn(dbScheduler).handle((rangeSend, sink) -> {
+		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOne in a nonblocking thread";
 				try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
@@ -1438,7 +1437,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<Buffer>> getOneKey(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono) {
-		return rangeMono.publishOn(dbScheduler).handle((rangeSend, sink) -> {
+		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOneKey in a nonblocking thread";
 				try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
@@ -1600,7 +1599,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Send<LLEntry>> removeOne(Mono<Send<LLRange>> rangeMono) {
-		return rangeMono.publishOn(dbScheduler).handle((rangeSend, sink) -> {
+		return rangeMono.publishOn(dbWScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called removeOne in a nonblocking thread";
 				try (var readOpts = new ReadOptions(getReadOptions(null))) {

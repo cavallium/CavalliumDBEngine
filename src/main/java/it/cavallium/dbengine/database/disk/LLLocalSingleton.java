@@ -9,7 +9,6 @@ import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
@@ -34,14 +33,16 @@ public class LLLocalSingleton implements LLSingleton {
 	private final String columnName;
 	private final Mono<Send<Buffer>> nameMono;
 	private final String databaseName;
-	private final Scheduler dbScheduler;
+	private final Scheduler dbWScheduler;
+	private final Scheduler dbRScheduler;
 
 	public LLLocalSingleton(RocksDBColumn db,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
 			String databaseName,
 			byte[] name,
 			String columnName,
-			Scheduler dbScheduler,
+			Scheduler dbWScheduler,
+			Scheduler dbRScheduler,
 			byte @Nullable [] defaultValue) throws RocksDBException {
 		this.db = db;
 		this.databaseName = databaseName;
@@ -55,7 +56,8 @@ public class LLLocalSingleton implements LLSingleton {
 				return nameBuf.send();
 			}
 		});
-		this.dbScheduler = dbScheduler;
+		this.dbWScheduler = dbWScheduler;
+		this.dbRScheduler = dbRScheduler;
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Initialized in a nonblocking thread");
 		}
@@ -64,8 +66,8 @@ public class LLLocalSingleton implements LLSingleton {
 		}
 	}
 
-	private <T> @NotNull Mono<T> runOnDb(Callable<@Nullable T> callable) {
-		return Mono.fromCallable(callable).subscribeOn(dbScheduler);
+	private <T> @NotNull Mono<T> runOnDb(boolean write, Callable<@Nullable T> callable) {
+		return Mono.fromCallable(callable).subscribeOn(write ? dbWScheduler : dbRScheduler);
 	}
 
 	private ReadOptions resolveSnapshot(LLSnapshot snapshot) {
@@ -83,7 +85,7 @@ public class LLLocalSingleton implements LLSingleton {
 
 	@Override
 	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
-		return nameMono.publishOn(Schedulers.boundedElastic()).handle((nameSend, sink) -> {
+		return nameMono.publishOn(dbRScheduler).handle((nameSend, sink) -> {
 			try (Buffer name = nameSend.receive()) {
 				Buffer result = db.get(resolveSnapshot(snapshot), name);
 				if (result != null) {
@@ -99,7 +101,7 @@ public class LLLocalSingleton implements LLSingleton {
 
 	@Override
 	public Mono<Void> set(Mono<Send<Buffer>> valueMono) {
-		return Mono.zip(nameMono, valueMono).publishOn(Schedulers.boundedElastic()).handle((tuple, sink) -> {
+		return Mono.zip(nameMono, valueMono).publishOn(dbWScheduler).handle((tuple, sink) -> {
 			var nameSend = tuple.getT1();
 			var valueSend = tuple.getT2();
 			try (Buffer name = nameSend.receive()) {
@@ -114,7 +116,7 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	private Mono<Void> unset() {
-		return nameMono.publishOn(Schedulers.boundedElastic()).handle((nameSend, sink) -> {
+		return nameMono.publishOn(dbWScheduler).handle((nameSend, sink) -> {
 			try (Buffer name = nameSend.receive()) {
 				db.delete(EMPTY_WRITE_OPTIONS, name);
 			} catch (RocksDBException ex) {
@@ -126,7 +128,7 @@ public class LLLocalSingleton implements LLSingleton {
 	@Override
 	public Mono<Send<Buffer>> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
-		return Mono.usingWhen(nameMono, keySend -> runOnDb(() -> {
+		return Mono.usingWhen(nameMono, keySend -> runOnDb(true, () -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
@@ -150,7 +152,7 @@ public class LLLocalSingleton implements LLSingleton {
 
 	@Override
 	public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
-		return Mono.usingWhen(nameMono, keySend -> runOnDb(() -> {
+		return Mono.usingWhen(nameMono, keySend -> runOnDb(true, () -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}

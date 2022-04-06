@@ -22,6 +22,7 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.cavallium.dbengine.rpc.current.data.nullables.NullableFilter;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,7 +98,8 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 														Nullablelong.empty(),
 														Nullablelong.empty(),
 														Nullableboolean.empty(),
-														false
+														false,
+														NullableFilter.empty()
 												)
 										),
 										conn.getLuceneIndex("testluceneindex1",

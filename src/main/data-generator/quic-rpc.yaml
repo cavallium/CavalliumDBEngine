@@ -81,6 +81,9 @@ versions:
         RocksDBStandaloneDirectory,
         StandardFSDirectoryOptions
       ]
+      Filter: [
+        BloomFilter
+      ]
     customTypes:
       Path:
         javaClass: java.nio.file.Path
@@ -234,8 +237,13 @@ versions:
           maxOpenFiles: -int
           memtableMemoryBudgetBytes: -long
           blockCache: -long
-          setCacheIndexAndFilterBlocks: -boolean
+          cacheIndexAndFilterBlocks: -boolean
           spinning: boolean
+          filter: -Filter
+      BloomFilter:
+        data:
+          bitsPerKey: int
+          optimizeForHits: -boolean
       DatabaseVolume:
         data:
           volumePath: Path

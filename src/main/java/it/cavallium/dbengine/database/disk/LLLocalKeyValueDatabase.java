@@ -206,12 +206,20 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
-					final BloomFilter bloomFilter = new BloomFilter(10);
-					tableOptions.setFilterPolicy(bloomFilter);
 					tableOptions.setOptimizeFiltersForMemory(true);
 					tableOptions.setVerifyCompression(false);
 				}
-				boolean cacheIndexAndFilterBlocks = databaseOptions.setCacheIndexAndFilterBlocks()
+				if (databaseOptions.filter().isPresent()) {
+					var filterOptions = databaseOptions.filter().get();
+
+					if (filterOptions instanceof it.cavallium.dbengine.rpc.current.data.BloomFilter bloomFilterOptions) {
+						// If OptimizeFiltersForHits == true: memory size = bitsPerKey * (totalKeys * 0.1)
+						// If OptimizeFiltersForHits == false: memory size = bitsPerKey * totalKeys
+						final BloomFilter bloomFilter = new BloomFilter(bloomFilterOptions.bitsPerKey());
+						tableOptions.setFilterPolicy(bloomFilter);
+					}
+				}
+				boolean cacheIndexAndFilterBlocks = databaseOptions.cacheIndexAndFilterBlocks()
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.orElse(true);
 				if (databaseOptions.spinning()) {
@@ -234,22 +242,29 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setBlockCache(optionsWithCache.standardCache())
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-						.setBlockSize((databaseOptions.spinning() ? 512 : 16) * SizeUnit.KB);
+						.setBlockSize((databaseOptions.spinning() ? 256 : 16) * SizeUnit.KB);
 
 				columnOptions.setTableFormatConfig(tableOptions);
 				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
-				if (databaseOptions.spinning()) {
-					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-					columnOptions.setOptimizeFiltersForHits(true);
-					// https://github.com/EighteenZi/rocksdb_wiki/blob/master/RocksDB-Tuning-Guide.md#throughput-gap-between-random-read-vs-sequential-read-is-much-higher-in-spinning-disks-suggestions=
+				if (databaseOptions.filter().isPresent()) {
+					var filterOptions = databaseOptions.filter().get();
+
+					if (filterOptions instanceof it.cavallium.dbengine.rpc.current.data.BloomFilter bloomFilterOptions) {
+						boolean optimizeForHits = bloomFilterOptions.optimizeForHits()
+								// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+								// https://github.com/EighteenZi/rocksdb_wiki/blob/master/RocksDB-Tuning-Guide.md#throughput-gap-between-random-read-vs-sequential-read-is-much-higher-in-spinning-disks-suggestions=
+								.orElse(databaseOptions.spinning());
+						columnOptions.setOptimizeFiltersForHits(optimizeForHits);
+					}
 				}
-				// Increasing this value can reduce the frequency of compaction and reduce write amplification,
-				// but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
-				// This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
-				columnOptions.setTargetFileSizeBase((databaseOptions.spinning() ? 256 : 128) * SizeUnit.MB);
-				// For each level up, the threshold is multiplied by the factor target_file_size_multiplier
-				// (but the default value is 1, which means that the maximum sstable of each level is the same).
-				columnOptions.setTargetFileSizeMultiplier(1);
+
+				// // Increasing this value can reduce the frequency of compaction and reduce write amplification,
+				// // but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
+				// // This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
+				// columnOptions.setTargetFileSizeBase((databaseOptions.spinning() ? 128 : 64) * SizeUnit.MB);
+				// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
+				// // (but the default value is 1, which means that the maximum sstable of each level is the same).
+				// columnOptions.setTargetFileSizeMultiplier(1);
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
 			}
@@ -529,7 +544,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(0) // automatic
 			;
 			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), 6, false);
-			compressedCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), 6, false);
+			compressedCache = null;
 
 			if (databaseOptions.spinning()) {
 				options

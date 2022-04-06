@@ -18,12 +18,10 @@
 package it.cavallium.dbengine.lucene.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.FloatCodec;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
-import it.cavallium.dbengine.lucene.LMDBArray;
-import java.io.Closeable;
+import it.cavallium.dbengine.lucene.HugePqArray;
 import java.io.IOException;
 import org.apache.lucene.document.IntPoint;
 import org.apache.lucene.index.LeafReaderContext;
@@ -40,10 +38,10 @@ public class IntComparator extends NumericComparator<Integer> implements SafeClo
   protected int topValue;
   protected int bottom;
 
-  public IntComparator(LLTempLMDBEnv env,
+  public IntComparator(LLTempHugePqEnv env,
       int numHits, String field, Integer missingValue, boolean reverse, int sortPos) {
     super(field, missingValue != null ? missingValue : 0, reverse, sortPos, Integer.BYTES);
-		values = new LMDBArray<>(env, new IntCodec(), numHits, 0);
+		values = new HugePqArray<>(env, new IntCodec(), numHits, 0);
   }
 
   @Override

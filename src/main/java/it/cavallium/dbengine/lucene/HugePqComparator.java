@@ -2,7 +2,7 @@ package it.cavallium.dbengine.lucene;
 
 import static org.apache.lucene.search.SortField.STRING_LAST;
 
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.comparators.DoubleComparator;
 import it.cavallium.dbengine.lucene.comparators.FloatComparator;
 import it.cavallium.dbengine.lucene.comparators.IntComparator;
@@ -18,11 +18,11 @@ import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSelector;
-import org.apache.lucene.search.comparators.LMDBDocComparator;
+import org.apache.lucene.search.comparators.HugePqDocComparator;
 
-public class LMDBComparator {
+public class HugePqComparator {
 
-	public static FieldComparator<?> getComparator(LLTempLMDBEnv env, SortField sortField,
+	public static FieldComparator<?> getComparator(LLTempHugePqEnv env, SortField sortField,
 			int numHits, int sortPos) {
 		var sortFieldClass = sortField.getClass();
 		if (sortFieldClass == org.apache.lucene.search.SortedNumericSortField.class) {
@@ -93,7 +93,7 @@ public class LMDBComparator {
 			var comparatorSource = sortField.getComparatorSource();
 			return switch (sortField.getType()) {
 				case SCORE -> new RelevanceComparator(env, numHits);
-				case DOC -> new LMDBDocComparator(env, numHits, reverse, sortPos);
+				case DOC -> new HugePqDocComparator(env, numHits, reverse, sortPos);
 				case INT -> new IntComparator(env, numHits, field, (Integer) missingValue,
 						reverse, sortPos);
 				case FLOAT -> new FloatComparator(env, numHits, field, (Float) missingValue,

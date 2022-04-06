@@ -17,13 +17,13 @@
 package org.apache.lucene.search;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.FieldValueHitQueue;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLFieldDoc;
 import it.cavallium.dbengine.lucene.LLSlotDoc;
 import it.cavallium.dbengine.lucene.LLSlotDocCodec;
-import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
+import it.cavallium.dbengine.lucene.HugePqPriorityQueue;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import it.cavallium.dbengine.lucene.PriorityQueue;
 import it.cavallium.dbengine.lucene.ResourceIterable;
@@ -39,15 +39,15 @@ import reactor.core.publisher.Flux;
 /**
  * A {@link org.apache.lucene.search.Collector} that sorts by {@link SortField} using {@link FieldComparator}s.
  *
- * <p>See the {@link #create(LLTempLMDBEnv, Sort, int, int)} (org.apache.lucene.search.Sort, int, int)} method for instantiating a
+ * <p>See the {@link #create(LLTempHugePqEnv, Sort, int, int)} (org.apache.lucene.search.Sort, int, int)} method for instantiating a
  * TopFieldCollector.
  *
  * This class must mirror this changes:
  * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/TopFieldCollector.java">
  *   Lucene TopFieldCollector changes on GitHub</a>
  */
-public abstract class LMDBFullFieldDocCollector extends
-		FullDocsCollector<LMDBPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
+public abstract class HugePqFullFieldDocCollector extends
+		FullDocsCollector<HugePqPriorityQueue<LLSlotDoc>, LLSlotDoc, LLFieldDoc> {
 
 	// TODO: one optimization we could do is to pre-fill
 	// the queue with sentinel value that guaranteed to
@@ -185,14 +185,14 @@ public abstract class LMDBFullFieldDocCollector extends
 	 * Implements a TopFieldCollector over one SortField criteria, with tracking
 	 * document scores and maxScore.
 	 */
-	private static class SimpleFieldCollector extends LMDBFullFieldDocCollector {
+	private static class SimpleFieldCollector extends HugePqFullFieldDocCollector {
 		final Sort sort;
 		final PriorityQueue<LLSlotDoc> queue;
 		private final FieldValueHitQueue fieldValueHitQueue;
 
 		public SimpleFieldCollector(
 				Sort sort,
-				LMDBPriorityQueue<LLSlotDoc> queue,
+				HugePqPriorityQueue<LLSlotDoc> queue,
 				FieldValueHitQueue fieldValueHitQueue,
 				long numHits,
 				HitsThresholdChecker hitsThresholdChecker,
@@ -268,8 +268,8 @@ public abstract class LMDBFullFieldDocCollector extends
 	// internal versions. If someone will define a constructor with any other
 	// visibility, then anyone will be able to extend the class, which is not what
 	// we want.
-	private LMDBFullFieldDocCollector(
-			LMDBPriorityQueue<LLSlotDoc> pq,
+	private HugePqFullFieldDocCollector(
+			HugePqPriorityQueue<LLSlotDoc> pq,
 			FieldValueHitQueue fieldValueHitQueue,
 			long numHits,
 			HitsThresholdChecker hitsThresholdChecker,
@@ -335,7 +335,7 @@ public abstract class LMDBFullFieldDocCollector extends
 	}
 
 	/**
-	 * Creates a new {@link LMDBFullFieldDocCollector} from the given arguments.
+	 * Creates a new {@link HugePqFullFieldDocCollector} from the given arguments.
 	 *
 	 * <p><b>NOTE</b>: The instances returned by this method pre-allocate a full array of length
 	 * <code>numHits</code>.
@@ -347,9 +347,9 @@ public abstract class LMDBFullFieldDocCollector extends
 	 *     hand if the query matches less than or exactly {@code totalHitsThreshold} hits then the hit
 	 *     count of the result will be accurate. {@link Integer#MAX_VALUE} may be used to make the hit
 	 *     count accurate, but this will also make query processing slower.
-	 * @return a {@link LMDBFullFieldDocCollector} instance which will sort the results by the sort criteria.
+	 * @return a {@link HugePqFullFieldDocCollector} instance which will sort the results by the sort criteria.
 	 */
-	public static LMDBFullFieldDocCollector create(LLTempLMDBEnv env, Sort sort, int numHits, int totalHitsThreshold) {
+	public static HugePqFullFieldDocCollector create(LLTempHugePqEnv env, Sort sort, int numHits, int totalHitsThreshold) {
 		if (totalHitsThreshold < 0) {
 			throw new IllegalArgumentException(
 					"totalHitsThreshold must be >= 0, got " + totalHitsThreshold);
@@ -367,8 +367,8 @@ public abstract class LMDBFullFieldDocCollector extends
 	 * Same as above with additional parameters to allow passing in the threshold checker and the max
 	 * score accumulator.
 	 */
-	static LMDBFullFieldDocCollector create(
-			LLTempLMDBEnv env,
+	static HugePqFullFieldDocCollector create(
+			LLTempHugePqEnv env,
 			Sort sort,
 			int numHits,
 			HitsThresholdChecker hitsThresholdChecker,
@@ -388,7 +388,7 @@ public abstract class LMDBFullFieldDocCollector extends
 		}
 
 		var fieldValueHitQueue = new LLSlotDocCodec(env, numHits, sort.getSort());
-		var queue = new LMDBPriorityQueue<>(env, fieldValueHitQueue);
+		var queue = new HugePqPriorityQueue<>(env, fieldValueHitQueue);
 
 		// inform a comparator that sort is based on this single field
 		// to enable some optimizations for skipping over non-competitive documents
@@ -405,8 +405,8 @@ public abstract class LMDBFullFieldDocCollector extends
 	 * shared {@link MaxScoreAccumulator} to propagate the minimum score accross segments if the
 	 * primary sort is by relevancy.
 	 */
-	public static CollectorManager<LMDBFullFieldDocCollector, FullFieldDocs<LLFieldDoc>> createSharedManager(
-			LLTempLMDBEnv env, Sort sort, int numHits, long totalHitsThreshold) {
+	public static CollectorManager<HugePqFullFieldDocCollector, FullFieldDocs<LLFieldDoc>> createSharedManager(
+			LLTempHugePqEnv env, Sort sort, int numHits, long totalHitsThreshold) {
 		return new CollectorManager<>() {
 
 			private final HitsThresholdChecker hitsThresholdChecker;
@@ -422,18 +422,18 @@ public abstract class LMDBFullFieldDocCollector extends
 			private final MaxScoreAccumulator minScoreAcc = new MaxScoreAccumulator();
 
 			@Override
-			public LMDBFullFieldDocCollector newCollector() {
+			public HugePqFullFieldDocCollector newCollector() {
 				return create(env, sort, numHits, hitsThresholdChecker, minScoreAcc);
 			}
 
 			@Override
-			public FullFieldDocs<LLFieldDoc> reduce(Collection<LMDBFullFieldDocCollector> collectors) {
+			public FullFieldDocs<LLFieldDoc> reduce(Collection<HugePqFullFieldDocCollector> collectors) {
 				return reduceShared(sort, collectors);
 			}
 		};
 	}
 
-	private static FullFieldDocs<LLFieldDoc> reduceShared(Sort sort, Collection<LMDBFullFieldDocCollector> collectors) {
+	private static FullFieldDocs<LLFieldDoc> reduceShared(Sort sort, Collection<HugePqFullFieldDocCollector> collectors) {
 		@SuppressWarnings("unchecked")
 		final FullDocs<LLFieldDoc>[] fullDocs = new FullDocs[collectors.size()];
 		int i = 0;

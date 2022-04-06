@@ -15,7 +15,15 @@ public record RocksIteratorTuple(List<RocksObject> refs, @NotNull RocksDBIterato
 
 	@Override
 	public void close() {
-		refs.forEach(AbstractImmutableNativeReference::close);
+		for (RocksObject rocksObject : refs) {
+			if (rocksObject instanceof UnreleasableReadOptions) {
+				continue;
+			}
+			if (rocksObject instanceof UnreleasableWriteOptions) {
+				continue;
+			}
+			rocksObject.close();
+		}
 		iterator.close();
 		sliceMin.close();
 		sliceMax.close();

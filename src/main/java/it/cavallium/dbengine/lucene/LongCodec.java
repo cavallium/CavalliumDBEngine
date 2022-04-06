@@ -1,17 +1,18 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.api.Buffer;
 import java.util.function.Function;
 
-public class LongCodec implements LMDBCodec<Long> {
+public class LongCodec implements HugePqCodec<Long> {
 
 	@Override
-	public ByteBuf serialize(Function<Integer, ByteBuf> allocator, Long data) {
+	public Buffer serialize(Function<Integer, Buffer> allocator, Long data) {
 		return allocator.apply(Long.BYTES).writeLong(data);
 	}
 
 	@Override
-	public Long deserialize(ByteBuf b) {
+	public Long deserialize(Buffer b) {
 		return b.readLong();
 	}
+
 }

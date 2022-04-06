@@ -18,12 +18,10 @@
 package it.cavallium.dbengine.lucene.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.DoubleCodec;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.FloatCodec;
 import it.cavallium.dbengine.lucene.IArray;
-import it.cavallium.dbengine.lucene.LMDBArray;
-import java.io.Closeable;
+import it.cavallium.dbengine.lucene.HugePqArray;
 import java.io.IOException;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.index.LeafReaderContext;
@@ -40,10 +38,10 @@ public class FloatComparator extends NumericComparator<Float> implements SafeClo
   protected float topValue;
   protected float bottom;
 
-  public FloatComparator(LLTempLMDBEnv env,
+  public FloatComparator(LLTempHugePqEnv env,
       int numHits, String field, Float missingValue, boolean reverse, int sortPos) {
     super(field, missingValue != null ? missingValue : 0.0f, reverse, sortPos, Float.BYTES);
-		values = new LMDBArray<>(env, new FloatCodec(), numHits, 0f);
+		values = new HugePqArray<>(env, new FloatCodec(), numHits, 0f);
   }
 
   @Override

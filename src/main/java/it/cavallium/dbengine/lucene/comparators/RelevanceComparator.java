@@ -17,24 +17,17 @@
 package it.cavallium.dbengine.lucene.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.FloatCodec;
 import it.cavallium.dbengine.lucene.IArray;
-import it.cavallium.dbengine.lucene.LMDBArray;
-import it.cavallium.dbengine.lucene.LongCodec;
-import java.io.Closeable;
+import it.cavallium.dbengine.lucene.HugePqArray;
 import java.io.IOException;
-import org.apache.lucene.index.BinaryDocValues;
-import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.index.SortedDocValues;
 import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreCachingWrappingScorer;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.BytesRefBuilder;
 
 /**
  * Sorts by descending relevance. NOTE: if you are sorting only by descending relevance and then secondarily by
@@ -52,8 +45,8 @@ public final class RelevanceComparator extends FieldComparator<Float> implements
 	/**
 	 * Creates a new comparator based on relevance for {@code numHits}.
 	 */
-	public RelevanceComparator(LLTempLMDBEnv env, int numHits) {
-		scores = new LMDBArray<>(env, new FloatCodec(), numHits, 0f);
+	public RelevanceComparator(LLTempHugePqEnv env, int numHits) {
+		scores = new HugePqArray<>(env, new FloatCodec(), numHits, 0f);
 	}
 
 	@Override

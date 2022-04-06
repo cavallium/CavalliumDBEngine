@@ -18,12 +18,10 @@
 package it.cavallium.dbengine.lucene.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.DoubleCodec;
 import it.cavallium.dbengine.lucene.IArray;
-import it.cavallium.dbengine.lucene.LMDBArray;
-import it.cavallium.dbengine.lucene.SortFieldCodec;
-import java.io.Closeable;
+import it.cavallium.dbengine.lucene.HugePqArray;
 import java.io.IOException;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.index.LeafReaderContext;
@@ -40,10 +38,10 @@ public class DoubleComparator extends NumericComparator<Double> implements SafeC
   protected double topValue;
   protected double bottom;
 
-  public DoubleComparator(LLTempLMDBEnv env,
+  public DoubleComparator(LLTempHugePqEnv env,
       int numHits, String field, Double missingValue, boolean reverse, int sortPos) {
     super(field, missingValue != null ? missingValue : 0.0, reverse, sortPos, Double.BYTES);
-		values = new LMDBArray<>(env, new DoubleCodec(), numHits, 0d);
+		values = new HugePqArray<>(env, new DoubleCodec(), numHits, 0d);
   }
 
   @Override

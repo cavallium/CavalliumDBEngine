@@ -6,9 +6,8 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LuceneHacks;
-import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.Column;
@@ -34,7 +33,7 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 	private final AtomicBoolean connected = new AtomicBoolean();
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
-	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
+	private final AtomicReference<LLTempHugePqEnv> env = new AtomicReference<>();
 
 	public LLMemoryDatabaseConnection(BufferAllocator allocator, MeterRegistry meterRegistry) {
 		this.allocator = allocator;
@@ -58,7 +57,7 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 					if (!connected.compareAndSet(false, true)) {
 						throw new IllegalStateException("Already connected");
 					}
-					var prev = env.getAndSet(new LLTempLMDBEnv());
+					var prev = env.getAndSet(new LLTempHugePqEnv());
 					if (prev != null) {
 						throw new IllegalStateException("Env was already set");
 					}

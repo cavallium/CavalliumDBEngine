@@ -18,22 +18,21 @@
 package org.apache.lucene.search.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
-import it.cavallium.dbengine.lucene.LMDBArray;
+import it.cavallium.dbengine.lucene.HugePqArray;
 import java.io.IOException;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Scorable;
-import org.apache.lucene.search.comparators.MinDocIterator;
 
 /**
  * Comparator that sorts by asc _doc
  * Based on {@link org.apache.lucene.search.comparators.DocComparator}
  * */
-public class LMDBDocComparator extends org.apache.lucene.search.comparators.DocComparator implements SafeCloseable {
+public class HugePqDocComparator extends org.apache.lucene.search.comparators.DocComparator implements SafeCloseable {
   private final IArray<Integer> docIDs;
   private final boolean enableSkipping; // if skipping functionality should be enabled
   private int bottom;
@@ -43,9 +42,9 @@ public class LMDBDocComparator extends org.apache.lucene.search.comparators.DocC
   private boolean hitsThresholdReached;
 
   /** Creates a new comparator based on document ids for {@code numHits} */
-  public LMDBDocComparator(LLTempLMDBEnv env, int numHits, boolean reverse, int sortPost) {
+  public HugePqDocComparator(LLTempHugePqEnv env, int numHits, boolean reverse, int sortPost) {
 		super(0, reverse, sortPost);
-		this.docIDs = new LMDBArray<>(env, new IntCodec(), numHits, 0);
+		this.docIDs = new HugePqArray<>(env, new IntCodec(), numHits, 0);
 		// skipping functionality is enabled if we are sorting by _doc in asc order as a primary sort
 		this.enableSkipping = (!reverse && sortPost == 0);
   }

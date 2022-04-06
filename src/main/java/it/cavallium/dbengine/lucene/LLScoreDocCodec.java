@@ -1,76 +1,51 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.api.Buffer;
 import java.util.function.Function;
 
-public class LLScoreDocCodec implements LMDBSortedCodec<LLScoreDoc> {
+public class LLScoreDocCodec implements HugePqCodec<LLScoreDoc> {
 
 	@Override
-	public ByteBuf serialize(Function<Integer, ByteBuf> allocator, LLScoreDoc data) {
+	public Buffer serialize(Function<Integer, Buffer> allocator, LLScoreDoc data) {
 		var buf = allocator.apply(Float.BYTES + Integer.BYTES + Integer.BYTES);
+		buf.writerOffset(Float.BYTES + Integer.BYTES + Integer.BYTES);
 		setScore(buf, data.score());
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
-		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES);
-		return buf.asReadOnly();
+		return buf;
 	}
 
 	@Override
-	public LLScoreDoc deserialize(ByteBuf buf) {
+	public LLScoreDoc deserialize(Buffer buf) {
 		return new LLScoreDoc(getDoc(buf), getScore(buf), getShardIndex(buf));
 	}
 
-	@Override
-	public int compare(LLScoreDoc hitA, LLScoreDoc hitB) {
-		if (hitA.score() == hitB.score()) {
-			if (hitA.doc() == hitB.doc()) {
-				return Integer.compare(hitA.shardIndex(), hitB.shardIndex());
-			} else {
-				return Integer.compare(hitB.doc(), hitA.doc());
-			}
-		} else {
-			return Float.compare(hitA.score(), hitB.score());
-		}
+	private static float getScore(Buffer hit) {
+		return HugePqCodec.getLexFloat(hit, 0, false);
+	}
+
+	private static int getDoc(Buffer hit) {
+		return HugePqCodec.getLexInt(hit, Float.BYTES, true);
+	}
+
+	private static int getShardIndex(Buffer hit) {
+		return HugePqCodec.getLexInt(hit, Float.BYTES + Integer.BYTES, false);
+	}
+
+	private static void setScore(Buffer hit, float score) {
+		HugePqCodec.setLexFloat(hit, 0, false, score);
+	}
+
+	private static void setDoc(Buffer hit, int doc) {
+		HugePqCodec.setLexInt(hit, Float.BYTES, true, doc);
+	}
+
+	private static void setShardIndex(Buffer hit, int shardIndex) {
+		HugePqCodec.setLexInt(hit, Float.BYTES + Integer.BYTES, false, shardIndex);
 	}
 
 	@Override
-	public int compareDirect(ByteBuf hitA, ByteBuf hitB) {
-		var scoreA = getScore(hitA);
-		var scoreB = getScore(hitB);
-		if (scoreA == scoreB) {
-			var docA = getDoc(hitA);
-			var docB = getDoc(hitB);
-			if (docA == docB) {
-				return Integer.compare(getShardIndex(hitA), getShardIndex(hitB));
-			} else {
-				return Integer.compare(docB, docA);
-			}
-		} else {
-			return Float.compare(scoreA, scoreB);
-		}
-	}
-
-	private static float getScore(ByteBuf hit) {
-		return hit.getFloat(0);
-	}
-
-	private static int getDoc(ByteBuf hit) {
-		return hit.getInt(Float.BYTES);
-	}
-
-	private static int getShardIndex(ByteBuf hit) {
-		return hit.getInt(Float.BYTES + Integer.BYTES);
-	}
-
-	private static void setScore(ByteBuf hit, float score) {
-		hit.setFloat(0, score);
-	}
-
-	private static void setDoc(ByteBuf hit, int doc) {
-		hit.setInt(Float.BYTES, doc);
-	}
-
-	private static void setShardIndex(ByteBuf hit, int shardIndex) {
-		hit.setInt(Float.BYTES + Integer.BYTES, shardIndex);
+	public LLScoreDoc clone(LLScoreDoc obj) {
+		return new LLScoreDoc(obj.doc(), obj.score(), obj.shardIndex());
 	}
 }

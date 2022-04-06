@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.api.Buffer;
 import java.util.ArrayList;
 import java.util.function.Function;
 
-public class LLFieldDocCodec implements LMDBSortedCodec<LLFieldDoc> {
+public class LLFieldDocCodec implements HugePqCodec<LLFieldDoc> {
 
 	private enum FieldType {
 		FLOAT,
@@ -18,7 +18,7 @@ public class LLFieldDocCodec implements LMDBSortedCodec<LLFieldDoc> {
 	}
 
 	@Override
-	public ByteBuf serialize(Function<Integer, ByteBuf> allocator, LLFieldDoc data) {
+	public Buffer serialize(Function<Integer, Buffer> allocator, LLFieldDoc data) {
 		int fieldsDataSize = 0;
 		byte[] fieldTypes = new byte[data.fields().size()];
 		int fieldId = 0;
@@ -47,7 +47,7 @@ public class LLFieldDocCodec implements LMDBSortedCodec<LLFieldDoc> {
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
 		setFieldsCount(buf, data.fields().size());
-		buf.writerIndex(size);
+		buf.writerOffset(size);
 
 		fieldId = 0;
 		for (Object field : data.fields()) {
@@ -67,14 +67,14 @@ public class LLFieldDocCodec implements LMDBSortedCodec<LLFieldDoc> {
 			fieldId++;
 		}
 		assert buf.writableBytes() == 0;
-		return buf.asReadOnly();
+		return buf;
 	}
 
 	@Override
-	public LLFieldDoc deserialize(ByteBuf buf) {
+	public LLFieldDoc deserialize(Buffer buf) {
 		var fieldsCount = getFieldsCount(buf);
 		ArrayList<Object> fields = new ArrayList<>(fieldsCount);
-		buf.readerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES + Character.BYTES);
+		buf.readerOffset(Float.BYTES + Integer.BYTES + Integer.BYTES + Character.BYTES);
 		for (char i = 0; i < fieldsCount; i++) {
 			fields.add(switch (FieldType.values()[buf.readByte()]) {
 				case FLOAT -> buf.readFloat();
@@ -87,65 +87,40 @@ public class LLFieldDocCodec implements LMDBSortedCodec<LLFieldDoc> {
 		return new LLFieldDoc(getDoc(buf), getScore(buf), getShardIndex(buf), fields);
 	}
 
-	@Override
-	public int compare(LLFieldDoc hitA, LLFieldDoc hitB) {
-		if (hitA.score() == hitB.score()) {
-			if (hitA.doc() == hitB.doc()) {
-				return Integer.compare(hitA.shardIndex(), hitB.shardIndex());
-			} else {
-				return Integer.compare(hitB.doc(), hitA.doc());
-			}
-		} else {
-			return Float.compare(hitA.score(), hitB.score());
-		}
+	private static float getScore(Buffer hit) {
+		return HugePqCodec.getLexFloat(hit, 0, false);
 	}
 
-	@Override
-	public int compareDirect(ByteBuf hitA, ByteBuf hitB) {
-		var scoreA = getScore(hitA);
-		var scoreB = getScore(hitB);
-		if (scoreA == scoreB) {
-			var docA = getDoc(hitA);
-			var docB = getDoc(hitB);
-			if (docA == docB) {
-				return Integer.compare(getShardIndex(hitA), getShardIndex(hitB));
-			} else {
-				return Integer.compare(docB, docA);
-			}
-		} else {
-			return Float.compare(scoreA, scoreB);
-		}
+	private static int getDoc(Buffer hit) {
+		return HugePqCodec.getLexInt(hit, Float.BYTES, true);
 	}
 
-	private static float getScore(ByteBuf hit) {
-		return hit.getFloat(0);
+	private static int getShardIndex(Buffer hit) {
+		return HugePqCodec.getLexInt(hit, Float.BYTES + Integer.BYTES, false);
 	}
 
-	private static int getDoc(ByteBuf hit) {
-		return hit.getInt(Float.BYTES);
-	}
-
-	private static int getShardIndex(ByteBuf hit) {
-		return hit.getInt(Float.BYTES + Integer.BYTES);
-	}
-
-	private char getFieldsCount(ByteBuf hit) {
+	private char getFieldsCount(Buffer hit) {
 		return hit.getChar(Float.BYTES + Integer.BYTES + Integer.BYTES);
 	}
 
-	private static void setScore(ByteBuf hit, float score) {
-		hit.setFloat(0, score);
+	private static void setScore(Buffer hit, float score) {
+		HugePqCodec.setLexFloat(hit, 0, false, score);
 	}
 
-	private static void setDoc(ByteBuf hit, int doc) {
-		hit.setInt(Float.BYTES, doc);
+	private static void setDoc(Buffer hit, int doc) {
+		HugePqCodec.setLexInt(hit, Float.BYTES, true, doc);
 	}
 
-	private static void setShardIndex(ByteBuf hit, int shardIndex) {
-		hit.setInt(Float.BYTES + Integer.BYTES, shardIndex);
+	private static void setShardIndex(Buffer hit, int shardIndex) {
+		HugePqCodec.setLexInt(hit, Float.BYTES + Integer.BYTES, false, shardIndex);
 	}
 
-	private void setFieldsCount(ByteBuf hit, int size) {
+	private void setFieldsCount(Buffer hit, int size) {
 		hit.setChar(Float.BYTES + Integer.BYTES + Integer.BYTES, (char) size);
+	}
+
+	@Override
+	public LLFieldDoc clone(LLFieldDoc obj) {
+		return new LLFieldDoc(obj.doc(), obj.score(), obj.shardIndex(), obj.fields());
 	}
 }

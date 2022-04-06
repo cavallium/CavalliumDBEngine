@@ -1,10 +1,10 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.api.Buffer;
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import java.io.Closeable;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
@@ -15,15 +15,18 @@ import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
+import org.rocksdb.AbstractComparator;
+import org.rocksdb.ComparatorOptions;
 
-public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHitQueue, SafeCloseable {
+public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueue, SafeCloseable {
 
 	private final SortField[] fields;
 
 	protected final FieldComparator<?>[] comparators;
 	protected final int[] reverseMul;
+	private final AbstractComparator comparator;
 
-	public LLSlotDocCodec(LLTempLMDBEnv env, int numHits, SortField[] fields) {
+	public LLSlotDocCodec(LLTempHugePqEnv env, int numHits, SortField[] fields) {
 		// When we get here, fields.length is guaranteed to be > 0, therefore no
 		// need to check it again.
 
@@ -37,89 +40,92 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 		for (int i = 0; i < numComparators; ++i) {
 			SortField field = fields[i];
 			reverseMul[i] = field.getReverse() ? -1 : 1;
-			comparators[i] = LMDBComparator.getComparator(env, field, numHits, i);
+			comparators[i] = HugePqComparator.getComparator(env, field, numHits, i);
 		}
+		comparator = new AbstractComparator(new ComparatorOptions()) {
+			@Override
+			public String name() {
+				return "slot-doc-codec-comparator";
+			}
+
+			@Override
+			public int compare(ByteBuffer hitA, ByteBuffer hitB) {
+				assert hitA != hitB;
+				assert getSlot(hitA) != getSlot(hitB);
+
+				int numComparators = comparators.length;
+				for (int i = 0; i < numComparators; ++i) {
+					final int c = reverseMul[i] * comparators[i].compare(getSlot(hitA), getSlot(hitB));
+					if (c != 0) {
+						// Short circuit
+						return -c;
+					}
+				}
+
+				// avoid random sort order that could lead to duplicates (bug #31241):
+				return Integer.compare(getDoc(hitB), getDoc(hitA));
+			}
+		};
 	}
 
 	@Override
-	public ByteBuf serialize(Function<Integer, ByteBuf> allocator, LLSlotDoc data) {
+	public Buffer serialize(Function<Integer, Buffer> allocator, LLSlotDoc data) {
 		var buf = allocator.apply(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
 		setScore(buf, data.score());
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
 		setSlot(buf, data.slot());
-		buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
-		return buf.asReadOnly();
+		buf.writerOffset(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
+		return buf;
 	}
 
 	@Override
-	public LLSlotDoc deserialize(ByteBuf buf) {
+	public LLSlotDoc deserialize(Buffer buf) {
 		return new LLSlotDoc(getDoc(buf), getScore(buf), getShardIndex(buf), getSlot(buf));
 	}
 
 	@Override
-	public int compare(LLSlotDoc hitA, LLSlotDoc hitB) {
-		int numComparators = comparators.length;
-		for (int i = 0; i < numComparators; ++i) {
-			final int c = reverseMul[i] * comparators[i].compare(hitA.slot(), hitB.slot());
-			if (c != 0) {
-				// Short circuit
-				return -c;
-			}
-		}
-
-		// avoid random sort order that could lead to duplicates (bug #31241):
-		return Integer.compare(hitB.doc(), hitA.doc());
+	public AbstractComparator getComparator() {
+		return comparator;
 	}
 
-	@Override
-	public int compareDirect(ByteBuf hitA, ByteBuf hitB) {
-
-		assert hitA != hitB;
-		assert getSlot(hitA) != getSlot(hitB);
-
-		int numComparators = comparators.length;
-		for (int i = 0; i < numComparators; ++i) {
-			final int c = reverseMul[i] * comparators[i].compare(getSlot(hitA), getSlot(hitB));
-			if (c != 0) {
-				// Short circuit
-				return -c;
-			}
-		}
-
-		// avoid random sort order that could lead to duplicates (bug #31241):
-		return Integer.compare(getDoc(hitB), getDoc(hitA));
-	}
-
-	private static float getScore(ByteBuf hit) {
+	private static float getScore(Buffer hit) {
 		return hit.getFloat(0);
 	}
 
-	private static int getDoc(ByteBuf hit) {
+	private static int getDoc(Buffer hit) {
 		return hit.getInt(Float.BYTES);
 	}
 
-	private static int getShardIndex(ByteBuf hit) {
+	private static int getDoc(ByteBuffer hit) {
+		return hit.getInt(Float.BYTES);
+	}
+
+	private static int getShardIndex(Buffer hit) {
 		return hit.getInt(Float.BYTES + Integer.BYTES);
 	}
 
-	private static int getSlot(ByteBuf hit) {
+	private static int getSlot(Buffer hit) {
 		return hit.getInt(Float.BYTES + Integer.BYTES + Integer.BYTES);
 	}
 
-	private static void setScore(ByteBuf hit, float score) {
+	private static int getSlot(ByteBuffer hit) {
+		return hit.getInt(Float.BYTES + Integer.BYTES + Integer.BYTES);
+	}
+
+	private static void setScore(Buffer hit, float score) {
 		hit.setFloat(0, score);
 	}
 
-	private static void setDoc(ByteBuf hit, int doc) {
+	private static void setDoc(Buffer hit, int doc) {
 		hit.setInt(Float.BYTES, doc);
 	}
 
-	private static void setShardIndex(ByteBuf hit, int shardIndex) {
+	private static void setShardIndex(Buffer hit, int shardIndex) {
 		hit.setInt(Float.BYTES + Integer.BYTES, shardIndex);
 	}
 
-	private static void setSlot(ByteBuf hit, int slot) {
+	private static void setSlot(Buffer hit, int slot) {
 		hit.setInt(Float.BYTES + Integer.BYTES + Integer.BYTES, slot);
 	}
 
@@ -176,5 +182,10 @@ public class LLSlotDocCodec implements LMDBSortedCodec<LLSlotDoc>, FieldValueHit
 				closeable.close();
 			}
 		}
+	}
+
+	@Override
+	public LLSlotDoc clone(LLSlotDoc obj) {
+		return new LLSlotDoc(obj.doc(), obj.score(), obj.shardIndex(), obj.slot());
 	}
 }

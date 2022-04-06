@@ -6,11 +6,11 @@ import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLFieldDoc;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import org.apache.lucene.search.LMDBFullFieldDocCollector;
+import org.apache.lucene.search.HugePqFullFieldDocCollector;
 import java.io.IOException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -24,9 +24,9 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 
 	protected static final Logger logger = LogManager.getLogger(SortedScoredFullMultiSearcher.class);
 
-	private final LLTempLMDBEnv env;
+	private final LLTempHugePqEnv env;
 
-	public SortedScoredFullMultiSearcher(LLTempLMDBEnv env) {
+	public SortedScoredFullMultiSearcher(LLTempHugePqEnv env) {
 		this.env = env;
 	}
 
@@ -70,7 +70,7 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 				.fromCallable(() -> {
 					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
-					return LMDBFullFieldDocCollector.createSharedManager(env, queryParams.sort(), queryParams.limitInt(),
+					return HugePqFullFieldDocCollector.createSharedManager(env, queryParams.sort(), queryParams.limitInt(),
 							totalHitsThreshold);
 				})
 				.<FullDocs<LLFieldDoc>>flatMap(sharedManager -> Flux
@@ -96,7 +96,7 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 								LLUtils.ensureBlocking();
 								return sharedManager.reduce(collectors);
 							} catch (Throwable ex) {
-								for (LMDBFullFieldDocCollector collector : collectors) {
+								for (HugePqFullFieldDocCollector collector : collectors) {
 									collector.close();
 								}
 								throw ex;

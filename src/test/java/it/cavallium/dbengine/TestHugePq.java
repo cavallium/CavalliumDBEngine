@@ -2,10 +2,10 @@ package it.cavallium.dbengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.netty5.buffer.ByteBuf;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
-import it.cavallium.dbengine.lucene.LMDBSortedCodec;
-import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
+import io.netty5.buffer.api.Buffer;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
+import it.cavallium.dbengine.lucene.HugePqCodec;
+import it.cavallium.dbengine.lucene.HugePqPriorityQueue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -15,33 +15,23 @@ import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-public class TestLMDB {
+public class TestHugePq {
 
-	private LLTempLMDBEnv env;
-	private LMDBPriorityQueue<Integer> queue;
+	private LLTempHugePqEnv env;
+	private HugePqPriorityQueue<Integer> queue;
 
 	@BeforeEach
 	public void beforeEach() throws IOException {
-		this.env = new LLTempLMDBEnv();
-		this.queue = new LMDBPriorityQueue<>(env, new LMDBSortedCodec<Integer>() {
+		this.env = new LLTempHugePqEnv();
+		this.queue = new HugePqPriorityQueue<>(env, new HugePqCodec<Integer>() {
 			@Override
-			public ByteBuf serialize(Function<Integer, ByteBuf> allocator, Integer data) {
-				return allocator.apply(Integer.BYTES).writeInt(data).asReadOnly();
+			public Buffer serialize(Function<Integer, Buffer> allocator, Integer data) {
+				return HugePqCodec.setLexInt(allocator.apply(Integer.BYTES), 0, false, data);
 			}
 
 			@Override
-			public Integer deserialize(ByteBuf b) {
-				return b.getInt(0);
-			}
-
-			@Override
-			public int compare(Integer o1, Integer o2) {
-				return Integer.compare(o1, o2);
-			}
-
-			@Override
-			public int compareDirect(ByteBuf o1, ByteBuf o2) {
-				return Integer.compare(o1.getInt(0), o2.getInt(0));
+			public Integer deserialize(Buffer b) {
+				return HugePqCodec.getLexInt(b, 0, false);
 			}
 		});
 	}
@@ -144,7 +134,6 @@ public class TestLMDB {
 	@AfterEach
 	public void afterEach() throws IOException {
 		queue.close();
-		assertEquals(0, env.countUsedDbs());
 		env.close();
 	}
 }

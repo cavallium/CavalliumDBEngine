@@ -35,12 +35,12 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 	private final DistributionSummary optimisticAttempts;
 
 	public OptimisticRocksDBColumn(OptimisticTransactionDB db,
-			DatabaseOptions databaseOptions,
+			boolean nettyDirect,
 			BufferAllocator alloc,
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry) {
-		super(db, databaseOptions, alloc, databaseName, cfh, meterRegistry);
+		super(db, nettyDirect, alloc, databaseName, cfh, meterRegistry);
 		this.optimisticAttempts = DistributionSummary
 				.builder("db.optimistic.attempts.distribution")
 				.publishPercentiles(0.2, 0.5, 0.95)

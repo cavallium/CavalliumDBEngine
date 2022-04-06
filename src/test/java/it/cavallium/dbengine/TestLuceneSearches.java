@@ -29,7 +29,7 @@ import it.cavallium.dbengine.client.query.current.data.Term;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.CountMultiSearcher;
@@ -70,7 +70,7 @@ import reactor.util.function.Tuples;
 public class TestLuceneSearches {
 
 	private static final Logger log = LogManager.getLogger(TestLuceneSearches.class);
-	private static LLTempLMDBEnv ENV;
+	private static LLTempHugePqEnv ENV;
 	private static final MemoryTemporaryDbGenerator TEMP_DB_GENERATOR = new MemoryTemporaryDbGenerator();
 
 	private static TestAllocator allocator;
@@ -112,8 +112,7 @@ public class TestLuceneSearches {
 		tempDb = Objects.requireNonNull(TEMP_DB_GENERATOR.openTempDb(allocator).block(), "TempDB");
 		luceneSingle = tempDb.luceneSingle();
 		luceneMulti = tempDb.luceneMulti();
-		ENV = new LLTempLMDBEnv();
-		assertEquals(0, ENV.countUsedDbs());
+		ENV = new LLTempHugePqEnv();
 
 		setUpIndex(true);
 		setUpIndex(false);
@@ -206,18 +205,15 @@ public class TestLuceneSearches {
 
 	@BeforeEach
 	public void beforeEach() {
-		assertEquals(0, ENV.countUsedDbs());
 	}
 
 	@AfterEach
 	public void afterEach() {
-		assertEquals(0, ENV.countUsedDbs());
 	}
 
 	@AfterAll
 	public static void afterAll() throws IOException {
 		TEMP_DB_GENERATOR.closeTempDb(tempDb).block();
-		assertEquals(0, ENV.countUsedDbs());
 		ENV.close();
 		ensureNoLeaks(allocator.allocator(), true, false);
 		destroyAllocator(allocator);

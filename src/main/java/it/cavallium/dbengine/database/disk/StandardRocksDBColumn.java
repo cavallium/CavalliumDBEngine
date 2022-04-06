@@ -23,11 +23,11 @@ import org.rocksdb.WriteOptions;
 public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> {
 
 	public StandardRocksDBColumn(RocksDB db,
-			DatabaseOptions databaseOptions,
+			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
 			ColumnFamilyHandle cfh, MeterRegistry meterRegistry) {
-		super(db, databaseOptions, alloc, dbName, cfh, meterRegistry);
+		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry);
 	}
 
 	@Override
@@ -111,24 +111,12 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 					recordAtomicUpdateTime(changed, prevData != null, newData != null, initNanoTime);
 					return switch (returnMode) {
 						case NOTHING -> {
-							if (prevData != null) {
-								prevData.close();
-							}
-							if (newData != null) {
-								newData.close();
-							}
 							yield RESULT_NOTHING;
 						}
 						case CURRENT -> {
-							if (prevData != null) {
-								prevData.close();
-							}
 							yield new UpdateAtomicResultCurrent(newData != null ? newData.send() : null);
 						}
 						case PREVIOUS -> {
-							if (newData != null) {
-								newData.close();
-							}
 							yield new UpdateAtomicResultPrevious(prevData != null ? prevData.send() : null);
 						}
 						case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);

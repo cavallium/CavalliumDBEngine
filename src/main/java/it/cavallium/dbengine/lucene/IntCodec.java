@@ -1,17 +1,17 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.api.Buffer;
 import java.util.function.Function;
 
-public class IntCodec implements LMDBCodec<Integer> {
+public class IntCodec implements HugePqCodec<Integer> {
 
 	@Override
-	public ByteBuf serialize(Function<Integer, ByteBuf> allocator, Integer data) {
+	public Buffer serialize(Function<Integer, Buffer> allocator, Integer data) {
 		return allocator.apply(Integer.BYTES).writeInt(data);
 	}
 
 	@Override
-	public Integer deserialize(ByteBuf b) {
+	public Integer deserialize(Buffer b) {
 		return b.readInt();
 	}
 }

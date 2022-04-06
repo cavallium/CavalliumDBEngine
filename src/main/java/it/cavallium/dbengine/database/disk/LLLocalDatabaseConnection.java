@@ -36,7 +36,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	private final Path basePath;
 	private final boolean inMemory;
 	private final LuceneRocksDBManager rocksDBManager;
-	private final AtomicReference<LLTempLMDBEnv> env = new AtomicReference<>();
+	private final AtomicReference<LLTempHugePqEnv> env = new AtomicReference<>();
 
 	public LLLocalDatabaseConnection(BufferAllocator allocator,
 			MeterRegistry meterRegistry,
@@ -69,7 +69,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 					if (Files.notExists(basePath)) {
 						Files.createDirectories(basePath);
 					}
-					var prev = env.getAndSet(new LLTempLMDBEnv());
+					var prev = env.getAndSet(new LLTempHugePqEnv());
 					if (prev != null) {
 						throw new IllegalStateException("Env was already set");
 					}

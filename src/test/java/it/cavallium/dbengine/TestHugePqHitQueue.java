@@ -1,16 +1,13 @@
 package it.cavallium.dbengine;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-
 import com.google.common.collect.Lists;
-import io.netty5.buffer.ByteBuf;
+import io.netty5.buffer.api.Buffer;
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
-import it.cavallium.dbengine.lucene.LMDBSortedCodec;
-import it.cavallium.dbengine.lucene.LMDBPriorityQueue;
+import it.cavallium.dbengine.lucene.HugePqCodec;
+import it.cavallium.dbengine.lucene.HugePqPriorityQueue;
 import it.cavallium.dbengine.lucene.PriorityQueue;
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,18 +16,20 @@ import java.util.Random;
 import java.util.function.Function;
 import org.apache.lucene.search.HitQueue;
 import org.apache.lucene.search.ScoreDoc;
+import org.assertj.core.description.Description;
+import org.assertj.core.description.TextDescription;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import reactor.core.publisher.Flux;
 
-public class TestLMDBHitQueue {
+public class TestHugePqHitQueue {
 
 	public static final int NUM_HITS = 1024;
 
-	private LLTempLMDBEnv env;
-	private SafeCloseable lmdbQueue;
+	private LLTempHugePqEnv env;
+	private SafeCloseable hugePqQueue;
 
 	private TestingPriorityQueue testingPriorityQueue;
 
@@ -54,14 +53,14 @@ public class TestLMDBHitQueue {
 		}
 	}
 
-	private static void assertEqualsScoreDoc(ScoreDoc expected, ScoreDoc actual) {
-		Assertions.assertEquals(toLLScoreDoc(expected), toLLScoreDoc(actual));
+	private static void assertEqualsScoreDoc(Description description, ScoreDoc expected, ScoreDoc actual) {
+		org.assertj.core.api.Assertions.assertThat(toLLScoreDoc(expected)).as(description).isEqualTo(toLLScoreDoc(actual));
 	}
 
 	private static void assertEqualsScoreDoc(List<ScoreDoc> expected, List<ScoreDoc> actual) {
-		Assertions.assertEquals(expected.size(), actual.size());
 		var list1 = expected.iterator();
 		var list2 = actual.iterator();
+		Assertions.assertEquals(expected.size(), actual.size());
 		while (list1.hasNext() && list2.hasNext()) {
 			Assertions.assertFalse(lessThan(list1.next(), list2.next()));
 		}
@@ -69,75 +68,58 @@ public class TestLMDBHitQueue {
 
 	@BeforeEach
 	public void beforeEach() throws IOException {
-		this.env = new LLTempLMDBEnv();
-		var lmdbQueue = new LMDBPriorityQueue<ScoreDoc>(env, new LMDBSortedCodec<>() {
+		this.env = new LLTempHugePqEnv();
+		var hugePqQueue = new HugePqPriorityQueue<ScoreDoc>(env, new HugePqCodec<>() {
 
 			@Override
-			public ByteBuf serialize(Function<Integer, ByteBuf> allocator, ScoreDoc data) {
+			public Buffer serialize(Function<Integer, Buffer> allocator, ScoreDoc data) {
 				var buf = allocator.apply(Float.BYTES + Integer.BYTES + Integer.BYTES);
+				buf.writerOffset(Float.BYTES + Integer.BYTES + Integer.BYTES);
 				setScore(buf, data.score);
 				setDoc(buf, data.doc);
 				setShardIndex(buf, data.shardIndex);
-				buf.writerIndex(Float.BYTES + Integer.BYTES + Integer.BYTES);
-				return buf.asReadOnly();
+				return buf;
 			}
 
 			@Override
-			public ScoreDoc deserialize(ByteBuf buf) {
+			public ScoreDoc deserialize(Buffer buf) {
 				return new ScoreDoc(getDoc(buf), getScore(buf), getShardIndex(buf));
 			}
 
-			@Override
-			public int compare(ScoreDoc hitA, ScoreDoc hitB) {
-				return compareScoreDoc(hitA, hitB);
+			private static float getScore(Buffer hit) {
+				return HugePqCodec.getLexFloat(hit, 0, false);
+			}
+
+			private static int getDoc(Buffer hit) {
+				return HugePqCodec.getLexInt(hit, Float.BYTES, true);
+			}
+
+			private static int getShardIndex(Buffer hit) {
+				return HugePqCodec.getLexInt(hit, Float.BYTES + Integer.BYTES, false);
+			}
+
+			private static void setScore(Buffer hit, float score) {
+				HugePqCodec.setLexFloat(hit, 0, false, score);
+			}
+
+			private static void setDoc(Buffer hit, int doc) {
+				HugePqCodec.setLexInt(hit, Float.BYTES, true, doc);
+			}
+
+			private static void setShardIndex(Buffer hit, int shardIndex) {
+				HugePqCodec.setLexInt(hit, Float.BYTES + Integer.BYTES, false, shardIndex);
 			}
 
 			@Override
-			public int compareDirect(ByteBuf hitA, ByteBuf hitB) {
-				var scoreA = getScore(hitA);
-				var scoreB = getScore(hitB);
-				if (scoreA == scoreB) {
-					var docA = getDoc(hitA);
-					var docB = getDoc(hitB);
-					if (docA == docB) {
-						return Integer.compare(getShardIndex(hitA), getShardIndex(hitB));
-					} else {
-						return Integer.compare(docB, docA);
-					}
-				} else {
-					return Float.compare(scoreA, scoreB);
-				}
-			}
-
-			private static float getScore(ByteBuf hit) {
-				return hit.getFloat(0);
-			}
-
-			private static int getDoc(ByteBuf hit) {
-				return hit.getInt(Float.BYTES);
-			}
-
-			private static int getShardIndex(ByteBuf hit) {
-				return hit.getInt(Float.BYTES + Integer.BYTES);
-			}
-
-			private static void setScore(ByteBuf hit, float score) {
-				hit.setFloat(0, score);
-			}
-
-			private static void setDoc(ByteBuf hit, int doc) {
-				hit.setInt(Float.BYTES, doc);
-			}
-
-			private static void setShardIndex(ByteBuf hit, int shardIndex) {
-				hit.setInt(Float.BYTES + Integer.BYTES, shardIndex);
+			public ScoreDoc clone(ScoreDoc obj) {
+				return new ScoreDoc(obj.doc, obj.score, obj.shardIndex);
 			}
 		});
-		this.lmdbQueue = lmdbQueue;
+		this.hugePqQueue = hugePqQueue;
 		PriorityQueueAdaptor<ScoreDoc> hitQueue = new PriorityQueueAdaptor<>(new HitQueue(NUM_HITS, false));
-		Assertions.assertEquals(0, lmdbQueue.size());
+		Assertions.assertEquals(0, hugePqQueue.size());
 		Assertions.assertEquals(0, hitQueue.size());
-		this.testingPriorityQueue = new TestingPriorityQueue(hitQueue, lmdbQueue);
+		this.testingPriorityQueue = new TestingPriorityQueue(hitQueue, hugePqQueue);
 	}
 
 	@Test
@@ -154,7 +136,7 @@ public class TestLMDBHitQueue {
 	public void testAddSingle() {
 		var item = new ScoreDoc(0, 0, 0);
 		testingPriorityQueue.add(item);
-		assertEqualsScoreDoc(item, testingPriorityQueue.top());
+		assertEqualsScoreDoc(new TextDescription("top value of %s", testingPriorityQueue), item, testingPriorityQueue.top());
 	}
 
 	@Test
@@ -163,7 +145,7 @@ public class TestLMDBHitQueue {
 			var item = new ScoreDoc(i, i >> 1, -1);
 			testingPriorityQueue.addUnsafe(item);
 		}
-		assertEqualsScoreDoc(new ScoreDoc(1, 0, -1), testingPriorityQueue.top());
+		assertEqualsScoreDoc(new TextDescription("top value of %s", testingPriorityQueue), new ScoreDoc(1, 0, -1), testingPriorityQueue.top());
 	}
 
 	@Test
@@ -189,7 +171,7 @@ public class TestLMDBHitQueue {
 		var item = new ScoreDoc(0, 0, 0);
 		testingPriorityQueue.addUnsafe(item);
 		testingPriorityQueue.remove(new ScoreDoc(2, 0, 0));
-		assertEqualsScoreDoc(item, testingPriorityQueue.top());
+		assertEqualsScoreDoc(new TextDescription("top value of %s", testingPriorityQueue), item, testingPriorityQueue.top());
 	}
 
 	@Test
@@ -206,7 +188,7 @@ public class TestLMDBHitQueue {
 			testingPriorityQueue.addUnsafe(item);
 		}
 		testingPriorityQueue.removeUnsafe(toRemove);
-		assertEqualsScoreDoc(top, testingPriorityQueue.top());
+		assertEqualsScoreDoc(new TextDescription("top value of %s", testingPriorityQueue), top, testingPriorityQueue.top());
 	}
 
 	@Test
@@ -223,7 +205,7 @@ public class TestLMDBHitQueue {
 			testingPriorityQueue.addUnsafe(item);
 		}
 		testingPriorityQueue.removeUnsafe(new ScoreDoc(0, 0, -1));
-		assertEqualsScoreDoc(top, testingPriorityQueue.top());
+		assertEqualsScoreDoc(new TextDescription("top value of %s", testingPriorityQueue), top, testingPriorityQueue.top());
 	}
 
 	@Test
@@ -232,89 +214,94 @@ public class TestLMDBHitQueue {
 		for (int i = 0; i < 1000; i++) {
 			sortedNumbers.add(new ScoreDoc(i, i >> 1, -1));
 		}
-		sortedNumbers.sort(TestLMDBHitQueue::compareScoreDoc);
+		sortedNumbers.sort(TestHugePqHitQueue::compareScoreDoc);
 		var shuffledNumbers = new ArrayList<>(sortedNumbers);
 		Collections.shuffle(shuffledNumbers, new Random(1000));
+
+		org.assertj.core.api.Assertions.assertThat(testingPriorityQueue.size()).isEqualTo(0);
+
 		for (ScoreDoc scoreDoc : shuffledNumbers) {
 			testingPriorityQueue.addUnsafe(scoreDoc);
 		}
+
+		org.assertj.core.api.Assertions.assertThat(testingPriorityQueue.size()).isEqualTo(sortedNumbers.size());
 
 		var newSortedNumbers = new ArrayList<ScoreDoc>();
 		ScoreDoc popped;
 		while ((popped = testingPriorityQueue.popUnsafe()) != null) {
 			newSortedNumbers.add(popped);
 		}
+		org.assertj.core.api.Assertions.assertThat(testingPriorityQueue.size()).isEqualTo(0);
 
 		assertEqualsScoreDoc(sortedNumbers, newSortedNumbers);
 	}
 
 	@AfterEach
 	public void afterEach() throws IOException {
-		lmdbQueue.close();
-		assertEquals(0, env.countUsedDbs());
+		hugePqQueue.close();
 		env.close();
 	}
 
 	private static class TestingPriorityQueue implements PriorityQueue<ScoreDoc> {
 
 		private final PriorityQueue<ScoreDoc> referenceQueue;
-		private final PriorityQueue<ScoreDoc> testQueue;
+		private final PriorityQueue<ScoreDoc> myQueue;
 
-		public TestingPriorityQueue(PriorityQueue<ScoreDoc> referenceQueue, PriorityQueue<ScoreDoc> testQueue) {
+		public TestingPriorityQueue(PriorityQueue<ScoreDoc> referenceQueue, PriorityQueue<ScoreDoc> myQueue) {
 			this.referenceQueue = referenceQueue;
-			this.testQueue = testQueue;
+			this.myQueue = myQueue;
 		}
 
 		@Override
 		public void add(ScoreDoc element) {
 			referenceQueue.add(element);
-			testQueue.add(element);
+			myQueue.add(element);
 			ensureEquality();
 		}
 
 		public void addUnsafe(ScoreDoc element) {
 			referenceQueue.add(element);
-			testQueue.add(element);
+			myQueue.add(element);
 		}
 
 		@Override
 		public ScoreDoc top() {
 			var top1 = referenceQueue.top();
-			var top2 = testQueue.top();
-			assertEqualsScoreDoc(top1, top2);
+			var top2 = myQueue.top();
+			assertEqualsScoreDoc(new TextDescription("top value of %s", myQueue), top1, top2);
 			return top2;
 		}
 
 		public ScoreDoc topUnsafe() {
 			var top1 = referenceQueue.top();
-			var top2 = testQueue.top();
+			var top2 = myQueue.top();
 			return top2;
 		}
 
 		@Override
 		public ScoreDoc pop() {
 			var top1 = referenceQueue.pop();
-			var top2 = testQueue.pop();
-			assertEqualsScoreDoc(top1, top2);
+			var top2 = myQueue.pop();
+			assertEqualsScoreDoc(new TextDescription("top value of %s", myQueue), top1, top2);
 			return top2;
 		}
 
 		public ScoreDoc popUnsafe() {
 			var top1 = referenceQueue.pop();
-			var top2 = testQueue.pop();
+			var top2 = myQueue.pop();
 			return top2;
 		}
 
 		@Override
 		public void replaceTop(ScoreDoc newTop) {
 			referenceQueue.replaceTop(newTop);
-			testQueue.replaceTop(newTop);
+			myQueue.replaceTop(newTop);
 		}
 
 		@Override
 		public long size() {
 			var size1 = referenceQueue.size();
-			var size2 = testQueue.size();
+			var size2 = myQueue.size();
 			Assertions.assertEquals(size1, size2);
 			return size2;
 		}
@@ -322,20 +309,20 @@ public class TestLMDBHitQueue {
 		@Override
 		public void clear() {
 			referenceQueue.clear();
-			testQueue.clear();
+			myQueue.clear();
 		}
 
 		@Override
 		public boolean remove(ScoreDoc element) {
-			var removed1 = referenceQueue.remove(element);
-			var removed2 = testQueue.remove(element);
-			Assertions.assertEquals(removed1, removed2);
-			return removed2;
+			var removedRef = referenceQueue.remove(element);
+			var removedMy = myQueue.remove(element);
+			Assertions.assertEquals(removedRef, removedMy);
+			return removedMy;
 		}
 
 		public boolean  removeUnsafe(ScoreDoc element) {
 			var removed1 = referenceQueue.remove(element);
-			var removed2 = testQueue.remove(element);
+			var removed2 = myQueue.remove(element);
 			return removed2;
 		}
 
@@ -344,7 +331,7 @@ public class TestLMDBHitQueue {
 			//noinspection BlockingMethodInNonBlockingContext
 			var it1 = referenceQueue.iterate().collectList().blockOptional().orElseThrow();
 			//noinspection BlockingMethodInNonBlockingContext
-			var it2 = testQueue.iterate().collectList().blockOptional().orElseThrow();
+			var it2 = myQueue.iterate().collectList().blockOptional().orElseThrow();
 			assertEqualsScoreDoc(it1, it2);
 			return Flux.fromIterable(it2);
 		}
@@ -352,18 +339,18 @@ public class TestLMDBHitQueue {
 		@Override
 		public void close() {
 			referenceQueue.close();
-			testQueue.close();
+			myQueue.close();
 		}
 
 		private void ensureEquality() {
-			Assertions.assertEquals(referenceQueue.size(), testQueue.size());
+			Assertions.assertEquals(referenceQueue.size(), myQueue.size());
 			var referenceQueueElements = Lists.newArrayList(referenceQueue
 					.iterate()
-					.map(TestLMDBHitQueue::toLLScoreDoc)
+					.map(TestHugePqHitQueue::toLLScoreDoc)
 					.toIterable());
-			var testQueueElements = Lists.newArrayList(testQueue
+			var testQueueElements = Lists.newArrayList(myQueue
 					.iterate()
-					.map(TestLMDBHitQueue::toLLScoreDoc)
+					.map(TestHugePqHitQueue::toLLScoreDoc)
 					.toIterable());
 			Assertions.assertEquals(referenceQueueElements, testQueueElements);
 		}

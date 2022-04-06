@@ -29,7 +29,6 @@ import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
-import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
@@ -54,7 +53,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
-import reactor.math.MathFlux;
 
 public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
@@ -83,7 +81,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	private final MultiSearcher multiSearcher;
 	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 
-	public LLLocalMultiLuceneIndex(LLTempLMDBEnv env,
+	public LLLocalMultiLuceneIndex(LLTempHugePqEnv env,
 			MeterRegistry meterRegistry,
 			String clusterName,
 			IntList activeShards,
@@ -130,12 +128,12 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 		this.lowMemory = luceneOptions.lowMemory();
 
-		var useLMDB = luceneOptions.allowNonVolatileCollection();
+		var useHugePq = luceneOptions.allowNonVolatileCollection();
 		var maxInMemoryResultEntries = luceneOptions.maxInMemoryResultEntries();
 		if (luceneHacks != null && luceneHacks.customMultiSearcher() != null) {
 			multiSearcher = luceneHacks.customMultiSearcher().get();
 		} else {
-			multiSearcher = new AdaptiveMultiSearcher(env, useLMDB, maxInMemoryResultEntries);
+			multiSearcher = new AdaptiveMultiSearcher(env, useHugePq, maxInMemoryResultEntries);
 		}
 	}
 

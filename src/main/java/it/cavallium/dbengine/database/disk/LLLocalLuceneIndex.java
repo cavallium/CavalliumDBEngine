@@ -130,7 +130,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final Phaser activeTasks = new Phaser(1);
 	private final AtomicBoolean closeRequested = new AtomicBoolean();
 
-	public LLLocalLuceneIndex(LLTempLMDBEnv env,
+	public LLLocalLuceneIndex(LLTempHugePqEnv env,
 			MeterRegistry meterRegistry,
 			@NotNull String clusterName,
 			int shardIndex,
@@ -160,12 +160,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 		this.rocksDBManager = rocksDBManager;
 
-		var useLMDB = luceneOptions.allowNonVolatileCollection();
+		var useHugePq = luceneOptions.allowNonVolatileCollection();
 		var maxInMemoryResultEntries = luceneOptions.maxInMemoryResultEntries();
 		if (luceneHacks != null && luceneHacks.customLocalSearcher() != null) {
 			localSearcher = luceneHacks.customLocalSearcher().get();
 		} else {
-			localSearcher = new AdaptiveLocalSearcher(env, useLMDB, maxInMemoryResultEntries);
+			localSearcher = new AdaptiveLocalSearcher(env, useHugePq, maxInMemoryResultEntries);
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);

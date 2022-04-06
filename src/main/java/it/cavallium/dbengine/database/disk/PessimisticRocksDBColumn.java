@@ -28,11 +28,11 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 	private static final TransactionOptions DEFAULT_TX_OPTIONS = new TransactionOptions();
 
 	public PessimisticRocksDBColumn(TransactionDB db,
-			DatabaseOptions databaseOptions,
+			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
 			ColumnFamilyHandle cfh, MeterRegistry meterRegistry) {
-		super(db, databaseOptions, alloc, dbName, cfh, meterRegistry);
+		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry);
 	}
 
 	@Override

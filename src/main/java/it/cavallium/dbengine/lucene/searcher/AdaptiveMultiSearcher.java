@@ -6,7 +6,7 @@ import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRIT
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
@@ -33,9 +33,9 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	@Nullable
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
-	public AdaptiveMultiSearcher(LLTempLMDBEnv env, boolean useLMDB, int maxInMemoryResultEntries) {
-		sortedByScoreFull = useLMDB ? new SortedByScoreFullMultiSearcher(env) : null;
-		sortedScoredFull = useLMDB ?  new SortedScoredFullMultiSearcher(env) : null;
+	public AdaptiveMultiSearcher(LLTempHugePqEnv env, boolean useHugePq, int maxInMemoryResultEntries) {
+		sortedByScoreFull = useHugePq ? new SortedByScoreFullMultiSearcher(env) : null;
+		sortedScoredFull = useHugePq ?  new SortedScoredFullMultiSearcher(env) : null;
 		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 

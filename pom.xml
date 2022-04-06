@@ -509,11 +509,6 @@
         </exclusion>
       </exclusions>
     </dependency>
-    <dependency>
-      <groupId>org.lmdbjava</groupId>
-      <artifactId>lmdbjava</artifactId>
-      <version>0.8.2</version>
-    </dependency>
   </dependencies>
   <build>
     <testSourceDirectory>src/test/java</testSourceDirectory>

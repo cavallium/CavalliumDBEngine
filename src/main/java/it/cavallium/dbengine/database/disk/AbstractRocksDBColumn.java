@@ -63,7 +63,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	protected final Logger logger = LogManager.getLogger(this.getClass());
 
 	private final T db;
-	private final DatabaseOptions opts;
 	private final boolean nettyDirect;
 	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
@@ -97,14 +96,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final Timer updateUnchangedTime;
 
 	public AbstractRocksDBColumn(T db,
-			DatabaseOptions databaseOptions,
+			boolean nettyDirect,
 			BufferAllocator alloc,
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry) {
 		this.db = db;
-		this.opts = databaseOptions;
-		this.nettyDirect = opts.allowNettyDirect() && alloc.getAllocationType() == OFF_HEAP;
+		this.nettyDirect = nettyDirect && alloc.getAllocationType() == OFF_HEAP;
 		this.alloc = alloc;
 		this.cfh = cfh;
 		String columnName;
@@ -316,10 +314,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 
 	protected T getDb() {
 		return db;
-	}
-
-	protected DatabaseOptions getOpts() {
-		return opts;
 	}
 
 	protected ColumnFamilyHandle getCfh() {

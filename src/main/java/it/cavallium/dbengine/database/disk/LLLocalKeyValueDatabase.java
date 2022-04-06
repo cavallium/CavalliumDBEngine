@@ -61,6 +61,7 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.OptimisticTransactionDB;
+import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
@@ -157,7 +158,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
+				columnOptions.setMaxBytesForLevelBase((databaseOptions.spinning() ? 512 : 256) * SizeUnit.MB);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 				columnOptions.setMaxBytesForLevelMultiplier(10);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
@@ -237,8 +238,18 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				columnOptions.setTableFormatConfig(tableOptions);
 				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
-				// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-				columnOptions.setOptimizeFiltersForHits(true);
+				if (databaseOptions.spinning()) {
+					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+					columnOptions.setOptimizeFiltersForHits(true);
+					// https://github.com/EighteenZi/rocksdb_wiki/blob/master/RocksDB-Tuning-Guide.md#throughput-gap-between-random-read-vs-sequential-read-is-much-higher-in-spinning-disks-suggestions=
+				}
+				// Increasing this value can reduce the frequency of compaction and reduce write amplification,
+				// but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
+				// This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
+				columnOptions.setTargetFileSizeBase((databaseOptions.spinning() ? 256 : 128) * SizeUnit.MB);
+				// For each level up, the threshold is multiplied by the factor target_file_size_multiplier
+				// (but the default value is 1, which means that the maximum sstable of each level is the same).
+				columnOptions.setTargetFileSizeMultiplier(1);
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
 			}
@@ -687,12 +698,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
+		var nettyDirect = databaseOptions.allowNettyDirect();
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
-			return new OptimisticRocksDBColumn(optimisticTransactionDB, databaseOptions, allocator, name, cfh, meterRegistry);
+			return new OptimisticRocksDBColumn(optimisticTransactionDB, nettyDirect, allocator, name, cfh, meterRegistry);
 		} else if (db instanceof TransactionDB transactionDB) {
-			return new PessimisticRocksDBColumn(transactionDB, databaseOptions, allocator, name, cfh, meterRegistry);
+			return new PessimisticRocksDBColumn(transactionDB, nettyDirect, allocator, name, cfh, meterRegistry);
 		} else {
-			return new StandardRocksDBColumn(db, databaseOptions, allocator, name, cfh, meterRegistry);
+			return new StandardRocksDBColumn(db, nettyDirect, allocator, name, cfh, meterRegistry);
 		}
 	}
 

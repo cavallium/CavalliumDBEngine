@@ -7,7 +7,7 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
@@ -34,9 +34,9 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	@Nullable
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
-	public AdaptiveLocalSearcher(LLTempLMDBEnv env, boolean useLMDB, int maxInMemoryResultEntries) {
-		sortedByScoreFull = useLMDB ? new SortedByScoreFullMultiSearcher(env) : null;
-		sortedScoredFull = useLMDB ? new SortedScoredFullMultiSearcher(env) : null;
+	public AdaptiveLocalSearcher(LLTempHugePqEnv env, boolean useHugePq, int maxInMemoryResultEntries) {
+		sortedByScoreFull = useHugePq ? new SortedByScoreFullMultiSearcher(env) : null;
+		sortedScoredFull = useHugePq ? new SortedScoredFullMultiSearcher(env) : null;
 		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 

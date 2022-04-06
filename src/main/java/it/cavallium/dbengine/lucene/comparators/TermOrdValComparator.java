@@ -1,14 +1,11 @@
 package it.cavallium.dbengine.lucene.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.ByteArrayCodec;
-import it.cavallium.dbengine.lucene.BytesRefCodec;
-import it.cavallium.dbengine.lucene.FloatCodec;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
-import it.cavallium.dbengine.lucene.LMDBArray;
-import java.io.Closeable;
+import it.cavallium.dbengine.lucene.HugePqArray;
 import java.io.IOException;
 import java.util.Arrays;
 import org.apache.lucene.index.DocValues;
@@ -18,7 +15,6 @@ import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.BytesRefBuilder;
 
 /**
  * Sorts by field's natural Term sort order, using ordinals. This is functionally equivalent to
@@ -88,7 +84,7 @@ public class TermOrdValComparator extends FieldComparator<BytesRef> implements L
 	final int missingOrd;
 
 	/** Creates this, sorting missing values first. */
-	public TermOrdValComparator(LLTempLMDBEnv env, int numHits, String field) {
+	public TermOrdValComparator(LLTempHugePqEnv env, int numHits, String field) {
 		this(env, numHits, field, false);
 	}
 
@@ -96,10 +92,10 @@ public class TermOrdValComparator extends FieldComparator<BytesRef> implements L
 	 * Creates this, with control over how missing values are sorted. Pass sortMissingLast=true to
 	 * put missing values at the end.
 	 */
-	public TermOrdValComparator(LLTempLMDBEnv env, int numHits, String field, boolean sortMissingLast) {
-		ords = new LMDBArray<>(env, new IntCodec(), numHits, 0);
-		values = new LMDBArray<>(env, new ByteArrayCodec(), numHits, null);
-		readerGen = new LMDBArray<>(env, new IntCodec(), numHits, 0);
+	public TermOrdValComparator(LLTempHugePqEnv env, int numHits, String field, boolean sortMissingLast) {
+		ords = new HugePqArray<>(env, new IntCodec(), numHits, 0);
+		values = new HugePqArray<>(env, new ByteArrayCodec(), numHits, null);
+		readerGen = new HugePqArray<>(env, new IntCodec(), numHits, 0);
 		this.field = field;
 		if (sortMissingLast) {
 			missingSortCmp = 1;

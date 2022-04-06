@@ -15,7 +15,7 @@ import it.cavallium.dbengine.client.Sort;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
-import it.cavallium.dbengine.database.disk.LLTempLMDBEnv;
+import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.CountMultiSearcher;
@@ -42,7 +42,7 @@ import reactor.util.function.Tuples;
 public class TestLuceneIndex {
 
 	private final Logger log = LogManager.getLogger(this.getClass());
-	private static LLTempLMDBEnv ENV;
+	private static LLTempHugePqEnv ENV;
 
 	private TestAllocator allocator;
 	private TempDb tempDb;
@@ -55,7 +55,7 @@ public class TestLuceneIndex {
 
 	@BeforeAll
 	public static void beforeAll() throws IOException {
-		ENV = new LLTempLMDBEnv();
+		ENV = new LLTempHugePqEnv();
 	}
 
 	@BeforeEach

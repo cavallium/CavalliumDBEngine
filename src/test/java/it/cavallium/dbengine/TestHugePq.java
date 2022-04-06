@@ -26,7 +26,9 @@ public class TestHugePq {
 		this.queue = new HugePqPriorityQueue<>(env, new HugePqCodec<Integer>() {
 			@Override
 			public Buffer serialize(Function<Integer, Buffer> allocator, Integer data) {
-				return HugePqCodec.setLexInt(allocator.apply(Integer.BYTES), 0, false, data);
+				var buf = allocator.apply(Integer.BYTES);
+				HugePqCodec.setLexInt(buf, 0, false, data);
+				return buf.writerOffset(Integer.BYTES);
 			}
 
 			@Override

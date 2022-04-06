@@ -42,7 +42,7 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 			reverseMul[i] = field.getReverse() ? -1 : 1;
 			comparators[i] = HugePqComparator.getComparator(env, field, numHits, i);
 		}
-		comparator = new AbstractComparator(new ComparatorOptions()) {
+		comparator = new AbstractComparator(new ComparatorOptions().setMaxReusedBufferSize(0)) {
 			@Override
 			public String name() {
 				return "slot-doc-codec-comparator";
@@ -51,11 +51,22 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 			@Override
 			public int compare(ByteBuffer hitA, ByteBuffer hitB) {
 				assert hitA != hitB;
-				assert getSlot(hitA) != getSlot(hitB);
+				hitA.position(hitA.position() + Float.BYTES);
+				hitB.position(hitB.position() + Float.BYTES);
+				var docA = readDoc(hitA);
+				var docB = readDoc(hitB);
+				if (docA == docB) {
+					return 0;
+				}
+				hitA.position(hitA.position() + Integer.BYTES);
+				hitB.position(hitB.position() + Integer.BYTES);
+				var slotA = readSlot(hitA);
+				var slotB = readSlot(hitB);
+				assert slotA != slotB : "Slot " + slotA + " is equal to slot " + slotB;
 
 				int numComparators = comparators.length;
 				for (int i = 0; i < numComparators; ++i) {
-					final int c = reverseMul[i] * comparators[i].compare(getSlot(hitA), getSlot(hitB));
+					final int c = reverseMul[i] * comparators[i].compare(slotA, slotB);
 					if (c != 0) {
 						// Short circuit
 						return -c;
@@ -63,7 +74,7 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 				}
 
 				// avoid random sort order that could lead to duplicates (bug #31241):
-				return Integer.compare(getDoc(hitB), getDoc(hitA));
+				return Integer.compare(docB, docA);
 			}
 		};
 	}
@@ -71,11 +82,11 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 	@Override
 	public Buffer serialize(Function<Integer, Buffer> allocator, LLSlotDoc data) {
 		var buf = allocator.apply(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
+		buf.writerOffset(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
 		setScore(buf, data.score());
 		setDoc(buf, data.doc());
 		setShardIndex(buf, data.shardIndex());
 		setSlot(buf, data.slot());
-		buf.writerOffset(Float.BYTES + Integer.BYTES + Integer.BYTES + Integer.BYTES);
 		return buf;
 	}
 
@@ -97,8 +108,8 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 		return hit.getInt(Float.BYTES);
 	}
 
-	private static int getDoc(ByteBuffer hit) {
-		return hit.getInt(Float.BYTES);
+	private static int readDoc(ByteBuffer hit) {
+		return hit.getInt();
 	}
 
 	private static int getShardIndex(Buffer hit) {
@@ -109,8 +120,8 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 		return hit.getInt(Float.BYTES + Integer.BYTES + Integer.BYTES);
 	}
 
-	private static int getSlot(ByteBuffer hit) {
-		return hit.getInt(Float.BYTES + Integer.BYTES + Integer.BYTES);
+	private static int readSlot(ByteBuffer hit) {
+		return hit.getInt();
 	}
 
 	private static void setScore(Buffer hit, float score) {

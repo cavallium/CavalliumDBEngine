@@ -6,14 +6,21 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.database.disk.HugePqEnv;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
+import it.cavallium.dbengine.database.disk.UnreleasableReadOptions;
+import it.cavallium.dbengine.database.disk.UnreleasableWriteOptions;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
+import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteOptions;
 
 public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 
+	static {
+		RocksDB.loadLibrary();
+	}
 
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private final HugePqCodec<V> valueCodec;
@@ -21,8 +28,11 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 	private final HugePqEnv env;
 	private final int hugePqId;
 	private final StandardRocksDBColumn rocksDB;
-	private WriteOptions writeOptions;
-	private ReadOptions readOptions;
+	private static final UnreleasableWriteOptions writeOptions = new UnreleasableWriteOptions(new WriteOptions()
+			.setDisableWAL(true)
+			.setSync(false));
+	private static final UnreleasableReadOptions readOptions = new UnreleasableReadOptions(new ReadOptions()
+			.setVerifyChecksums(false));
 	private final V defaultValue;
 
 	private final long virtualSize;
@@ -33,8 +43,6 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		this.env = env.getEnv();
 		this.hugePqId = env.allocateDb(null);
 		this.rocksDB = this.env.openDb(hugePqId);
-		this.writeOptions = new WriteOptions().setDisableWAL(true).setSync(false);
-		this.readOptions = new ReadOptions().setVerifyChecksums(false);
 		this.defaultValue = defaultValue;
 
 		this.virtualSize = size;
@@ -57,8 +65,8 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		ensureBounds(index);
 		ensureThread();
 		var keyBuf = allocate(Long.BYTES);
-		keyBuf.writeLong(index);
 		try (var valueBuf = valueCodec.serialize(this::allocate, value); keyBuf) {
+			keyBuf.writeLong(index);
 			rocksDB.put(writeOptions, keyBuf, valueBuf);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
@@ -85,7 +93,11 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 
 		var keyBuf = allocate(Long.BYTES);
 		try (keyBuf) {
+			keyBuf.writeLong(index);
 			try (var value = rocksDB.get(readOptions, keyBuf)) {
+				if (value == null) {
+					return null;
+				}
 				return valueCodec.deserialize(value);
 			}
 		} catch (RocksDBException e) {
@@ -105,17 +117,22 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 
 	@Override
 	public void close() {
-		readOptions.close();
-		writeOptions.close();
 		if (closed.compareAndSet(false, true)) {
 			ensureThread();
 			this.tempEnv.freeDb(hugePqId);
 		}
 	}
 
-
 	@Override
 	public String toString() {
 		return "huge_pq_array[" + virtualSize + "]";
+	}
+
+	public Object[] toArray() {
+		var result = new Object[Math.toIntExact(virtualSize)];
+		for (int i = 0; i < virtualSize; i++) {
+			result[i] = get(i);
+		}
+		return result;
 	}
 }

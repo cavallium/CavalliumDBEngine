@@ -51,7 +51,11 @@ public final class RelevanceComparator extends FieldComparator<Float> implements
 
 	@Override
 	public int compare(int slot1, int slot2) {
-		return Float.compare(scores.getOrDefault(slot2, 0f), scores.getOrDefault(slot1, 0f));
+		var value1 = scores.get(slot1);
+		var value2 = scores.get(slot2);
+		assert value1 != null : "Missing score for slot1: " + slot1;
+		assert value2 != null : "Missing score for slot2: " + slot2;
+		return Float.compare(value1, value2);
 	}
 
 	@Override

@@ -46,7 +46,11 @@ public class IntComparator extends NumericComparator<Integer> implements SafeClo
 
   @Override
   public int compare(int slot1, int slot2) {
-    return Integer.compare(values.getOrDefault(slot1, 0), values.getOrDefault(slot2, 0));
+		var value1 = values.get(slot1);
+		var value2 = values.get(slot2);
+		assert value1 != null : "Missing value for slot1: " + slot1;
+		assert value2 != null : "Missing value for slot2: " + slot2;
+    return Integer.compare(value1, value2);
   }
 
   @Override

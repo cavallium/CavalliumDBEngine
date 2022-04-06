@@ -45,6 +45,7 @@ import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -85,7 +86,7 @@ public class TestLuceneSearches {
 		// Start the pool by creating and deleting a direct buffer
 		PooledByteBufAllocator.DEFAULT.directBuffer().release();
 
-		var modifiableElements = new HashMap<String, String>();
+		var modifiableElements = new LinkedHashMap<String, String>();
 		modifiableElements.put("test-key-1", "0123456789");
 		modifiableElements.put("test-key-2", "test 0123456789 test word");
 		modifiableElements.put("test-key-3", "0123456789 test example string");
@@ -123,7 +124,7 @@ public class TestLuceneSearches {
 
 		Flux
 				.fromIterable(ELEMENTS.entrySet())
-				.flatMap(entry -> index.updateDocument(entry.getKey(), entry.getValue()))
+				.concatMap(entry -> index.updateDocument(entry.getKey(), entry.getValue()))
 				.subscribeOn(Schedulers.boundedElastic())
 				.blockLast();
 		tempDb.swappableLuceneSearcher().setSingle(new CountMultiSearcher());
@@ -279,7 +280,7 @@ public class TestLuceneSearches {
 				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
 				try (var officialResults = run(luceneIndex.search(officialQuery))) {
 					var officialHits = officialResults.totalHitsCount();
-					var officialKeys = getResults(officialResults).stream().toList();
+					var officialKeys = getResults(officialResults);
 					if (officialHits.exact()) {
 						Assertions.assertEquals(officialKeys.size(), officialHits.value());
 					} else {

@@ -46,7 +46,11 @@ public class FloatComparator extends NumericComparator<Float> implements SafeClo
 
   @Override
   public int compare(int slot1, int slot2) {
-    return Float.compare(values.getOrDefault(slot1, 0f), values.getOrDefault(slot2, 0f));
+		var value1 = values.get(slot1);
+		var value2 = values.get(slot2);
+		assert value1 != null : "Missing value for slot1: " + slot1;
+		assert value2 != null : "Missing value for slot2: " + slot2;
+    return Float.compare(value1, value2);
   }
 
   @Override

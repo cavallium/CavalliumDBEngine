@@ -43,7 +43,7 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 			.setDisableWAL(true)
 			.setSync(false));
 	private static final UnreleasableReadOptions readOptions = new UnreleasableReadOptions(new ReadOptions()
-			.setVerifyChecksums(false).setTotalOrderSeek(true));
+			.setVerifyChecksums(false));
 	private final HugePqCodec<T> codec;
 
 	private long size = 0;

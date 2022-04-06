@@ -17,12 +17,15 @@
 
 package it.cavallium.dbengine.lucene.comparators;
 
+import static java.util.Objects.requireNonNull;
+
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
-import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.HugePqArray;
+import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.LongCodec;
 import java.io.IOException;
+import java.util.Objects;
 import org.apache.lucene.document.LongPoint;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.LeafFieldComparator;
@@ -46,7 +49,11 @@ public class LongComparator extends NumericComparator<Long> implements SafeClose
 
   @Override
   public int compare(int slot1, int slot2) {
-    return Long.compare(values.getOrDefault(slot1, 0L), values.getOrDefault(slot2, 0L));
+		var value1 = values.get(slot1);
+		var value2 = values.get(slot2);
+		assert value1 != null : "Missing value for slot1: " + slot1;
+		assert value2 != null : "Missing value for slot2: " + slot2;
+		return Long.compare(value1, value2);
   }
 
   @Override

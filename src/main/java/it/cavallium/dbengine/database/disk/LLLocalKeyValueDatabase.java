@@ -61,7 +61,6 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.OptimisticTransactionDB;
-import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
@@ -287,17 +286,33 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				this.dbRScheduler = Schedulers.boundedElastic();
 			} else {
 				// 8 or more
-				threadCap = Math.max(8, Math.max(Runtime.getRuntime().availableProcessors(),
-						Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.threads", "0"))));
-				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.shared", "true"))) {
+				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
+				{
+					var threadCapProperty = Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.write.threads", "0"));
+					if (threadCapProperty > 1) {
+						threadCap = threadCapProperty;
+					}
+				}
+				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.write.shared", "true"))) {
 					this.dbWScheduler = Schedulers.boundedElastic();
-					this.dbRScheduler = Schedulers.boundedElastic();
 				} else {
 					this.dbWScheduler = Schedulers.newBoundedElastic(threadCap,
 							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 							new ShortNamedThreadFactory("db-write-" + name).setDaemon(true).withGroup(new ThreadGroup("database-write")),
 							60
 					);
+				}
+				// 8 or more
+				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
+				{
+					var threadCapProperty = Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.read.threads", "0"));
+					if (threadCapProperty > 1) {
+						threadCap = threadCapProperty;
+					}
+				}
+				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.read.shared", "true"))) {
+					this.dbRScheduler = Schedulers.boundedElastic();
+				} else {
 					this.dbRScheduler = Schedulers.newBoundedElastic(threadCap,
 							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
 							new ShortNamedThreadFactory("db-write-" + name).setDaemon(true).withGroup(new ThreadGroup("database-read")),
@@ -368,6 +383,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		registerGauge(meterRegistry, name, "rocksdb.estimate-num-keys");
 		registerGauge(meterRegistry, name, "rocksdb.block-cache-usage");
 		registerGauge(meterRegistry, name, "rocksdb.block-cache-pinned-usage");
+		// Bloom seek stats
+		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.prefix.useful");
+		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.prefix.checked");
+		// Bloom point lookup stats
+		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.useful");
+		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.full.positive");
+		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.full.true.positive");
 	}
 
 	public Map<Column, ColumnFamilyHandle> getAllColumnFamilyHandles() {
@@ -615,9 +637,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			return List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
 							100L * 1024L * 1024L * 1024L), // 100GiB
 					new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
-							500L * 1024L * 1024L * 1024L), // 500GiB
+							0), // Legacy
 					new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
-							500L * 1024L * 1024L * 1024L)); // 500GiB
+							0)
+			); // Legacy
 		}
 		for (DatabaseVolume volume : volumes) {
 			Path volumePath;

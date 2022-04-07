@@ -128,7 +128,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "no")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "disabled")
 				.register(meterRegistry);
 		this.readValueNotFoundWithBloomBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -136,7 +136,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "hit.notfound")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "enabled", "bloom.mayexist", "false")
 				.register(meterRegistry);
 		this.readValueNotFoundWithMayExistBloomBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -144,7 +144,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "hit.wrong")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "false", "bloom", "enabled", "bloom.mayexist", "true", "bloom.mayexist.result", "notexists", "bloom.mayexist.cached", "false")
 				.register(meterRegistry);
 		this.readValueFoundWithBloomUncachedBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -152,7 +152,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "hit.found")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "enabled", "bloom.mayexist", "true", "bloom.mayexist.result", "exists", "bloom.mayexist.cached", "false")
 				.register(meterRegistry);
 		this.readValueFoundWithBloomCacheBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -160,7 +160,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "hit.cachedvalue")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "enabled", "bloom.mayexist", "true", "bloom.mayexist.result", "exists", "bloom.mayexist.cached", "true")
 				.register(meterRegistry);
 		this.readValueFoundWithBloomSimpleBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -168,7 +168,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "hit")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "enabled", "bloom.mayexist", "true", "bloom.mayexist.result", "exists", "bloom.mayexist.cached", "false")
 				.register(meterRegistry);
 		this.readValueFoundWithoutBloomBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -176,7 +176,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.baseUnit("bytes")
 				.scale(1)
 				.publishPercentileHistogram()
-				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "no")
+				.tags("db.name", databaseName, "db.column", columnName, "buffer.type", "val.read", "found", "true", "bloom", "disabled")
 				.register(meterRegistry);
 		this.writeValueBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")

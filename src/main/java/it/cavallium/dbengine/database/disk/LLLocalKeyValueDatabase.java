@@ -420,6 +420,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					try {
 						return database.getAggregatedLongProperty(propertyName);
 					} catch (RocksDBException e) {
+						if ("NotFound".equals(e.getMessage())) {
+							return 0d;
+						}
 						throw new RuntimeException(e);
 					}
 				}

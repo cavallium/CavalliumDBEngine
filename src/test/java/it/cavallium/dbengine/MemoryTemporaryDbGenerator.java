@@ -9,6 +9,7 @@ import it.cavallium.data.generator.nativedata.Nullableint;
 import it.cavallium.data.generator.nativedata.Nullablelong;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
+import it.cavallium.dbengine.client.DefaultDatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;
 import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.database.ColumnUtils;
@@ -56,22 +57,7 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 							.zip(
 									conn.getDatabase("testdb",
 											List.of(ColumnUtils.dictionary("testmap"), ColumnUtils.special("ints"), ColumnUtils.special("longs")),
-											DatabaseOptions.of(List.of(),
-													List.of(),
-													Map.of(),
-													true,
-													false,
-													false,
-													true,
-													canUseNettyDirect,
-													true,
-													Nullableint.of(-1),
-													Nullablelong.empty(),
-													Nullablelong.empty(),
-													Nullableboolean.empty(),
-													false,
-													NullableFilter.empty()
-											)
+											DefaultDatabaseOptions.builder().allowNettyDirect(canUseNettyDirect).build()
 									),
 									conn.getLuceneIndex("testluceneindex1",
 											LuceneUtils.singleStructure(),

@@ -13,6 +13,12 @@ interfacesData:
     extendInterfaces: [RPCEvent]
   ServerBoundResponse:
     extendInterfaces: [RPCEvent]
+  ColumnOptions:
+    commonGetters:
+      levels: DatabaseLevel[]
+      memtableMemoryBudgetBytes: -long
+      cacheIndexAndFilterBlocks: -boolean
+      filter: -Filter
 # versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
 versions:
   0.0.0:
@@ -83,6 +89,10 @@ versions:
       ]
       Filter: [
         BloomFilter
+      ]
+      ColumnOptions: [
+        DefaultColumnOptions,
+        NamedColumnOptions
       ]
     customTypes:
       Path:
@@ -226,7 +236,6 @@ versions:
       DatabaseOptions:
         data:
           volumes: DatabaseVolume[]
-          levels: DatabaseLevel[]
           extraFlags: StringMap
           absoluteConsistency: boolean
           lowMemory: boolean
@@ -235,10 +244,24 @@ versions:
           allowNettyDirect: boolean
           optimistic: boolean
           maxOpenFiles: -int
-          memtableMemoryBudgetBytes: -long
           blockCache: -long
-          cacheIndexAndFilterBlocks: -boolean
           spinning: boolean
+          defaultColumnOptions: DefaultColumnOptions
+          columnOptions: NamedColumnOptions[]
+      # Remember to update ColumnOptions common getters
+      DefaultColumnOptions:
+        data:
+          levels: DatabaseLevel[]
+          memtableMemoryBudgetBytes: -long
+          cacheIndexAndFilterBlocks: -boolean
+          filter: -Filter
+      # Remember to update ColumnOptions common getters
+      NamedColumnOptions:
+        data:
+          columnName: String
+          levels: DatabaseLevel[]
+          memtableMemoryBudgetBytes: -long
+          cacheIndexAndFilterBlocks: -boolean
           filter: -Filter
       BloomFilter:
         data:

@@ -16,9 +16,11 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.rpc.current.data.ColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseLevel;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
+import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -144,50 +147,70 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			List<ColumnFamilyDescriptor> descriptors = new ArrayList<>();
 
 			descriptors.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY));
+
+			// Check column names validity
+			for (NamedColumnOptions columnOption : databaseOptions.columnOptions()) {
+				if (columns.stream().map(Column::name).noneMatch(columnName -> columnName.equals(columnOption.columnName()))) {
+					throw new IllegalArgumentException(
+							"Column " + columnOption.columnName() + " does not exist. Available columns: " + columns
+									.stream()
+									.map(Column::name)
+									.collect(Collectors.joining(", ", "[", "]")));
+				}
+			}
+
 			for (Column column : columns) {
-				var columnOptions = new ColumnFamilyOptions();
+				var columnFamilyOptions = new ColumnFamilyOptions();
+
+				var columnOptions = databaseOptions
+						.columnOptions()
+						.stream()
+						.filter(opts -> opts.columnName().equals(column.name()))
+						.findFirst()
+						.map(opts -> (ColumnOptions) opts)
+						.orElse(databaseOptions.defaultColumnOptions());
 
 				//noinspection ConstantConditions
-				if (databaseOptions.memtableMemoryBudgetBytes() != null) {
+				if (columnOptions.memtableMemoryBudgetBytes() != null) {
 					// about 512MB of ram will be used for level style compaction
-					columnOptions.optimizeLevelStyleCompaction(databaseOptions.memtableMemoryBudgetBytes().orElse(
+					columnFamilyOptions.optimizeLevelStyleCompaction(columnOptions.memtableMemoryBudgetBytes().orElse(
 							databaseOptions.lowMemory()
 									? (DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET / 4)
 									: DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET));
 				}
 
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnOptions.setMaxBytesForLevelBase((databaseOptions.spinning() ? 512 : 256) * SizeUnit.MB);
+				columnFamilyOptions.setMaxBytesForLevelBase((databaseOptions.spinning() ? 512 : 256) * SizeUnit.MB);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnOptions.setMaxBytesForLevelMultiplier(10);
+				columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 				// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-				columnOptions.setLevelCompactionDynamicLevelBytes(true);
+				columnFamilyOptions.setLevelCompactionDynamicLevelBytes(true);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnOptions.setLevel0FileNumCompactionTrigger(2);
+				columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnOptions.setLevel0SlowdownWritesTrigger(20);
+				columnFamilyOptions.setLevel0SlowdownWritesTrigger(20);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnOptions.setLevel0StopWritesTrigger(36);
+				columnFamilyOptions.setLevel0StopWritesTrigger(36);
 
-				if (!databaseOptions.levels().isEmpty()) {
-					var firstLevelOptions = getRocksLevelOptions(databaseOptions.levels().get(0));
-					columnOptions.setCompressionType(firstLevelOptions.compressionType);
-					columnOptions.setCompressionOptions(firstLevelOptions.compressionOptions);
+				if (!columnOptions.levels().isEmpty()) {
+					var firstLevelOptions = getRocksLevelOptions(columnOptions.levels().get(0));
+					columnFamilyOptions.setCompressionType(firstLevelOptions.compressionType);
+					columnFamilyOptions.setCompressionOptions(firstLevelOptions.compressionOptions);
 
-					var lastLevelOptions = getRocksLevelOptions(databaseOptions
+					var lastLevelOptions = getRocksLevelOptions(columnOptions
 							.levels()
-							.get(databaseOptions.levels().size() - 1));
-					columnOptions.setBottommostCompressionType(lastLevelOptions.compressionType);
-					columnOptions.setBottommostCompressionOptions(lastLevelOptions.compressionOptions);
+							.get(columnOptions.levels().size() - 1));
+					columnFamilyOptions.setBottommostCompressionType(lastLevelOptions.compressionType);
+					columnFamilyOptions.setBottommostCompressionOptions(lastLevelOptions.compressionOptions);
 
-					columnOptions.setCompressionPerLevel(databaseOptions
+					columnFamilyOptions.setCompressionPerLevel(columnOptions
 							.levels()
 							.stream()
 							.map(v -> v.compression().getType())
 							.toList());
 				} else {
-					columnOptions.setNumLevels(7);
+					columnFamilyOptions.setNumLevels(7);
 					List<CompressionType> compressionTypes = new ArrayList<>(7);
 					for (int i = 0; i < 7; i++) {
 						if (i < 2) {
@@ -196,20 +219,20 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							compressionTypes.add(CompressionType.LZ4_COMPRESSION);
 						}
 					}
-					columnOptions.setBottommostCompressionType(CompressionType.LZ4_COMPRESSION);
-					columnOptions.setBottommostCompressionOptions(new CompressionOptions()
+					columnFamilyOptions.setBottommostCompressionType(CompressionType.LZ4_COMPRESSION);
+					columnFamilyOptions.setBottommostCompressionOptions(new CompressionOptions()
 							.setEnabled(true)
 							.setMaxDictBytes(32768));
-					columnOptions.setCompressionPerLevel(compressionTypes);
+					columnFamilyOptions.setCompressionPerLevel(compressionTypes);
 				}
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
 					tableOptions.setOptimizeFiltersForMemory(true);
-					tableOptions.setVerifyCompression(false);
 				}
-				if (databaseOptions.filter().isPresent()) {
-					var filterOptions = databaseOptions.filter().get();
+				tableOptions.setVerifyCompression(false);
+				if (columnOptions.filter().isPresent()) {
+					var filterOptions = columnOptions.filter().get();
 
 					if (filterOptions instanceof it.cavallium.dbengine.rpc.current.data.BloomFilter bloomFilterOptions) {
 						// If OptimizeFiltersForHits == true: memory size = bitsPerKey * (totalKeys * 0.1)
@@ -218,7 +241,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						tableOptions.setFilterPolicy(bloomFilter);
 					}
 				}
-				boolean cacheIndexAndFilterBlocks = databaseOptions.cacheIndexAndFilterBlocks()
+				boolean cacheIndexAndFilterBlocks = columnOptions.cacheIndexAndFilterBlocks()
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.orElse(true);
 				if (databaseOptions.spinning()) {
@@ -243,17 +266,17 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 						.setBlockSize((databaseOptions.spinning() ? 256 : 16) * SizeUnit.KB);
 
-				columnOptions.setTableFormatConfig(tableOptions);
-				columnOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
-				if (databaseOptions.filter().isPresent()) {
-					var filterOptions = databaseOptions.filter().get();
+				columnFamilyOptions.setTableFormatConfig(tableOptions);
+				columnFamilyOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
+				if (columnOptions.filter().isPresent()) {
+					var filterOptions = columnOptions.filter().get();
 
 					if (filterOptions instanceof it.cavallium.dbengine.rpc.current.data.BloomFilter bloomFilterOptions) {
 						boolean optimizeForHits = bloomFilterOptions.optimizeForHits()
 								// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 								// https://github.com/EighteenZi/rocksdb_wiki/blob/master/RocksDB-Tuning-Guide.md#throughput-gap-between-random-read-vs-sequential-read-is-much-higher-in-spinning-disks-suggestions=
 								.orElse(databaseOptions.spinning());
-						columnOptions.setOptimizeFiltersForHits(optimizeForHits);
+						columnFamilyOptions.setOptimizeFiltersForHits(optimizeForHits);
 					}
 				}
 
@@ -265,7 +288,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				// // (but the default value is 1, which means that the maximum sstable of each level is the same).
 				// columnOptions.setTargetFileSizeMultiplier(1);
 
-				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnOptions));
+				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnFamilyOptions));
 			}
 
 			// Get databases directory path

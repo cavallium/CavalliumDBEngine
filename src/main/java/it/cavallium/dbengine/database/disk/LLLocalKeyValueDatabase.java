@@ -471,14 +471,25 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private void flushAndCloseDb(RocksDB db, List<ColumnFamilyHandle> handles)
 			throws RocksDBException {
+		if (!db.isOwningHandle()) {
+			return;
+		}
 		flushDb(db, handles);
+		if (!db.isOwningHandle()) {
+			return;
+		}
 
 		for (ColumnFamilyHandle handle : handles) {
 			try {
-				handle.close();
+				if (handle.isOwningHandle()) {
+					handle.close();
+				}
 			} catch (Exception ex) {
 				logger.error("Can't close column family", ex);
 			}
+		}
+		if (!db.isOwningHandle()) {
+			return;
 		}
 		try {
 			db.closeE();
@@ -486,12 +497,21 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			if ("Cannot close DB with unreleased snapshot.".equals(ex.getMessage())) {
 				snapshotsHandles.forEach((id, snapshot) -> {
 					try {
+						if (!db.isOwningHandle()) {
+							return;
+						}
+						if (!snapshot.isOwningHandle()) {
+							return;
+						}
 						db.releaseSnapshot(snapshot);
 					} catch (Exception ex2) {
 						// ignore exception
 						logger.debug("Failed to release snapshot " + id, ex2);
 					}
 				});
+				if (!db.isOwningHandle()) {
+					return;
+				}
 				db.closeE();
 			}
 			throw ex;
@@ -896,6 +916,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					Snapshot dbSnapshot = this.snapshotsHandles.remove(snapshot.getSequenceNumber());
 					if (dbSnapshot == null) {
 						throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
+					}
+					if (!db.isOwningHandle()) {
+						return null;
+					}
+					if (!dbSnapshot.isOwningHandle()) {
+						return null;
 					}
 					db.releaseSnapshot(dbSnapshot);
 					return null;

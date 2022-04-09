@@ -210,7 +210,7 @@
       <dependency>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator-runtime</artifactId>
-        <version>1.0.46</version>
+        <version>1.0.52</version>
       </dependency>
       <dependency>
         <groupId>io.micrometer</groupId>
@@ -523,27 +523,6 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-install-plugin</artifactId>
         <version>3.0.0-M1</version>
-      </plugin>
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-dependency-plugin</artifactId>
-        <version>3.1.2</version>
-        <executions>
-          <execution>
-            <phase>compile</phase>
-            <goals>
-              <goal>copy-dependencies</goal>
-            </goals>
-            <configuration>
-              <outputDirectory>${project.build.directory}/lib</outputDirectory>
-              <overWriteReleases>false</overWriteReleases>
-              <overWriteSnapshots>false</overWriteSnapshots>
-              <overWriteIfNewer>true</overWriteIfNewer>
-              <prependGroupId>true</prependGroupId>
-              <stripVersion>true</stripVersion>
-            </configuration>
-          </execution>
-        </executions>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

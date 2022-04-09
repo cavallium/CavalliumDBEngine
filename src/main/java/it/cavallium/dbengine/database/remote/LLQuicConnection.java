@@ -21,6 +21,7 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
@@ -65,6 +66,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.DBOptions;
+import org.rocksdb.TableProperties;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.incubator.quic.QuicClient;
@@ -325,6 +328,16 @@ public class LLQuicConnection implements LLDatabaseConnection {
 
 					@Override
 					public Mono<MemoryStats> getMemoryStats() {
+						return null;
+					}
+
+					@Override
+					public Mono<String> getRocksDBStats() {
+						return null;
+					}
+
+					@Override
+					public Flux<TableWithProperties> getTableProperties() {
 						return null;
 					}
 

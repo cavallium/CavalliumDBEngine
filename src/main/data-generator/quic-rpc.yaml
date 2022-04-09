@@ -245,6 +245,7 @@ versions:
           optimistic: boolean
           maxOpenFiles: -int
           blockCache: -long
+          compressedBlockCache: -long
           spinning: boolean
           defaultColumnOptions: DefaultColumnOptions
           columnOptions: NamedColumnOptions[]

@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.lucene.search;
+package it.cavallium.dbengine.lucene.hugepq.search;
 
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
@@ -29,10 +29,23 @@ import it.cavallium.dbengine.lucene.PriorityQueue;
 import it.cavallium.dbengine.lucene.ResourceIterable;
 import it.cavallium.dbengine.lucene.collector.FullDocsCollector;
 import it.cavallium.dbengine.lucene.collector.FullFieldDocs;
+import it.cavallium.dbengine.lucene.hugepq.mirrored.HitsThresholdChecker;
+import it.cavallium.dbengine.lucene.hugepq.mirrored.MultiLeafFieldComparator;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.search.CollectionTerminatedException;
+import org.apache.lucene.search.CollectorManager;
+import org.apache.lucene.search.DocIdSetIterator;
+import org.apache.lucene.search.FieldComparator;
+import org.apache.lucene.search.LeafCollector;
+import org.apache.lucene.search.LeafFieldComparator;
+import org.apache.lucene.search.Scorable;
+import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SortField;
+import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.TotalHits.Relation;
 import reactor.core.publisher.Flux;
 

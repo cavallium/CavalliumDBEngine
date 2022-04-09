@@ -10,7 +10,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import java.util.List;
-import org.apache.lucene.search.CustomHitsThresholdChecker;
+import it.cavallium.dbengine.lucene.hugepq.search.CustomHitsThresholdChecker;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.jetbrains.annotations.Nullable;

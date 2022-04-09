@@ -15,13 +15,14 @@
  * limitations under the License.
  */
 
-package org.apache.lucene.search.comparators;
+package it.cavallium.dbengine.lucene.hugepq.search.comparators;
 
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.IArray;
 import it.cavallium.dbengine.lucene.IntCodec;
 import it.cavallium.dbengine.lucene.HugePqArray;
+import it.cavallium.dbengine.lucene.hugepq.mirrored.MinDocIterator;
 import java.io.IOException;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;

@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.MemoryManager;
-import io.netty5.buffer.api.pool.MetricUtils;
 import io.netty5.buffer.api.pool.PoolArenaMetric;
 import io.netty5.buffer.api.pool.PooledBufferAllocator;
 import io.netty5.util.internal.PlatformDependent;
@@ -22,7 +21,6 @@ import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterHashMap;
 import it.cavallium.dbengine.database.collections.SubStageGetterMap;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;

@@ -15,9 +15,10 @@
  * limitations under the License.
  */
 
-package org.apache.lucene.search;
+package it.cavallium.dbengine.lucene.hugepq.search;
 
 import java.util.concurrent.atomic.AtomicLong;
+import org.apache.lucene.search.ScoreMode;
 
 /** Used for defining custom algorithms to allow searches to early terminate */
 public abstract class CustomHitsThresholdChecker {

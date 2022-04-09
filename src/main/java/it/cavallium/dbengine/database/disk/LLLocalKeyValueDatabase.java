@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.ColumnOptions;
@@ -36,6 +37,7 @@ import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -67,6 +69,7 @@ import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
+import org.rocksdb.TableProperties;
 import org.rocksdb.TransactionDB;
 import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.TxnDBWritePolicy;
@@ -74,9 +77,11 @@ import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.rocksdb.util.SizeUnit;
 import org.warp.commonutils.type.ShortNamedThreadFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuple2;
 
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
@@ -180,7 +185,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnFamilyOptions.setMaxBytesForLevelBase((databaseOptions.spinning() ? 512 : 256) * SizeUnit.MB);
+				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+				columnFamilyOptions.setMaxBytesForLevelBase((databaseOptions.spinning() ? 1024 : 256) * SizeUnit.MB);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 				columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
@@ -247,6 +253,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				if (databaseOptions.spinning()) {
 					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 					cacheIndexAndFilterBlocks = true;
+					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					columnFamilyOptions.setMinWriteBufferNumberToMerge(3);
+					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					columnFamilyOptions.setMaxWriteBufferNumber(4);
 				}
 				tableOptions
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
@@ -264,7 +274,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setBlockCache(optionsWithCache.standardCache())
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-						.setBlockSize((databaseOptions.spinning() ? 256 : 16) * SizeUnit.KB);
+						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+						.setBlockSize((databaseOptions.spinning() ? 128 : 16) * SizeUnit.KB);
 
 				columnFamilyOptions.setTableFormatConfig(tableOptions);
 				columnFamilyOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
@@ -283,10 +294,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				// // Increasing this value can reduce the frequency of compaction and reduce write amplification,
 				// // but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
 				// // This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
-				// columnOptions.setTargetFileSizeBase((databaseOptions.spinning() ? 128 : 64) * SizeUnit.MB);
+				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+				columnFamilyOptions.setTargetFileSizeBase((databaseOptions.spinning() ? 256 : 64) * SizeUnit.MB);
 				// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
 				// // (but the default value is 1, which means that the maximum sstable of each level is the same).
-				// columnOptions.setTargetFileSizeMultiplier(1);
+				columnFamilyOptions.setTargetFileSizeMultiplier(1);
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnFamilyOptions));
 			}
@@ -577,6 +589,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes());
 		options.setDbPaths(paths);
 		options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
+		if (databaseOptions.spinning()) {
+			// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+			options.setUseFsync(false);
+		}
 
 		Cache blockCache;
 		Cache compressedCache;
@@ -592,7 +608,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(0) // automatic
 			;
 			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB), 6, false);
-			compressedCache = null;
+			compressedCache = new ClockCache(databaseOptions.compressedBlockCache().orElse( 8L * SizeUnit.MB), 6, false);
 
 			if (databaseOptions.spinning()) {
 				options
@@ -621,8 +637,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(0)
 					.setMaxTotalWalSize(80 * SizeUnit.MB) // 80MiB max wal directory size
 			;
-			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB) / 2);
-			compressedCache = null;
+			blockCache = new ClockCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB), 6, false);
+			compressedCache = new ClockCache(databaseOptions.compressedBlockCache().orElse( 512 * SizeUnit.MB), 6, false);
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -792,14 +808,50 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<MemoryStats> getMemoryStats() {
 		return Mono
-				.fromCallable(() -> new MemoryStats(db.getAggregatedLongProperty("rocksdb.estimate-table-readers-mem"),
-						db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
-						db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
-						db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
-						db.getAggregatedLongProperty("rocksdb.block-cache-usage"),
-						db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage")
-				))
+				.fromCallable(() -> {
+					if (!closed) {
+						return new MemoryStats(db.getAggregatedLongProperty("rocksdb.estimate-table-readers-mem"),
+								db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
+								db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
+								db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
+								db.getAggregatedLongProperty("rocksdb.block-cache-usage"),
+								db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage")
+						);
+					} else {
+						return null;
+					}
+				})
 				.onErrorMap(cause -> new IOException("Failed to read memory stats", cause))
+				.subscribeOn(dbRScheduler);
+	}
+
+	@Override
+	public Mono<String> getRocksDBStats() {
+		return Mono
+				.fromCallable(() -> {
+					if (!closed) {
+						return db.getProperty("rocksdb.stats");
+					} else {
+						return null;
+					}
+				})
+				.onErrorMap(cause -> new IOException("Failed to read stats", cause))
+				.subscribeOn(dbRScheduler);
+	}
+
+	@Override
+	public Flux<TableWithProperties> getTableProperties() {
+		return Mono
+				.fromCallable(() -> {
+					if (!closed) {
+						return db.getPropertiesOfAllTables();
+					} else {
+						return null;
+					}
+				})
+				.flatMapIterable(Map::entrySet)
+				.map(entry -> new TableWithProperties(entry.getKey(), entry.getValue()))
+				.onErrorMap(cause -> new IOException("Failed to read stats", cause))
 				.subscribeOn(dbRScheduler);
 	}
 

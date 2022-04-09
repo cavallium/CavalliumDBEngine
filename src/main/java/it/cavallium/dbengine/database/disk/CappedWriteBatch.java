@@ -1,4 +1,4 @@
-package org.rocksdb;
+package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.isDirect;
 import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
@@ -13,6 +13,10 @@ import it.cavallium.dbengine.database.disk.RocksDBColumn;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import org.rocksdb.ColumnFamilyHandle;
+import org.rocksdb.RocksDBException;
+import org.rocksdb.WriteBatch;
+import org.rocksdb.WriteOptions;
 
 public class CappedWriteBatch extends WriteBatch {
 

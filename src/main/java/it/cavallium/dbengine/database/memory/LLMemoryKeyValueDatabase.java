@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.unimi.dsi.fastutil.bytes.ByteList;
@@ -17,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
@@ -96,6 +98,16 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public Mono<MemoryStats> getMemoryStats() {
 		return Mono.just(new MemoryStats(0, 0, 0, 0, 0, 0));
+	}
+
+	@Override
+	public Mono<String> getRocksDBStats() {
+		return Mono.empty();
+	}
+
+	@Override
+	public Flux<TableWithProperties> getTableProperties() {
+		return Flux.empty();
 	}
 
 	@Override

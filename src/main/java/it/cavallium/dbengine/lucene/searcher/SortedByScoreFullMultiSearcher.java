@@ -10,7 +10,7 @@ import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
-import org.apache.lucene.search.HugePqFullScoreDocCollector;
+import it.cavallium.dbengine.lucene.hugepq.search.HugePqFullScoreDocCollector;
 import java.io.IOException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

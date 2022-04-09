@@ -7,9 +7,11 @@ import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
-import it.cavallium.dbengine.database.collections.DatabaseSingleton;
 import java.nio.charset.StandardCharsets;
+import java.util.Map.Entry;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.TableProperties;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure {
@@ -55,6 +57,10 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 	Mono<Long> getProperty(String propertyName);
 
 	Mono<MemoryStats> getMemoryStats();
+
+	Mono<String> getRocksDBStats();
+
+	Flux<TableWithProperties> getTableProperties();
 
 	Mono<Void> verifyChecksum();
 

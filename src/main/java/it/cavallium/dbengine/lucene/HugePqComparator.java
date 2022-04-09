@@ -18,7 +18,7 @@ import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.SortedNumericSelector;
-import org.apache.lucene.search.comparators.HugePqDocComparator;
+import it.cavallium.dbengine.lucene.hugepq.search.comparators.HugePqDocComparator;
 
 public class HugePqComparator {
 

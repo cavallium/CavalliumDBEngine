@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.lucene.search;
+package it.cavallium.dbengine.lucene.hugepq.search;
 
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.FullDocs;
@@ -28,6 +28,13 @@ import java.io.IOException;
 import java.util.Collection;
 import org.apache.lucene.index.LeafReaderContext;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator.DocAndScore;
+import org.apache.lucene.search.Collector;
+import org.apache.lucene.search.CollectorManager;
+import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.LeafCollector;
+import org.apache.lucene.search.Scorable;
+import org.apache.lucene.search.ScoreMode;
+import org.apache.lucene.search.TotalHits;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 

@@ -19,6 +19,7 @@ interfacesData:
       memtableMemoryBudgetBytes: -long
       cacheIndexAndFilterBlocks: -boolean
       filter: -Filter
+      blockSize: -int
 # versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
 versions:
   0.0.0:
@@ -256,6 +257,7 @@ versions:
           memtableMemoryBudgetBytes: -long
           cacheIndexAndFilterBlocks: -boolean
           filter: -Filter
+          blockSize: -int
       # Remember to update ColumnOptions common getters
       NamedColumnOptions:
         data:
@@ -264,6 +266,7 @@ versions:
           memtableMemoryBudgetBytes: -long
           cacheIndexAndFilterBlocks: -boolean
           filter: -Filter
+          blockSize: -int
       BloomFilter:
         data:
           bitsPerKey: int

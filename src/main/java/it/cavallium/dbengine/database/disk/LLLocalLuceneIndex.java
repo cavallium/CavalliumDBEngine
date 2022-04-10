@@ -81,7 +81,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalLuceneIndex.class);
 
-	private static final ReentrantLock shutdownLock = new ReentrantLock();
+	private final ReentrantLock shutdownLock = new ReentrantLock();
 	/**
 	 * Global lucene index scheduler.
 	 * There is only a single thread globally to not overwhelm the disk with

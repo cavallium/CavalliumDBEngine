@@ -4,6 +4,12 @@ import static it.cavallium.dbengine.lucene.LuceneUtils.alignUnsigned;
 import static it.cavallium.dbengine.lucene.LuceneUtils.readInternalAligned;
 
 import com.sun.nio.file.ExtendedOpenOption;
+import java.nio.file.OpenOption;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.LockFactory;
+
 import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOException;
@@ -23,7 +29,8 @@ import org.apache.lucene.util.IOUtils;
 @SuppressWarnings({"RedundantArrayCreation", "unused", "unused", "RedundantCast"})
 public class DirectNIOFSDirectory extends FSDirectory {
 
-	private final OpenOption[] openOptions = {StandardOpenOption.READ, ExtendedOpenOption.DIRECT};
+	@SuppressWarnings("sunapi")
+	private final OpenOption[] openOptions = {StandardOpenOption.READ, com.sun.nio.file.ExtendedOpenOption.DIRECT};
 
 	public DirectNIOFSDirectory(Path path, LockFactory lockFactory) throws IOException {
 		super(path, lockFactory);
@@ -58,10 +65,10 @@ public class DirectNIOFSDirectory extends FSDirectory {
 
 	static final class NIOFSIndexInput extends BufferedIndexInput {
 		private static final int CHUNK_SIZE = 16384;
-		protected final FileChannel channel;
+		private final FileChannel channel;
 		boolean isClone = false;
-		protected final long off;
-		protected final long end;
+		private final long off;
+		private final long end;
 
 		public NIOFSIndexInput(String resourceDesc, FileChannel fc, IOContext context) throws IOException {
 			super(resourceDesc, context);
@@ -99,7 +106,7 @@ public class DirectNIOFSDirectory extends FSDirectory {
 			}
 		}
 
-		public final long length() {
+		public long length() {
 			return this.end - this.off;
 		}
 

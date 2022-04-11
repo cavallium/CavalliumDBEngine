@@ -46,6 +46,7 @@ public class DefaultDatabaseOptions {
 			Nullableint.empty(),
 			Nullablelong.empty(),
 			Nullablelong.empty(),
+			Nullablelong.empty(),
 			false,
 			DEFAULT_DEFAULT_COLUMN_OPTIONS,
 			List.of()

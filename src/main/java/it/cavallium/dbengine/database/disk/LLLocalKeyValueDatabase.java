@@ -613,6 +613,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			options.setUseFsync(false);
 		}
 
+		long writeBufferManagerSize;
+		if (databaseOptions.writeBufferManager().isPresent()) {
+			writeBufferManagerSize = databaseOptions.writeBufferManager().get();
+		} else {
+			writeBufferManagerSize = 0;
+		}
+
 		Cache blockCache;
 		Cache compressedCache;
 		if (databaseOptions.lowMemory()) {
@@ -627,8 +634,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(0) // automatic
 			;
 			// DO NOT USE ClockCache! IT'S BROKEN!
-			blockCache = new LRUCache(databaseOptions.blockCache().orElse( 8L * SizeUnit.MB));
-			compressedCache = new LRUCache(databaseOptions.compressedBlockCache().orElse( 8L * SizeUnit.MB));
+			blockCache = new LRUCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 8L * SizeUnit.MB));
+			if (databaseOptions.compressedBlockCache().isPresent()) {
+				compressedCache = new LRUCache(databaseOptions.compressedBlockCache().get());
+			} else {
+				compressedCache = null;
+			}
 
 			if (databaseOptions.spinning()) {
 				options
@@ -658,8 +669,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setMaxTotalWalSize(80 * SizeUnit.MB) // 80MiB max wal directory size
 			;
 			// DO NOT USE ClockCache! IT'S BROKEN!
-			blockCache = new LRUCache(databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
-			compressedCache = new LRUCache(databaseOptions.compressedBlockCache().orElse( 512 * SizeUnit.MB));
+			blockCache = new LRUCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
+			if (databaseOptions.compressedBlockCache().isPresent()) {
+				compressedCache = new LRUCache(databaseOptions.compressedBlockCache().get());
+			} else {
+				compressedCache = null;
+			}
 
 			if (databaseOptions.useDirectIO()) {
 				options
@@ -674,7 +689,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 
 		options.setRowCache(blockCache);
-		options.setWriteBufferManager(new WriteBufferManager(256L * 1024L * 1024L, blockCache));
+		if (databaseOptions.writeBufferManager().isPresent()) {
+			options.setWriteBufferManager(new WriteBufferManager(writeBufferManagerSize, blockCache));
+		}
 
 		if (databaseOptions.useDirectIO()) {
 			options

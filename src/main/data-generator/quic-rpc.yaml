@@ -247,6 +247,7 @@ versions:
           maxOpenFiles: -int
           blockCache: -long
           compressedBlockCache: -long
+          writeBufferManager: -long
           spinning: boolean
           defaultColumnOptions: DefaultColumnOptions
           columnOptions: NamedColumnOptions[]

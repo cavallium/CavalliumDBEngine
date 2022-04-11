@@ -842,8 +842,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 								db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
 								db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
 								db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
-								db.getAggregatedLongProperty("rocksdb.block-cache-usage"),
-								db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage")
+								db.getAggregatedLongProperty("rocksdb.block-cache-usage") / this.handles.size(),
+								db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage") / this.handles.size()
 						);
 					} else {
 						return null;

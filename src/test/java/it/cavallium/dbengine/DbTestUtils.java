@@ -41,10 +41,10 @@ public class DbTestUtils {
 		return "0123456789".repeat(1024);
 	}
 
-	public record TestAllocator(PooledBufferAllocator allocator) {}
+	public record TestAllocator(TestAllocatorImpl allocator) {}
 
 	public static TestAllocator newAllocator() {
-		return new TestAllocator(new PooledBufferAllocator(MemoryManager.instance(), true, 1, 8192, 9, 0, 0, true));
+		return new TestAllocator(TestAllocatorImpl.create());
 	}
 
 	public static void destroyAllocator(TestAllocator testAllocator) {
@@ -52,20 +52,10 @@ public class DbTestUtils {
 	}
 
 	@SuppressWarnings("SameParameterValue")
-	private static long getActiveAllocations(PooledBufferAllocator allocator, boolean printStats) {
-		allocator.trimCurrentThreadCache();
-		var metrics = MetricUtils.getPoolArenaMetrics(allocator);
-		int allocations = 0;
-		int deallocations = 0;
-		int activeAllocations = 0;
-		for (PoolArenaMetric metric : metrics) {
-			allocations += metric.numAllocations();
-			deallocations += metric.numDeallocations();
-			activeAllocations += metric.numActiveAllocations();
-		}
+	private static long getActiveAllocations(TestAllocatorImpl allocator, boolean printStats) {
+		long activeAllocations = allocator.getActiveAllocations();
 		if (printStats) {
-			System.out.println("allocations=" + allocations + ", deallocations=" + deallocations
-					+ ", activeAllocations=" + activeAllocations);
+			System.out.println("activeAllocations=" + activeAllocations);
 		}
 		return activeAllocations;
 	}
@@ -102,7 +92,7 @@ public class DbTestUtils {
 		return canUse;
 	}
 
-	public static void ensureNoLeaks(PooledBufferAllocator allocator, boolean printStats, boolean useClassicException) {
+	public static void ensureNoLeaks(TestAllocatorImpl allocator, boolean printStats, boolean useClassicException) {
 		if (allocator != null) {
 			var allocs = getActiveAllocations(allocator, printStats);
 			if (useClassicException) {
@@ -203,7 +193,7 @@ public class DbTestUtils {
 		);
 	}
 
-	public static <T, U> DatabaseMapDictionaryHashed<String, String, Integer> tempDatabaseMapDictionaryHashMap(
+	public static DatabaseMapDictionaryHashed<String, String, Integer> tempDatabaseMapDictionaryHashMap(
 			LLDictionary dictionary) {
 		return DatabaseMapDictionaryHashed.simple(dictionary,
 				Serializer.UTF8_SERIALIZER,

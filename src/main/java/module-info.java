@@ -15,6 +15,8 @@ module dbengine {
 	exports it.cavallium.dbengine.client.query;
 	exports it.cavallium.dbengine.database.memory;
 	exports it.cavallium.dbengine.netty;
+	opens it.cavallium.dbengine.database.remote;
+	exports it.cavallium.dbengine;
 	requires org.jetbrains.annotations;
 	requires reactor.core;
 	requires com.google.common;
@@ -35,6 +37,8 @@ module dbengine {
 	requires java.compiler;
 	requires org.apache.lucene.analysis.common;
 	requires org.apache.lucene.misc;
+	requires org.apache.lucene.codecs;
+	requires org.apache.lucene.backward_codecs;
 	requires lucene.relevance;
 	requires io.netty.buffer;
 	requires io.netty.transport;
@@ -49,5 +53,4 @@ module dbengine {
 	requires io.netty.incubator.codec.classes.quic;
 	requires org.apache.lucene.queryparser;
 	requires reactor.netty.incubator.quic;
-
 }

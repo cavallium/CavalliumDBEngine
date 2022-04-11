@@ -101,7 +101,7 @@
       <dependency>
         <groupId>org.junit.jupiter</groupId>
         <artifactId>junit-jupiter-api</artifactId>
-        <version>5.8.0-M1</version>
+        <version>5.8.2</version>
         <exclusions>
           <exclusion>
             <groupId>org.hamcrest</groupId>
@@ -112,12 +112,12 @@
       <dependency>
         <groupId>org.junit.jupiter</groupId>
         <artifactId>junit-jupiter-engine</artifactId>
-        <version>5.8.0-M1</version>
+        <version>5.8.2</version>
       </dependency>
       <dependency>
         <groupId>org.junit.jupiter</groupId>
         <artifactId>junit-jupiter-params</artifactId>
-        <version>5.8.0-M1</version>
+        <version>5.8.2</version>
       </dependency>
       <!-- This will get hamcrest-core automatically -->
       <dependency>
@@ -184,6 +184,7 @@
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-test-framework</artifactId>
         <version>9.0.0</version>
+        <scope>test</scope>
       </dependency>
       <dependency>
         <groupId>org.jetbrains</groupId>
@@ -534,7 +535,7 @@
             <annotationProcessorPath>
               <groupId>io.soabase.record-builder</groupId>
               <artifactId>record-builder-processor</artifactId>
-              <version>32</version>
+              <version>33</version>
             </annotationProcessorPath>
           </annotationProcessorPaths>
           <annotationProcessors>
@@ -583,10 +584,11 @@
           <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter-engine</artifactId>
-            <version>5.8.0-M1</version>
+            <version>5.8.2</version>
           </dependency>
         </dependencies>
         <configuration>
+          <useModulePath>false</useModulePath>
           <argLine>--add-modules jdk.incubator.foreign -Dforeign.restricted=permit --add-opens=java.base/jdk.internal.misc=ALL-UNNAMED --add-opens=java.base/java.lang=ALL-UNNAMED --add-opens=java.base/java.nio=ALL-UNNAMED --enable-native-access=ALL-UNNAMED</argLine>
           <systemProperties>
             <property>

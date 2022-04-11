@@ -22,6 +22,7 @@ public class DefaultDatabaseOptions {
 			Collections.emptyList(),
 			Nullablelong.empty(),
 			Nullableboolean.empty(),
+			Nullableboolean.empty(),
 			NullableFilter.empty(),
 			Nullableint.empty()
 	);
@@ -30,6 +31,7 @@ public class DefaultDatabaseOptions {
 			new String(RocksDB.DEFAULT_COLUMN_FAMILY, StandardCharsets.UTF_8),
 			Collections.emptyList(),
 			Nullablelong.empty(),
+			Nullableboolean.empty(),
 			Nullableboolean.empty(),
 			NullableFilter.empty(),
 			Nullableint.empty()

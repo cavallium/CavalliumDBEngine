@@ -269,7 +269,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setCacheIndexAndFilterBlocksWithHighPriority(true)
 						.setCacheIndexAndFilterBlocks(cacheIndexAndFilterBlocks)
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.setPartitionFilters(true)
+						.setPartitionFilters(columnOptions.partitionFilters().orElse(false))
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setIndexType(IndexType.kTwoLevelIndexSearch)
 						//todo: replace with kxxhash3
@@ -512,9 +512,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				logger.debug("Failed to release snapshot " + id, ex2);
 			}
 		});
-		db.closeE();
-		compressedCache.close();
-		standardCache.close();
+		db.close();
+		if (compressedCache != null) {
+			compressedCache.close();
+		}
+		if (standardCache != null) {
+			standardCache.close();
+		}
 	}
 
 	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
@@ -664,9 +668,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setBytesPerSync(64 * SizeUnit.KB)
 					.setWalBytesPerSync(64 * SizeUnit.KB)
 
-					.setWalTtlSeconds(0)
-					.setWalSizeLimitMB(0)
-					.setMaxTotalWalSize(80 * SizeUnit.MB) // 80MiB max wal directory size
+					.setWalTtlSeconds(30) // flush wal after 30 seconds
+					.setWalSizeLimitMB(1024) // 1024MB
+					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
 			;
 			// DO NOT USE ClockCache! IT'S BROKEN!
 			blockCache = new LRUCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));

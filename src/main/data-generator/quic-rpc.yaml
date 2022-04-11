@@ -18,6 +18,7 @@ interfacesData:
       levels: DatabaseLevel[]
       memtableMemoryBudgetBytes: -long
       cacheIndexAndFilterBlocks: -boolean
+      partitionFilters: -boolean
       filter: -Filter
       blockSize: -int
 # versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
@@ -257,6 +258,7 @@ versions:
           levels: DatabaseLevel[]
           memtableMemoryBudgetBytes: -long
           cacheIndexAndFilterBlocks: -boolean
+          partitionFilters: -boolean
           filter: -Filter
           blockSize: -int
       # Remember to update ColumnOptions common getters
@@ -266,6 +268,7 @@ versions:
           levels: DatabaseLevel[]
           memtableMemoryBudgetBytes: -long
           cacheIndexAndFilterBlocks: -boolean
+          partitionFilters: -boolean
           filter: -Filter
           blockSize: -int
       BloomFilter:

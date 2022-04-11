@@ -205,12 +205,12 @@
       <dependency>
         <groupId>io.soabase.record-builder</groupId>
         <artifactId>record-builder-core</artifactId>
-        <version>26</version>
+        <version>32</version>
       </dependency>
       <dependency>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator-runtime</artifactId>
-        <version>1.0.52</version>
+        <version>1.0.54</version>
       </dependency>
       <dependency>
         <groupId>io.micrometer</groupId>
@@ -547,7 +547,7 @@
       <plugin>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator</artifactId>
-        <version>0.9.102</version>
+        <version>0.9.112</version>
         <executions>
           <execution>
             <id>generate-lucene-query-sources</id>
@@ -558,6 +558,7 @@
             <configuration>
               <basePackageName>it.cavallium.dbengine.client.query</basePackageName>
               <configPath>${basedir}/src/main/data-generator/lucene-query.yaml</configPath>
+              <useRecordBuilder>true</useRecordBuilder>
             </configuration>
           </execution>
           <execution>
@@ -569,6 +570,7 @@
             <configuration>
               <basePackageName>it.cavallium.dbengine.rpc</basePackageName>
               <configPath>${basedir}/src/main/data-generator/quic-rpc.yaml</configPath>
+              <useRecordBuilder>true</useRecordBuilder>
             </configuration>
           </execution>
         </executions>

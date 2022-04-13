@@ -185,7 +185,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-				columnFamilyOptions.setMaxBytesForLevelBase((databaseOptions.spinning() ? 1024 : 256) * SizeUnit.MB);
+				columnFamilyOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 				columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
 				// This option is not supported with multiple db paths
@@ -299,7 +299,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				// // but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
 				// // This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
 				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-				columnFamilyOptions.setTargetFileSizeBase((databaseOptions.spinning() ? 256 : 64) * SizeUnit.MB);
+				columnFamilyOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
 				// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
 				// // (but the default value is 1, which means that the maximum sstable of each level is the same).
 				columnFamilyOptions.setTargetFileSizeMultiplier(1);

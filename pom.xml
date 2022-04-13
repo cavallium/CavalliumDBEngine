@@ -466,11 +466,6 @@
       <artifactId>lucene-relevance</artifactId>
     </dependency>
     <dependency>
-      <groupId>io.soabase.record-builder</groupId>
-      <artifactId>record-builder-core</artifactId>
-      <scope>provided</scope>
-    </dependency>
-    <dependency>
       <groupId>it.cavallium</groupId>
       <artifactId>data-generator-runtime</artifactId>
       <exclusions>
@@ -500,6 +495,11 @@
           <artifactId>slf4j-api</artifactId>
         </exclusion>
       </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>io.soabase.record-builder</groupId>
+      <artifactId>record-builder-core</artifactId>
+      <scope>provided</scope>
     </dependency>
   </dependencies>
   <build>
@@ -548,7 +548,7 @@
       <plugin>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator</artifactId>
-        <version>0.9.118</version>
+        <version>0.9.120</version>
         <executions>
           <execution>
             <id>generate-lucene-query-sources</id>

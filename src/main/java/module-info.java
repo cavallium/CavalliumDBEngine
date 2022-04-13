@@ -25,7 +25,7 @@ module dbengine {
 	requires rocksdbjni;
 	requires org.reactivestreams;
 	requires org.apache.logging.log4j;
-	requires io.soabase.recordbuilder.core;
+	requires static io.soabase.recordbuilder.core;
 	requires moshi;
 	requires io.netty5.common;
 	requires it.unimi.dsi.fastutil;

@@ -206,7 +206,7 @@
       <dependency>
         <groupId>io.soabase.record-builder</groupId>
         <artifactId>record-builder-core</artifactId>
-        <version>32</version>
+        <version>33</version>
       </dependency>
       <dependency>
         <groupId>it.cavallium</groupId>

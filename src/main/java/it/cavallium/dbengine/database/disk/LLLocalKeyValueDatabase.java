@@ -1070,7 +1070,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return Mono
 				.<Void>fromCallable(() -> {
 					try {
-						closed = true;
 						flushAndCloseDb(db, standardCache, compressedCache, new ArrayList<>(handles.values()));
 						deleteUnusedOldLogFiles();
 					} catch (RocksDBException e) {

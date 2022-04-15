@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
+import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
@@ -82,7 +83,7 @@ public class LLLocalDictionary implements LLDictionary {
 	 * It used to be false,
 	 * now it's true to avoid crashes during iterations on completely corrupted files
 	 */
-	static final boolean VERIFY_CHECKSUMS_WHEN_NOT_NEEDED = false;
+	static final boolean VERIFY_CHECKSUMS_WHEN_NOT_NEEDED = !LLUtils.FORCE_DISABLE_CHECKSUM_VERIFICATION;
 	/**
 	 * Default: true. Use false to debug problems with windowing.
 	 */
@@ -229,7 +230,7 @@ public class LLLocalDictionary implements LLDictionary {
 	 */
 	private ReadOptions getReadOptions(Snapshot snapshot) {
 		if (snapshot != null) {
-			return new ReadOptions().setSnapshot(snapshot);
+			return LLUtils.generateCustomReadOptions(null, true, true, true).setSnapshot(snapshot);
 		} else {
 			return EMPTY_READ_OPTIONS;
 		}
@@ -290,7 +291,11 @@ public class LLLocalDictionary implements LLDictionary {
 							AbstractSlice<?> slice1 = null;
 							AbstractSlice<?> slice2 = null;
 
-							try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
+							try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot),
+									true,
+									isBoundedRange(range),
+									true
+							)) {
 								readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 								readOpts.setFillCache(fillCache);
 								if (range.hasMin()) {
@@ -881,7 +886,11 @@ public class LLLocalDictionary implements LLDictionary {
 						.<BadBlock>create(sink -> {
 							var range = rangeSend.receive();
 							sink.onDispose(range::close);
-							try (var ro = new ReadOptions(getReadOptions(null))) {
+							try (var ro = LLUtils.generateCustomReadOptions(getReadOptions(null),
+									false,
+									isBoundedRange(range),
+									false
+							)) {
 								ro.setFillCache(false);
 								if (!range.isSingle()) {
 									if (LLUtils.MANUAL_READAHEAD) {
@@ -968,7 +977,11 @@ public class LLLocalDictionary implements LLDictionary {
 							assert !Schedulers.isInNonBlockingThread() : "Called setRange in a nonblocking thread";
 							if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
 								assert EMPTY_READ_OPTIONS.isOwningHandle();
-								try (var opts = new ReadOptions(EMPTY_READ_OPTIONS)) {
+								try (var opts = LLUtils.generateCustomReadOptions(EMPTY_READ_OPTIONS,
+										true,
+										isBoundedRange(range),
+										smallRange
+								)) {
 									ReleasableSlice minBound;
 									if (range.hasMin()) {
 										minBound = AbstractRocksDBColumn.setIterateBound(nettyDirect, opts, IterateBound.LOWER, range.getMinUnsafe());
@@ -1187,7 +1200,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private void deleteSmallRangeWriteBatch(WriteBatch writeBatch, Send<LLRange> rangeToReceive)
 			throws RocksDBException {
 		try (var range = rangeToReceive.receive()) {
-			try (var readOpts = new ReadOptions(getReadOptions(null))) {
+			try (var readOpts = LLUtils.generateCustomReadOptions(getReadOptions(null), true, isBoundedRange(range), true)) {
 				readOpts.setFillCache(false);
 				ReleasableSlice minBound;
 				if (range.hasMin()) {
@@ -1251,7 +1264,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.<Void>fromCallable(() -> {
 					assert !Schedulers.isInNonBlockingThread() : "Called clear in a nonblocking thread";
 					boolean shouldCompactLater = false;
-					try (var readOpts = new ReadOptions(getReadOptions(null))) {
+					try (var readOpts = LLUtils.generateCustomReadOptions(getReadOptions(null), false, false, false)) {
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 						// readOpts.setIgnoreRangeDeletions(true);
@@ -1323,7 +1336,7 @@ public class LLLocalDictionary implements LLDictionary {
 				if (range.isAll()) {
 					sink.next(fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot));
 				} else {
-					try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
+					try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), false, isBoundedRange(range), false)) {
 						readOpts.setFillCache(false);
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 						ReleasableSlice minBound;
@@ -1384,7 +1397,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOne in a nonblocking thread";
-				try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
+				try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), true, true, true)) {
 					ReleasableSlice minBound;
 					if (range.hasMin()) {
 						minBound = AbstractRocksDBColumn.setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
@@ -1439,7 +1452,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOneKey in a nonblocking thread";
-				try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
+				try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), true, true, true)) {
 					ReleasableSlice minBound;
 					if (range.hasMin()) {
 						minBound = AbstractRocksDBColumn.setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
@@ -1518,8 +1531,7 @@ public class LLLocalDictionary implements LLDictionary {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called exactSizeAll in a nonblocking thread");
 		}
-		try (var readOpts = new ReadOptions(resolveSnapshot(snapshot))) {
-			readOpts.setFillCache(false);
+		try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), false, false, false)) {
 			if (LLUtils.MANUAL_READAHEAD) {
 				readOpts.setReadaheadSize(128 * 1024); // 128KiB
 			}

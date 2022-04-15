@@ -8,6 +8,7 @@ import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import java.io.IOException;
 import java.util.Arrays;
@@ -72,7 +73,7 @@ public class LLLocalSingleton implements LLSingleton {
 
 	private ReadOptions resolveSnapshot(LLSnapshot snapshot) {
 		if (snapshot != null) {
-			return new ReadOptions().setSnapshot(snapshotResolver.apply(snapshot));
+			return LLUtils.generateCustomReadOptions(null, true, true, true).setSnapshot(snapshotResolver.apply(snapshot));
 		} else {
 			return EMPTY_READ_OPTIONS;
 		}

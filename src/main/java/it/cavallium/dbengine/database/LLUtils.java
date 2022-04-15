@@ -86,6 +86,9 @@ public class LLUtils {
 	public static final AtomicBoolean hookRegistered = new AtomicBoolean();
 	public static final boolean MANUAL_READAHEAD = false;
 
+	public static final boolean FORCE_DISABLE_CHECKSUM_VERIFICATION
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checksum.disable.force", "false"));
+
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
 			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
@@ -739,6 +742,10 @@ public class LLUtils {
 		} else {
 			readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
 			readOptions.setFillCache(false);
+			readOptions.setVerifyChecksums(false);
+		}
+
+		if (FORCE_DISABLE_CHECKSUM_VERIFICATION) {
 			readOptions.setVerifyChecksums(false);
 		}
 

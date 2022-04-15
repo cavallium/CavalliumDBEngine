@@ -46,6 +46,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -153,6 +154,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			}
 		}
 
+		this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
+
+		if (!enableColumnsBug) {
+			if (columns.stream().noneMatch(column -> column.name().equals("default"))) {
+				columns = Stream.concat(Stream.of(Column.of("default")), columns.stream()).toList();
+			}
+		}
+
 		OptionsWithCache optionsWithCache = openRocksDb(path, databaseOptions);
 		var rocksdbOptions = optionsWithCache.options();
 		try {
@@ -246,7 +255,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
-					tableOptions.setOptimizeFiltersForMemory(true);
+					// tableOptions.setOptimizeFiltersForMemory(true);
 				}
 				tableOptions.setVerifyCompression(false);
 				if (columnOptions.filter().isPresent()) {
@@ -264,7 +273,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.orElse(true);
 				if (databaseOptions.spinning()) {
 					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-					cacheIndexAndFilterBlocks = true;
+					// cacheIndexAndFilterBlocks = true;
 					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 					columnFamilyOptions.setMinWriteBufferNumberToMerge(3);
 					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
@@ -282,7 +291,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						// Enabling partition filters increase the reads by 2x
 						.setPartitionFilters(columnOptions.partitionFilters().orElse(false))
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.setIndexType(IndexType.kTwoLevelIndexSearch)
+						.setIndexType(columnOptions.partitionFilters().orElse(false) ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
 						//todo: replace with kxxhash3
 						.setChecksumType(ChecksumType.kCRC32c)
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
@@ -371,7 +380,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					);
 				}
 			}
-			this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
 			createIfNotExists(descriptors, rocksdbOptions, standardCache, compressedCache, inMemory, dbPath, dbPathString);
 
@@ -790,11 +798,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		var paths = new ArrayList<DbPath>(volumes.size());
 		if (volumes.isEmpty()) {
 			return List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
-							100L * 1024L * 1024L * 1024L), // 100GiB
+							0), // Legacy
 					new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
 							0), // Legacy
 					new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
-							0)
+							1000L * 1024L * 1024L * 1024L)  // 1000GiB
 			); // Legacy
 		}
 		for (DatabaseVolume volume : volumes) {

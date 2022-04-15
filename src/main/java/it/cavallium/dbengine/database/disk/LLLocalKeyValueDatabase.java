@@ -284,7 +284,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setIndexType(IndexType.kTwoLevelIndexSearch)
 						//todo: replace with kxxhash3
-						.setChecksumType(ChecksumType.kxxHash)
+						.setChecksumType(ChecksumType.kCRC32c)
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html

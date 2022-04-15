@@ -21,6 +21,7 @@ interfacesData:
       partitionFilters: -boolean
       filter: -Filter
       blockSize: -int
+      persistentCacheId: -String
 # versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
 versions:
   0.0.0:
@@ -248,6 +249,7 @@ versions:
           maxOpenFiles: -int
           blockCache: -long
           compressedBlockCache: -long
+          persistentCaches: PersistentCache[]
           writeBufferManager: -long
           spinning: boolean
           defaultColumnOptions: DefaultColumnOptions
@@ -261,6 +263,7 @@ versions:
           partitionFilters: -boolean
           filter: -Filter
           blockSize: -int
+          persistentCacheId: -String
       # Remember to update ColumnOptions common getters
       NamedColumnOptions:
         data:
@@ -271,10 +274,17 @@ versions:
           partitionFilters: -boolean
           filter: -Filter
           blockSize: -int
+          persistentCacheId: -String
       BloomFilter:
         data:
           bitsPerKey: int
           optimizeForHits: -boolean
+      PersistentCache:
+        data:
+          id: String
+          path: String
+          size: long
+          optimizeForNvm: boolean
       DatabaseVolume:
         data:
           volumePath: Path

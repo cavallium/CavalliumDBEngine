@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.data.generator.nativedata.Nullableboolean;
 import it.cavallium.data.generator.nativedata.Nullableint;
 import it.cavallium.data.generator.nativedata.Nullablelong;
@@ -24,7 +25,8 @@ public class DefaultDatabaseOptions {
 			Nullableboolean.empty(),
 			Nullableboolean.empty(),
 			NullableFilter.empty(),
-			Nullableint.empty()
+			Nullableint.empty(),
+			NullableString.empty()
 	);
 
 	public static NamedColumnOptions DEFAULT_NAMED_COLUMN_OPTIONS = new NamedColumnOptions(
@@ -34,7 +36,8 @@ public class DefaultDatabaseOptions {
 			Nullableboolean.empty(),
 			Nullableboolean.empty(),
 			NullableFilter.empty(),
-			Nullableint.empty()
+			Nullableint.empty(),
+			NullableString.empty()
 	);
 
 	public static DatabaseOptions DEFAULT_DATABASE_OPTIONS = new DatabaseOptions(List.of(),
@@ -48,6 +51,7 @@ public class DefaultDatabaseOptions {
 			Nullableint.empty(),
 			Nullablelong.empty(),
 			Nullablelong.empty(),
+			Collections.emptyList(),
 			Nullablelong.empty(),
 			false,
 			DEFAULT_DEFAULT_COLUMN_OPTIONS,

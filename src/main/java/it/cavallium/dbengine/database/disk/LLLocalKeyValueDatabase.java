@@ -63,6 +63,7 @@ import org.rocksdb.CompactionPriority;
 import org.rocksdb.CompressionOptions;
 import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
+import org.rocksdb.DataBlockIndexType;
 import org.rocksdb.DbPath;
 import org.rocksdb.Env;
 import org.rocksdb.FlushOptions;
@@ -280,6 +281,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					columnFamilyOptions.setMaxWriteBufferNumber(4);
 				}
 				tableOptions
+						// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
+						.setDataBlockIndexType(DataBlockIndexType.kDataBlockBinaryAndHash)
+						// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
+						.setDataBlockHashTableUtilRatio(0.75)
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setPinTopLevelIndexAndFilter(true)
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters

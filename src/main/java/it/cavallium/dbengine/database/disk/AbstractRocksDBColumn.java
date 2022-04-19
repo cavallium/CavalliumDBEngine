@@ -651,6 +651,57 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
+	public boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
+		}
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!readOptions.isOwningHandle()) {
+			throw new IllegalStateException("ReadOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
+		if (nettyDirect) {
+			// Get the key nio buffer to pass to RocksDB
+			ByteBuffer keyNioBuffer;
+			boolean mustCloseKey;
+			{
+				if (!LLUtils.isReadOnlyDirect(key)) {
+					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+					mustCloseKey = true;
+					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+					key = directKey;
+				} else {
+					mustCloseKey = false;
+				}
+				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+				assert keyNioBuffer.isDirect();
+				assert keyNioBuffer.limit() == key.readableBytes();
+			}
+			try {
+				return db.keyMayExist(cfh, keyNioBuffer);
+			} finally {
+				if (mustCloseKey) {
+					key.close();
+				}
+			}
+		} else {
+			byte[] keyBytes = LLUtils.toArray(key);
+			try {
+				return db.keyMayExist(cfh, readOptions, keyBytes, null);
+			} finally {
+				if (!(readOptions instanceof UnreleasableReadOptions)) {
+					readOptions.close();
+				}
+			}
+		}
+	}
+
+	@Override
 	public void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException {
 		if (!db.isOwningHandle()) {
 			throw new IllegalStateException("Database is closed");

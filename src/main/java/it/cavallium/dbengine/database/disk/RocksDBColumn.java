@@ -52,6 +52,8 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
 
+	boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+
 	void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException;
 
 	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value)

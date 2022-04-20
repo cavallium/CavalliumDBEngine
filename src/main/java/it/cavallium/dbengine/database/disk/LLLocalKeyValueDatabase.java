@@ -572,7 +572,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			}
 			snapshotsHandles.forEach((id, snapshot) -> {
 				try {
-					if (db.isOwningHandle() && snapshot.isOwningHandle()) {
+					if (db.isOwningHandle()) {
 						db.releaseSnapshot(snapshot);
 					}
 				} catch (Exception ex2) {
@@ -1056,9 +1056,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
 						}
 						if (!db.isOwningHandle()) {
-							return null;
-						}
-						if (!dbSnapshot.isOwningHandle()) {
 							return null;
 						}
 						db.releaseSnapshot(dbSnapshot);

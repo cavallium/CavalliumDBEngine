@@ -740,7 +740,9 @@ public class LLUtils {
 		if (boundedRange || smallRange) {
 			readOptions.setFillCache(canFillCache);
 		} else {
-			readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
+			if (readOptions.readaheadSize() <= 0) {
+				readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
+			}
 			readOptions.setFillCache(false);
 			readOptions.setVerifyChecksums(false);
 		}

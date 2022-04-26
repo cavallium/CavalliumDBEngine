@@ -59,6 +59,8 @@ import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.CompactRangeOptions;
+import org.rocksdb.CompactRangeOptions.BottommostLevelCompaction;
+import org.rocksdb.CompactionOptions;
 import org.rocksdb.CompactionPriority;
 import org.rocksdb.CompressionOptions;
 import org.rocksdb.CompressionType;
@@ -66,15 +68,22 @@ import org.rocksdb.DBOptions;
 import org.rocksdb.DataBlockIndexType;
 import org.rocksdb.DbPath;
 import org.rocksdb.Env;
+import org.rocksdb.EnvOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
+import org.rocksdb.IngestExternalFileOptions;
 import org.rocksdb.LRUCache;
+import org.rocksdb.LevelMetaData;
+import org.rocksdb.LiveFileMetaData;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
 import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDB.LiveFiles;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
+import org.rocksdb.SstFileMetaData;
+import org.rocksdb.SstFileWriter;
 import org.rocksdb.TransactionDB;
 import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.TxnDBWritePolicy;
@@ -203,23 +212,39 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 									: DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET));
 				}
 
-				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-				columnFamilyOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
-				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
+				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.compactions.auto.disable", "false"))) {
+					columnFamilyOptions.setDisableAutoCompactions(true);
+				}
+				boolean dynamicLevelBytes;
 				// This option is not supported with multiple db paths
 				if (databaseOptions.volumes().size() <= 1) {
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(true);
+					dynamicLevelBytes = true;
+				} else {
+					dynamicLevelBytes = false;
+				}
+				if (dynamicLevelBytes) {
+					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(dynamicLevelBytes);
+				} else {
+					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					columnFamilyOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
+					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
 				}
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				// Higher values speed up writes, but slow down reads
 				columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
-				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnFamilyOptions.setLevel0SlowdownWritesTrigger(20);
-				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				columnFamilyOptions.setLevel0StopWritesTrigger(36);
+				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.disableslowdown", "false"))) {
+					columnFamilyOptions.setLevel0SlowdownWritesTrigger(-1);
+					columnFamilyOptions.setLevel0StopWritesTrigger(Integer.MAX_VALUE);
+				} else {
+					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					columnFamilyOptions.setLevel0SlowdownWritesTrigger(20);
+					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					columnFamilyOptions.setLevel0StopWritesTrigger(36);
+				}
 
 				if (!columnOptions.levels().isEmpty()) {
 					var firstLevelOptions = getRocksLevelOptions(columnOptions.levels().get(0));
@@ -247,7 +272,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							compressionTypes.add(CompressionType.LZ4_COMPRESSION);
 						}
 					}
-					columnFamilyOptions.setBottommostCompressionType(CompressionType.LZ4_COMPRESSION);
+					columnFamilyOptions.setBottommostCompressionType(CompressionType.LZ4HC_COMPRESSION);
 					columnFamilyOptions.setBottommostCompressionOptions(new CompressionOptions()
 							.setEnabled(true)
 							.setMaxDictBytes(32768));
@@ -257,6 +282,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
 				if (!databaseOptions.lowMemory()) {
 					// tableOptions.setOptimizeFiltersForMemory(true);
+					columnFamilyOptions.setWriteBufferSize(256 * SizeUnit.MB);
+				}
+				if (columnOptions.writeBufferSize().isPresent()) {
+					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
 				}
 				tableOptions.setVerifyCompression(false);
 				if (columnOptions.filter().isPresent()) {
@@ -511,6 +540,54 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return this.handles;
 	}
 
+	public int getLastVolumeId() {
+		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumes());
+		return paths.size() - 1;
+	}
+
+	public void forceCompaction(int volumeId) throws RocksDBException {
+		try (var co = new CompactionOptions()
+				.setCompression(CompressionType.LZ4HC_COMPRESSION)
+				.setMaxSubcompactions(Runtime.getRuntime().availableProcessors())
+				.setOutputFileSizeLimit(2 * SizeUnit.GB)) {
+			for (ColumnFamilyHandle cfh : this.handles.values()) {
+				List<String> files = new ArrayList<>();
+				var meta = db.getLiveFilesMetaData();
+				int bottommostLevel = -1;
+				for (var level : meta) {
+					bottommostLevel = Math.max(bottommostLevel, level.level());
+				}
+				int count = 0;
+				for (var file : meta) {
+					if (file.fileName().endsWith(".sst") && Arrays.equals(cfh.getName(), file.columnFamilyName())) {
+						files.add(file.fileName());
+						count++;
+						if (count >= 2) {
+							break;
+						}
+					}
+				}
+				bottommostLevel = Math.max(bottommostLevel, databaseOptions.defaultColumnOptions().levels().size() - 1);
+				if (!files.isEmpty() && bottommostLevel != -1) {
+					db.compactFiles(co, cfh, files, bottommostLevel, volumeId, null);
+				}
+				try (var co2 = new CompactRangeOptions()
+						.setAllowWriteStall(true)
+						.setChangeLevel(true)
+						.setTargetLevel(bottommostLevel)
+						.setMaxSubcompactions(Runtime.getRuntime().availableProcessors())
+						.setExclusiveManualCompaction(true)
+						.setBottommostLevelCompaction(BottommostLevelCompaction.kSkip)) {
+					db.compactRange(cfh, null, null, co2);
+				}
+			}
+		}
+	}
+
+	public void flush(FlushOptions flushOptions) throws RocksDBException {
+		db.flush(flushOptions);
+	}
+
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
 	private RocksLevelOptions getRocksLevelOptions(DatabaseLevel levelOptions) {
 		var compressionType = levelOptions.compression().getType();
@@ -560,7 +637,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			}
 			closed = true;
 			if (db.isOwningHandle()) {
-				flushDb(db, handles);
+				//flushDb(db, handles);
 			}
 
 			for (ColumnFamilyHandle handle : handles) {
@@ -672,7 +749,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// that determines the behaviour of the database.
 		var options = new DBOptions();
 		options.setEnablePipelinedWrite(true);
-		options.setMaxSubcompactions(2);
+		options.setMaxSubcompactions(Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "2")));
 		var customWriteRate = Long.parseLong(System.getProperty("it.cavallium.dbengine.write.delayedrate", "-1"));
 		if (customWriteRate >= 0) {
 			options.setDelayedWriteRate(customWriteRate);
@@ -693,7 +770,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 		Objects.requireNonNull(databasesDirPath);
 		Objects.requireNonNull(path.getFileName());
-		List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes());
+		List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes())
+				.stream()
+				.map(p -> new DbPath(p.path, p.targetSize))
+				.toList();
 		options.setDbPaths(paths);
 		options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
 		if (databaseOptions.spinning()) {
@@ -748,7 +828,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} else {
 			// HIGH MEMORY
 			options
-					.setDbWriteBufferSize(64 * SizeUnit.MB)
+					//.setDbWriteBufferSize(64 * SizeUnit.MB)
 					.setBytesPerSync(64 * SizeUnit.KB)
 					.setWalBytesPerSync(64 * SizeUnit.KB)
 
@@ -799,14 +879,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return new OptionsWithCache(options, blockCache, compressedCache);
 	}
 
-	private static List<DbPath> convertPaths(Path databasesDirPath, Path path, List<DatabaseVolume> volumes) {
-		var paths = new ArrayList<DbPath>(volumes.size());
+	record DbPathRecord(Path path, long targetSize) {}
+
+	private static List<DbPathRecord> convertPaths(Path databasesDirPath, Path path, List<DatabaseVolume> volumes) {
+		var paths = new ArrayList<DbPathRecord>(volumes.size());
 		if (volumes.isEmpty()) {
-			return List.of(new DbPath(databasesDirPath.resolve(path.getFileName() + "_hot"),
+			return List.of(new DbPathRecord(databasesDirPath.resolve(path.getFileName() + "_hot"),
 							0), // Legacy
-					new DbPath(databasesDirPath.resolve(path.getFileName() + "_cold"),
+					new DbPathRecord(databasesDirPath.resolve(path.getFileName() + "_cold"),
 							0), // Legacy
-					new DbPath(databasesDirPath.resolve(path.getFileName() + "_colder"),
+					new DbPathRecord(databasesDirPath.resolve(path.getFileName() + "_colder"),
 							1000L * 1024L * 1024L * 1024L)  // 1000GiB
 			); // Legacy
 		}
@@ -817,7 +899,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			} else {
 				volumePath = databasesDirPath.resolve(volume.volumePath());
 			}
-			paths.add(new DbPath(volumePath, volume.targetSizeBytes()));
+			paths.add(new DbPathRecord(volumePath, volume.targetSizeBytes()));
 		}
 		return paths;
 	}
@@ -937,6 +1019,48 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				.subscribeOn(dbRScheduler);
 	}
 
+	public Flux<Path> getSSTS() {
+		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumes());
+		return Mono
+				.fromCallable(() -> db.getLiveFiles())
+				.flatMapIterable(liveFiles -> liveFiles.files)
+				.filter(file -> file.endsWith(".sst"))
+				.map(file -> file.substring(1))
+				.flatMapSequential(file -> Mono.fromCallable(() -> {
+					{
+						var path = dbPath.resolve(file);
+						if (Files.exists(path)) {
+							return path;
+						}
+					}
+					for (var volumePath : paths) {
+						var path = volumePath.path().resolve(file);
+						if (Files.exists(path)) {
+							return path;
+						}
+					}
+					return null;
+				}).subscribeOn(Schedulers.boundedElastic()));
+	}
+
+	public Mono<Void> ingestSSTS(Flux<Path> sstsFlux) {
+		return sstsFlux
+				.map(path -> path.toAbsolutePath().toString())
+				.flatMap(sst -> Mono.fromCallable(() -> {
+					try (var opts = new IngestExternalFileOptions()) {
+						try {
+							logger.info("Ingesting SST \"{}\"...", sst);
+							db.ingestExternalFile(List.of(sst), opts);
+							logger.info("Ingested SST \"{}\" successfully", sst);
+						} catch (RocksDBException e) {
+							logger.error("Can't ingest SST \"{}\"", sst, e);
+						}
+					}
+					return null;
+				}).subscribeOn(Schedulers.boundedElastic()))
+				.then();
+	}
+
 	@Override
 	public Mono<MemoryStats> getMemoryStats() {
 		return Mono
@@ -1008,6 +1132,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				.onErrorMap(cause -> new IOException("Failed to verify checksum of database \""
 						+ getDatabaseName() + "\"", cause))
 				.subscribeOn(dbRScheduler);
+	}
+
+	@Override
+	public Mono<Void> compact() {
+		return Mono.<Void>fromCallable(() -> {
+			this.forceCompaction(getLastVolumeId());
+			return null;
+		}).subscribeOn(dbWScheduler);
 	}
 
 	@Override

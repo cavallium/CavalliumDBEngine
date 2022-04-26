@@ -347,6 +347,11 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
+					public Mono<Void> compact() {
+						return null;
+					}
+
+					@Override
 					public BufferAllocator getAllocator() {
 						return allocator;
 					}

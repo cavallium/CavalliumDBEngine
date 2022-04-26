@@ -23,10 +23,10 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSliceImplWithRelease;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSliceImplWithoutRelease;
 import it.cavallium.dbengine.database.serialization.SerializationException;
-import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -37,14 +37,17 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractSlice;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
+import org.rocksdb.CompactionOptions;
 import org.rocksdb.DirectSlice;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist.KeyMayExistEnum;
+import org.rocksdb.LevelMetaData;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Slice;
+import org.rocksdb.SstFileMetaData;
 import org.rocksdb.Transaction;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
@@ -940,6 +943,34 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
+	public final void forceCompaction(int volumeId) throws RocksDBException {
+		List<String> files = new ArrayList<>();
+		var meta = db.getColumnFamilyMetaData(cfh);
+		int bottommostLevel = -1;
+		for (LevelMetaData level : meta.levels()) {
+			bottommostLevel = Math.max(bottommostLevel, level.level());
+		}
+		int count = 0;
+		x: for (LevelMetaData level : meta.levels()) {
+			for (SstFileMetaData file : level.files()) {
+				if (file.fileName().endsWith(".sst")) {
+					files.add(file.fileName());
+					count++;
+					if (count >= 4) {
+						break x;
+					}
+				}
+			}
+		}
+		try (var co = new CompactionOptions()) {
+			if (!files.isEmpty() && bottommostLevel != -1) {
+				db.compactFiles(co, cfh, files, bottommostLevel, volumeId, null);
+			}
+			db.compactRange(cfh);
+		}
+	}
+
+	@Override
 	public ColumnFamilyHandle getColumnFamilyHandle() {
 		return cfh;
 	}
@@ -951,5 +982,17 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 
 	public MeterRegistry getMeterRegistry() {
 		return meterRegistry;
+	}
+
+	public Timer getIterNextTime() {
+		return iterNextTime;
+	}
+
+	public Counter getStartedIterNext() {
+		return startedIterNext;
+	}
+
+	public Counter getEndedIterNext() {
+		return endedIterNext;
 	}
 }

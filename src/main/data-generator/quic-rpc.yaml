@@ -22,6 +22,7 @@ interfacesData:
       filter: -Filter
       blockSize: -int
       persistentCacheId: -String
+      writeBufferSize: -long
 # versions must have only numbers, lowercase letters, dots, dashes. Maximum: 99.999.9999
 versions:
   0.0.0:
@@ -264,6 +265,7 @@ versions:
           filter: -Filter
           blockSize: -int
           persistentCacheId: -String
+          writeBufferSize: -long
       # Remember to update ColumnOptions common getters
       NamedColumnOptions:
         data:
@@ -275,6 +277,7 @@ versions:
           filter: -Filter
           blockSize: -int
           persistentCacheId: -String
+          writeBufferSize: -long
       BloomFilter:
         data:
           bitsPerKey: int

@@ -100,4 +100,6 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	MeterRegistry getMeterRegistry();
 
 	boolean supportsTransactions();
+
+	void forceCompaction(int volumeId) throws RocksDBException;
 }

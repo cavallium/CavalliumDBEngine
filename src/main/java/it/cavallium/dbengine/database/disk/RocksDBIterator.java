@@ -147,14 +147,30 @@ public class RocksDBIterator implements SafeCloseable {
 	}
 
 	public void next() throws RocksDBException {
-		startedIterNext.increment();
-		iterNextTime.record(rocksIterator::next);
-		endedIterNext.increment();
+		next(true);
+	}
+
+	public void next(boolean traceStats) throws RocksDBException {
+		if (traceStats) {
+			startedIterNext.increment();
+			iterNextTime.record(rocksIterator::next);
+			endedIterNext.increment();
+		} else {
+			rocksIterator.next();
+		}
 	}
 
 	public void prev() throws RocksDBException {
-		startedIterNext.increment();
-		iterNextTime.record(rocksIterator::prev);
-		endedIterNext.increment();
+		prev(true);
+	}
+
+	public void prev(boolean traceStats) throws RocksDBException {
+		if (traceStats) {
+			startedIterNext.increment();
+			iterNextTime.record(rocksIterator::prev);
+			endedIterNext.increment();
+		} else {
+			rocksIterator.prev();
+		}
 	}
 }

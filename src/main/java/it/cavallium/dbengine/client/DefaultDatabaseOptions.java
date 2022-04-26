@@ -26,7 +26,8 @@ public class DefaultDatabaseOptions {
 			Nullableboolean.empty(),
 			NullableFilter.empty(),
 			Nullableint.empty(),
-			NullableString.empty()
+			NullableString.empty(),
+			Nullablelong.empty()
 	);
 
 	public static NamedColumnOptions DEFAULT_NAMED_COLUMN_OPTIONS = new NamedColumnOptions(
@@ -37,7 +38,8 @@ public class DefaultDatabaseOptions {
 			Nullableboolean.empty(),
 			NullableFilter.empty(),
 			Nullableint.empty(),
-			NullableString.empty()
+			NullableString.empty(),
+			Nullablelong.empty()
 	);
 
 	public static DatabaseOptions DEFAULT_DATABASE_OPTIONS = new DatabaseOptions(List.of(),

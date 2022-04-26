@@ -116,6 +116,11 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
+	public Mono<Void> compact() {
+		return Mono.empty();
+	}
+
+	@Override
 	public BufferAllocator getAllocator() {
 		return allocator;
 	}

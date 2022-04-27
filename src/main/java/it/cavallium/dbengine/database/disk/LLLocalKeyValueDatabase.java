@@ -568,9 +568,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					}
 				}
 				bottommostLevel = Math.max(bottommostLevel, databaseOptions.defaultColumnOptions().levels().size() - 1);
-				if (!files.isEmpty() && bottommostLevel != -1) {
+				/*if (!files.isEmpty() && bottommostLevel != -1) {
 					db.compactFiles(co, cfh, files, bottommostLevel, volumeId, null);
-				}
+				}*/
 				try (var co2 = new CompactRangeOptions()
 						.setAllowWriteStall(true)
 						.setChangeLevel(true)

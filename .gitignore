@@ -183,3 +183,6 @@ dbengine.iml
 /.idea/
 
 .ci-friendly-pom.xml
+/.classpath
+/.project
+/.settings/

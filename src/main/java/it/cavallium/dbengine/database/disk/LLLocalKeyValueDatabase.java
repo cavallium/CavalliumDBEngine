@@ -68,22 +68,16 @@ import org.rocksdb.DBOptions;
 import org.rocksdb.DataBlockIndexType;
 import org.rocksdb.DbPath;
 import org.rocksdb.Env;
-import org.rocksdb.EnvOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.IngestExternalFileOptions;
 import org.rocksdb.LRUCache;
-import org.rocksdb.LevelMetaData;
-import org.rocksdb.LiveFileMetaData;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
 import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDB.LiveFiles;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
-import org.rocksdb.SstFileMetaData;
-import org.rocksdb.SstFileWriter;
 import org.rocksdb.TransactionDB;
 import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.TxnDBWritePolicy;
@@ -212,8 +206,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 									: DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET));
 				}
 
-				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.compactions.auto.disable", "false"))) {
+				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setDisableAutoCompactions(true);
+					columnFamilyOptions.setHardPendingCompactionBytesLimit(Long.MAX_VALUE);
+					columnFamilyOptions.setSoftPendingCompactionBytesLimit(Long.MAX_VALUE);
 				}
 				boolean dynamicLevelBytes;
 				// This option is not supported with multiple db paths
@@ -233,9 +229,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
 				}
-				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-				// Higher values speed up writes, but slow down reads
-				columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
+				if (isDisableAutoCompactions()) {
+					columnFamilyOptions.setLevel0FileNumCompactionTrigger(-1);
+				} else {
+					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					// Higher values speed up writes, but slow down reads
+					columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
+				}
 				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.disableslowdown", "false"))) {
 					columnFamilyOptions.setLevel0SlowdownWritesTrigger(-1);
 					columnFamilyOptions.setLevel0StopWritesTrigger(Integer.MAX_VALUE);
@@ -498,6 +498,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.useful", false);
 		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.full.positive", false);
 		registerGauge(meterRegistry, name, "rocksdb.bloom.filter.full.true.positive", false);
+	}
+
+	private boolean isDisableAutoCompactions() {
+		return Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.compactions.auto.disable", "false"));
 	}
 
 	private synchronized PersistentCache resolvePersistentCache(HashMap<String, PersistentCache> caches,

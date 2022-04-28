@@ -868,6 +868,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
+		if (!db.isOwningHandle()) {
+			throw new IllegalStateException("Database is closed");
+		}
+		if (!readOptions.isOwningHandle()) {
+			throw new IllegalStateException("ReadOptions is closed");
+		}
+		if (!cfh.isOwningHandle()) {
+			throw new IllegalStateException("Column family is closed");
+		}
 		try {
 			keyBufferSize.record(key.readableBytes());
 			startedUpdate.increment();

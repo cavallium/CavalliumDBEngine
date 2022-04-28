@@ -10,11 +10,10 @@ import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;
-import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -39,8 +38,9 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 			BufferAllocator alloc,
 			String databaseName,
 			ColumnFamilyHandle cfh,
-			MeterRegistry meterRegistry) {
-		super(db, nettyDirect, alloc, databaseName, cfh, meterRegistry);
+			MeterRegistry meterRegistry,
+			Lock accessibilityLock) {
+		super(db, nettyDirect, alloc, databaseName, cfh, meterRegistry, accessibilityLock);
 		this.optimisticAttempts = DistributionSummary
 				.builder("db.optimistic.attempts.distribution")
 				.publishPercentiles(0.2, 0.5, 0.95)

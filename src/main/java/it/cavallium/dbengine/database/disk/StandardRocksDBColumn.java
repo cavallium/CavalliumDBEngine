@@ -5,18 +5,15 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
+import java.util.concurrent.locks.Lock;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
-import org.rocksdb.RocksDBException;
 import org.rocksdb.Transaction;
 import org.rocksdb.WriteOptions;
 
@@ -26,8 +23,8 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
-			ColumnFamilyHandle cfh, MeterRegistry meterRegistry) {
-		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry);
+			ColumnFamilyHandle cfh, MeterRegistry meterRegistry, Lock accessibilityLock) {
+		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, accessibilityLock);
 	}
 
 	@Override

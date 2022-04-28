@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.locks.Lock;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -71,6 +72,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final ColumnFamilyHandle cfh;
 
 	protected final MeterRegistry meterRegistry;
+	protected final Lock accessibilityLock;
 	protected final String columnName;
 
 	protected final DistributionSummary keyBufferSize;
@@ -103,7 +105,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			BufferAllocator alloc,
 			String databaseName,
 			ColumnFamilyHandle cfh,
-			MeterRegistry meterRegistry) {
+			MeterRegistry meterRegistry,
+			Lock accessibilityLock) {
 		this.db = db;
 		this.nettyDirect = nettyDirect && alloc.getAllocationType() == OFF_HEAP;
 		this.alloc = alloc;
@@ -116,6 +119,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 		this.columnName = columnName;
 		this.meterRegistry = meterRegistry;
+		this.accessibilityLock = accessibilityLock;
 
 		this.keyBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -880,12 +884,14 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try {
 			keyBufferSize.record(key.readableBytes());
 			startedUpdate.increment();
+			accessibilityLock.lock();
 			return updateAtomicImpl(readOptions, writeOptions, key, updater, returnMode);
 		} catch (IOException e) {
 			throw e;
 		} catch (Exception e) {
 			throw new IOException(e);
 		} finally {
+			accessibilityLock.unlock();
 			endedUpdate.increment();
 		}
 	}

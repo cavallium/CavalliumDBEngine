@@ -9,9 +9,8 @@ import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
+import java.util.concurrent.locks.Lock;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -31,8 +30,10 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
-			ColumnFamilyHandle cfh, MeterRegistry meterRegistry) {
-		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry);
+			ColumnFamilyHandle cfh,
+			MeterRegistry meterRegistry,
+			Lock accessibilityLock) {
+		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, accessibilityLock);
 	}
 
 	@Override

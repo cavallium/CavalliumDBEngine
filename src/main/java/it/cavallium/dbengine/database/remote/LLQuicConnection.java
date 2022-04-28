@@ -352,6 +352,11 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
+					public Mono<Void> flush() {
+						return null;
+					}
+
+					@Override
 					public BufferAllocator getAllocator() {
 						return allocator;
 					}

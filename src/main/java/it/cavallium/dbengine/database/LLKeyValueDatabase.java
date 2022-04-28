@@ -66,6 +66,8 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	Mono<Void> compact();
 
+	Mono<Void> flush();
+
 	BufferAllocator getAllocator();
 
 	MeterRegistry getMeterRegistry();

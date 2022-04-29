@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 import org.rocksdb.AbstractComparator;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
@@ -77,7 +78,7 @@ public class HugePqEnv implements Closeable {
 				db.getName(),
 				cfh,
 				new CompositeMeterRegistry(),
-				new ReentrantReadWriteLock().readLock()
+				new StampedLock()
 		);
 	}
 }

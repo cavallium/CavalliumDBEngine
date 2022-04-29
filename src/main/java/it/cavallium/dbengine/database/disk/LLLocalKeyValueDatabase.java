@@ -40,6 +40,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -47,8 +48,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
@@ -62,7 +63,6 @@ import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
 import org.rocksdb.CompactRangeOptions;
-import org.rocksdb.CompactRangeOptions.BottommostLevelCompaction;
 import org.rocksdb.CompactionJobInfo;
 import org.rocksdb.CompactionOptions;
 import org.rocksdb.CompactionPriority;
@@ -132,7 +132,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final HashMap<String, PersistentCache> persistentCaches;
 	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
-	private final ReadWriteLock shutdownLock = new ReentrantReadWriteLock();
+	private final StampedLock closeLock = new StampedLock();
 	private volatile boolean closed = false;
 
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
@@ -253,6 +253,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 
 				if (!columnOptions.levels().isEmpty()) {
+					columnFamilyOptions.setNumLevels(columnOptions.levels().size());
 					var firstLevelOptions = getRocksLevelOptions(columnOptions.levels().get(0));
 					columnFamilyOptions.setCompressionType(firstLevelOptions.compressionType);
 					columnFamilyOptions.setCompressionOptions(firstLevelOptions.compressionOptions);
@@ -269,9 +270,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							.map(v -> v.compression().getType())
 							.toList());
 				} else {
-					columnFamilyOptions.setNumLevels(7);
-					List<CompressionType> compressionTypes = new ArrayList<>(7);
-					for (int i = 0; i < 7; i++) {
+					columnFamilyOptions.setNumLevels(6);
+					List<CompressionType> compressionTypes = new ArrayList<>(6);
+					for (int i = 0; i < 6; i++) {
 						if (i < 2) {
 							compressionTypes.add(CompressionType.NO_COMPRESSION);
 						} else {
@@ -560,60 +561,27 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return paths.size() - 1;
 	}
 
-	public void forceCompaction(int volumeId) throws RocksDBException {
-		try (var co = new CompactionOptions()
-				.setCompression(CompressionType.LZ4_COMPRESSION)
-				.setMaxSubcompactions(0)
-				.setOutputFileSizeLimit(2 * SizeUnit.GB)) {
-			for (ColumnFamilyHandle cfh : this.handles.values()) {
-				List<String> files = new ArrayList<>();
-				var meta = db.getColumnFamilyMetaData(cfh);
-				int bottommostLevel = -1;
-				for (LevelMetaData level : meta.levels()) {
-					bottommostLevel = Math.max(bottommostLevel, level.level());
-				}
-				for (LevelMetaData level : meta.levels()) {
-					if (level.level() < bottommostLevel) {
-						for (SstFileMetaData file : level.files()) {
-							if (file.fileName().endsWith(".sst")) {
-								files.add(file.fileName());
-							}
-						}
-					}
-				}
-				bottommostLevel = Math.max(bottommostLevel, databaseOptions.defaultColumnOptions().levels().size() - 1);
+	public int getLastLevel(Column column) {
+		return databaseOptions
+				.columnOptions()
+				.stream()
+				.filter(namedColumnOptions -> namedColumnOptions.columnName().equals(column.name()))
+				.findFirst()
+				.map(NamedColumnOptions::levels)
+				.filter(levels -> !levels.isEmpty())
+				.or(() -> Optional.of(databaseOptions.defaultColumnOptions().levels()).filter(levels -> !levels.isEmpty()))
+				.map(List::size)
+				.orElse(6);
+	}
 
-				if (!files.isEmpty() && bottommostLevel != -1) {
-					var partitionSize = files.size() / Runtime.getRuntime().availableProcessors();
-					List<List<String>> partitions;
-					if (partitionSize > 0) {
-						partitions = partition(files, files.size() / Runtime.getRuntime().availableProcessors());
-					} else {
-						partitions = List.of(files);
-					}
-					int finalBottommostLevel = bottommostLevel;
-					Mono.when(partitions.stream().map(partition -> Mono.<Void>fromCallable(() -> {
-						logger.info("Compacting {} files in database {} in column family {} to level {}",
-								partition.size(),
-								name,
-								new String(cfh.getName(), StandardCharsets.UTF_8),
-								finalBottommostLevel
-						);
-						if (!partition.isEmpty()) {
-							var coi = new CompactionJobInfo();
-							db.compactFiles(co, cfh, partition, finalBottommostLevel, volumeId, coi);
-							logger.info("Compacted {} files in database {} in column family {} to level {}: {}",
-									partition.size(),
-									name,
-									new String(cfh.getName(), StandardCharsets.UTF_8),
-									finalBottommostLevel,
-									coi.status().getCodeString()
-							);
-						}
-						return null;
-					}).subscribeOn(Schedulers.boundedElastic())).toList()).block();
-				}
-			}
+	public List<String> getColumnFiles(Column column, boolean excludeLastLevel) {
+		var cfh = handles.get(column);
+		return RocksDBUtils.getColumnFiles(db, cfh, excludeLastLevel);
+	}
+
+	public void forceCompaction(int volumeId) throws RocksDBException {
+		for (var cfh : this.handles.values()) {
+			RocksDBUtils.forceCompaction(db, name, cfh, volumeId, logger);
 		}
 	}
 
@@ -660,14 +628,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return name;
 	}
 
-	public Lock getAccessibilityLock() {
-		return shutdownLock.readLock();
+	public StampedLock getCloseLock() {
+		return closeLock;
 	}
 
 	private void flushAndCloseDb(RocksDB db, Cache standardCache, Cache compressedCache, List<ColumnFamilyHandle> handles)
 			throws RocksDBException {
-		var shutdownWriteLock = shutdownLock.writeLock();
-		shutdownWriteLock.lock();
+		var closeWriteLock = closeLock.writeLock();
 		try {
 			if (closed) {
 				return;
@@ -715,7 +682,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 			}
 		} finally {
-			shutdownWriteLock.unlock();
+			closeLock.unlockWrite(closeWriteLock);
 		}
 	}
 
@@ -1037,7 +1004,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
 		var nettyDirect = databaseOptions.allowNettyDirect();
-		var accessibilityLock = getAccessibilityLock();
+		var closeLock = getCloseLock();
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
 			return new OptimisticRocksDBColumn(optimisticTransactionDB,
 					nettyDirect,
@@ -1045,7 +1012,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					name,
 					cfh,
 					meterRegistry,
-					accessibilityLock
+					closeLock
 			);
 		} else if (db instanceof TransactionDB transactionDB) {
 			return new PessimisticRocksDBColumn(transactionDB,
@@ -1054,10 +1021,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					name,
 					cfh,
 					meterRegistry,
-					accessibilityLock
+					closeLock
 			);
 		} else {
-			return new StandardRocksDBColumn(db, nettyDirect, allocator, name, cfh, meterRegistry, accessibilityLock);
+			return new StandardRocksDBColumn(db, nettyDirect, allocator, name, cfh, meterRegistry, closeLock);
 		}
 	}
 
@@ -1225,8 +1192,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
 				.fromCallable(() -> snapshotTime.recordCallable(() -> {
-					var shutdownReadLock = shutdownLock.readLock();
-					shutdownReadLock.lock();
+					var closeReadLock = closeLock.readLock();
 					try {
 						if (closed) {
 							throw new IllegalStateException("Database closed");
@@ -1236,7 +1202,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
 						return new LLSnapshot(currentSnapshotSequenceNumber);
 					} finally {
-						shutdownReadLock.unlock();
+						closeLock.unlockRead(closeReadLock);
 					}
 				}))
 				.subscribeOn(dbRScheduler);
@@ -1246,8 +1212,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return Mono
 				.<Void>fromCallable(() -> {
-					var shutdownReadLock = shutdownLock.readLock();
-					shutdownReadLock.lock();
+					var closeReadLock = closeLock.readLock();
 					try {
 						if (closed) {
 							throw new IllegalStateException("Database closed");
@@ -1262,7 +1227,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						db.releaseSnapshot(dbSnapshot);
 						return null;
 					} finally {
-						shutdownReadLock.unlock();
+						closeLock.unlockRead(closeReadLock);
 					}
 				})
 				.subscribeOn(dbRScheduler);

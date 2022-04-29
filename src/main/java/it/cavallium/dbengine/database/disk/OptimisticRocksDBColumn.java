@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.LockSupport;
+import java.util.concurrent.locks.StampedLock;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -39,8 +40,8 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
-			Lock accessibilityLock) {
-		super(db, nettyDirect, alloc, databaseName, cfh, meterRegistry, accessibilityLock);
+			StampedLock closeLock) {
+		super(db, nettyDirect, alloc, databaseName, cfh, meterRegistry, closeLock);
 		this.optimisticAttempts = DistributionSummary
 				.builder("db.optimistic.attempts.distribution")
 				.publishPercentiles(0.2, 0.5, 0.95)

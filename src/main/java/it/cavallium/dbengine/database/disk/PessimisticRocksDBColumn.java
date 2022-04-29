@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.StampedLock;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -32,8 +33,8 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			String dbName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
-			Lock accessibilityLock) {
-		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, accessibilityLock);
+			StampedLock closeLock) {
+		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, closeLock);
 	}
 
 	@Override

@@ -56,8 +56,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException;
 
-	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value)
-			throws RocksDBException {
+	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value) throws RocksDBException {
 		var allocator = getAllocator();
 		try (var keyBuf = allocator.allocate(key.length)) {
 			keyBuf.writeBytes(key);

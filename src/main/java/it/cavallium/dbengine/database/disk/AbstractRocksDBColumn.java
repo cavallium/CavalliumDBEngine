@@ -23,14 +23,18 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSliceImplWithRelease;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary.ReleasableSliceImplWithoutRelease;
 import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.StampedLock;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -72,7 +76,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final ColumnFamilyHandle cfh;
 
 	protected final MeterRegistry meterRegistry;
-	protected final Lock accessibilityLock;
+	protected final StampedLock closeLock;
 	protected final String columnName;
 
 	protected final DistributionSummary keyBufferSize;
@@ -106,7 +110,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
-			Lock accessibilityLock) {
+			StampedLock closeLock) {
 		this.db = db;
 		this.nettyDirect = nettyDirect && alloc.getAllocationType() == OFF_HEAP;
 		this.alloc = alloc;
@@ -119,7 +123,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 		this.columnName = columnName;
 		this.meterRegistry = meterRegistry;
-		this.accessibilityLock = accessibilityLock;
+		this.closeLock = closeLock;
 
 		this.keyBufferSize = DistributionSummary
 				.builder("buffer.size.distribution")
@@ -327,24 +331,261 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		return cfh;
 	}
 
-	@Override
-	public @Nullable Buffer get(@NotNull ReadOptions readOptions, Buffer key)
-			throws RocksDBException {
+	protected void ensureOpen() {
 		if (Schedulers.isInNonBlockingThread()) {
-			throw new UnsupportedOperationException("Called dbGet in a nonblocking thread");
+			throw new UnsupportedOperationException("Called in a nonblocking thread");
 		}
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		ensureOwned(db);
+		ensureOwned(cfh);
+	}
+
+	protected void ensureOwned(org.rocksdb.RocksObject rocksObject) {
+		if (!rocksObject.isOwningHandle()) {
+			throw new IllegalStateException("Not owning handle");
 		}
-		if (!readOptions.isOwningHandle()) {
-			throw new IllegalStateException("ReadOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		keyBufferSize.record(key.readableBytes());
-		int readAttemptsCount = 0;
+	}
+
+	@Override
+	public @Nullable Buffer get(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
 		try {
+			ensureOpen();
+			ensureOwned(readOptions);
+			keyBufferSize.record(key.readableBytes());
+			int readAttemptsCount = 0;
+			try {
+				if (nettyDirect) {
+					// Get the key nio buffer to pass to RocksDB
+					ByteBuffer keyNioBuffer;
+					boolean mustCloseKey;
+					{
+						if (!LLUtils.isReadOnlyDirect(key)) {
+							// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+							mustCloseKey = true;
+							var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+							key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+							key = directKey;
+						} else {
+							mustCloseKey = false;
+						}
+						keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+						assert keyNioBuffer.isDirect();
+						assert keyNioBuffer.limit() == key.readableBytes();
+					}
+
+					try {
+						// Create a direct result buffer because RocksDB works only with direct buffers
+						var resultBuffer = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
+						try {
+							assert resultBuffer.readerOffset() == 0;
+							assert resultBuffer.writerOffset() == 0;
+							var resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
+
+							var keyMayExist = db.keyMayExist(cfh, readOptions, keyNioBuffer.rewind(),
+									resultWritable.clear());
+							KeyMayExistEnum keyMayExistState = keyMayExist.exists;
+							int keyMayExistValueLength = keyMayExist.valueLength;
+							// At the beginning, size reflects the expected size, then it becomes the real data size
+							int size = keyMayExistState == kExistsWithValue ? keyMayExistValueLength : -1;
+							boolean isKExistsWithoutValue = false;
+							switch (keyMayExistState) {
+								case kNotExist: {
+									readValueNotFoundWithBloomBufferSize.record(0);
+									resultBuffer.close();
+									return null;
+								}
+								// todo: kExistsWithValue is not reliable (read below),
+								//  in some cases it should be treated as kExistsWithoutValue
+								case kExistsWithValue:
+								case kExistsWithoutValue: {
+									if (keyMayExistState == kExistsWithoutValue) {
+										isKExistsWithoutValue = true;
+									} else {
+										// todo: "size == 0 || resultWritable.limit() == 0" is checked because keyMayExist is broken,
+										//  and sometimes it returns an empty array, as if it exists
+										if (size == 0 || resultWritable.limit() == 0) {
+											isKExistsWithoutValue = true;
+										}
+									}
+									if (isKExistsWithoutValue) {
+										assert keyMayExistValueLength == 0;
+										resultWritable.clear();
+										readAttemptsCount++;
+										// real data size
+										size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
+										if (size == RocksDB.NOT_FOUND) {
+											resultBuffer.close();
+											readValueNotFoundWithMayExistBloomBufferSize.record(0);
+											return null;
+										}
+									}
+								}
+								default: {
+									// real data size
+									assert size >= 0;
+									if (size <= resultWritable.limit()) {
+										if (isKExistsWithoutValue) {
+											readValueFoundWithBloomUncachedBufferSize.record(size);
+										} else {
+											readValueFoundWithBloomCacheBufferSize.record(size);
+										}
+										assert size == resultWritable.limit();
+										return resultBuffer.writerOffset(resultWritable.limit());
+									} else {
+										resultBuffer.ensureWritable(size);
+										resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
+										assert resultBuffer.readerOffset() == 0;
+										assert resultBuffer.writerOffset() == 0;
+
+										readAttemptsCount++;
+										size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
+										if (size == RocksDB.NOT_FOUND) {
+											readValueNotFoundWithMayExistBloomBufferSize.record(0);
+											resultBuffer.close();
+											return null;
+										}
+										assert size == resultWritable.limit();
+										if (isKExistsWithoutValue) {
+											readValueFoundWithBloomUncachedBufferSize.record(size);
+										} else {
+											readValueFoundWithBloomCacheBufferSize.record(size);
+										}
+										return resultBuffer.writerOffset(resultWritable.limit());
+									}
+								}
+							}
+						} catch (Throwable t) {
+							resultBuffer.close();
+							throw t;
+						}
+					} finally {
+						if (mustCloseKey) {
+							key.close();
+						}
+					}
+				} else {
+					try {
+						byte[] keyArray = LLUtils.toArray(key);
+						requireNonNull(keyArray);
+						Holder<byte[]> data = new Holder<>();
+						if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
+							// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
+							//  returns an empty array, as if it exists
+							if (data.getValue() != null && data.getValue().length > 0) {
+								readValueFoundWithBloomCacheBufferSize.record(data.getValue().length);
+								return LLUtils.fromByteArray(alloc, data.getValue());
+							} else {
+								readAttemptsCount++;
+								byte[] result = db.get(cfh, readOptions, keyArray);
+								if (result == null) {
+									if (data.getValue() != null) {
+										readValueNotFoundWithBloomBufferSize.record(0);
+									} else {
+										readValueNotFoundWithMayExistBloomBufferSize.record(0);
+									}
+									return null;
+								} else {
+									readValueFoundWithBloomUncachedBufferSize.record(0);
+									return LLUtils.fromByteArray(alloc, result);
+								}
+							}
+						} else {
+							readValueNotFoundWithBloomBufferSize.record(0);
+							return null;
+						}
+					} finally {
+						if (!(readOptions instanceof UnreleasableReadOptions)) {
+							readOptions.close();
+						}
+					}
+				}
+			} finally {
+				readAttempts.record(readAttemptsCount);
+			}
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
+		try {
+			try {
+				ensureOpen();
+				ensureOwned(writeOptions);
+				assert key.isAccessible();
+				assert value.isAccessible();
+				this.keyBufferSize.record(key.readableBytes());
+				this.writeValueBufferSize.record(value.readableBytes());
+				if (nettyDirect) {
+					// Get the key nio buffer to pass to RocksDB
+					ByteBuffer keyNioBuffer;
+					boolean mustCloseKey;
+					{
+						if (!LLUtils.isReadOnlyDirect(key)) {
+							// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+							mustCloseKey = true;
+							var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+							key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+							key = directKey;
+						} else {
+							mustCloseKey = false;
+						}
+						keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+						assert keyNioBuffer.isDirect();
+						assert keyNioBuffer.limit() == key.readableBytes();
+					}
+					try {
+						// Get the value nio buffer to pass to RocksDB
+						ByteBuffer valueNioBuffer;
+						boolean mustCloseValue;
+						{
+							if (!LLUtils.isReadOnlyDirect(value)) {
+								// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+								mustCloseValue = true;
+								var directValue = DefaultBufferAllocators.offHeapAllocator().allocate(value.readableBytes());
+								value.copyInto(value.readerOffset(), directValue, 0, value.readableBytes());
+								value = directValue;
+							} else {
+								mustCloseValue = false;
+							}
+							valueNioBuffer = ((ReadableComponent) value).readableBuffer();
+							assert valueNioBuffer.isDirect();
+							assert valueNioBuffer.limit() == value.readableBytes();
+						}
+
+						try {
+							db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
+						} finally {
+							if (mustCloseValue) {
+								value.close();
+							}
+						}
+					} finally {
+						if (mustCloseKey) {
+							key.close();
+						}
+					}
+				} else {
+					db.put(cfh, writeOptions, LLUtils.toArray(key), LLUtils.toArray(value));
+				}
+			} finally {
+				if (!(writeOptions instanceof UnreleasableWriteOptions)) {
+					writeOptions.close();
+				}
+			}
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(readOptions);
 			if (nettyDirect) {
 				// Get the key nio buffer to pass to RocksDB
 				ByteBuffer keyNioBuffer;
@@ -363,90 +604,20 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					assert keyNioBuffer.isDirect();
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
-
 				try {
-					// Create a direct result buffer because RocksDB works only with direct buffers
-					var resultBuffer = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
-					try {
-						assert resultBuffer.readerOffset() == 0;
-						assert resultBuffer.writerOffset() == 0;
-						var resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
-
-						var keyMayExist = db.keyMayExist(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
-						KeyMayExistEnum keyMayExistState = keyMayExist.exists;
-						int keyMayExistValueLength = keyMayExist.valueLength;
-						// At the beginning, size reflects the expected size, then it becomes the real data size
-						int size = keyMayExistState == kExistsWithValue ? keyMayExistValueLength : -1;
-						boolean isKExistsWithoutValue = false;
-						switch (keyMayExistState) {
-							case kNotExist: {
-								readValueNotFoundWithBloomBufferSize.record(0);
-								resultBuffer.close();
-								return null;
-							}
-							// todo: kExistsWithValue is not reliable (read below),
-							//  in some cases it should be treated as kExistsWithoutValue
-							case kExistsWithValue:
-							case kExistsWithoutValue: {
-								if (keyMayExistState == kExistsWithoutValue) {
-									isKExistsWithoutValue = true;
-								} else {
-									// todo: "size == 0 || resultWritable.limit() == 0" is checked because keyMayExist is broken,
-									//  and sometimes it returns an empty array, as if it exists
-									if (size == 0 || resultWritable.limit() == 0) {
-										isKExistsWithoutValue = true;
-									}
-								}
-								if (isKExistsWithoutValue) {
-									assert keyMayExistValueLength == 0;
-									resultWritable.clear();
-									readAttemptsCount++;
-									// real data size
-									size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
-									if (size == RocksDB.NOT_FOUND) {
-										resultBuffer.close();
-										readValueNotFoundWithMayExistBloomBufferSize.record(0);
-										return null;
-									}
-								}
-							}
-							default: {
-								// real data size
-								assert size >= 0;
-								if (size <= resultWritable.limit()) {
-									if (isKExistsWithoutValue) {
-										readValueFoundWithBloomUncachedBufferSize.record(size);
-									} else {
-										readValueFoundWithBloomCacheBufferSize.record(size);
-									}
-									assert size == resultWritable.limit();
-									return resultBuffer.writerOffset(resultWritable.limit());
-								} else {
-									resultBuffer.ensureWritable(size);
-									resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
-									assert resultBuffer.readerOffset() == 0;
-									assert resultBuffer.writerOffset() == 0;
-
-									readAttemptsCount++;
-									size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
-									if (size == RocksDB.NOT_FOUND) {
-										readValueNotFoundWithMayExistBloomBufferSize.record(0);
-										resultBuffer.close();
-										return null;
-									}
-									assert size == resultWritable.limit();
-									if (isKExistsWithoutValue) {
-										readValueFoundWithBloomUncachedBufferSize.record(size);
-									} else {
-										readValueFoundWithBloomCacheBufferSize.record(size);
-									}
-									return resultBuffer.writerOffset(resultWritable.limit());
-								}
-							}
+					if (db.keyMayExist(cfh, keyNioBuffer)) {
+						int size = db.get(cfh, readOptions, keyNioBuffer.position(0), LLUtils.EMPTY_BYTE_BUFFER);
+						boolean found = size != RocksDB.NOT_FOUND;
+						if (found) {
+							readValueFoundWithBloomSimpleBufferSize.record(size);
+							return true;
+						} else {
+							readValueNotFoundWithMayExistBloomBufferSize.record(0);
+							return false;
 						}
-					} catch (Throwable t) {
-						resultBuffer.close();
-						throw t;
+					} else {
+						readValueNotFoundWithBloomBufferSize.record(0);
+						return false;
 					}
 				} finally {
 					if (mustCloseKey) {
@@ -454,35 +625,76 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					}
 				}
 			} else {
+				int size = RocksDB.NOT_FOUND;
+				byte[] keyBytes = LLUtils.toArray(key);
+				Holder<byte[]> data = new Holder<>();
+				boolean mayExistHit = false;
 				try {
-					byte[] keyArray = LLUtils.toArray(key);
-					requireNonNull(keyArray);
-					Holder<byte[]> data = new Holder<>();
-					if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
-						// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
-						//  returns an empty array, as if it exists
-						if (data.getValue() != null && data.getValue().length > 0) {
-							readValueFoundWithBloomCacheBufferSize.record(data.getValue().length);
-							return LLUtils.fromByteArray(alloc, data.getValue());
+					if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
+						mayExistHit = true;
+						if (data.getValue() != null) {
+							size = data.getValue().length;
 						} else {
-							readAttemptsCount++;
-							byte[] result = db.get(cfh, readOptions, keyArray);
-							if (result == null) {
-								if (data.getValue() != null) {
-									readValueNotFoundWithBloomBufferSize.record(0);
-								} else {
-									readValueNotFoundWithMayExistBloomBufferSize.record(0);
-								}
-								return null;
-							} else {
-								readValueFoundWithBloomUncachedBufferSize.record(0);
-								return LLUtils.fromByteArray(alloc, result);
-							}
+							size = db.get(cfh, readOptions, keyBytes, NO_DATA);
 						}
+					}
+				} finally {
+					if (!(readOptions instanceof UnreleasableReadOptions)) {
+						readOptions.close();
+					}
+				}
+				boolean found = size != RocksDB.NOT_FOUND;
+				if (found) {
+					readValueFoundWithBloomSimpleBufferSize.record(size);
+				} else {
+					if (mayExistHit) {
+						readValueNotFoundWithMayExistBloomBufferSize.record(0);
 					} else {
 						readValueNotFoundWithBloomBufferSize.record(0);
-						return null;
 					}
+				}
+				return found;
+			}
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(readOptions);
+			if (nettyDirect) {
+				// Get the key nio buffer to pass to RocksDB
+				ByteBuffer keyNioBuffer;
+				boolean mustCloseKey;
+				{
+					if (!LLUtils.isReadOnlyDirect(key)) {
+						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+						mustCloseKey = true;
+						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+						key = directKey;
+					} else {
+						mustCloseKey = false;
+					}
+					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					assert keyNioBuffer.isDirect();
+					assert keyNioBuffer.limit() == key.readableBytes();
+				}
+				try {
+					return db.keyMayExist(cfh, keyNioBuffer);
+				} finally {
+					if (mustCloseKey) {
+						key.close();
+					}
+				}
+			} else {
+				byte[] keyBytes = LLUtils.toArray(key);
+				try {
+					return db.keyMayExist(cfh, readOptions, keyBytes, null);
 				} finally {
 					if (!(readOptions instanceof UnreleasableReadOptions)) {
 						readOptions.close();
@@ -490,29 +702,17 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				}
 			}
 		} finally {
-			readAttempts.record(readAttemptsCount);
+			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException {
+	public void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
 		try {
-			if (Schedulers.isInNonBlockingThread()) {
-				throw new UnsupportedOperationException("Called dbPut in a nonblocking thread");
-			}
-			if (!db.isOwningHandle()) {
-				throw new IllegalStateException("Database is closed");
-			}
-			if (!writeOptions.isOwningHandle()) {
-				throw new IllegalStateException("WriteOptions is closed");
-			}
-			if (!cfh.isOwningHandle()) {
-				throw new IllegalStateException("Column family is closed");
-			}
-			assert key.isAccessible();
-			assert value.isAccessible();
-			this.keyBufferSize.record(key.readableBytes());
-			this.writeValueBufferSize.record(value.readableBytes());
+			ensureOpen();
+			ensureOwned(writeOptions);
+			keyBufferSize.record(key.readableBytes());
 			if (nettyDirect) {
 				// Get the key nio buffer to pass to RocksDB
 				ByteBuffer keyNioBuffer;
@@ -532,331 +732,117 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
 				try {
-					// Get the value nio buffer to pass to RocksDB
-					ByteBuffer valueNioBuffer;
-					boolean mustCloseValue;
-					{
-						if (!LLUtils.isReadOnlyDirect(value)) {
-							// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-							mustCloseValue = true;
-							var directValue = DefaultBufferAllocators.offHeapAllocator().allocate(value.readableBytes());
-							value.copyInto(value.readerOffset(), directValue, 0, value.readableBytes());
-							value = directValue;
-						} else {
-							mustCloseValue = false;
-						}
-						valueNioBuffer = ((ReadableComponent) value).readableBuffer();
-						assert valueNioBuffer.isDirect();
-						assert valueNioBuffer.limit() == value.readableBytes();
-					}
-
-					try {
-						db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
-					} finally {
-						if (mustCloseValue) {
-							value.close();
-						}
-					}
+					db.delete(cfh, writeOptions, keyNioBuffer);
 				} finally {
 					if (mustCloseKey) {
 						key.close();
 					}
 				}
 			} else {
-				db.put(cfh, writeOptions, LLUtils.toArray(key), LLUtils.toArray(value));
+				db.delete(cfh, writeOptions, LLUtils.toArray(key));
 			}
 		} finally {
-			if (!(writeOptions instanceof UnreleasableWriteOptions)) {
-				writeOptions.close();
-			}
-		}
-	}
-
-	@Override
-	public boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
-		if (Schedulers.isInNonBlockingThread()) {
-			throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
-		}
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
-		}
-		if (!readOptions.isOwningHandle()) {
-			throw new IllegalStateException("ReadOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		if (nettyDirect) {
-			// Get the key nio buffer to pass to RocksDB
-			ByteBuffer keyNioBuffer;
-			boolean mustCloseKey;
-			{
-				if (!LLUtils.isReadOnlyDirect(key)) {
-					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-					mustCloseKey = true;
-					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-					key = directKey;
-				} else {
-					mustCloseKey = false;
-				}
-				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
-				assert keyNioBuffer.isDirect();
-				assert keyNioBuffer.limit() == key.readableBytes();
-			}
-			try {
-				if (db.keyMayExist(cfh, keyNioBuffer)) {
-					int size = db.get(cfh, readOptions, keyNioBuffer.position(0), LLUtils.EMPTY_BYTE_BUFFER);
-					boolean found = size != RocksDB.NOT_FOUND;
-					if (found) {
-						readValueFoundWithBloomSimpleBufferSize.record(size);
-						return true;
-					} else {
-						readValueNotFoundWithMayExistBloomBufferSize.record(0);
-						return false;
-					}
-				} else {
-					readValueNotFoundWithBloomBufferSize.record(0);
-					return false;
-				}
-			} finally {
-				if (mustCloseKey) {
-					key.close();
-				}
-			}
-		} else {
-			int size = RocksDB.NOT_FOUND;
-			byte[] keyBytes = LLUtils.toArray(key);
-			Holder<byte[]> data = new Holder<>();
-			boolean mayExistHit = false;
-			try {
-				if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
-					mayExistHit = true;
-					if (data.getValue() != null) {
-						size = data.getValue().length;
-					} else {
-						size = db.get(cfh, readOptions, keyBytes, NO_DATA);
-					}
-				}
-			} finally {
-				if (!(readOptions instanceof UnreleasableReadOptions)) {
-					readOptions.close();
-				}
-			}
-			boolean found = size != RocksDB.NOT_FOUND;
-			if (found) {
-				readValueFoundWithBloomSimpleBufferSize.record(size);
-			} else {
-				if (mayExistHit) {
-					readValueNotFoundWithMayExistBloomBufferSize.record(0);
-				} else {
-					readValueNotFoundWithBloomBufferSize.record(0);
-				}
-			}
-			return found;
-		}
-	}
-
-	@Override
-	public boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
-		if (Schedulers.isInNonBlockingThread()) {
-			throw new UnsupportedOperationException("Called containsKey in a nonblocking thread");
-		}
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
-		}
-		if (!readOptions.isOwningHandle()) {
-			throw new IllegalStateException("ReadOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		if (nettyDirect) {
-			// Get the key nio buffer to pass to RocksDB
-			ByteBuffer keyNioBuffer;
-			boolean mustCloseKey;
-			{
-				if (!LLUtils.isReadOnlyDirect(key)) {
-					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-					mustCloseKey = true;
-					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-					key = directKey;
-				} else {
-					mustCloseKey = false;
-				}
-				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
-				assert keyNioBuffer.isDirect();
-				assert keyNioBuffer.limit() == key.readableBytes();
-			}
-			try {
-				return db.keyMayExist(cfh, keyNioBuffer);
-			} finally {
-				if (mustCloseKey) {
-					key.close();
-				}
-			}
-		} else {
-			byte[] keyBytes = LLUtils.toArray(key);
-			try {
-				return db.keyMayExist(cfh, readOptions, keyBytes, null);
-			} finally {
-				if (!(readOptions instanceof UnreleasableReadOptions)) {
-					readOptions.close();
-				}
-			}
-		}
-	}
-
-	@Override
-	public void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
-		}
-		if (!writeOptions.isOwningHandle()) {
-			throw new IllegalStateException("WriteOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		keyBufferSize.record(key.readableBytes());
-		if (nettyDirect) {
-			// Get the key nio buffer to pass to RocksDB
-			ByteBuffer keyNioBuffer;
-			boolean mustCloseKey;
-			{
-				if (!LLUtils.isReadOnlyDirect(key)) {
-					// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-					mustCloseKey = true;
-					var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-					key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-					key = directKey;
-				} else {
-					mustCloseKey = false;
-				}
-				keyNioBuffer = ((ReadableComponent) key).readableBuffer();
-				assert keyNioBuffer.isDirect();
-				assert keyNioBuffer.limit() == key.readableBytes();
-			}
-			try {
-				db.delete(cfh, writeOptions, keyNioBuffer);
-			} finally {
-				if (mustCloseKey) {
-					key.close();
-				}
-			}
-		} else {
-			db.delete(cfh, writeOptions, LLUtils.toArray(key));
+			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
 	public void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(writeOptions);
+			keyBufferSize.record(key.length);
+			db.delete(cfh, writeOptions, key);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!writeOptions.isOwningHandle()) {
-			throw new IllegalStateException("WriteOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		keyBufferSize.record(key.length);
-		db.delete(cfh, writeOptions, key);
 	}
 
 	@Override
 	public List<byte[]> multiGetAsList(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(readOptions);
+			for (byte[] key : keys) {
+				keyBufferSize.record(key.length);
+			}
+			var columnFamilyHandles = new RepeatedElementList<>(cfh, keys.size());
+			return db.multiGetAsList(readOptions, columnFamilyHandles, keys);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!readOptions.isOwningHandle()) {
-			throw new IllegalStateException("ReadOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		for (byte[] key : keys) {
-			keyBufferSize.record(key.length);
-		}
-		var columnFamilyHandles = new RepeatedElementList<>(cfh, keys.size());
-		return db.multiGetAsList(readOptions, columnFamilyHandles, keys);
 	}
 
 	@Override
 	public void suggestCompactRange() throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			db.suggestCompactRange(cfh);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		db.suggestCompactRange(cfh);
 	}
 
 	@Override
-	public void compactRange(byte[] begin, byte[] end, CompactRangeOptions options)
-			throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+	public void compactRange(byte[] begin, byte[] end, CompactRangeOptions options) throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
+		try {
+			 ensureOpen();
+			 ensureOwned(options);
+			db.compactRange(cfh, begin, end, options);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!options.isOwningHandle()) {
-			throw new IllegalStateException("CompactRangeOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		db.compactRange(cfh, begin, end, options);
 	}
 
 	@Override
 	public void flush(FlushOptions options) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(options);
+			db.flush(options, cfh);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!options.isOwningHandle()) {
-			throw new IllegalStateException("FlushOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		db.flush(options, cfh);
 	}
 
 	@Override
 	public void flushWal(boolean sync) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			db.flushWal(sync);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		db.flushWal(sync);
 	}
 
 	@Override
 	public long getLongProperty(String property) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			return db.getLongProperty(cfh, property);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		return db.getLongProperty(cfh, property);
 	}
 
 	@Override
 	public void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(writeOptions);
+			ensureOwned(writeBatch);
+			db.write(writeOptions, writeBatch);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!writeOptions.isOwningHandle()) {
-			throw new IllegalStateException("WriteOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		db.write(writeOptions, writeBatch);
 	}
 
 	/**
@@ -872,27 +858,23 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
-		}
-		if (!readOptions.isOwningHandle()) {
-			throw new IllegalStateException("ReadOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
+		var closeReadLock = closeLock.readLock();
 		try {
-			keyBufferSize.record(key.readableBytes());
-			startedUpdate.increment();
-			accessibilityLock.lock();
-			return updateAtomicImpl(readOptions, writeOptions, key, updater, returnMode);
-		} catch (IOException e) {
-			throw e;
-		} catch (Exception e) {
-			throw new IOException(e);
+			ensureOpen();
+			ensureOwned(readOptions);
+			try {
+				keyBufferSize.record(key.readableBytes());
+				startedUpdate.increment();
+				return updateAtomicImpl(readOptions, writeOptions, key, updater, returnMode);
+			} catch (IOException e) {
+				throw e;
+			} catch (Exception e) {
+				throw new IOException(e);
+			} finally {
+				endedUpdate.increment();
+			}
 		} finally {
-			accessibilityLock.unlock();
-			endedUpdate.increment();
+			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
@@ -923,24 +905,23 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	@NotNull
 	public RocksDBIterator newIterator(@NotNull ReadOptions readOptions) {
-		if (!db.isOwningHandle()) {
-			throw new IllegalStateException("Database is closed");
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			ensureOwned(readOptions);
+			var it = db.newIterator(cfh, readOptions);
+			return new RocksDBIterator(it,
+					nettyDirect,
+					this.startedIterSeek,
+					this.endedIterSeek,
+					this.iterSeekTime,
+					this.startedIterNext,
+					this.endedIterNext,
+					this.iterNextTime
+			);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
-		if (!readOptions.isOwningHandle()) {
-			throw new IllegalStateException("ReadOptions is closed");
-		}
-		if (!cfh.isOwningHandle()) {
-			throw new IllegalStateException("Column family is closed");
-		}
-		return new RocksDBIterator(db.newIterator(cfh, readOptions),
-				nettyDirect,
-				this.startedIterSeek,
-				this.endedIterSeek,
-				this.iterSeekTime,
-				this.startedIterNext,
-				this.endedIterNext,
-				this.iterNextTime
-		);
 	}
 
 	protected final Buffer applyUpdateAndCloseIfNecessary(BinarySerializationFunction updater,
@@ -957,31 +938,18 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		return newData;
 	}
 
+	protected int getLastLevel() {
+		return RocksDBUtils.getLastLevel(db, cfh);
+	}
+
 	@Override
-	public final void forceCompaction(int volumeId) throws RocksDBException {
-		List<String> files = new ArrayList<>();
-		var meta = db.getColumnFamilyMetaData(cfh);
-		int bottommostLevel = -1;
-		for (LevelMetaData level : meta.levels()) {
-			bottommostLevel = Math.max(bottommostLevel, level.level());
-		}
-		int count = 0;
-		x: for (LevelMetaData level : meta.levels()) {
-			for (SstFileMetaData file : level.files()) {
-				if (file.fileName().endsWith(".sst")) {
-					files.add(file.fileName());
-					count++;
-					if (count >= 4) {
-						break x;
-					}
-				}
-			}
-		}
-		try (var co = new CompactionOptions()) {
-			if (!files.isEmpty() && bottommostLevel != -1) {
-				db.compactFiles(co, cfh, files, bottommostLevel, volumeId, null);
-			}
-			db.compactRange(cfh);
+	public final void forceCompaction(int volumeId) {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			RocksDBUtils.forceCompaction(db, db.getName(), cfh, volumeId, logger);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
 		}
 	}
 

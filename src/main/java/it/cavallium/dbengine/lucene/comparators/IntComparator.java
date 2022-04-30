@@ -39,8 +39,8 @@ public class IntComparator extends NumericComparator<Integer> implements SafeClo
   protected int bottom;
 
   public IntComparator(LLTempHugePqEnv env,
-      int numHits, String field, Integer missingValue, boolean reverse, int sortPos) {
-    super(field, missingValue != null ? missingValue : 0, reverse, sortPos, Integer.BYTES);
+      int numHits, String field, Integer missingValue, boolean reverse, boolean enableSkipping) {
+    super(field, missingValue != null ? missingValue : 0, reverse, enableSkipping, Integer.BYTES);
 		values = new HugePqArray<>(env, new IntCodec(), numHits, 0);
   }
 

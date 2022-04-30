@@ -23,7 +23,7 @@ import it.cavallium.dbengine.lucene.hugepq.search.comparators.HugePqDocComparato
 public class HugePqComparator {
 
 	public static FieldComparator<?> getComparator(LLTempHugePqEnv env, SortField sortField,
-			int numHits, int sortPos) {
+			int numHits, boolean enableSkipping) {
 		var sortFieldClass = sortField.getClass();
 		if (sortFieldClass == org.apache.lucene.search.SortedNumericSortField.class) {
 			var nf = (org.apache.lucene.search.SortedNumericSortField) sortField;
@@ -32,7 +32,7 @@ public class HugePqComparator {
 			var reverse = nf.getReverse();
 			var selector = nf.getSelector();
 			final FieldComparator<?> fieldComparator = switch (type) {
-				case INT -> new IntComparator(env, numHits, nf.getField(), (Integer) missingValue, reverse, sortPos) {
+				case INT -> new IntComparator(env, numHits, nf.getField(), (Integer) missingValue, reverse, enableSkipping) {
 					@Override
 					public LeafFieldComparator getLeafComparator(LeafReaderContext context) throws IOException {
 						return new IntLeafComparator(context) {
@@ -44,7 +44,7 @@ public class HugePqComparator {
 						};
 					}
 				};
-				case FLOAT -> new FloatComparator(env, numHits, nf.getField(), (Float) missingValue, reverse, sortPos) {
+				case FLOAT -> new FloatComparator(env, numHits, nf.getField(), (Float) missingValue, reverse, enableSkipping) {
 					@Override
 					public LeafFieldComparator getLeafComparator(LeafReaderContext context) throws IOException {
 						return new FloatLeafComparator(context) {
@@ -56,7 +56,7 @@ public class HugePqComparator {
 						};
 					}
 				};
-				case LONG -> new LongComparator(env, numHits, nf.getField(), (Long) missingValue, reverse, sortPos) {
+				case LONG -> new LongComparator(env, numHits, nf.getField(), (Long) missingValue, reverse, enableSkipping) {
 					@Override
 					public LeafFieldComparator getLeafComparator(LeafReaderContext context) throws IOException {
 						return new LongLeafComparator(context) {
@@ -68,7 +68,7 @@ public class HugePqComparator {
 						};
 					}
 				};
-				case DOUBLE -> new DoubleComparator(env, numHits, nf.getField(), (Double) missingValue, reverse, sortPos) {
+				case DOUBLE -> new DoubleComparator(env, numHits, nf.getField(), (Double) missingValue, reverse, enableSkipping) {
 					@Override
 					public LeafFieldComparator getLeafComparator(LeafReaderContext context) throws IOException {
 						return new DoubleLeafComparator(context) {
@@ -93,18 +93,18 @@ public class HugePqComparator {
 			var comparatorSource = sortField.getComparatorSource();
 			return switch (sortField.getType()) {
 				case SCORE -> new RelevanceComparator(env, numHits);
-				case DOC -> new HugePqDocComparator(env, numHits, reverse, sortPos);
+				case DOC -> new HugePqDocComparator(env, numHits, reverse, enableSkipping);
 				case INT -> new IntComparator(env, numHits, field, (Integer) missingValue,
-						reverse, sortPos);
+						reverse, enableSkipping);
 				case FLOAT -> new FloatComparator(env, numHits, field, (Float) missingValue,
-						reverse, sortPos);
+						reverse, enableSkipping);
 				case LONG -> new LongComparator(env, numHits, field, (Long) missingValue,
-						reverse, sortPos);
+						reverse, enableSkipping);
 				case DOUBLE -> new DoubleComparator(env, numHits, field, (Double) missingValue,
-						reverse, sortPos);
+						reverse, enableSkipping);
 				case CUSTOM -> {
 					assert comparatorSource != null;
-					yield comparatorSource.newComparator(field, numHits, sortPos, reverse);
+					yield comparatorSource.newComparator(field, numHits, enableSkipping, reverse);
 				}
 				case STRING -> new TermOrdValComparator(env, numHits, field, missingValue == STRING_LAST);
 				case STRING_VAL -> throw new NotImplementedException("String val sort field not implemented");

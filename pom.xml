@@ -15,6 +15,7 @@
     <revision>0-SNAPSHOT</revision>
     <dbengine.ci>false</dbengine.ci>
     <micrometer.version>1.7.4</micrometer.version>
+    <lucene.version>9.1.0</lucene.version>
   </properties>
   <repositories>
     <repository>
@@ -133,57 +134,57 @@
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-core</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-join</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-analysis-common</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-analysis-icu</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-codecs</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-backward-codecs</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-queries</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-queryparser</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-misc</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-facet</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
       </dependency>
       <dependency>
         <groupId>org.apache.lucene</groupId>
         <artifactId>lucene-test-framework</artifactId>
-        <version>9.0.0</version>
+        <version>${lucene.version}</version>
         <scope>test</scope>
       </dependency>
       <dependency>
@@ -322,7 +323,7 @@
     <dependency>
       <groupId>org.rocksdb</groupId>
       <artifactId>rocksdbjni</artifactId>
-      <version>7.1.1</version>
+      <version>7.1.2</version>
     </dependency>
     <dependency>
       <groupId>org.apache.lucene</groupId>

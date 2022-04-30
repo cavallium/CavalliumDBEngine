@@ -42,8 +42,8 @@ public class LongComparator extends NumericComparator<Long> implements SafeClose
   protected long bottom;
 
   public LongComparator(LLTempHugePqEnv env,
-      int numHits, String field, Long missingValue, boolean reverse, int sortPos) {
-    super(field, missingValue != null ? missingValue : 0L, reverse, sortPos, Long.BYTES);
+      int numHits, String field, Long missingValue, boolean reverse, boolean enableSkipping) {
+    super(field, missingValue != null ? missingValue : 0L, reverse, enableSkipping, Long.BYTES);
 		values = new HugePqArray<>(env, new LongCodec(), numHits, 0L);
   }
 

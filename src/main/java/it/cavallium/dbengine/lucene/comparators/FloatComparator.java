@@ -39,8 +39,8 @@ public class FloatComparator extends NumericComparator<Float> implements SafeClo
   protected float bottom;
 
   public FloatComparator(LLTempHugePqEnv env,
-      int numHits, String field, Float missingValue, boolean reverse, int sortPos) {
-    super(field, missingValue != null ? missingValue : 0.0f, reverse, sortPos, Float.BYTES);
+      int numHits, String field, Float missingValue, boolean reverse, boolean enableSkipping) {
+    super(field, missingValue != null ? missingValue : 0.0f, reverse, enableSkipping, Float.BYTES);
 		values = new HugePqArray<>(env, new FloatCodec(), numHits, 0f);
   }
 

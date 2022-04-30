@@ -109,7 +109,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 
 					for (int compIDX = 0; compIDX < sortFields.length; ++compIDX) {
 						SortField sortField = sortFields[compIDX];
-						comparators[compIDX] = sortField.getComparator(1, compIDX);
+						comparators[compIDX] = sortField.getComparator(1, compIDX == 0);
 						reverseMul[compIDX] = sortField.getReverse() ? -1 : 1;
 					}
 

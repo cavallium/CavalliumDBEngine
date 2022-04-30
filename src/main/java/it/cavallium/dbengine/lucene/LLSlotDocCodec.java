@@ -40,7 +40,7 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 		for (int i = 0; i < numComparators; ++i) {
 			SortField field = fields[i];
 			reverseMul[i] = field.getReverse() ? -1 : 1;
-			comparators[i] = HugePqComparator.getComparator(env, field, numHits, i);
+			comparators[i] = HugePqComparator.getComparator(env, field, numHits, i == 0);
 		}
 		comparator = new AbstractComparator(new ComparatorOptions().setMaxReusedBufferSize(0)) {
 			@Override

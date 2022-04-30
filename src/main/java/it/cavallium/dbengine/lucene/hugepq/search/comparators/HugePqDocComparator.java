@@ -43,11 +43,11 @@ public class HugePqDocComparator extends org.apache.lucene.search.comparators.Do
   private boolean hitsThresholdReached;
 
   /** Creates a new comparator based on document ids for {@code numHits} */
-  public HugePqDocComparator(LLTempHugePqEnv env, int numHits, boolean reverse, int sortPost) {
-		super(0, reverse, sortPost);
+  public HugePqDocComparator(LLTempHugePqEnv env, int numHits, boolean reverse, boolean enableSkipping) {
+		super(0, reverse, enableSkipping);
 		this.docIDs = new HugePqArray<>(env, new IntCodec(), numHits, 0);
 		// skipping functionality is enabled if we are sorting by _doc in asc order as a primary sort
-		this.enableSkipping = (!reverse && sortPost == 0);
+		this.enableSkipping = (!reverse && enableSkipping);
   }
 
   @Override

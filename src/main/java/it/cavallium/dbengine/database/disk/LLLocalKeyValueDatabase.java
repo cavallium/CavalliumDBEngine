@@ -990,6 +990,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			this.compressedCache = compressedCache;
 
 			flushAndCloseDb(db, standardCache, compressedCache, handles);
+			this.closed = false;
 			this.db = null;
 			this.standardCache = null;
 			this.compressedCache = null;

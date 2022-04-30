@@ -270,9 +270,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							.map(v -> v.compression().getType())
 							.toList());
 				} else {
-					columnFamilyOptions.setNumLevels(6);
-					List<CompressionType> compressionTypes = new ArrayList<>(6);
-					for (int i = 0; i < 6; i++) {
+					columnFamilyOptions.setNumLevels(7);
+					List<CompressionType> compressionTypes = new ArrayList<>(7);
+					for (int i = 0; i < 7; i++) {
 						if (i < 2) {
 							compressionTypes.add(CompressionType.NO_COMPRESSION);
 						} else {
@@ -561,17 +561,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return paths.size() - 1;
 	}
 
-	public int getLastLevel(Column column) {
-		return databaseOptions
-				.columnOptions()
-				.stream()
-				.filter(namedColumnOptions -> namedColumnOptions.columnName().equals(column.name()))
-				.findFirst()
-				.map(NamedColumnOptions::levels)
-				.filter(levels -> !levels.isEmpty())
-				.or(() -> Optional.of(databaseOptions.defaultColumnOptions().levels()).filter(levels -> !levels.isEmpty()))
-				.map(List::size)
-				.orElse(6);
+	public int getLevels(Column column) {
+		return RocksDBUtils.getLevels(db, handles.get(column));
 	}
 
 	public List<String> getColumnFiles(Column column, boolean excludeLastLevel) {

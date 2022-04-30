@@ -21,21 +21,16 @@ import reactor.core.scheduler.Schedulers;
 
 public class RocksDBUtils {
 
-	public static int getLastLevel(RocksDB db, ColumnFamilyHandle cfh) {
-		var lastLevel = db.numberLevels(cfh);
-		if (lastLevel == 0) {
-			return 6;
-		} else {
-			return lastLevel;
-		}
+	public static int getLevels(RocksDB db, ColumnFamilyHandle cfh) {
+		return db.numberLevels(cfh);
 	}
 
 	public static List<String> getColumnFiles(RocksDB db, ColumnFamilyHandle cfh, boolean excludeLastLevel) {
 		List<String> files = new ArrayList<>();
 		var meta = db.getColumnFamilyMetaData(cfh);
-		var lastLevel = excludeLastLevel ? getLastLevel(db, cfh) : -1;
+		var lastLevelId = excludeLastLevel ? (getLevels(db, cfh) - 1) : -1;
 		for (LevelMetaData level : meta.levels()) {
-			if (!excludeLastLevel || level.level() < lastLevel) {
+			if (!excludeLastLevel || level.level() < lastLevelId) {
 				for (SstFileMetaData file : level.files()) {
 					if (file.fileName().endsWith(".sst")) {
 						files.add(file.fileName());
@@ -65,23 +60,23 @@ public class RocksDBUtils {
 				} else {
 					partitions = List.of(filesToCompact);
 				}
-				int finalBottommostLevel = getLastLevel(db, cfh);
+				int finalBottommostLevelId = getLevels(db, cfh) - 1;
 				Mono.whenDelayError(partitions.stream().map(partition -> Mono.<Void>fromCallable(() -> {
 					logger.info("Compacting {} files in database {} in column family {} to level {}",
 							partition.size(),
 							logDbName,
 							new String(cfh.getName(), StandardCharsets.UTF_8),
-							finalBottommostLevel
+							finalBottommostLevelId
 					);
 					if (!partition.isEmpty()) {
 						var coi = new CompactionJobInfo();
 						try {
-							db.compactFiles(co, cfh, partition, finalBottommostLevel, volumeId, coi);
+							db.compactFiles(co, cfh, partition, finalBottommostLevelId, volumeId, coi);
 							logger.info("Compacted {} files in database {} in column family {} to level {}: {}",
 									partition.size(),
 									logDbName,
 									new String(cfh.getName(), StandardCharsets.UTF_8),
-									finalBottommostLevel,
+									finalBottommostLevelId,
 									coi.status().getCodeString()
 							);
 						} catch (Throwable ex) {
@@ -89,7 +84,7 @@ public class RocksDBUtils {
 									partition.size(),
 									logDbName,
 									new String(cfh.getName(), StandardCharsets.UTF_8),
-									finalBottommostLevel,
+									finalBottommostLevelId,
 									ex
 							);
 						}

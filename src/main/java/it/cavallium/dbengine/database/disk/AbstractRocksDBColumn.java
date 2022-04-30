@@ -938,8 +938,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		return newData;
 	}
 
-	protected int getLastLevel() {
-		return RocksDBUtils.getLastLevel(db, cfh);
+	protected int getLevels() {
+		return RocksDBUtils.getLevels(db, cfh);
 	}
 
 	@Override

@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactionJobInfo;
 import org.rocksdb.CompactionOptions;
@@ -92,6 +93,20 @@ public class RocksDBUtils {
 					return null;
 				}).subscribeOn(Schedulers.boundedElastic())).toList()).block();
 			}
+		}
+	}
+
+	public static void ensureOpen(RocksDB db, @Nullable ColumnFamilyHandle cfh) {
+		if (Schedulers.isInNonBlockingThread()) {
+			throw new UnsupportedOperationException("Called in a nonblocking thread");
+		}
+		ensureOwned(db);
+		ensureOwned(cfh);
+	}
+
+	public static void ensureOwned(@Nullable org.rocksdb.RocksObject rocksObject) {
+		if (rocksObject != null && !rocksObject.isOwningHandle()) {
+			throw new IllegalStateException("Not owning handle");
 		}
 	}
 }

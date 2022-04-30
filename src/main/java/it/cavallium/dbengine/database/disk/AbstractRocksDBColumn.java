@@ -332,17 +332,11 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	protected void ensureOpen() {
-		if (Schedulers.isInNonBlockingThread()) {
-			throw new UnsupportedOperationException("Called in a nonblocking thread");
-		}
-		ensureOwned(db);
-		ensureOwned(cfh);
+		RocksDBUtils.ensureOpen(db, cfh);
 	}
 
 	protected void ensureOwned(org.rocksdb.RocksObject rocksObject) {
-		if (!rocksObject.isOwningHandle()) {
-			throw new IllegalStateException("Not owning handle");
-		}
+		RocksDBUtils.ensureOwned(rocksObject);
 	}
 
 	@Override
@@ -939,7 +933,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	protected int getLevels() {
-		return RocksDBUtils.getLevels(db, cfh);
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			return RocksDBUtils.getLevels(db, cfh);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	@Override

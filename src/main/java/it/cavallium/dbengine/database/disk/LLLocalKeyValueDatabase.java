@@ -358,7 +358,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				columnFamilyOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
 				// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
 				// // (but the default value is 1, which means that the maximum sstable of each level is the same).
-				columnFamilyOptions.setTargetFileSizeMultiplier(1);
+				columnFamilyOptions.setTargetFileSizeMultiplier(2);
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnFamilyOptions));
 			}

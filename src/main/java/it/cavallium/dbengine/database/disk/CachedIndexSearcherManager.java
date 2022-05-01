@@ -108,20 +108,20 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				})
 				.then(refresherClosed.asMono())
 				.then(Mono.<Void>fromRunnable(() -> {
-					logger.info("Closed IndexSearcherManager");
-					logger.info("Closing refreshes...");
+					logger.debug("Closed IndexSearcherManager");
+					logger.debug("Closing refreshes...");
 					long initTime = System.nanoTime();
 					while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 						LockSupport.parkNanos(50000000);
 					}
-					logger.info("Closed refreshes...");
-					logger.info("Closing active searchers...");
+					logger.debug("Closed refreshes...");
+					logger.debug("Closing active searchers...");
 					initTime = System.nanoTime();
 					while (activeSearchers.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 						LockSupport.parkNanos(50000000);
 					}
-					logger.info("Closed active searchers");
-					logger.info("Stopping searcher executor...");
+					logger.debug("Closed active searchers");
+					logger.debug("Stopping searcher executor...");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
 					searchExecutor.shutdown();
@@ -133,7 +133,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					} catch (InterruptedException e) {
 						logger.error("Failed to stop executor", e);
 					}
-					logger.info("Stopped searcher executor...");
+					logger.debug("Stopped searcher executor");
 				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 				.publishOn(Schedulers.parallel())
 				.cache();

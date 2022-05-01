@@ -493,10 +493,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				.then(Mono.<Void>fromCallable(() -> {
 					shutdownLock.lock();
 					try {
-						logger.info("Closing IndexWriter...");
+						logger.debug("Closing IndexWriter...");
 						indexWriter.close();
 						directory.close();
-						logger.info("IndexWriter closed");
+						logger.debug("IndexWriter closed");
 					} finally {
 						shutdownLock.unlock();
 					}

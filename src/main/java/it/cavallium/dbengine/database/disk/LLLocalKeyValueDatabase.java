@@ -232,7 +232,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				} else {
 					// ArangoDB uses a value of 2: https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					// Higher values speed up writes, but slow down reads
-					columnFamilyOptions.setLevel0FileNumCompactionTrigger(4);
+					columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
 				}
 				if (isDisableSlowdown()) {
 					columnFamilyOptions.setLevel0SlowdownWritesTrigger(-1);

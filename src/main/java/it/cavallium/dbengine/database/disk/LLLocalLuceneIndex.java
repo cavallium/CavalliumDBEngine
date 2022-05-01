@@ -483,9 +483,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public Mono<Void> close() {
 		return Mono
 				.<Void>fromCallable(() -> {
-					logger.info("Waiting IndexWriter tasks...");
+					logger.debug("Waiting IndexWriter tasks...");
 					activeTasks.arriveAndAwaitAdvance();
-					logger.info("IndexWriter tasks ended");
+					logger.debug("IndexWriter tasks ended");
 					return null;
 				})
 				.subscribeOn(luceneHeavyTasksScheduler)

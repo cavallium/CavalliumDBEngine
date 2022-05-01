@@ -102,7 +102,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 		this.closeMono = Mono
 				.fromRunnable(() -> {
-					logger.info("Closing IndexSearcherManager...");
+					logger.debug("Closing IndexSearcherManager...");
 					this.closeRequested.set(true);
 					this.closeRequestedMono.tryEmitEmpty();
 				})

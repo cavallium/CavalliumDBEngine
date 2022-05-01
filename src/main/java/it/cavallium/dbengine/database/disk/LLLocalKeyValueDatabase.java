@@ -789,6 +789,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} else {
 			options.setDelayedWriteRate(64 * SizeUnit.MB);
 		}
+		if (databaseOptions.logPath().isPresent()) {
+			options.setDbLogDir(databaseOptions.logPath().get());
+		}
+		if (databaseOptions.walPath().isPresent()) {
+			options.setWalDir(databaseOptions.walPath().get());
+		}
 		options.setCreateIfMissing(true);
 		options.setSkipStatsUpdateOnDbOpen(true);
 		options.setCreateMissingColumnFamilies(true);
@@ -869,8 +875,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			// HIGH MEMORY
 			options
 					//.setDbWriteBufferSize(64 * SizeUnit.MB)
-					.setBytesPerSync(0)
-					.setWalBytesPerSync(0)
+					.setBytesPerSync(64 * SizeUnit.MB)
+					.setWalBytesPerSync(64 * SizeUnit.MB)
 
 					.setWalTtlSeconds(0) // Auto
 					.setWalSizeLimitMB(0) // Auto

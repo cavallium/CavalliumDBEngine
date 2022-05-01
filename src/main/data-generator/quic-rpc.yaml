@@ -255,6 +255,8 @@ versions:
           spinning: boolean
           defaultColumnOptions: DefaultColumnOptions
           columnOptions: NamedColumnOptions[]
+          logPath: -String
+          walPath: -String
       # Remember to update ColumnOptions common getters
       DefaultColumnOptions:
         data:

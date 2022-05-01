@@ -57,7 +57,9 @@ public class DefaultDatabaseOptions {
 			Nullablelong.empty(),
 			false,
 			DEFAULT_DEFAULT_COLUMN_OPTIONS,
-			List.of()
+			List.of(),
+			NullableString.empty(),
+			NullableString.empty()
 	);
 
 	public static DatabaseOptionsBuilder builder() {

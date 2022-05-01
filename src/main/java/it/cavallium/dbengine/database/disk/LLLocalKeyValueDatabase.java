@@ -107,8 +107,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalKeyValueDatabase.class);
-	private static final ColumnFamilyDescriptor DEFAULT_COLUMN_FAMILY
-			= new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY);
 
 	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
@@ -122,7 +120,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private final Path dbPath;
 	private final String name;
 	private final DatabaseOptions databaseOptions;
-	private final boolean nettyDirect;
 
 	private final boolean enableColumnsBug;
 	private RocksDB db;
@@ -147,7 +144,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			DatabaseOptions databaseOptions) throws IOException {
 		this.name = name;
 		this.allocator = allocator;
-		this.nettyDirect = databaseOptions.allowNettyDirect() && allocator.getAllocationType() == OFF_HEAP;
+		boolean nettyDirect = databaseOptions.allowNettyDirect() && allocator.getAllocationType() == OFF_HEAP;
 		this.meterRegistry = meterRegistry;
 
 		this.snapshotTime = Timer
@@ -216,17 +213,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setDisableAutoCompactions(true);
 				}
-				boolean dynamicLevelBytes;
+
 				// This option is not supported with multiple db paths
-				if (databaseOptions.volumes().size() <= 1) {
-					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-					dynamicLevelBytes = true;
-				} else {
-					dynamicLevelBytes = false;
-				}
+				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+				// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+				boolean dynamicLevelBytes = databaseOptions.volumes().size() <= 1;
 				if (dynamicLevelBytes) {
-					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(dynamicLevelBytes);
+					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(true);
 				} else {
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
@@ -237,9 +230,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setLevel0FileNumCompactionTrigger(-1);
 				} else {
-					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					// ArangoDB uses a value of 2: https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					// Higher values speed up writes, but slow down reads
-					columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
+					columnFamilyOptions.setLevel0FileNumCompactionTrigger(4);
 				}
 				if (isDisableSlowdown()) {
 					columnFamilyOptions.setLevel0SlowdownWritesTrigger(-1);

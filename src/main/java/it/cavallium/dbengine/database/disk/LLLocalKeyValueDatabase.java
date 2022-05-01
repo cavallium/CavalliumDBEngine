@@ -423,8 +423,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 			}
 
-			createIfNotExists(descriptors, rocksdbOptions, standardCache, compressedCache, inMemory, dbPath, dbPathString);
-
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
@@ -682,13 +680,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				//flushDb(db, handles);
 			}
 
-			for (ColumnFamilyHandle handle : handles) {
-				try {
-					handle.close();
-				} catch (Exception ex) {
-					logger.error("Can't close column family", ex);
-				}
-			}
 			snapshotsHandles.forEach((id, snapshot) -> {
 				try {
 					if (db.isOwningHandle()) {
@@ -704,6 +695,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				db.closeE();
 			} catch (Exception ex) {
 				logger.error("Can't close database " + name + " at " + dbPath, ex);
+			}
+			for (ColumnFamilyHandle handle : handles) {
+				try {
+					handle.close();
+				} catch (Exception ex) {
+					logger.error("Can't close column family", ex);
+				}
 			}
 			if (compressedCache != null) {
 				compressedCache.close();
@@ -951,50 +949,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			paths.add(new DbPathRecord(volumePath, volume.targetSizeBytes()));
 		}
 		return paths;
-	}
-
-	private void createIfNotExists(List<ColumnFamilyDescriptor> descriptors,
-			DBOptions options,
-			Cache standardCache,
-			Cache compressedCache,
-			boolean inMemory,
-			Path dbPath,
-			String dbPathString) throws RocksDBException {
-		if (inMemory) {
-			return;
-		}
-		if (Files.notExists(dbPath)) {
-			// Check if handles are all different
-			var descriptorsSet = new HashSet<>(descriptors);
-			if (descriptorsSet.size() != descriptors.size()) {
-				throw new IllegalArgumentException("Descriptors must be unique!");
-			}
-
-			List<ColumnFamilyDescriptor> descriptorsToCreate = new LinkedList<>(descriptors);
-			descriptorsToCreate
-					.removeIf((cf) -> Arrays.equals(cf.getName(), DEFAULT_COLUMN_FAMILY.getName()));
-
-			/*
-			  SkipStatsUpdateOnDbOpen = true because this RocksDB.open session is used only to add just some columns
-			 */
-			//var dbOptionsFastLoadSlowEdit = options.setSkipStatsUpdateOnDbOpen(true);
-
-			LinkedList<ColumnFamilyHandle> handles = new LinkedList<>();
-
-			this.db = RocksDB.open(options.setCreateMissingColumnFamilies(true),
-					dbPathString,
-					descriptors,
-					handles
-			);
-			this.standardCache = standardCache;
-			this.compressedCache = compressedCache;
-
-			flushAndCloseDb(db, standardCache, compressedCache, handles);
-			this.closed = false;
-			this.db = null;
-			this.standardCache = null;
-			this.compressedCache = null;
-		}
 	}
 
 	private Snapshot getSnapshotLambda(LLSnapshot snapshot) {

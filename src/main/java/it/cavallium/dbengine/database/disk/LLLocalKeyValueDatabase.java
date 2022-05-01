@@ -869,12 +869,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			// HIGH MEMORY
 			options
 					//.setDbWriteBufferSize(64 * SizeUnit.MB)
-					.setBytesPerSync(64 * SizeUnit.KB)
-					.setWalBytesPerSync(64 * SizeUnit.KB)
+					.setBytesPerSync(0)
+					.setWalBytesPerSync(0)
 
-					.setWalTtlSeconds(30) // flush wal after 30 seconds
-					.setWalSizeLimitMB(1024) // 1024MB
-					.setMaxTotalWalSize(2L * SizeUnit.GB) // 2GiB max wal directory size
+					.setWalTtlSeconds(0) // Auto
+					.setWalSizeLimitMB(0) // Auto
+					.setMaxTotalWalSize(0) // Auto
 			;
 			// DO NOT USE ClockCache! IT'S BROKEN!
 			blockCache = new LRUCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));

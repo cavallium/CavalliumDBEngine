@@ -1003,29 +1003,26 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	@Override
 	public Mono<LLLocalDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						var cfh = getCfh(columnName);
-						ensureOwned(cfh);
-						return new LLLocalDictionary(
-								allocator,
-								getRocksDBColumn(db, cfh),
-								name,
-								ColumnUtils.toString(columnName),
-								dbWScheduler,
-								dbRScheduler,
-								this::getSnapshotLambda,
-								updateMode,
-								databaseOptions
-						);
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.subscribeOn(dbRScheduler);
+		return Mono.fromCallable(() -> {
+			var closeReadLock = closeLock.readLock();
+			try {
+				ensureOpen();
+				var cfh = getCfh(columnName);
+				ensureOwned(cfh);
+				return new LLLocalDictionary(allocator,
+						getRocksDBColumn(db, cfh),
+						name,
+						ColumnUtils.toString(columnName),
+						dbWScheduler,
+						dbRScheduler,
+						this::getSnapshotLambda,
+						updateMode,
+						databaseOptions
+				);
+			} finally {
+				closeLock.unlockRead(closeReadLock);
+			}
+		}).subscribeOn(dbRScheduler);
 	}
 
 	public RocksDBColumn getRocksDBColumn(byte[] columnName) {

@@ -100,6 +100,7 @@ import reactor.core.scheduler.Schedulers;
 public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private static final boolean DELETE_LOG_FILES = false;
+	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = true;
 
 	static {
 		RocksDB.loadLibrary();
@@ -230,9 +231,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setLevel0FileNumCompactionTrigger(-1);
 				} else {
-					// ArangoDB uses a value of 2: https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-					// Higher values speed up writes, but slow down reads
-					columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
+					if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
+						// ArangoDB uses a value of 2: https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+						// Higher values speed up writes, but slow down reads
+						columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
+					}
 				}
 				if (isDisableSlowdown()) {
 					columnFamilyOptions.setLevel0SlowdownWritesTrigger(-1);
@@ -281,12 +284,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				}
 
 				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
-				if (!databaseOptions.lowMemory()) {
-					// tableOptions.setOptimizeFiltersForMemory(true);
-					columnFamilyOptions.setWriteBufferSize(256 * SizeUnit.MB);
-				}
-				if (columnOptions.writeBufferSize().isPresent()) {
-					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
+				if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
+					if (!databaseOptions.lowMemory()) {
+						// tableOptions.setOptimizeFiltersForMemory(true);
+						columnFamilyOptions.setWriteBufferSize(256 * SizeUnit.MB);
+					}
+					if (columnOptions.writeBufferSize().isPresent()) {
+						columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
+					}
 				}
 				tableOptions.setVerifyCompression(false);
 				if (columnOptions.filter().isPresent()) {
@@ -303,12 +308,14 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.orElse(true);
 				if (databaseOptions.spinning()) {
-					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-					// cacheIndexAndFilterBlocks = true;
-					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-					columnFamilyOptions.setMinWriteBufferNumberToMerge(3);
-					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-					columnFamilyOptions.setMaxWriteBufferNumber(4);
+					if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
+						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+						// cacheIndexAndFilterBlocks = true;
+						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+						columnFamilyOptions.setMinWriteBufferNumberToMerge(3);
+						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+						columnFamilyOptions.setMaxWriteBufferNumber(4);
+					}
 				}
 				tableOptions
 						// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
@@ -351,14 +358,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					}
 				}
 
-				// // Increasing this value can reduce the frequency of compaction and reduce write amplification,
-				// // but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
-				// // This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
-				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-				columnFamilyOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
-				// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
-				// // (but the default value is 1, which means that the maximum sstable of each level is the same).
-				columnFamilyOptions.setTargetFileSizeMultiplier(2);
+				if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
+					// // Increasing this value can reduce the frequency of compaction and reduce write amplification,
+					// // but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
+					// // This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
+					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					columnFamilyOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
+					// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
+					// // (but the default value is 1, which means that the maximum sstable of each level is the same).
+					columnFamilyOptions.setTargetFileSizeMultiplier(2);
+				}
 
 				descriptors.add(new ColumnFamilyDescriptor(column.name().getBytes(StandardCharsets.US_ASCII), columnFamilyOptions));
 			}
@@ -831,7 +840,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			options.setMaxBackgroundCompactions(0);
 			options.setMaxBackgroundJobs(0);
 		} else {
-			options.setMaxBackgroundJobs(Integer.parseInt(System.getProperty("it.cavallium.dbengine.jobs.background.num", "2")));
+			var backgroundJobs = Integer.parseInt(System.getProperty("it.cavallium.dbengine.jobs.background.num", "-1"));
+			if (backgroundJobs >= 0) {
+				options.setMaxBackgroundJobs(backgroundJobs);
+			}
 		}
 
 		Cache blockCache;

@@ -10,6 +10,7 @@ import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.database.ColumnProperty;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -21,13 +22,15 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.RocksDBLongProperty;
+import it.cavallium.dbengine.database.RocksDBMapProperty;
+import it.cavallium.dbengine.database.RocksDBStringProperty;
 import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.remote.RPCCodecs.RPCEventCodec;
 import it.cavallium.dbengine.database.serialization.SerializationException;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
@@ -61,13 +64,12 @@ import java.io.File;
 import java.net.SocketAddress;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.rocksdb.DBOptions;
-import org.rocksdb.TableProperties;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.incubator.quic.QuicClient;
@@ -322,17 +324,47 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
-					public Mono<Long> getProperty(String propertyName) {
-						return null;
-					}
-
-					@Override
 					public Mono<MemoryStats> getMemoryStats() {
 						return null;
 					}
 
 					@Override
 					public Mono<String> getRocksDBStats() {
+						return null;
+					}
+
+					@Override
+					public Mono<Long> getAggregatedLongProperty(RocksDBLongProperty property) {
+						return null;
+					}
+
+					@Override
+					public Mono<String> getStringProperty(@Nullable Column column, RocksDBStringProperty property) {
+						return null;
+					}
+
+					@Override
+					public Flux<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
+						return null;
+					}
+
+					@Override
+					public Mono<Long> getLongProperty(@Nullable Column column, RocksDBLongProperty property) {
+						return null;
+					}
+
+					@Override
+					public Flux<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
+						return null;
+					}
+
+					@Override
+					public Mono<Map<String, String>> getMapProperty(@Nullable Column column, RocksDBMapProperty property) {
+						return null;
+					}
+
+					@Override
+					public Flux<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
 						return null;
 					}
 

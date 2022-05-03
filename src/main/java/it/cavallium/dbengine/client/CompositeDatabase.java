@@ -2,10 +2,11 @@ package it.cavallium.dbengine.client;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
+import it.cavallium.dbengine.database.DatabaseProperties;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface CompositeDatabase {
+public interface CompositeDatabase extends DatabaseProperties {
 
 	Mono<Void> close();
 

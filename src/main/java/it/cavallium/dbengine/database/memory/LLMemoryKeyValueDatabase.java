@@ -3,17 +3,22 @@ package it.cavallium.dbengine.database.memory;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.client.MemoryStats;
+import it.cavallium.dbengine.database.ColumnProperty;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.RocksDBLongProperty;
+import it.cavallium.dbengine.database.RocksDBMapProperty;
+import it.cavallium.dbengine.database.RocksDBStringProperty;
 import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -91,17 +96,47 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<Long> getProperty(String propertyName) {
-		return Mono.empty();
-	}
-
-	@Override
 	public Mono<MemoryStats> getMemoryStats() {
 		return Mono.just(new MemoryStats(0, 0, 0, 0, 0, 0));
 	}
 
 	@Override
 	public Mono<String> getRocksDBStats() {
+		return Mono.empty();
+	}
+
+	@Override
+	public Mono<Map<String, String>> getMapProperty(@Nullable Column column, RocksDBMapProperty property) {
+		return Mono.empty();
+	}
+
+	@Override
+	public Flux<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
+		return Flux.empty();
+	}
+
+	@Override
+	public Mono<String> getStringProperty(@Nullable Column column, RocksDBStringProperty property) {
+		return Mono.empty();
+	}
+
+	@Override
+	public Flux<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
+		return Flux.empty();
+	}
+
+	@Override
+	public Mono<Long> getLongProperty(@Nullable Column column, RocksDBLongProperty property) {
+		return Mono.empty();
+	}
+
+	@Override
+	public Flux<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
+		return Flux.empty();
+	}
+
+	@Override
+	public Mono<Long> getAggregatedLongProperty(RocksDBLongProperty property) {
 		return Mono.empty();
 	}
 

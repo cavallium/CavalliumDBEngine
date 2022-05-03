@@ -791,12 +791,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		// that determines the behaviour of the database.
 		var options = new DBOptions();
 		options.setEnablePipelinedWrite(true);
-		options.setMaxSubcompactions(Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "2")));
+		var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
+		if (maxSubCompactions >= 0) {
+			options.setMaxSubcompactions(maxSubCompactions);
+		}
 		var customWriteRate = Long.parseLong(System.getProperty("it.cavallium.dbengine.write.delayedrate", "-1"));
 		if (customWriteRate >= 0) {
 			options.setDelayedWriteRate(customWriteRate);
-		} else {
-			options.setDelayedWriteRate(64 * SizeUnit.MB);
 		}
 		if (databaseOptions.logPath().isPresent()) {
 			options.setDbLogDir(databaseOptions.logPath().get());
@@ -915,7 +916,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 
 		if (databaseOptions.writeBufferManager().isPresent()) {
-			options.setWriteBufferManager(new WriteBufferManager(writeBufferManagerSize, blockCache));
+			options.setWriteBufferManager(new WriteBufferManager(writeBufferManagerSize, blockCache, false));
 		}
 
 		if (databaseOptions.useDirectIO()) {

@@ -89,75 +89,78 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 
 
 	public final Flux<List<T>> flux() {
-		return Flux
-				.generate(() -> {
-					var readOptions = generateCustomReadOptions(this.readOptions, true, isBoundedRange(range), smallRange);
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-					}
-					return db.getRocksIterator(allowNettyDirect, readOptions, range, false);
-				}, (tuple, sink) -> {
-					try {
-						var rocksIterator = tuple.iterator();
-						ObjectArrayList<T> values = new ObjectArrayList<>();
-						Buffer firstGroupKey = null;
-						try {
-							while (rocksIterator.isValid()) {
-								try (Buffer key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key)) {
-									if (firstGroupKey == null) {
-										firstGroupKey = key.copy();
-									} else if (!LLUtils.equals(firstGroupKey, firstGroupKey.readerOffset(),
-											key, key.readerOffset(), prefixLength)) {
-										break;
-									}
-									@Nullable Buffer value;
-									if (readValues) {
-										value = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::value);
-									} else {
-										value = null;
-									}
+		return Flux.generate(() -> {
+			var readOptions = generateCustomReadOptions(this.readOptions, true, isBoundedRange(range), smallRange);
+			if (logger.isTraceEnabled()) {
+				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+			}
+			return db.getRocksIterator(allowNettyDirect, readOptions, range, false);
+		}, (tuple, sink) -> {
+			try {
+				var rocksIterator = tuple.iterator();
+				ObjectArrayList<T> values = new ObjectArrayList<>();
+				Buffer firstGroupKey = null;
+				try {
+					while (rocksIterator.isValid()) {
+						try (Buffer key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key)) {
+							if (firstGroupKey == null) {
+								firstGroupKey = key.copy();
+							} else if (!LLUtils.equals(firstGroupKey,
+									firstGroupKey.readerOffset(),
+									key,
+									key.readerOffset(),
+									prefixLength
+							)) {
+								break;
+							}
+							@Nullable Buffer value;
+							if (readValues) {
+								value = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::value);
+							} else {
+								value = null;
+							}
 
-									if (logger.isTraceEnabled()) {
-										logger.trace(MARKER_ROCKSDB,
-												"Range {} is reading {}: {}",
-												LLUtils.toStringSafe(range),
-												LLUtils.toStringSafe(key),
-												LLUtils.toStringSafe(value)
-										);
-									}
+							if (logger.isTraceEnabled()) {
+								logger.trace(MARKER_ROCKSDB,
+										"Range {} is reading {}: {}",
+										LLUtils.toStringSafe(range),
+										LLUtils.toStringSafe(key),
+										LLUtils.toStringSafe(value)
+								);
+							}
 
-									try {
-										rocksIterator.next();
-										T entry = getEntry(key.send(), value == null ? null : value.send());
-										values.add(entry);
-									} finally {
-										if (value != null) {
-											value.close();
-										}
-									}
+							try {
+								rocksIterator.next();
+								T entry = getEntry(key.send(), value == null ? null : value.send());
+								values.add(entry);
+							} finally {
+								if (value != null) {
+									value.close();
 								}
 							}
-						} finally {
-							if (firstGroupKey != null) {
-								firstGroupKey.close();
-							}
 						}
-						if (!values.isEmpty()) {
-							sink.next(values);
-						} else {
-							if (logger.isTraceEnabled()) {
-								logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
-							}
-							sink.complete();
-						}
-					} catch (RocksDBException ex) {
-						if (logger.isTraceEnabled()) {
-							logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
-						}
-						sink.error(ex);
 					}
-					return tuple;
-				}, RocksIteratorTuple::close);
+				} finally {
+					if (firstGroupKey != null) {
+						firstGroupKey.close();
+					}
+				}
+				if (!values.isEmpty()) {
+					sink.next(values);
+				} else {
+					if (logger.isTraceEnabled()) {
+						logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+					}
+					sink.complete();
+				}
+			} catch (RocksDBException ex) {
+				if (logger.isTraceEnabled()) {
+					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+				}
+				sink.error(ex);
+			}
+			return tuple;
+		}, RocksIteratorTuple::close);
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);

@@ -16,6 +16,7 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.buffer.api.internal.Statics;
 import io.netty5.util.IllegalReferenceCountException;
+import it.cavallium.dbengine.database.disk.RocksIteratorTuple;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
@@ -1012,6 +1013,8 @@ public class LLUtils {
 			iterable.forEach(LLUtils::onNextDropped);
 		} else if (next instanceof SafeCloseable safeCloseable) {
 			safeCloseable.close();
+		} else if (next instanceof RocksIteratorTuple iteratorTuple) {
+			iteratorTuple.close();
 		} else if (next instanceof UpdateAtomicResultDelta delta) {
 			delta.delta().close();
 		} else if (next instanceof UpdateAtomicResultCurrent cur) {

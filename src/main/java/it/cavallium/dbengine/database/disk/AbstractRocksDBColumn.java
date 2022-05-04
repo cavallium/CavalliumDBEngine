@@ -302,25 +302,30 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			sliceMax = emptyReleasableSlice();
 		}
 		var rocksIterator = this.newIterator(readOptions);
-		SafeCloseable seekFromOrTo;
-		if (reverse) {
-			if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMax()) {
-				seekFromOrTo = Objects.requireNonNullElseGet(rocksIterator.seekFrom(range.getMaxUnsafe()),
-						() -> ((SafeCloseable) () -> {}));
+		try {
+			SafeCloseable seekFromOrTo;
+			if (reverse) {
+				if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMax()) {
+					seekFromOrTo = Objects.requireNonNullElseGet(rocksIterator.seekFrom(range.getMaxUnsafe()),
+							() -> ((SafeCloseable) () -> {}));
+				} else {
+					seekFromOrTo = () -> {};
+					rocksIterator.seekToLast();
+				}
 			} else {
-				seekFromOrTo = () -> {};
-				rocksIterator.seekToLast();
+				if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
+					seekFromOrTo = Objects.requireNonNullElseGet(rocksIterator.seekTo(range.getMinUnsafe()),
+							() -> ((SafeCloseable) () -> {}));
+				} else {
+					seekFromOrTo = () -> {};
+					rocksIterator.seekToFirst();
+				}
 			}
-		} else {
-			if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
-				seekFromOrTo = Objects.requireNonNullElseGet(rocksIterator.seekTo(range.getMinUnsafe()),
-						() -> ((SafeCloseable) () -> {}));
-			} else {
-				seekFromOrTo = () -> {};
-				rocksIterator.seekToFirst();
-			}
+			return new RocksIteratorTuple(List.of(readOptions), rocksIterator, sliceMin, sliceMax, seekFromOrTo);
+		} catch (Throwable ex) {
+			rocksIterator.close();
+			throw ex;
 		}
-		return new RocksIteratorTuple(List.of(readOptions), rocksIterator, sliceMin, sliceMax, seekFromOrTo);
 	}
 
 	protected T getDb() {
@@ -904,15 +909,20 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			ensureOpen();
 			ensureOwned(readOptions);
 			var it = db.newIterator(cfh, readOptions);
-			return new RocksDBIterator(it,
-					nettyDirect,
-					this.startedIterSeek,
-					this.endedIterSeek,
-					this.iterSeekTime,
-					this.startedIterNext,
-					this.endedIterNext,
-					this.iterNextTime
-			);
+			try {
+				return new RocksDBIterator(it,
+						nettyDirect,
+						this.startedIterSeek,
+						this.endedIterSeek,
+						this.iterSeekTime,
+						this.startedIterNext,
+						this.endedIterNext,
+						this.iterNextTime
+				);
+			} catch (Throwable ex) {
+				it.close();
+				throw ex;
+			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}

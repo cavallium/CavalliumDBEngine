@@ -668,13 +668,14 @@ public class RocksdbFileStore {
 
 	private List<String> listKeyInternal() {
 		List<String> keys = new ArrayList<>();
-		RocksIterator iterator = db.newIterator(filename);
-		iterator.seekToFirst();
-		while (iterator.isValid()) {
-			keys.add(new String(iterator.key(), StandardCharsets.US_ASCII).intern());
-			iterator.next();
+		try (RocksIterator iterator = db.newIterator(filename)) {
+			iterator.seekToFirst();
+			while (iterator.isValid()) {
+				keys.add(new String(iterator.key(), StandardCharsets.US_ASCII).intern());
+				iterator.next();
+			}
+			return keys;
 		}
-		return keys;
 	}
 
 	public void append(String name, Buffer buf, int offset, int len) throws IOException {

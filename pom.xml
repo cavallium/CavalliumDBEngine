@@ -212,7 +212,7 @@
       <dependency>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator-runtime</artifactId>
-        <version>1.0.62</version>
+        <version>1.0.63</version>
       </dependency>
       <dependency>
         <groupId>io.micrometer</groupId>
@@ -549,7 +549,7 @@
       <plugin>
         <groupId>it.cavallium</groupId>
         <artifactId>data-generator</artifactId>
-        <version>0.9.125</version>
+        <version>0.9.126</version>
         <executions>
           <execution>
             <id>generate-lucene-query-sources</id>

@@ -4,6 +4,8 @@
 
 [Reactive](https://www.reactive-streams.org/) database engine written in Java (17+) using [Project Reactor](https://github.com/reactor/reactor-core).
 
+## DO NOT USE THIS PROJECT: THIS IS A PERSONAL PROJECT, THE API IS NOT STABLE, THE CODE IS NOT TESTED.
+
 This library provides a basic reactive abstraction and implementation of a **key-value store** and a **search engine**.
 
 Four implementations exists out-of-the-box, two for the key-value store, two for the search engine, but it's possible to add more implementations.

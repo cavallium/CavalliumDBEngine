@@ -27,7 +27,6 @@ module dbengine {
 	requires org.reactivestreams;
 	requires org.apache.logging.log4j;
 	requires static io.soabase.recordbuilder.core;
-	requires moshi;
 	requires io.netty5.common;
 	requires it.unimi.dsi.fastutil;
 	requires data.generator.runtime;
@@ -46,7 +45,6 @@ module dbengine {
 	requires org.apache.lucene.facet;
 	requires java.management;
 	requires reactor.netty.core;
-	requires jdk.unsupported;
 	requires com.ibm.icu;
 	requires org.apache.lucene.analysis.icu;
 	requires io.netty.handler;
@@ -55,4 +53,6 @@ module dbengine {
 	requires reactor.netty.incubator.quic;
 	requires okio;
 	requires moshi.records.reflect;
+	requires moshi;
+	requires static jdk.unsupported;
 }

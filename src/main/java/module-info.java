@@ -17,6 +17,7 @@ module dbengine {
 	exports it.cavallium.dbengine.netty;
 	opens it.cavallium.dbengine.database.remote;
 	exports it.cavallium.dbengine;
+	exports it.cavallium.dbengine.utils;
 	requires org.jetbrains.annotations;
 	requires reactor.core;
 	requires com.google.common;
@@ -29,7 +30,6 @@ module dbengine {
 	requires moshi;
 	requires io.netty5.common;
 	requires it.unimi.dsi.fastutil;
-	requires common.utils;
 	requires data.generator.runtime;
 	requires java.logging;
 	requires org.apache.lucene.core;
@@ -54,4 +54,5 @@ module dbengine {
 	requires org.apache.lucene.queryparser;
 	requires reactor.netty.incubator.quic;
 	requires okio;
+	requires moshi.records.reflect;
 }

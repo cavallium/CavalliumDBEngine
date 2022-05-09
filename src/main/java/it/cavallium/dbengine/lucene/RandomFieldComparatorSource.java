@@ -3,7 +3,7 @@ package it.cavallium.dbengine.lucene;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.FieldComparatorSource;
-import org.warp.commonutils.random.LFSR;
+import it.cavallium.dbengine.utils.LFSR;
 
 public class RandomFieldComparatorSource extends FieldComparatorSource {
 

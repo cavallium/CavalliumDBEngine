@@ -8,7 +8,7 @@ import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreCachingWrappingScorer;
 import org.jetbrains.annotations.NotNull;
-import org.warp.commonutils.random.LFSR.LFSRIterator;
+import it.cavallium.dbengine.utils.LFSR.LFSRIterator;
 
 //todo: fix
 public class RandomFieldComparator extends FieldComparator<Float> implements LeafFieldComparator {

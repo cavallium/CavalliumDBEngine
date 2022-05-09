@@ -7,7 +7,6 @@ import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.warp.commonutils.error.IndexOutOfBoundsException;
 
 public class CodecSerializer<A> implements Serializer<A> {
 
@@ -33,7 +32,7 @@ public class CodecSerializer<A> implements Serializer<A> {
 		this.serializationCodecId = serializationCodecId;
 		this.microCodecs = microCodecs;
 		if (microCodecs && (serializationCodecId > 255 || serializationCodecId < 0)) {
-			throw new IndexOutOfBoundsException(serializationCodecId, 0, 255);
+			throw new IndexOutOfBoundsException(serializationCodecId);
 		}
 		if (serializedSizeHint != -1) {
 			this.serializedSizeHint = (microCodecs ? Byte.BYTES : Integer.BYTES) + serializedSizeHint;

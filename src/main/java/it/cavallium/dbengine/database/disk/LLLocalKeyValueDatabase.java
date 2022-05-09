@@ -87,7 +87,7 @@ import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.rocksdb.util.SizeUnit;
-import org.warp.commonutils.type.ShortNamedThreadFactory;
+import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -838,7 +838,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCreateIfMissing(true);
 		options.setSkipStatsUpdateOnDbOpen(true);
 		options.setCreateMissingColumnFamilies(true);
-		options.setInfoLogLevel(InfoLogLevel.DEBUG_LEVEL);
+		options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
 		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
 		options.setWalRecoveryMode(databaseOptions.absoluteConsistency()

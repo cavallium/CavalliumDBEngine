@@ -5,7 +5,6 @@ import org.rocksdb.AbstractTableFilter;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.ReadTier;
 import org.rocksdb.Snapshot;
-import org.warp.commonutils.range.UnmodifiableRange;
 
 public class UnmodifiableReadOptions extends ReadOptions {
 

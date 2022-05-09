@@ -15,18 +15,16 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectMaps;
 import it.unimi.dsi.fastutil.objects.Object2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.shorts.ShortList;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import org.warp.commonutils.moshi.BooleanListJsonAdapter;
-import org.warp.commonutils.moshi.ByteListJsonAdapter;
-import org.warp.commonutils.moshi.CharListJsonAdapter;
-import org.warp.commonutils.moshi.IntListJsonAdapter;
-import org.warp.commonutils.moshi.LongListJsonAdapter;
-import org.warp.commonutils.moshi.MoshiPolymorphic;
-import org.warp.commonutils.moshi.ShortListJsonAdapter;
+import it.cavallium.dbengine.utils.BooleanListJsonAdapter;
+import it.cavallium.dbengine.utils.ByteListJsonAdapter;
+import it.cavallium.dbengine.utils.CharListJsonAdapter;
+import it.cavallium.dbengine.utils.IntListJsonAdapter;
+import it.cavallium.dbengine.utils.LongListJsonAdapter;
+import it.cavallium.dbengine.utils.MoshiPolymorphic;
+import it.cavallium.dbengine.utils.ShortListJsonAdapter;
 
 public class QueryMoshi extends MoshiPolymorphic<IType> {
 

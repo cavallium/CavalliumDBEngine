@@ -53,4 +53,5 @@ module dbengine {
 	requires io.netty.incubator.codec.classes.quic;
 	requires org.apache.lucene.queryparser;
 	requires reactor.netty.incubator.quic;
+	requires okio;
 }

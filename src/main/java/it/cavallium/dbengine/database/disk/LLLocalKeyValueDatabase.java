@@ -53,7 +53,6 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.reactivestreams.Publisher;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.Cache;
@@ -79,6 +78,9 @@ import org.rocksdb.PersistentCache;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
+import org.rocksdb.Statistics;
+import org.rocksdb.StatsLevel;
+import org.rocksdb.TickerType;
 import org.rocksdb.TransactionDB;
 import org.rocksdb.TransactionDBOptions;
 import org.rocksdb.TxnDBWritePolicy;
@@ -118,6 +120,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private final boolean enableColumnsBug;
 	private RocksDB db;
+	private Statistics statistics;
 	private Cache standardCache;
 	private Cache compressedCache;
 	private final Map<Column, ColumnFamilyHandle> handles;
@@ -417,6 +420,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							60
 					);
 				}
+			}
+
+			var statsLevel = System.getProperty("it.cavallium.dbengine.stats.level");
+			if (statsLevel != null) {
+				this.statistics = registerStatistics(name, rocksdbOptions, meterRegistry, StatsLevel.valueOf(statsLevel));
+			} else {
+				this.statistics = null;
 			}
 
 			while (true) {
@@ -828,7 +838,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		options.setCreateIfMissing(true);
 		options.setSkipStatsUpdateOnDbOpen(true);
 		options.setCreateMissingColumnFamilies(true);
-		options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
+		options.setInfoLogLevel(InfoLogLevel.DEBUG_LEVEL);
 		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 		options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
 		options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
@@ -981,6 +991,37 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			paths.add(new DbPathRecord(volumePath, volume.targetSizeBytes()));
 		}
 		return paths;
+	}
+
+	private Statistics registerStatistics(String dbName, DBOptions dbOptions, MeterRegistry meterRegistry,
+			StatsLevel statsLevel) {
+			Statistics stats = new Statistics();
+			stats.setStatsLevel(statsLevel);
+			dbOptions.setStatistics(stats);
+		for (TickerType tickerType : TickerType.values()) {
+			if (tickerType == TickerType.TICKER_ENUM_MAX) {
+				continue;
+			}
+			meterRegistry.gauge("rocksdb.statistics.value",
+					List.of(Tag.of("db.name", dbName), Tag.of("db.statistics.name", tickerType.name())),
+					stats,
+					statistics -> {
+						if (closed) {
+							return 0d;
+						}
+						var closeReadLock = closeLock.readLock();
+						try {
+							if (closed) {
+								return 0d;
+							}
+							return statistics.getTickerCount(tickerType);
+						} finally {
+							closeLock.unlockRead(closeReadLock);
+						}
+					}
+			);
+		}
+		return stats;
 	}
 
 	private Snapshot getSnapshotLambda(LLSnapshot snapshot) {
@@ -1441,6 +1482,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	public Mono<Void> close() {
 		return Mono
 				.<Void>fromCallable(() -> {
+					if (statistics != null) {
+						statistics.close();
+						statistics = null;
+					}
 					try {
 						flushAndCloseDb(db, standardCache, compressedCache, new ArrayList<>(handles.values()));
 						deleteUnusedOldLogFiles();

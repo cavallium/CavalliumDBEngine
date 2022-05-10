@@ -321,7 +321,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					rocksIterator.seekToFirst();
 				}
 			}
-			return new RocksIteratorTuple(List.of(readOptions), rocksIterator, sliceMin, sliceMax, seekFromOrTo);
+			return new RocksIteratorTuple(rocksIterator, sliceMin, sliceMax, seekFromOrTo);
 		} catch (Throwable ex) {
 			rocksIterator.close();
 			throw ex;
@@ -463,39 +463,33 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 						}
 					}
 				} else {
-					try {
-						byte[] keyArray = LLUtils.toArray(key);
-						requireNonNull(keyArray);
-						Holder<byte[]> data = new Holder<>();
-						if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
-							// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
-							//  returns an empty array, as if it exists
-							if (data.getValue() != null && data.getValue().length > 0) {
-								readValueFoundWithBloomCacheBufferSize.record(data.getValue().length);
-								return LLUtils.fromByteArray(alloc, data.getValue());
-							} else {
-								readAttemptsCount++;
-								byte[] result = db.get(cfh, readOptions, keyArray);
-								if (result == null) {
-									if (data.getValue() != null) {
-										readValueNotFoundWithBloomBufferSize.record(0);
-									} else {
-										readValueNotFoundWithMayExistBloomBufferSize.record(0);
-									}
-									return null;
-								} else {
-									readValueFoundWithBloomUncachedBufferSize.record(0);
-									return LLUtils.fromByteArray(alloc, result);
-								}
-							}
+					byte[] keyArray = LLUtils.toArray(key);
+					requireNonNull(keyArray);
+					Holder<byte[]> data = new Holder<>();
+					if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
+						// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
+						//  returns an empty array, as if it exists
+						if (data.getValue() != null && data.getValue().length > 0) {
+							readValueFoundWithBloomCacheBufferSize.record(data.getValue().length);
+							return LLUtils.fromByteArray(alloc, data.getValue());
 						} else {
-							readValueNotFoundWithBloomBufferSize.record(0);
-							return null;
+							readAttemptsCount++;
+							byte[] result = db.get(cfh, readOptions, keyArray);
+							if (result == null) {
+								if (data.getValue() != null) {
+									readValueNotFoundWithBloomBufferSize.record(0);
+								} else {
+									readValueNotFoundWithMayExistBloomBufferSize.record(0);
+								}
+								return null;
+							} else {
+								readValueFoundWithBloomUncachedBufferSize.record(0);
+								return LLUtils.fromByteArray(alloc, result);
+							}
 						}
-					} finally {
-						if (!(readOptions instanceof UnreleasableReadOptions)) {
-							readOptions.close();
-						}
+					} else {
+						readValueNotFoundWithBloomBufferSize.record(0);
+						return null;
 					}
 				}
 			} finally {
@@ -510,69 +504,63 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	public void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
-			try {
-				ensureOpen();
-				ensureOwned(writeOptions);
-				assert key.isAccessible();
-				assert value.isAccessible();
-				this.keyBufferSize.record(key.readableBytes());
-				this.writeValueBufferSize.record(value.readableBytes());
-				if (nettyDirect) {
-					// Get the key nio buffer to pass to RocksDB
-					ByteBuffer keyNioBuffer;
-					boolean mustCloseKey;
+			ensureOpen();
+			ensureOwned(writeOptions);
+			assert key.isAccessible();
+			assert value.isAccessible();
+			this.keyBufferSize.record(key.readableBytes());
+			this.writeValueBufferSize.record(value.readableBytes());
+			if (nettyDirect) {
+				// Get the key nio buffer to pass to RocksDB
+				ByteBuffer keyNioBuffer;
+				boolean mustCloseKey;
+				{
+					if (!LLUtils.isReadOnlyDirect(key)) {
+						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
+						mustCloseKey = true;
+						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
+						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
+						key = directKey;
+					} else {
+						mustCloseKey = false;
+					}
+					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					assert keyNioBuffer.isDirect();
+					assert keyNioBuffer.limit() == key.readableBytes();
+				}
+				try {
+					// Get the value nio buffer to pass to RocksDB
+					ByteBuffer valueNioBuffer;
+					boolean mustCloseValue;
 					{
-						if (!LLUtils.isReadOnlyDirect(key)) {
+						if (!LLUtils.isReadOnlyDirect(value)) {
 							// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-							mustCloseKey = true;
-							var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-							key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-							key = directKey;
+							mustCloseValue = true;
+							var directValue = DefaultBufferAllocators.offHeapAllocator().allocate(value.readableBytes());
+							value.copyInto(value.readerOffset(), directValue, 0, value.readableBytes());
+							value = directValue;
 						} else {
-							mustCloseKey = false;
+							mustCloseValue = false;
 						}
-						keyNioBuffer = ((ReadableComponent) key).readableBuffer();
-						assert keyNioBuffer.isDirect();
-						assert keyNioBuffer.limit() == key.readableBytes();
+						valueNioBuffer = ((ReadableComponent) value).readableBuffer();
+						assert valueNioBuffer.isDirect();
+						assert valueNioBuffer.limit() == value.readableBytes();
 					}
-					try {
-						// Get the value nio buffer to pass to RocksDB
-						ByteBuffer valueNioBuffer;
-						boolean mustCloseValue;
-						{
-							if (!LLUtils.isReadOnlyDirect(value)) {
-								// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-								mustCloseValue = true;
-								var directValue = DefaultBufferAllocators.offHeapAllocator().allocate(value.readableBytes());
-								value.copyInto(value.readerOffset(), directValue, 0, value.readableBytes());
-								value = directValue;
-							} else {
-								mustCloseValue = false;
-							}
-							valueNioBuffer = ((ReadableComponent) value).readableBuffer();
-							assert valueNioBuffer.isDirect();
-							assert valueNioBuffer.limit() == value.readableBytes();
-						}
 
-						try {
-							db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
-						} finally {
-							if (mustCloseValue) {
-								value.close();
-							}
-						}
+					try {
+						db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
 					} finally {
-						if (mustCloseKey) {
-							key.close();
+						if (mustCloseValue) {
+							value.close();
 						}
 					}
-				} else {
-					db.put(cfh, writeOptions, LLUtils.toArray(key), LLUtils.toArray(value));
+				} finally {
+					if (mustCloseKey) {
+						key.close();
+					}
 				}
-			} finally {
-				if (!(writeOptions instanceof UnreleasableWriteOptions)) {
-					writeOptions.close();
-				}
+			} else {
+				db.put(cfh, writeOptions, LLUtils.toArray(key), LLUtils.toArray(value));
 			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);
@@ -628,18 +616,12 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				byte[] keyBytes = LLUtils.toArray(key);
 				Holder<byte[]> data = new Holder<>();
 				boolean mayExistHit = false;
-				try {
-					if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
-						mayExistHit = true;
-						if (data.getValue() != null) {
-							size = data.getValue().length;
-						} else {
-							size = db.get(cfh, readOptions, keyBytes, NO_DATA);
-						}
-					}
-				} finally {
-					if (!(readOptions instanceof UnreleasableReadOptions)) {
-						readOptions.close();
+				if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
+					mayExistHit = true;
+					if (data.getValue() != null) {
+						size = data.getValue().length;
+					} else {
+						size = db.get(cfh, readOptions, keyBytes, NO_DATA);
 					}
 				}
 				boolean found = size != RocksDB.NOT_FOUND;
@@ -692,13 +674,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				}
 			} else {
 				byte[] keyBytes = LLUtils.toArray(key);
-				try {
-					return db.keyMayExist(cfh, readOptions, keyBytes, null);
-				} finally {
-					if (!(readOptions instanceof UnreleasableReadOptions)) {
-						readOptions.close();
-					}
-				}
+				return db.keyMayExist(cfh, readOptions, keyBytes, null);
 			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);

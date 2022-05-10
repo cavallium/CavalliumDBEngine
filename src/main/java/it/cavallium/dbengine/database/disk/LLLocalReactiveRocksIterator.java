@@ -17,6 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuples;
 
 public abstract class LLLocalReactiveRocksIterator<T> extends
 		ResourceSupport<LLLocalReactiveRocksIterator<T>, LLLocalReactiveRocksIterator<T>> {
@@ -34,9 +35,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			}
 			try {
 				if (obj.readOptions != null) {
-					if (!(obj.readOptions instanceof UnreleasableReadOptions)) {
-						obj.readOptions.close();
-					}
+					obj.readOptions.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close readOptions", ex);
@@ -88,10 +87,10 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, reverse);
+			return Tuples.of(readOptions, db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, reverse));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.iterator();
+				var rocksIterator = tuple.getT2().iterator();
 				if (rocksIterator.isValid()) {
 					Buffer key;
 					if (allowNettyDirect) {
@@ -146,7 +145,11 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIteratorTuple::close);
+		}, t -> {
+			t.getT2().close();
+			t.getT1().close();
+			this.close();
+		});
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);

@@ -722,20 +722,19 @@ public class LLUtils {
 	}
 
 	/**
-	 * Generate a copy of the passed ReadOptions, with some parameters modified to help with bulk iterations
-	 * @param readOptions the read options to copy
+	 * Generate a ReadOptions, with some parameters modified to help with bulk iterations
+	 * @param readOptions the read options to start with
 	 * @param canFillCache true to fill the cache. If closedRange is false, this field will be ignored
 	 * @param boundedRange true if the range is bounded from both sides
 	 * @param smallRange true if the range is small
-	 * @return a new instance of ReadOptions
+	 * @return the passed instance of ReadOptions, or a new one if the passed readOptions is null
 	 */
 	public static ReadOptions generateCustomReadOptions(@Nullable ReadOptions readOptions,
 			boolean canFillCache,
 			boolean boundedRange,
 			boolean smallRange) {
-		if (readOptions != null) {
-			readOptions = new ReadOptions(readOptions);
-		} else {
+		if (readOptions == null) {
+			//noinspection resource
 			readOptions = new ReadOptions();
 		}
 		if (boundedRange || smallRange) {

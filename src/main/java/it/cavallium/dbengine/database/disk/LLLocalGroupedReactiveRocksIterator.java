@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuples;
 
 public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		ResourceSupport<LLLocalGroupedReactiveRocksIterator<T>, LLLocalGroupedReactiveRocksIterator<T>> {
@@ -36,9 +37,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			}
 			try {
 				if (obj.readOptions != null) {
-					if (!(obj.readOptions instanceof UnreleasableReadOptions)) {
-						obj.readOptions.close();
-					}
+					obj.readOptions.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close readOptions", ex);
@@ -94,10 +93,10 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 			}
-			return db.getRocksIterator(allowNettyDirect, readOptions, range, false);
+			return Tuples.of(readOptions, db.getRocksIterator(allowNettyDirect, readOptions, range, false));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.iterator();
+				var rocksIterator = tuple.getT2().iterator();
 				ObjectArrayList<T> values = new ObjectArrayList<>();
 				Buffer firstGroupKey = null;
 				try {
@@ -160,7 +159,11 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIteratorTuple::close);
+		}, t -> {
+			t.getT2().close();
+			t.getT1().close();
+			this.close();
+		});
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
@@ -173,14 +176,15 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	@Override
 	protected Owned<LLLocalGroupedReactiveRocksIterator<T>> prepareSend() {
 		var range = this.range.send();
-		var readOptions = new ReadOptions(this.readOptions);
+		var readOptions = this.readOptions;
 		return drop -> new LLLocalGroupedReactiveRocksIterator<>(db,
 				prefixLength,
 				range,
 				allowNettyDirect,
 				readOptions,
 				canFillCache,
-				readValues, smallRange
+				readValues,
+				smallRange
 		) {
 			@Override
 			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {

@@ -16,6 +16,7 @@ import org.apache.logging.log4j.Logger;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuples;
 
 public class LLLocalKeyPrefixReactiveRocksIterator extends
 		ResourceSupport<LLLocalKeyPrefixReactiveRocksIterator, LLLocalKeyPrefixReactiveRocksIterator> {
@@ -33,9 +34,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 			}
 			try {
 				if (obj.readOptions != null) {
-					if (!(obj.readOptions instanceof UnreleasableReadOptions)) {
-						obj.readOptions.close();
-					}
+					obj.readOptions.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close readOptions", ex);
@@ -91,10 +90,10 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, false);
+			return Tuples.of(readOptions, db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, false));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.iterator();
+				var rocksIterator = tuple.getT2().iterator();
 				Buffer firstGroupKey = null;
 				try {
 					while (rocksIterator.isValid()) {
@@ -151,7 +150,11 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIteratorTuple::close);
+		}, t -> {
+			t.getT2().close();
+			t.getT1().close();
+			this.close();
+		});
 	}
 
 	@Override
@@ -162,13 +165,14 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 	@Override
 	protected Owned<LLLocalKeyPrefixReactiveRocksIterator> prepareSend() {
 		var range = this.rangeShared.send();
-		var readOptions = new ReadOptions(this.readOptions);
+		var readOptions = this.readOptions;
 		return drop -> new LLLocalKeyPrefixReactiveRocksIterator(db,
 				prefixLength,
 				range,
 				allowNettyDirect,
 				readOptions,
-				canFillCache, smallRange
+				canFillCache,
+				smallRange
 		);
 	}
 

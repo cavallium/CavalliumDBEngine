@@ -6,11 +6,8 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.database.disk.HugePqEnv;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
-import it.cavallium.dbengine.database.disk.UnreleasableReadOptions;
-import it.cavallium.dbengine.database.disk.UnreleasableWriteOptions;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jetbrains.annotations.Nullable;
-import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -28,11 +25,8 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 	private final HugePqEnv env;
 	private final int hugePqId;
 	private final StandardRocksDBColumn rocksDB;
-	private static final UnreleasableWriteOptions writeOptions = new UnreleasableWriteOptions(new WriteOptions()
-			.setDisableWAL(true)
-			.setSync(false));
-	private static final UnreleasableReadOptions readOptions = new UnreleasableReadOptions(new ReadOptions()
-			.setVerifyChecksums(false));
+	private static final WriteOptions WRITE_OPTIONS = new WriteOptions().setDisableWAL(true).setSync(false);
+	private static final ReadOptions READ_OPTIONS = new ReadOptions().setVerifyChecksums(false);
 	private final V defaultValue;
 
 	private final long virtualSize;
@@ -67,7 +61,7 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		var keyBuf = allocate(Long.BYTES);
 		try (var valueBuf = valueCodec.serialize(this::allocate, value); keyBuf) {
 			keyBuf.writeLong(index);
-			rocksDB.put(writeOptions, keyBuf, valueBuf);
+			rocksDB.put(WRITE_OPTIONS, keyBuf, valueBuf);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
@@ -80,7 +74,7 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		var keyBuf = allocate(Long.BYTES);
 		try (keyBuf) {
 			keyBuf.writeLong(index);
-			rocksDB.delete(writeOptions, keyBuf);
+			rocksDB.delete(WRITE_OPTIONS, keyBuf);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
@@ -94,7 +88,7 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		var keyBuf = allocate(Long.BYTES);
 		try (keyBuf) {
 			keyBuf.writeLong(index);
-			try (var value = rocksDB.get(readOptions, keyBuf)) {
+			try (var value = rocksDB.get(READ_OPTIONS, keyBuf)) {
 				if (value == null) {
 					return null;
 				}

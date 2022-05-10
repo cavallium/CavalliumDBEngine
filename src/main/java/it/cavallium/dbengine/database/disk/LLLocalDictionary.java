@@ -75,9 +75,9 @@ public class LLLocalDictionary implements LLDictionary {
 	static final long MAX_WRITE_BATCH_SIZE = 1024L * 1024L * 1024L; // 1GiB
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
 	static final int MULTI_GET_WINDOW = 16;
-	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
-	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
-	static final WriteOptions BATCH_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
+	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
+	private static final WriteOptions EMPTY_WRITE_OPTIONS = new WriteOptions();
+	private static final WriteOptions BATCH_WRITE_OPTIONS = new WriteOptions();
 	static final boolean PREFER_AUTO_SEEK_BOUND = false;
 	/**
 	 * It used to be false,
@@ -212,27 +212,23 @@ public class LLLocalDictionary implements LLDictionary {
 		return columnName;
 	}
 
-	/**
-	 * Please don't modify the returned ReadOptions!
-	 * If you want to modify it, wrap it into a new ReadOptions!
-	 */
-	private ReadOptions resolveSnapshot(LLSnapshot snapshot) {
-		if (snapshot != null) {
-			return getReadOptions(snapshotResolver.apply(snapshot));
-		} else {
-			return EMPTY_READ_OPTIONS;
-		}
+	@NotNull
+	private ReadOptions generateReadOptionsOrStatic(LLSnapshot snapshot) {
+		return generateReadOptions(snapshot != null ? snapshotResolver.apply(snapshot) : null, true);
 	}
 
-	/**
-	 * Please don't modify the returned ReadOptions!
-	 * If you want to modify it, wrap it into a new ReadOptions!
-	 */
-	private ReadOptions getReadOptions(Snapshot snapshot) {
+	@Nullable
+	private ReadOptions generateReadOptionsOrNull(LLSnapshot snapshot) {
+		return generateReadOptions(snapshot != null ? snapshotResolver.apply(snapshot) : null, false);
+	}
+
+	private ReadOptions generateReadOptions(Snapshot snapshot, boolean orStaticOpts) {
 		if (snapshot != null) {
-			return LLUtils.generateCustomReadOptions(null, true, true, true).setSnapshot(snapshot);
-		} else {
+			return new ReadOptions().setSnapshot(snapshot);
+		} else if (orStaticOpts) {
 			return EMPTY_READ_OPTIONS;
+		} else {
+			return null;
 		}
 	}
 
@@ -253,13 +249,16 @@ public class LLLocalDictionary implements LLDictionary {
 					try (var key = keySend.receive()) {
 						logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
 						try {
-							var readOptions = requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
+							var readOptions = generateReadOptionsOrStatic(snapshot);
 							Buffer result;
 							startedGet.increment();
 							try {
 								result = getTime.recordCallable(() -> db.get(readOptions, key));
 							} finally {
 								endedGet.increment();
+								if (readOptions != EMPTY_READ_OPTIONS) {
+									readOptions.close();
+								}
 							}
 							logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
 							if (result != null) {
@@ -291,7 +290,7 @@ public class LLLocalDictionary implements LLDictionary {
 							AbstractSlice<?> slice1 = null;
 							AbstractSlice<?> slice2 = null;
 
-							try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot),
+							try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot),
 									true,
 									isBoundedRange(range),
 									true
@@ -360,8 +359,14 @@ public class LLLocalDictionary implements LLDictionary {
 		startedContains.increment();
 		try {
 			var result = containsTime.recordCallable(() -> {
-				var unmodifiableReadOpts = resolveSnapshot(snapshot);
-				return db.exists(unmodifiableReadOpts, key);
+				var readOptions = generateReadOptionsOrStatic(snapshot);
+				try {
+					return db.exists(readOptions, key);
+				} finally {
+					if (readOptions != EMPTY_READ_OPTIONS) {
+						readOptions.close();
+					}
+				}
 			});
 			assert result != null;
 			return result;
@@ -580,21 +585,28 @@ public class LLLocalDictionary implements LLDictionary {
 					}
 					try {
 						assert !Schedulers.isInNonBlockingThread() : "Called getMulti in a nonblocking thread";
-						var readOptions = Objects.requireNonNullElse(resolveSnapshot(snapshot), EMPTY_READ_OPTIONS);
-						List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
-						var mappedResults = new ArrayList<Optional<Buffer>>(results.size());
-						for (int i = 0; i < results.size(); i++) {
-							byte[] val = results.get(i);
-							Optional<Buffer> valueOpt;
-							if (val != null) {
-								// free memory
-								results.set(i, null);
+						ArrayList<Optional<Buffer>> mappedResults;
+						var readOptions = generateReadOptionsOrStatic(snapshot);
+						try {
+							List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
+							mappedResults = new ArrayList<Optional<Buffer>>(results.size());
+							for (int i = 0; i < results.size(); i++) {
+								byte[] val = results.get(i);
+								Optional<Buffer> valueOpt;
+								if (val != null) {
+									// free memory
+									results.set(i, null);
 
-								valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
-							} else {
-								valueOpt = Optional.empty();
+									valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
+								} else {
+									valueOpt = Optional.empty();
+								}
+								mappedResults.add(valueOpt);
 							}
-							mappedResults.add(valueOpt);
+						} finally {
+							if (readOptions != EMPTY_READ_OPTIONS) {
+								readOptions.close();
+							}
 						}
 						sink.next(mappedResults);
 					} catch (RocksDBException ex) {
@@ -680,24 +692,30 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 						ArrayList<Tuple3<K, Send<Buffer>, Optional<Send<Buffer>>>> mappedInputs;
 						{
-							var readOptions = Objects.requireNonNullElse(resolveSnapshot(null), EMPTY_READ_OPTIONS);
-							var inputs = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
-							mappedInputs = new ArrayList<>(inputs.size());
-							for (int i = 0; i < inputs.size(); i++) {
-								var val = inputs.get(i);
-								if (val != null) {
-									inputs.set(i, null);
-									mappedInputs.add(Tuples.of(
-											entriesWindow.get(i).getT1(),
-											keyBufsWindow.get(i).send(),
-											Optional.of(fromByteArray(alloc, val).send())
-									));
-								} else {
-									mappedInputs.add(Tuples.of(
-											entriesWindow.get(i).getT1(),
-											keyBufsWindow.get(i).send(),
-											Optional.empty()
-									));
+							var readOptions = generateReadOptionsOrStatic(null);
+							try {
+								var inputs = db.multiGetAsList(readOptions, LLUtils.toArray(keyBufsWindow));
+								mappedInputs = new ArrayList<>(inputs.size());
+								for (int i = 0; i < inputs.size(); i++) {
+									var val = inputs.get(i);
+									if (val != null) {
+										inputs.set(i, null);
+										mappedInputs.add(Tuples.of(
+												entriesWindow.get(i).getT1(),
+												keyBufsWindow.get(i).send(),
+												Optional.of(fromByteArray(alloc, val).send())
+										));
+									} else {
+										mappedInputs.add(Tuples.of(
+												entriesWindow.get(i).getT1(),
+												keyBufsWindow.get(i).send(),
+												Optional.empty()
+										));
+									}
+								}
+							} finally {
+								if (readOptions != EMPTY_READ_OPTIONS) {
+									readOptions.close();
 								}
 							}
 						}
@@ -814,7 +832,7 @@ public class LLLocalDictionary implements LLDictionary {
 			boolean reverse,
 			boolean smallRange) {
 		Mono<LLLocalEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
-			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			ReadOptions resolvedSnapshot = generateReadOptionsOrNull(snapshot);
 			return new LLLocalEntryReactiveRocksIterator(db, rangeSend, nettyDirect, resolvedSnapshot, reverse, smallRange);
 		});
 		return Flux.usingWhen(iteratorMono,
@@ -826,7 +844,7 @@ public class LLLocalDictionary implements LLDictionary {
 	private Flux<List<Send<LLEntry>>> getRangeMultiGrouped(LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono,
 			int prefixLength, boolean smallRange) {
 		Mono<LLLocalGroupedEntryReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
-			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			ReadOptions resolvedSnapshot = generateReadOptionsOrNull(snapshot);
 			return new LLLocalGroupedEntryReactiveRocksIterator(db,
 					prefixLength,
 					rangeSend,
@@ -864,7 +882,7 @@ public class LLLocalDictionary implements LLDictionary {
 			int prefixLength,
 			boolean smallRange) {
 		Mono<LLLocalGroupedKeyReactiveRocksIterator> iteratorMono = rangeMono.map(rangeSend -> {
-			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			ReadOptions resolvedSnapshot = generateReadOptionsOrNull(snapshot);
 			return new LLLocalGroupedKeyReactiveRocksIterator(db,
 					prefixLength,
 					rangeSend,
@@ -886,7 +904,7 @@ public class LLLocalDictionary implements LLDictionary {
 						.<BadBlock>create(sink -> {
 							var range = rangeSend.receive();
 							sink.onDispose(range::close);
-							try (var ro = LLUtils.generateCustomReadOptions(getReadOptions(null),
+							try (var ro = LLUtils.generateCustomReadOptions(null,
 									false,
 									isBoundedRange(range),
 									false
@@ -925,7 +943,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> rangeMono,
 			int prefixLength, boolean smallRange) {
 		Mono<LLLocalKeyPrefixReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
-			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			ReadOptions resolvedSnapshot = generateReadOptionsOrNull(snapshot);
 			return new LLLocalKeyPrefixReactiveRocksIterator(db, prefixLength, range, nettyDirect, resolvedSnapshot, true,
 					smallRange
 			);
@@ -958,7 +976,7 @@ public class LLLocalDictionary implements LLDictionary {
 			boolean reverse,
 			boolean smallRange) {
 		Mono<LLLocalKeyReactiveRocksIterator> iteratorMono = rangeMono.map(range -> {
-			ReadOptions resolvedSnapshot = resolveSnapshot(snapshot);
+			ReadOptions resolvedSnapshot = generateReadOptionsOrNull(snapshot);
 			return new LLLocalKeyReactiveRocksIterator(db, range, nettyDirect, resolvedSnapshot, reverse, smallRange);
 		});
 		return Flux.usingWhen(iteratorMono,
@@ -976,8 +994,7 @@ public class LLLocalDictionary implements LLDictionary {
 						try (var range = rangeSend.receive()) {
 							assert !Schedulers.isInNonBlockingThread() : "Called setRange in a nonblocking thread";
 							if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
-								assert EMPTY_READ_OPTIONS.isOwningHandle();
-								try (var opts = LLUtils.generateCustomReadOptions(EMPTY_READ_OPTIONS,
+								try (var opts = LLUtils.generateCustomReadOptions(null,
 										true,
 										isBoundedRange(range),
 										smallRange
@@ -1152,7 +1169,8 @@ public class LLLocalDictionary implements LLDictionary {
 	private void deleteSmallRangeWriteBatch(CappedWriteBatch writeBatch, Send<LLRange> rangeToReceive)
 			throws RocksDBException {
 		var range = rangeToReceive.receive();
-		try (var readOpts = new ReadOptions(getReadOptions(null))) {
+		var readOpts = generateReadOptionsOrStatic(null);
+		try {
 			readOpts.setFillCache(false);
 			ReleasableSlice minBound;
 			if (range.hasMin()) {
@@ -1194,13 +1212,17 @@ public class LLLocalDictionary implements LLDictionary {
 		} catch (Throwable e) {
 			range.close();
 			throw e;
+		} finally {
+			if (readOpts != EMPTY_READ_OPTIONS) {
+				readOpts.close();
+			}
 		}
 	}
 
 	private void deleteSmallRangeWriteBatch(WriteBatch writeBatch, Send<LLRange> rangeToReceive)
 			throws RocksDBException {
 		try (var range = rangeToReceive.receive()) {
-			try (var readOpts = LLUtils.generateCustomReadOptions(getReadOptions(null), true, isBoundedRange(range), true)) {
+			try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(null), true, isBoundedRange(range), true)) {
 				readOpts.setFillCache(false);
 				ReleasableSlice minBound;
 				if (range.hasMin()) {
@@ -1264,7 +1286,7 @@ public class LLLocalDictionary implements LLDictionary {
 				.<Void>fromCallable(() -> {
 					assert !Schedulers.isInNonBlockingThread() : "Called clear in a nonblocking thread";
 					boolean shouldCompactLater = false;
-					try (var readOpts = LLUtils.generateCustomReadOptions(getReadOptions(null), false, false, false)) {
+					try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(null), false, false, false)) {
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 						// readOpts.setIgnoreRangeDeletions(true);
@@ -1336,7 +1358,7 @@ public class LLLocalDictionary implements LLDictionary {
 				if (range.isAll()) {
 					sink.next(fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot));
 				} else {
-					try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), false, isBoundedRange(range), false)) {
+					try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), false, isBoundedRange(range), false)) {
 						readOpts.setFillCache(false);
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 						ReleasableSlice minBound;
@@ -1397,7 +1419,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOne in a nonblocking thread";
-				try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), true, true, true)) {
+				try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), true, true, true)) {
 					ReleasableSlice minBound;
 					if (range.hasMin()) {
 						minBound = AbstractRocksDBColumn.setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
@@ -1452,7 +1474,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.publishOn(dbRScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOneKey in a nonblocking thread";
-				try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), true, true, true)) {
+				try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), true, true, true)) {
 					ReleasableSlice minBound;
 					if (range.hasMin()) {
 						minBound = AbstractRocksDBColumn.setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
@@ -1499,7 +1521,11 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private long fastSizeAll(@Nullable LLSnapshot snapshot) throws RocksDBException {
-		try (var rocksdbSnapshot = new ReadOptions(resolveSnapshot(snapshot))) {
+		var rocksdbSnapshot = generateReadOptionsOrNull(snapshot);
+		if (rocksdbSnapshot == null) {
+			rocksdbSnapshot = new ReadOptions();
+		}
+		try {
 			if (USE_CURRENT_FASTSIZE_FOR_OLD_SNAPSHOTS || rocksdbSnapshot.snapshot() == null) {
 				try {
 					return db.getLongProperty("rocksdb.estimate-num-keys");
@@ -1524,6 +1550,8 @@ public class LLLocalDictionary implements LLDictionary {
 					return count;
 				}
 			}
+		} finally {
+			rocksdbSnapshot.close();
 		}
 	}
 
@@ -1531,7 +1559,7 @@ public class LLLocalDictionary implements LLDictionary {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called exactSizeAll in a nonblocking thread");
 		}
-		try (var readOpts = LLUtils.generateCustomReadOptions(resolveSnapshot(snapshot), false, false, false)) {
+		try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), false, false, false)) {
 			if (LLUtils.MANUAL_READAHEAD) {
 				readOpts.setReadaheadSize(128 * 1024); // 128KiB
 			}
@@ -1613,7 +1641,8 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.publishOn(dbWScheduler).handle((rangeSend, sink) -> {
 			try (var range = rangeSend.receive()) {
 				assert !Schedulers.isInNonBlockingThread() : "Called removeOne in a nonblocking thread";
-				try (var readOpts = new ReadOptions(getReadOptions(null))) {
+				var readOpts = generateReadOptionsOrStatic(null);
+				try {
 					ReleasableSlice minBound;
 					if (range.hasMin()) {
 						minBound = AbstractRocksDBColumn.setIterateBound(nettyDirect, readOpts, IterateBound.LOWER, range.getMinUnsafe());
@@ -1654,6 +1683,10 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 					} finally {
 						minBound.close();
+					}
+				} finally {
+					if (readOpts != EMPTY_READ_OPTIONS) {
+						readOpts.close();
 					}
 				}
 			} catch (RocksDBException ex) {

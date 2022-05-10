@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.util.function.Tuples;
 
 public final class LLLocalMigrationReactiveRocksIterator extends
 		ResourceSupport<LLLocalMigrationReactiveRocksIterator, LLLocalMigrationReactiveRocksIterator> {
@@ -36,9 +37,7 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 			}
 			try {
 				if (obj.readOptions != null) {
-					if (!(obj.readOptions instanceof UnreleasableReadOptions)) {
-						obj.readOptions.close();
-					}
+					obj.readOptions.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close readOptions", ex);
@@ -77,10 +76,11 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 	public Flux<ByteEntry> flux() {
 		return Flux.generate(() -> {
 			var readOptions = generateCustomReadOptions(this.readOptions, false, false, false);
-			return db.getRocksIterator(false, readOptions, rangeShared, false);
+			return Tuples.of(readOptions, db.getRocksIterator(false, readOptions, rangeShared, false));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.iterator();
+				//noinspection resource
+				var rocksIterator = tuple.getT2().iterator();
 				if (rocksIterator.isValid()) {
 					byte[] key = rocksIterator.key();
 					byte[] value = rocksIterator.value();
@@ -93,7 +93,11 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIteratorTuple::close);
+		}, t -> {
+			t.getT2().close();
+			t.getT1().close();
+			this.close();
+		});
 	}
 
 	@Override

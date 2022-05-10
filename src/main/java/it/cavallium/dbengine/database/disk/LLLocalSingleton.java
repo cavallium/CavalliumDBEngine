@@ -26,8 +26,8 @@ import reactor.core.scheduler.Schedulers;
 
 public class LLLocalSingleton implements LLSingleton {
 
-	static final ReadOptions EMPTY_READ_OPTIONS = new UnreleasableReadOptions(new UnmodifiableReadOptions());
-	static final WriteOptions EMPTY_WRITE_OPTIONS = new UnreleasableWriteOptions(new UnmodifiableWriteOptions());
+	private static final ReadOptions EMPTY_READ_OPTIONS = new ReadOptions();
+	private static final WriteOptions EMPTY_WRITE_OPTIONS = new WriteOptions();
 	private final RocksDBColumn db;
 	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final byte[] name;
@@ -71,11 +71,13 @@ public class LLLocalSingleton implements LLSingleton {
 		return Mono.fromCallable(callable).subscribeOn(write ? dbWScheduler : dbRScheduler);
 	}
 
-	private ReadOptions resolveSnapshot(LLSnapshot snapshot) {
+	private ReadOptions generateReadOptions(LLSnapshot snapshot, boolean orStaticOpts) {
 		if (snapshot != null) {
-			return LLUtils.generateCustomReadOptions(null, true, true, true).setSnapshot(snapshotResolver.apply(snapshot));
-		} else {
+			return new ReadOptions().setSnapshot(snapshotResolver.apply(snapshot));
+		} else if (orStaticOpts) {
 			return EMPTY_READ_OPTIONS;
+		} else {
+			return null;
 		}
 	}
 
@@ -88,7 +90,7 @@ public class LLLocalSingleton implements LLSingleton {
 	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
 		return nameMono.publishOn(dbRScheduler).handle((nameSend, sink) -> {
 			try (Buffer name = nameSend.receive()) {
-				Buffer result = db.get(resolveSnapshot(snapshot), name);
+				Buffer result = db.get(generateReadOptions(snapshot, true), name);
 				if (result != null) {
 					sink.next(result.send());
 				} else {

@@ -24,6 +24,7 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 
 	protected final FieldComparator<?>[] comparators;
 	protected final int[] reverseMul;
+	private final ComparatorOptions comparatorOptions;
 	private final AbstractComparator comparator;
 
 	public LLSlotDocCodec(LLTempHugePqEnv env, int numHits, SortField[] fields) {
@@ -42,7 +43,8 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 			reverseMul[i] = field.getReverse() ? -1 : 1;
 			comparators[i] = HugePqComparator.getComparator(env, field, numHits, i == 0);
 		}
-		comparator = new AbstractComparator(new ComparatorOptions().setMaxReusedBufferSize(0)) {
+		comparatorOptions = new ComparatorOptions().setMaxReusedBufferSize(0);
+		comparator = new AbstractComparator(comparatorOptions) {
 			@Override
 			public String name() {
 				return "slot-doc-codec-comparator";
@@ -193,6 +195,8 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 				closeable.close();
 			}
 		}
+		comparator.close();
+		comparatorOptions.close();
 	}
 
 	@Override

@@ -73,7 +73,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 			this.prefixLength = prefixLength;
 			this.rangeShared = range.receive();
 			this.allowNettyDirect = allowNettyDirect;
-			this.readOptions = readOptions;
+			this.readOptions = readOptions != null ? readOptions : new ReadOptions();
 			this.canFillCache = canFillCache;
 			this.smallRange = smallRange;
 		}
@@ -153,7 +153,6 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 		}, t -> {
 			t.getT2().close();
 			t.getT1().close();
-			this.close();
 		});
 	}
 

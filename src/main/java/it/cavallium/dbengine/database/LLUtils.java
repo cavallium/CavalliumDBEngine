@@ -723,7 +723,7 @@ public class LLUtils {
 
 	/**
 	 * Generate a ReadOptions, with some parameters modified to help with bulk iterations
-	 * @param readOptions the read options to start with
+	 * @param readOptions the read options to start with, it will be modified
 	 * @param canFillCache true to fill the cache. If closedRange is false, this field will be ignored
 	 * @param boundedRange true if the range is bounded from both sides
 	 * @param smallRange true if the range is small

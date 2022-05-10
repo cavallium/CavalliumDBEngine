@@ -79,7 +79,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			this.prefixLength = prefixLength;
 			this.range = range.receive();
 			this.allowNettyDirect = allowNettyDirect;
-			this.readOptions = readOptions;
+			this.readOptions = readOptions != null ? readOptions : new ReadOptions();
 			this.canFillCache = canFillCache;
 			this.readValues = readValues;
 			this.smallRange = smallRange;
@@ -162,7 +162,6 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		}, t -> {
 			t.getT2().close();
 			t.getT1().close();
-			this.close();
 		});
 	}
 

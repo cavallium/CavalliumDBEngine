@@ -148,7 +148,6 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 		}, t -> {
 			t.getT2().close();
 			t.getT1().close();
-			this.close();
 		});
 	}
 

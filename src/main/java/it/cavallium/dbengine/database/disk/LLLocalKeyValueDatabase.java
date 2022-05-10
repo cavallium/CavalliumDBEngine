@@ -783,10 +783,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				try {
 					// Range rangeToCompact = db.suggestCompactRange(cfh);
 					logger.info("Compacting range {}", r);
-					db.compactRange(cfh, null, null, new CompactRangeOptions()
+					try (var cro = new CompactRangeOptions()
 							.setAllowWriteStall(true)
 							.setExclusiveManualCompaction(true)
-							.setChangeLevel(false));
+							.setChangeLevel(false)) {
+						db.compactRange(cfh, null, null, cro);
+					}
 				} catch (RocksDBException e) {
 					if ("Database shutdown".equalsIgnoreCase(e.getMessage())) {
 						logger.warn("Compaction cancelled: database shutdown");

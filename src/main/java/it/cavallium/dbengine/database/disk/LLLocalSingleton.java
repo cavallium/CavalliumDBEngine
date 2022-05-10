@@ -90,7 +90,15 @@ public class LLLocalSingleton implements LLSingleton {
 	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
 		return nameMono.publishOn(dbRScheduler).handle((nameSend, sink) -> {
 			try (Buffer name = nameSend.receive()) {
-				Buffer result = db.get(generateReadOptions(snapshot, true), name);
+				Buffer result;
+				var readOptions = generateReadOptions(snapshot, true);
+				try {
+					result = db.get(readOptions, name);
+				} finally {
+					if (readOptions != EMPTY_READ_OPTIONS) {
+						readOptions.close();
+					}
+				}
 				if (result != null) {
 					sink.next(result.send());
 				} else {

@@ -90,10 +90,10 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return Tuples.of(readOptions, db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, false));
+			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, rangeShared, false));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.getT2().iterator();
+				var rocksIterator = tuple.iter().iterator();
 				Buffer firstGroupKey = null;
 				try {
 					while (rocksIterator.isValid()) {
@@ -150,10 +150,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, t -> {
-			t.getT2().close();
-			t.getT1().close();
-		});
+		}, RocksIterWithReadOpts::close);
 	}
 
 	@Override

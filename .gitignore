@@ -186,3 +186,5 @@ dbengine.iml
 /.classpath
 /.project
 /.settings/
+
+.flattened-pom.xml

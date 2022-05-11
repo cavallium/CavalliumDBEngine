@@ -8,7 +8,6 @@ import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static java.util.Objects.requireNonNull;
-import static java.util.Objects.requireNonNullElse;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
@@ -35,7 +34,6 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
@@ -926,16 +924,17 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 								ro.setVerifyChecksums(true);
-								try (var rocksIteratorTuple = db.getRocksIterator(nettyDirect, ro, range, false)) {
-									var rocksIterator = rocksIteratorTuple.iterator();
-									rocksIterator.seekToFirst();
-									while (rocksIterator.isValid() && !sink.isCancelled()) {
-										try {
-											rocksIterator.key(DUMMY_WRITE_ONLY_BYTE_BUFFER);
-											rocksIterator.value(DUMMY_WRITE_ONLY_BYTE_BUFFER);
-											rocksIterator.next();
-										} catch (RocksDBException ex) {
-											sink.next(new BadBlock(databaseName, ColumnUtils.special(columnName), null, ex));
+								try (var rocksIteratorTuple = db.newRocksIterator(nettyDirect, ro, range, false)) {
+									try (var rocksIterator = rocksIteratorTuple.iterator()) {
+										rocksIterator.seekToFirst();
+										while (rocksIterator.isValid() && !sink.isCancelled()) {
+											try {
+												rocksIterator.key(DUMMY_WRITE_ONLY_BYTE_BUFFER);
+												rocksIterator.value(DUMMY_WRITE_ONLY_BYTE_BUFFER);
+												rocksIterator.next();
+											} catch (RocksDBException ex) {
+												sink.next(new BadBlock(databaseName, ColumnUtils.special(columnName), null, ex));
+											}
 										}
 									}
 								}
@@ -1603,7 +1602,7 @@ public class LLLocalDictionary implements LLDictionary {
 									if (sliceBegin != null) {
 										rangeReadOpts.setIterateLowerBound(sliceBegin);
 									}
-									if (sliceBegin != null) {
+									if (sliceEnd != null) {
 										rangeReadOpts.setIterateUpperBound(sliceEnd);
 									}
 									try (var rocksIterator = db.newIterator(rangeReadOpts)) {

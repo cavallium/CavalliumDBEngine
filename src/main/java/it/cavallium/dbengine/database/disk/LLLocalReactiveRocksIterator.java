@@ -87,10 +87,10 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
 			}
-			return Tuples.of(readOptions, db.getRocksIterator(allowNettyDirect, readOptions, rangeShared, reverse));
+			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, rangeShared, reverse));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.getT2().iterator();
+				var rocksIterator = tuple.iter().iterator();
 				if (rocksIterator.isValid()) {
 					Buffer key;
 					if (allowNettyDirect) {
@@ -145,10 +145,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, t -> {
-			t.getT2().close();
-			t.getT1().close();
-		});
+		}, RocksIterWithReadOpts::close);
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);

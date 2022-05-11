@@ -1,21 +1,14 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
-import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
-import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
-import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLLocalMigrationReactiveRocksIterator.ByteEntry;
-import java.util.Map;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
@@ -76,11 +69,11 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 	public Flux<ByteEntry> flux() {
 		return Flux.generate(() -> {
 			var readOptions = generateCustomReadOptions(this.readOptions, false, false, false);
-			return Tuples.of(readOptions, db.getRocksIterator(false, readOptions, rangeShared, false));
+			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(false, readOptions, rangeShared, false));
 		}, (tuple, sink) -> {
 			try {
 				//noinspection resource
-				var rocksIterator = tuple.getT2().iterator();
+				var rocksIterator = tuple.iter().iterator();
 				if (rocksIterator.isValid()) {
 					byte[] key = rocksIterator.key();
 					byte[] value = rocksIterator.value();
@@ -93,11 +86,7 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, t -> {
-			t.getT2().close();
-			t.getT1().close();
-			this.close();
-		});
+		}, RocksIterWithReadOpts::close);
 	}
 
 	@Override

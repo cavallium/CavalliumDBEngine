@@ -19,7 +19,6 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
-import reactor.util.function.Tuples;
 
 public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		ResourceSupport<LLLocalGroupedReactiveRocksIterator<T>, LLLocalGroupedReactiveRocksIterator<T>> {
@@ -86,17 +85,16 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		}
 	}
 
-
 	public final Flux<List<T>> flux() {
 		return Flux.generate(() -> {
 			var readOptions = generateCustomReadOptions(this.readOptions, true, isBoundedRange(range), smallRange);
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 			}
-			return Tuples.of(readOptions, db.getRocksIterator(allowNettyDirect, readOptions, range, false));
+			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, range, false));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.getT2().iterator();
+				var rocksIterator = tuple.iter().iterator();
 				ObjectArrayList<T> values = new ObjectArrayList<>();
 				Buffer firstGroupKey = null;
 				try {
@@ -159,10 +157,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, t -> {
-			t.getT2().close();
-			t.getT1().close();
-		});
+		}, RocksIterWithReadOpts::close);
 	}
 
 	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);

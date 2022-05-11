@@ -3,10 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import java.util.List;
 import org.jetbrains.annotations.NotNull;
@@ -16,7 +14,6 @@ import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
-import org.rocksdb.RocksIterator;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 
@@ -26,7 +23,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
 	@NotNull
-	RocksIteratorTuple getRocksIterator(boolean allowNettyDirect,
+	RocksIteratorTuple newRocksIterator(boolean allowNettyDirect,
 			ReadOptions readOptions,
 			LLRange range,
 			boolean reverse) throws RocksDBException;

@@ -277,14 +277,14 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	static ReleasableSlice emptyReleasableSlice() {
 		var arr = new byte[0];
 
-		return new ReleasableSliceImplWithoutRelease(new Slice(arr));
+		return new ReleasableSliceImplWithRelease(new Slice(arr));
 	}
 
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
 	@NotNull
-	public RocksIteratorTuple getRocksIterator(boolean allowNettyDirect,
+	public RocksIteratorTuple newRocksIterator(boolean allowNettyDirect,
 			ReadOptions readOptions,
 			LLRange range,
 			boolean reverse) throws RocksDBException {
@@ -301,9 +301,9 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		} else {
 			sliceMax = emptyReleasableSlice();
 		}
+		SafeCloseable seekFromOrTo = null;
 		var rocksIterator = this.newIterator(readOptions);
 		try {
-			SafeCloseable seekFromOrTo;
 			if (reverse) {
 				if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMax()) {
 					seekFromOrTo = Objects.requireNonNullElseGet(rocksIterator.seekFrom(range.getMaxUnsafe()),
@@ -324,6 +324,11 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			return new RocksIteratorTuple(rocksIterator, sliceMin, sliceMax, seekFromOrTo);
 		} catch (Throwable ex) {
 			rocksIterator.close();
+			sliceMax.close();
+			sliceMax.close();
+			if (seekFromOrTo != null) {
+				seekFromOrTo.close();
+			}
 			throw ex;
 		}
 	}

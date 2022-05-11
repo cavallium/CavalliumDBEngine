@@ -49,6 +49,7 @@ module dbengine {
 	requires org.apache.lucene.analysis.icu;
 	requires io.netty.handler;
 	requires io.netty.incubator.codec.classes.quic;
+	requires io.netty.common;
 	requires org.apache.lucene.queryparser;
 	requires reactor.netty.incubator.quic;
 	requires okio;

@@ -6,10 +6,12 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.database.disk.HugePqEnv;
-import it.cavallium.dbengine.database.disk.RocksIteratorTuple;
+import it.cavallium.dbengine.database.disk.RocksIterWithReadOpts;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultMode;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -37,8 +39,6 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	private final HugePqEnv env;
 	private final int hugePqId;
 	private final StandardRocksDBColumn rocksDB;
-	private static final WriteOptions WRITE_OPTIONS = new WriteOptions().setDisableWAL(true).setSync(false);
-	private static final ReadOptions READ_OPTIONS = new ReadOptions().setVerifyChecksums(false);
 	private final HugePqCodec<T> codec;
 
 	private long size = 0;
@@ -49,6 +49,14 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 		this.hugePqId = env.allocateDb(codec.getComparator());
 		this.rocksDB = this.env.openDb(hugePqId);
 		this.codec = codec;
+	}
+
+	private static RocksObj<ReadOptions> newReadOptions() {
+		return new RocksObj<>(new ReadOptions().setVerifyChecksums(false));
+	}
+
+	private static RocksObj<WriteOptions> newWriteOptions() {
+		return new RocksObj<>(new WriteOptions().setDisableWAL(true).setSync(false));
 	}
 
 	private Buffer allocate(int size) {
@@ -69,7 +77,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 
 		var keyBuf = serializeKey(element);
 		try (keyBuf) {
-			rocksDB.updateAtomic(READ_OPTIONS, WRITE_OPTIONS, keyBuf, this::incrementOrAdd, UpdateAtomicResultMode.NOTHING);
+			try (var readOptions = newReadOptions(); var writeOptions = newWriteOptions()) {
+				rocksDB.updateAtomic(readOptions, writeOptions, keyBuf, this::incrementOrAdd, UpdateAtomicResultMode.NOTHING);
+			}
 			++size;
 		} catch (IOException e) {
 			throw new IllegalStateException(e);
@@ -101,17 +111,16 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	}
 
 	private T databaseTop() {
-		try (var it  = rocksDB.newRocksIterator(true, READ_OPTIONS, LLRange.all(), false)) {
-			try (var rocksIterator = it.iterator()) {
-				rocksIterator.seekToFirst();
-				if (rocksIterator.isValid()) {
-					var key = rocksIterator.key();
-					try (var keyBuf = rocksDB.getAllocator().copyOf(key)) {
-						return deserializeKey(keyBuf);
-					}
-				} else {
-					return null;
+		try (var readOptions = newReadOptions();
+				var it = rocksDB.newRocksIterator(true, readOptions, LLRange.all(), false)) {
+			it.seekToFirst();
+			if (it.isValid()) {
+				var key = it.key();
+				try (var keyBuf = rocksDB.getAllocator().copyOf(key)) {
+					return deserializeKey(keyBuf);
 				}
+			} else {
+				return null;
 			}
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
@@ -121,19 +130,19 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	@Override
 	public T pop() {
 		ensureThread();
-		try (var it  = rocksDB.newRocksIterator(true, READ_OPTIONS, LLRange.all(), false)) {
-			try (var rocksIterator = it.iterator()) {
-				rocksIterator.seekToFirst();
-				if (rocksIterator.isValid()) {
-					var key = rocksIterator.key();
-					try (var keyBuf = rocksDB.getAllocator().copyOf(key)) {
-						rocksDB.updateAtomic(READ_OPTIONS, WRITE_OPTIONS, keyBuf, this::reduceOrRemove, UpdateAtomicResultMode.NOTHING);
-						--size;
-						return deserializeKey(keyBuf);
-					}
-				} else {
-					return null;
+		try (var readOptions = newReadOptions();
+				var writeOptions = newWriteOptions();
+				var it  = rocksDB.newRocksIterator(true, readOptions, LLRange.all(), false)) {
+			it.seekToFirst();
+			if (it.isValid()) {
+				var key = it.key();
+				try (var keyBuf = rocksDB.getAllocator().copyOf(key)) {
+					rocksDB.updateAtomic(readOptions, writeOptions, keyBuf, this::reduceOrRemove, UpdateAtomicResultMode.NOTHING);
+					--size;
+					return deserializeKey(keyBuf);
 				}
+			} else {
+				return null;
 			}
 		} catch (RocksDBException | IOException e) {
 			throw new IllegalStateException(e);
@@ -180,10 +189,10 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	@Override
 	public void clear() {
 		ensureThread();
-		try (var wb = new WriteBatch()) {
-			wb.deleteRange(rocksDB.getColumnFamilyHandle(), new byte[0], getBiggestKey());
+		try (var wb = new WriteBatch(); var wo = newWriteOptions()) {
+			wb.deleteRange(rocksDB.getColumnFamilyHandle().v(), new byte[0], getBiggestKey());
 			size = 0;
-			rocksDB.write(WRITE_OPTIONS, wb);
+			rocksDB.write(wo, wb);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
@@ -199,8 +208,10 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	public boolean remove(@NotNull T element) {
 		ensureThread();
 		Objects.requireNonNull(element);
-		try (var keyBuf = serializeKey(element)) {
-			UpdateAtomicResultPrevious prev = (UpdateAtomicResultPrevious) rocksDB.updateAtomic(READ_OPTIONS, WRITE_OPTIONS,
+		try (var readOptions = newReadOptions();
+				var writeOptions = newWriteOptions();
+				var keyBuf = serializeKey(element)) {
+			UpdateAtomicResultPrevious prev = (UpdateAtomicResultPrevious) rocksDB.updateAtomic(readOptions, writeOptions,
 					keyBuf,
 					this::reduceOrRemove,
 					UpdateAtomicResultMode.PREVIOUS
@@ -232,9 +243,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	}
 
 	private Flux<T> iterate(long skips, boolean reverse) {
-		return Flux.<List<T>, RocksIteratorTuple>generate(() -> {
-			var it = rocksDB.newRocksIterator(true, READ_OPTIONS, LLRange.all(), reverse);
-			var rocksIterator = it.iterator();
+		return Flux.<List<T>, RocksIterWithReadOpts>generate(() -> {
+			var readOptions = newReadOptions();
+			var rocksIterator = rocksDB.newRocksIterator(true, readOptions, LLRange.all(), reverse);
 			if (reverse) {
 				rocksIterator.seekToLast();
 			} else {
@@ -249,9 +260,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 				}
 				skipsDone++;
 			}
-			return it;
-		}, (itT, sink) -> {
-			var rocksIterator = itT.iterator();
+			return new RocksIterWithReadOpts(readOptions, rocksIterator);
+		}, (t, sink) -> {
+			var rocksIterator = t.iter();
 			if (rocksIterator.isValid()) {
 				try (var keyBuf = rocksDB.getAllocator().copyOf(rocksIterator.key());
 						var valBuf = rocksDB.getAllocator().copyOf(rocksIterator.value())) {
@@ -284,8 +295,8 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 				sink.complete();
 			}
 
-			return itT;
-		}, RocksIteratorTuple::close).concatMapIterable(item -> item);
+			return t;
+		}, RocksIterWithReadOpts::close).concatMapIterable(item -> item);
 	}
 
 	@Override

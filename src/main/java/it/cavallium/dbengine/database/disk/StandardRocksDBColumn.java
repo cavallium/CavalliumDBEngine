@@ -7,6 +7,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.StampedLock;
@@ -16,6 +17,7 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.Transaction;
+import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteOptions;
 
 public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> {
@@ -24,23 +26,26 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
-			ColumnFamilyHandle cfh, MeterRegistry meterRegistry, StampedLock closeLock) {
+			RocksObj<ColumnFamilyHandle> cfh,
+			MeterRegistry meterRegistry,
+			StampedLock closeLock) {
 		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, closeLock);
 	}
 
 	@Override
-	protected boolean commitOptimistically(Transaction tx) {
+	protected boolean commitOptimistically(RocksObj<Transaction> tx) {
 		throw new UnsupportedOperationException("Transactions not supported");
 	}
 
 	@Override
-	protected Transaction beginTransaction(@NotNull WriteOptions writeOptions) {
+	protected RocksObj<Transaction> beginTransaction(@NotNull RocksObj<WriteOptions> writeOptions,
+			RocksObj<TransactionOptions> txOpts) {
 		throw new UnsupportedOperationException("Transactions not supported");
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull RocksObj<ReadOptions> readOptions,
+			@NotNull RocksObj<WriteOptions> writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {

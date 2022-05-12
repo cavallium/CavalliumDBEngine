@@ -11,6 +11,7 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -56,7 +57,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	private final RocksDBColumn db;
 	private LLRange rangeShared;
 	private final boolean allowNettyDirect;
-	private ReadOptions readOptions;
+	private RocksObj<ReadOptions> readOptions;
 	private final boolean readValues;
 	private final boolean reverse;
 	private final boolean smallRange;
@@ -65,7 +66,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	public LLLocalReactiveRocksIterator(RocksDBColumn db,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
+			RocksObj<ReadOptions> readOptions,
 			boolean readValues,
 			boolean reverse,
 			boolean smallRange) {
@@ -90,7 +91,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, rangeShared, reverse));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.iter().iterator();
+				var rocksIterator = tuple.iter();
 				if (rocksIterator.isValid()) {
 					Buffer key;
 					if (allowNettyDirect) {

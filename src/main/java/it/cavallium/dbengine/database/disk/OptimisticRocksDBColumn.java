@@ -10,6 +10,7 @@ import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;
 import java.io.IOException;
 import java.util.concurrent.ThreadLocalRandom;
@@ -24,6 +25,7 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Status.Code;
 import org.rocksdb.Transaction;
+import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import reactor.core.scheduler.Schedulers;
@@ -38,7 +40,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String databaseName,
-			ColumnFamilyHandle cfh,
+			RocksObj<ColumnFamilyHandle> cfh,
 			MeterRegistry meterRegistry,
 			StampedLock closeLock) {
 		super(db, nettyDirect, alloc, databaseName, cfh, meterRegistry, closeLock);
@@ -53,9 +55,9 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 	}
 
 	@Override
-	protected boolean commitOptimistically(Transaction tx) throws RocksDBException {
+	protected boolean commitOptimistically(RocksObj<Transaction> tx) throws RocksDBException {
 		try {
-			tx.commit();
+			tx.v().commit();
 			return true;
 		} catch (RocksDBException ex) {
 			var status = ex.getStatus() != null ? ex.getStatus().getCode() : Code.Ok;
@@ -67,18 +69,19 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 	}
 
 	@Override
-	protected Transaction beginTransaction(@NotNull WriteOptions writeOptions) {
-		return getDb().beginTransaction(writeOptions);
+	protected RocksObj<Transaction> beginTransaction(@NotNull RocksObj<WriteOptions> writeOptions,
+			RocksObj<TransactionOptions> txOpts) {
+		return new RocksObj<>(getDb().beginTransaction(writeOptions.v()));
 	}
 
 	@Override
-	public void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException {
-		getDb().write(writeOptions, writeBatch);
+	public void write(RocksObj<WriteOptions> writeOptions, WriteBatch writeBatch) throws RocksDBException {
+		getDb().write(writeOptions.v(), writeBatch);
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull RocksObj<ReadOptions> readOptions,
+			@NotNull RocksObj<WriteOptions> writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
@@ -89,7 +92,8 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
-			try (var tx = beginTransaction(writeOptions)) {
+			try (var txOpts = new RocksObj<>(new TransactionOptions());
+					var tx = beginTransaction(writeOptions, txOpts)) {
 				boolean committedSuccessfully;
 				int retries = 0;
 				ExponentialPageLimits retryTime = null;
@@ -97,7 +101,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 				Send<Buffer> sentCurData;
 				boolean changed;
 				do {
-					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
+					var prevDataArray = tx.v().getForUpdate(readOptions.v(), cfh.v(), keyArray, true);
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB,
 								"Reading {}: {} (before update)",
@@ -135,7 +139,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
 								}
-								tx.delete(cfh, keyArray, true);
+								tx.v().delete(cfh.v(), keyArray, true);
 								changed = true;
 								committedSuccessfully = commitOptimistically(tx);
 							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
@@ -146,19 +150,19 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 											LLUtils.toStringSafe(newData)
 									);
 								}
-								tx.put(cfh, keyArray, newDataArray);
+								tx.v().put(cfh.v(), keyArray, newDataArray);
 								changed = true;
 								committedSuccessfully = commitOptimistically(tx);
 							} else {
 								changed = false;
 								committedSuccessfully = true;
-								tx.rollback();
+								tx.v().rollback();
 							}
 							sentPrevData = prevData == null ? null : prevData.send();
 							sentCurData = newData == null ? null : newData.send();
 							if (!committedSuccessfully) {
-								tx.undoGetForUpdate(cfh, keyArray);
-								tx.rollback();
+								tx.v().undoGetForUpdate(cfh.v(), keyArray);
+								tx.v().rollback();
 								if (sentPrevData != null) {
 									sentPrevData.close();
 								}

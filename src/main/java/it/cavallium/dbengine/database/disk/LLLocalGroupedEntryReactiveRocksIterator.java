@@ -4,6 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import org.rocksdb.ReadOptions;
 
 public class LLLocalGroupedEntryReactiveRocksIterator extends
@@ -13,7 +14,7 @@ public class LLLocalGroupedEntryReactiveRocksIterator extends
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
+			RocksObj<ReadOptions> readOptions,
 			boolean smallRange) {
 		super(db, prefixLength, range, allowNettyDirect, readOptions, false, true, smallRange);
 	}

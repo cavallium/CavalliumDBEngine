@@ -18,6 +18,7 @@ module dbengine {
 	opens it.cavallium.dbengine.database.remote;
 	exports it.cavallium.dbengine;
 	exports it.cavallium.dbengine.utils;
+	exports it.cavallium.dbengine.database.disk.rocksdb;
 	requires org.jetbrains.annotations;
 	requires reactor.core;
 	requires com.google.common;

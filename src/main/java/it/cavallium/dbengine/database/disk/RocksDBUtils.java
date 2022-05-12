@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static com.google.common.collect.Lists.partition;
 
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -96,7 +97,7 @@ public class RocksDBUtils {
 		}
 	}
 
-	public static void ensureOpen(RocksDB db, @Nullable ColumnFamilyHandle cfh) {
+	public static void ensureOpen(RocksDB db, @Nullable RocksObj<ColumnFamilyHandle> cfh) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called in a nonblocking thread");
 		}
@@ -106,6 +107,12 @@ public class RocksDBUtils {
 
 	public static void ensureOwned(@Nullable org.rocksdb.RocksObject rocksObject) {
 		if (rocksObject != null && !rocksObject.isOwningHandle()) {
+			throw new IllegalStateException("Not owning handle");
+		}
+	}
+
+	public static void ensureOwned(@Nullable RocksObj<?> rocksObject) {
+		if (rocksObject != null && !rocksObject.isAccessible()) {
 			throw new IllegalStateException("Not owning handle");
 		}
 	}

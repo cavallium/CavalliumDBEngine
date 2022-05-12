@@ -16,10 +16,11 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.buffer.api.internal.Statics;
 import io.netty5.util.IllegalReferenceCountException;
-import it.cavallium.dbengine.database.disk.RocksIteratorTuple;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
@@ -86,6 +87,7 @@ public class LLUtils {
 	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
 	public static final AtomicBoolean hookRegistered = new AtomicBoolean();
 	public static final boolean MANUAL_READAHEAD = false;
+	public static final boolean ALLOW_STATIC_OPTIONS = false;
 
 	public static final boolean FORCE_DISABLE_CHECKSUM_VERIFICATION
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checksum.disable.force", "false"));
@@ -729,26 +731,26 @@ public class LLUtils {
 	 * @param smallRange true if the range is small
 	 * @return the passed instance of ReadOptions, or a new one if the passed readOptions is null
 	 */
-	public static ReadOptions generateCustomReadOptions(@Nullable ReadOptions readOptions,
+	public static RocksObj<ReadOptions> generateCustomReadOptions(@Nullable RocksObj<ReadOptions> readOptions,
 			boolean canFillCache,
 			boolean boundedRange,
 			boolean smallRange) {
 		if (readOptions == null) {
 			//noinspection resource
-			readOptions = new ReadOptions();
+			readOptions = new RocksObj<>(new ReadOptions());
 		}
 		if (boundedRange || smallRange) {
-			readOptions.setFillCache(canFillCache);
+			readOptions.v().setFillCache(canFillCache);
 		} else {
-			if (readOptions.readaheadSize() <= 0) {
-				readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
+			if (readOptions.v().readaheadSize() <= 0) {
+				readOptions.v().setReadaheadSize(4 * 1024 * 1024); // 4MiB
 			}
-			readOptions.setFillCache(false);
-			readOptions.setVerifyChecksums(false);
+			readOptions.v().setFillCache(false);
+			readOptions.v().setVerifyChecksums(false);
 		}
 
 		if (FORCE_DISABLE_CHECKSUM_VERIFICATION) {
-			readOptions.setVerifyChecksums(false);
+			readOptions.v().setVerifyChecksums(false);
 		}
 
 		return readOptions;
@@ -1012,8 +1014,10 @@ public class LLUtils {
 			iterable.forEach(LLUtils::onNextDropped);
 		} else if (next instanceof SafeCloseable safeCloseable) {
 			safeCloseable.close();
-		} else if (next instanceof RocksIteratorTuple iteratorTuple) {
-			iteratorTuple.close();
+		} else if (next instanceof RocksIteratorObj rocksIteratorObj) {
+			rocksIteratorObj.close();
+		} else if (next instanceof RocksObj<?> rocksObj) {
+			rocksObj.close();
 		} else if (next instanceof UpdateAtomicResultDelta delta) {
 			delta.delta().close();
 		} else if (next instanceof UpdateAtomicResultCurrent cur) {

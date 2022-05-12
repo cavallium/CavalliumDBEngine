@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.database.disk.HugePqEnv;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
@@ -25,8 +26,6 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 	private final HugePqEnv env;
 	private final int hugePqId;
 	private final StandardRocksDBColumn rocksDB;
-	private static final WriteOptions WRITE_OPTIONS = new WriteOptions().setDisableWAL(true).setSync(false);
-	private static final ReadOptions READ_OPTIONS = new ReadOptions().setVerifyChecksums(false);
 	private final V defaultValue;
 
 	private final long virtualSize;
@@ -40,6 +39,14 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		this.defaultValue = defaultValue;
 
 		this.virtualSize = size;
+	}
+
+	private static RocksObj<ReadOptions> newReadOptions() {
+		return new RocksObj<>(new ReadOptions().setVerifyChecksums(false));
+	}
+
+	private static RocksObj<WriteOptions> newWriteOptions() {
+		return new RocksObj<>(new WriteOptions().setDisableWAL(true).setSync(false));
 	}
 
 	public HugePqCodec<V> getValueCodec() {
@@ -59,9 +66,10 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		ensureBounds(index);
 		ensureThread();
 		var keyBuf = allocate(Long.BYTES);
-		try (var valueBuf = valueCodec.serialize(this::allocate, value); keyBuf) {
+		try (var writeOptions = newWriteOptions();
+				var valueBuf = valueCodec.serialize(this::allocate, value); keyBuf) {
 			keyBuf.writeLong(index);
-			rocksDB.put(WRITE_OPTIONS, keyBuf, valueBuf);
+			rocksDB.put(writeOptions, keyBuf, valueBuf);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
@@ -71,10 +79,10 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 	public void reset(long index) {
 		ensureBounds(index);
 		ensureThread();
-		var keyBuf = allocate(Long.BYTES);
-		try (keyBuf) {
+		try (var writeOptions = newWriteOptions();
+				var keyBuf = allocate(Long.BYTES)) {
 			keyBuf.writeLong(index);
-			rocksDB.delete(WRITE_OPTIONS, keyBuf);
+			rocksDB.delete(writeOptions, keyBuf);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
@@ -88,7 +96,8 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		var keyBuf = allocate(Long.BYTES);
 		try (keyBuf) {
 			keyBuf.writeLong(index);
-			try (var value = rocksDB.get(READ_OPTIONS, keyBuf)) {
+			try (var readOptions = newReadOptions();
+					var value = rocksDB.get(readOptions, keyBuf)) {
 				if (value == null) {
 					return null;
 				}

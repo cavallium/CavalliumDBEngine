@@ -11,6 +11,7 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
@@ -58,7 +59,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	private final int prefixLength;
 	private LLRange range;
 	private final boolean allowNettyDirect;
-	private ReadOptions readOptions;
+	private RocksObj<ReadOptions> readOptions;
 	private final boolean canFillCache;
 	private final boolean readValues;
 	private final boolean smallRange;
@@ -68,7 +69,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			int prefixLength,
 			Send<LLRange> range,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
+			RocksObj<ReadOptions> readOptions,
 			boolean canFillCache,
 			boolean readValues,
 			boolean smallRange) {
@@ -78,7 +79,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			this.prefixLength = prefixLength;
 			this.range = range.receive();
 			this.allowNettyDirect = allowNettyDirect;
-			this.readOptions = readOptions != null ? readOptions : new ReadOptions();
+			this.readOptions = readOptions != null ? readOptions : new RocksObj<>(new ReadOptions());
 			this.canFillCache = canFillCache;
 			this.readValues = readValues;
 			this.smallRange = smallRange;
@@ -94,7 +95,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, range, false));
 		}, (tuple, sink) -> {
 			try {
-				var rocksIterator = tuple.iter().iterator();
+				var rocksIterator = tuple.iter();
 				ObjectArrayList<T> values = new ObjectArrayList<>();
 				Buffer firstGroupKey = null;
 				try {

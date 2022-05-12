@@ -9,6 +9,7 @@ import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.StampedLock;
@@ -31,26 +32,27 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
-			ColumnFamilyHandle cfh,
+			RocksObj<ColumnFamilyHandle> cfh,
 			MeterRegistry meterRegistry,
 			StampedLock closeLock) {
 		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, closeLock);
 	}
 
 	@Override
-	protected boolean commitOptimistically(Transaction tx) throws RocksDBException {
-		tx.commit();
+	protected boolean commitOptimistically(RocksObj<Transaction> tx) throws RocksDBException {
+		tx.v().commit();
 		return true;
 	}
 
 	@Override
-	protected Transaction beginTransaction(@NotNull WriteOptions writeOptions) {
-		return getDb().beginTransaction(writeOptions, DEFAULT_TX_OPTIONS);
+	protected RocksObj<Transaction> beginTransaction(@NotNull RocksObj<WriteOptions> writeOptions,
+			RocksObj<TransactionOptions> txOpts) {
+		return new RocksObj<>(getDb().beginTransaction(writeOptions.v(), txOpts.v()));
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull RocksObj<ReadOptions> readOptions,
+			@NotNull RocksObj<WriteOptions> writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
@@ -61,14 +63,15 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
-			try (var tx = beginTransaction(writeOptions)) {
+			try (var txOpts = new RocksObj<>(new TransactionOptions());
+					var tx = beginTransaction(writeOptions, txOpts)) {
 				Send<Buffer> sentPrevData;
 				Send<Buffer> sentCurData;
 				boolean changed;
 				if (logger.isTraceEnabled()) {
 					logger.trace(MARKER_ROCKSDB, "Reading {} (before update lock)", LLUtils.toStringSafe(key));
 				}
-				var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
+				var prevDataArray = tx.v().getForUpdate(readOptions.v(), cfh.v(), keyArray, true);
 				try {
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB,
@@ -109,9 +112,9 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
 								}
 								writeValueBufferSize.record(0);
-								tx.delete(cfh, keyArray, true);
+								tx.v().delete(cfh.v(), keyArray, true);
 								changed = true;
-								tx.commit();
+								tx.v().commit();
 							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB,
@@ -121,19 +124,19 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 									);
 								}
 								writeValueBufferSize.record(newDataArray.length);
-								tx.put(cfh, keyArray, newDataArray);
+								tx.v().put(cfh.v(), keyArray, newDataArray);
 								changed = true;
-								tx.commit();
+								tx.v().commit();
 							} else {
 								changed = false;
-								tx.rollback();
+								tx.v().rollback();
 							}
 							sentPrevData = prevData == null ? null : prevData.send();
 							sentCurData = newData == null ? null : newData.send();
 						}
 					}
 				} finally {
-					tx.undoGetForUpdate(cfh, keyArray);
+					tx.v().undoGetForUpdate(cfh.v(), keyArray);
 				}
 				recordAtomicUpdateTime(changed, sentPrevData != null, sentCurData != null, initNanoTime);
 				return switch (returnMode) {

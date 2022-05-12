@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.Closeable;
 import java.io.File;
 import java.io.IOException;
@@ -58,11 +59,16 @@ public class LLTempHugePqEnv implements Closeable {
 
 						var cfh = new ArrayList<ColumnFamilyHandle>();
 						nextColumnName = new AtomicInteger(0);
-						env = new HugePqEnv(RocksDB.open(opts,
+						var db = RocksDB.open(opts,
 								tempDirectory.toString(),
 								List.of(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY, getColumnOptions(null))),
 								cfh
-						), cfh);
+						);
+						var cfhObjs = new ArrayList<RocksObj<ColumnFamilyHandle>>(cfh.size());
+						for (ColumnFamilyHandle columnFamilyHandle : cfh) {
+							cfhObjs.add(new RocksObj<>(columnFamilyHandle));
+						}
+						env = new HugePqEnv(db, cfhObjs);
 						initialized = true;
 					} catch (RocksDBException | IOException e) {
 						throw new RuntimeException(e);

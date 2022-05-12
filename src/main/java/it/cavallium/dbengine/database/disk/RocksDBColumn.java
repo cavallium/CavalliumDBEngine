@@ -5,6 +5,8 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.List;
 import org.jetbrains.annotations.NotNull;
@@ -22,13 +24,12 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
-	@NotNull
-	RocksIteratorTuple newRocksIterator(boolean allowNettyDirect,
-			ReadOptions readOptions,
+	@NotNull RocksIteratorObj newRocksIterator(boolean allowNettyDirect,
+			RocksObj<ReadOptions> readOptions,
 			LLRange range,
 			boolean reverse) throws RocksDBException;
 
-	default byte @Nullable [] get(@NotNull ReadOptions readOptions,
+	default byte @Nullable [] get(@NotNull RocksObj<ReadOptions> readOptions,
 			byte[] key,
 			boolean existsAlmostCertainly)
 			throws RocksDBException {
@@ -45,15 +46,15 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	}
 
 	@Nullable
-	Buffer get(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+	Buffer get(@NotNull RocksObj<ReadOptions> readOptions, Buffer key) throws RocksDBException;
 
-	boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+	boolean exists(@NotNull RocksObj<ReadOptions> readOptions, Buffer key) throws RocksDBException;
 
-	boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+	boolean mayExists(@NotNull RocksObj<ReadOptions> readOptions, Buffer key) throws RocksDBException;
 
-	void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException;
+	void put(@NotNull RocksObj<WriteOptions> writeOptions, Buffer key, Buffer value) throws RocksDBException;
 
-	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value) throws RocksDBException {
+	default void put(@NotNull RocksObj<WriteOptions> writeOptions, byte[] key, byte[] value) throws RocksDBException {
 		var allocator = getAllocator();
 		try (var keyBuf = allocator.allocate(key.length)) {
 			keyBuf.writeBytes(key);
@@ -65,31 +66,33 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 		}
 	}
 
-	@NotNull RocksDBIterator newIterator(@NotNull ReadOptions readOptions);
+	@NotNull RocksIteratorObj newIterator(@NotNull RocksObj<ReadOptions> readOptions, @Nullable Buffer min, @Nullable Buffer max);
 
-	@NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions, @NotNull WriteOptions writeOptions,
-			Buffer key, BinarySerializationFunction updater,
+	@NotNull UpdateAtomicResult updateAtomic(@NotNull RocksObj<ReadOptions> readOptions,
+			@NotNull RocksObj<WriteOptions> writeOptions,
+			Buffer key,
+			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws RocksDBException, IOException;
 
-	void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException;
+	void delete(RocksObj<WriteOptions> writeOptions, Buffer key) throws RocksDBException;
 
-	void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException;
+	void delete(RocksObj<WriteOptions> writeOptions, byte[] key) throws RocksDBException;
 
-	List<byte[]> multiGetAsList(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException;
+	List<byte[]> multiGetAsList(RocksObj<ReadOptions> readOptions, List<byte[]> keys) throws RocksDBException;
 
-	void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException;
+	void write(RocksObj<WriteOptions> writeOptions, WriteBatch writeBatch) throws RocksDBException;
 
 	void suggestCompactRange() throws RocksDBException;
 
-	void compactRange(byte[] begin, byte[] end, CompactRangeOptions options) throws RocksDBException;
+	void compactRange(byte[] begin, byte[] end, RocksObj<CompactRangeOptions> options) throws RocksDBException;
 
-	void flush(FlushOptions options) throws RocksDBException;
+	void flush(RocksObj<FlushOptions> options) throws RocksDBException;
 
 	void flushWal(boolean sync) throws RocksDBException;
 
 	long getLongProperty(String property) throws RocksDBException;
 
-	ColumnFamilyHandle getColumnFamilyHandle();
+	RocksObj<ColumnFamilyHandle> getColumnFamilyHandle();
 
 	BufferAllocator getAllocator();
 

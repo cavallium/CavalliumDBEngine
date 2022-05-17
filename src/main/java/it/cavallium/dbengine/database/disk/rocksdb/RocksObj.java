@@ -12,7 +12,7 @@ public class RocksObj<T extends AbstractNativeReference> extends ResourceSupport
 		@Override
 		public void drop(RocksObj obj) {
 			if (obj.val != null) {
-				obj.val.close();
+				if (obj.val.isAccessible()) obj.val.close();
 			}
 		}
 

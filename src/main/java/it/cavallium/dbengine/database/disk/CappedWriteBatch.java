@@ -267,8 +267,8 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	@Override
-	public synchronized void close() {
-		super.close();
+	protected void disposeInternal(boolean owningHandle) {
+		super.disposeInternal(owningHandle);
 		releaseAllBuffers();
 	}
 }

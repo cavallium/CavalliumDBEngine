@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database;
 
-import static io.netty5.buffer.Unpooled.wrappedBuffer;
-
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;

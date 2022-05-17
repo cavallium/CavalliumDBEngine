@@ -809,7 +809,7 @@ public class LLUtils {
 				b1.writerOffset(b1.writerOffset() + b2.readableBytes());
 				return b1;
 			} else {
-				return CompositeBuffer.compose(alloc, b1.send(), b2.send());
+				return alloc.compose(List.of(b1.send(), b2.send()));
 			}
 		}
 	}
@@ -834,7 +834,7 @@ public class LLUtils {
 					b1.writerOffset(b1.writerOffset() + b3.readableBytes());
 					return b1;
 				} else {
-					return CompositeBuffer.compose(alloc, b1.send(), b2.send(), b3.send());
+					return alloc.compose(List.of(b1.send(), b2.send(), b3.send()));
 				}
 			}
 		}

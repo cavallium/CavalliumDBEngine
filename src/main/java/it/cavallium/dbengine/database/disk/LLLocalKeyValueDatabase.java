@@ -1499,7 +1499,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 								compressedCache,
 								new ArrayList<>(handles.values().stream().map(RocksObj::v).toList())
 						);
-						handles.values().forEach(ResourceSupport::close);
+						handles.values().forEach(columnFamilyHandleRocksObj -> {
+							if (columnFamilyHandleRocksObj.isAccessible()) {
+								columnFamilyHandleRocksObj.close();
+							}
+						});
 						handles.clear();
 						deleteUnusedOldLogFiles();
 					} catch (RocksDBException e) {

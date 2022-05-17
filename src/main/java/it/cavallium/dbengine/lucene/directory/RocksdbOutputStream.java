@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.lucene.directory;
 
-import io.netty5.buffer.ByteBuf;
-import io.netty5.buffer.ByteBufAllocator;
 import io.netty5.buffer.api.Buffer;
 import org.apache.lucene.store.BufferedChecksum;
 import org.apache.lucene.store.IndexOutput;

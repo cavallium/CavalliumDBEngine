@@ -1,8 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import static io.netty5.buffer.Unpooled.wrappedBuffer;
-
-import io.netty5.buffer.Unpooled;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLUtils;
@@ -24,11 +21,6 @@ public class TestRanges {
 	@AfterAll
 	public static void afterAll() {
 		alloc = BufferAllocator.offHeapPooled();
-	}
-
-	@Test
-	public void testDirectBuffer() {
-		Assertions.assertTrue(wrappedBuffer(Unpooled.directBuffer(10, 10), Unpooled.buffer(10, 10)).isDirect());
 	}
 
 	@Test

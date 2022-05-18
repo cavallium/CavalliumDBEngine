@@ -374,7 +374,7 @@
 		<dependency>
 			<groupId>it.cavallium</groupId>
 			<artifactId>data-generator-runtime</artifactId>
-			<version>1.0.68</version>
+			<version>1.0.70</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.jetbrains</groupId>
@@ -470,7 +470,7 @@
 			<plugin>
 				<groupId>it.cavallium</groupId>
 				<artifactId>data-generator</artifactId>
-				<version>0.9.133</version>
+				<version>0.9.135</version>
 				<executions>
 					<execution>
 						<id>generate-lucene-query-sources</id>
@@ -567,5 +567,40 @@
 				</executions>
 			</plugin>
 		</plugins>
+		<pluginManagement>
+			<plugins>
+				<!--This plugin's configuration is used to store Eclipse m2e settings only. It has no influence on the Maven build itself.-->
+				<plugin>
+					<groupId>org.eclipse.m2e</groupId>
+					<artifactId>lifecycle-mapping</artifactId>
+					<version>1.0.0</version>
+					<configuration>
+						<lifecycleMappingMetadata>
+							<pluginExecutions>
+								<pluginExecution>
+									<pluginExecutionFilter>
+										<groupId>
+											org.codehaus.mojo
+										</groupId>
+										<artifactId>
+											flatten-maven-plugin
+										</artifactId>
+										<versionRange>
+											[1.1.0,)
+										</versionRange>
+										<goals>
+											<goal>flatten</goal>
+										</goals>
+									</pluginExecutionFilter>
+									<action>
+										<ignore></ignore>
+									</action>
+								</pluginExecution>
+							</pluginExecutions>
+						</lifecycleMappingMetadata>
+					</configuration>
+				</plugin>
+			</plugins>
+		</pluginManagement>
 	</build>
 </project>

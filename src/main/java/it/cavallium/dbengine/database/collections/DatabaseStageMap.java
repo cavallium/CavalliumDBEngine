@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.collections;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
@@ -120,7 +121,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 		return entries.flatMap(entry -> this.putValue(entry.getKey(), entry.getValue())).then();
 	}
 
-	Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
+	Flux<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
 
 	default Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return this

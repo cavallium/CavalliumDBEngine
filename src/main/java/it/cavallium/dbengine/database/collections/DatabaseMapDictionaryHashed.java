@@ -10,6 +10,7 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -195,7 +196,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T key) {
 		return this
 				.atPrivate(snapshot, key, keySuffixHashFunction.apply(key))
-				.map(cast -> (DatabaseStageEntry<U>) cast);
+				.map(cast -> cast);
 	}
 
 	private Mono<DatabaseSingleBucket<T, U, TH>> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
@@ -210,7 +211,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	}
 
 	@Override
-	public Flux<Entry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+	public Flux<SubStageEntry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot,
+			boolean smallRange) {
 		return subDictionary
 				.getAllValues(snapshot, smallRange)
 				.map(Entry::getValue)
@@ -218,8 +220,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 				.flatMap(bucket -> Flux
 						.fromIterable(bucket)
 						.map(Entry::getKey)
-						.flatMap(key -> this.at(snapshot, key).map(stage -> Map.entry(key, stage)))
-				);
+						.flatMap(key -> this.at(snapshot, key).map(stage -> new SubStageEntry<>(key, stage))));
 	}
 
 	@Override

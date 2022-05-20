@@ -421,26 +421,33 @@ public class LLLocalDictionary implements LLDictionary {
 				case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
 				case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 			};
-			UpdateAtomicResult result;
-			var readOptions = generateReadOptionsOrStatic(null);
-			startedUpdates.increment();
-			try (var writeOptions = new WriteOptions()) {
-				result = updateTime.recordCallable(() -> db.updateAtomic(readOptions, writeOptions, key, updater, returnMode));
-			} finally {
-				endedUpdates.increment();
-				if (readOptions != EMPTY_READ_OPTIONS) {
-					readOptions.close();
+			UpdateAtomicResult result = null;
+			try {
+				var readOptions = generateReadOptionsOrStatic(null);
+				startedUpdates.increment();
+				try (var writeOptions = new WriteOptions()) {
+					result = updateTime.recordCallable(() -> db.updateAtomic(readOptions, writeOptions, key, updater, returnMode));
+				} finally {
+					endedUpdates.increment();
+					if (readOptions != EMPTY_READ_OPTIONS) {
+						readOptions.close();
+					}
 				}
-			}
-			assert result != null;
-			return switch (updateReturnMode) {
-				case NOTHING -> {
+				assert result != null;
+				return switch (updateReturnMode) {
+					case NOTHING -> {
+						result.close();
+						yield null;
+					}
+					case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
+					case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
+				};
+			} catch (Throwable ex) {
+				if (result != null) {
 					result.close();
-					yield null;
 				}
-				case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
-				case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
-			};
+				throw ex;
+			}
 		}), key -> Mono.fromRunnable(key::close));
 	}
 
@@ -458,19 +465,27 @@ public class LLLocalDictionary implements LLDictionary {
 						+ "safe atomic operations");
 			}
 
-			UpdateAtomicResult result;
-			var readOptions = generateReadOptionsOrStatic(null);
-			startedUpdates.increment();
-			try (var writeOptions = new WriteOptions()) {
-				result = updateTime.recordCallable(() -> db.updateAtomic(readOptions, writeOptions, key, updater, DELTA));
-			} finally {
-				endedUpdates.increment();
-				if (readOptions != EMPTY_READ_OPTIONS) {
-					readOptions.close();
+			UpdateAtomicResultDelta result = null;
+			try {
+				var readOptions = generateReadOptionsOrStatic(null);
+				startedUpdates.increment();
+				try (var writeOptions = new WriteOptions()) {
+					result = updateTime.recordCallable(() ->
+							(UpdateAtomicResultDelta) db.updateAtomic(readOptions, writeOptions, key, updater, DELTA));
+				} finally {
+					endedUpdates.increment();
+					if (readOptions != EMPTY_READ_OPTIONS) {
+						readOptions.close();
+					}
 				}
+				assert result != null;
+				return result.delta();
+			} catch (Throwable ex) {
+				if (result != null && result.delta().isAccessible()) {
+					result.close();
+				}
+				throw ex;
 			}
-			assert result != null;
-			return ((UpdateAtomicResultDelta) result).delta();
 		}), key -> Mono.fromRunnable(key::close));
 	}
 
@@ -938,7 +953,7 @@ public class LLLocalDictionary implements LLDictionary {
 		if (USE_WINDOW_IN_SET_RANGE) {
 			return Mono
 					.usingWhen(rangeMono, range -> runOnDb(true, () -> {
-						try (var writeOptions = new WriteOptions(); range) {
+						try (var writeOptions = new WriteOptions()) {
 							assert !Schedulers.isInNonBlockingThread() : "Called setRange in a nonblocking thread";
 							if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
 								try (var opts = LLUtils.generateCustomReadOptions(null, true, isBoundedRange(range), smallRange)) {

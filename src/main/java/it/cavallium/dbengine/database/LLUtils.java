@@ -797,29 +797,21 @@ public class LLUtils {
 	}
 
 	public static Mono<Buffer> resolveLLDelta(Mono<LLDelta> prev, UpdateReturnMode updateReturnMode) {
-		return prev.handle((delta, sink) -> {
+		return prev.mapNotNull(delta -> {
 			final Buffer previous = delta.previousUnsafe();
 			final Buffer current = delta.currentUnsafe();
-			switch (updateReturnMode) {
+			return switch (updateReturnMode) {
 				case GET_NEW_VALUE -> {
 					if (previous != null && previous.isAccessible()) {
 						previous.close();
 					}
-					if (current != null) {
-						sink.next(current);
-					} else {
-						sink.complete();
-					}
+					yield current;
 				}
 				case GET_OLD_VALUE -> {
 					if (current != null && current.isAccessible()) {
 						current.close();
 					}
-					if (previous != null) {
-						sink.next(previous);
-					} else {
-						sink.complete();
-					}
+					yield previous;
 				}
 				case NOTHING -> {
 					if (previous != null && previous.isAccessible()) {
@@ -828,10 +820,9 @@ public class LLUtils {
 					if (current != null && current.isAccessible()) {
 						current.close();
 					}
-					sink.complete();
+					yield null;
 				}
-				default -> sink.error(new IllegalStateException());
-			}
+			};
 		});
 	}
 
@@ -862,27 +853,23 @@ public class LLUtils {
 
 	public static <U> Mono<Delta<U>> mapLLDelta(Mono<LLDelta> mono,
 			SerializationFunction<@NotNull Buffer, @Nullable U> mapper) {
-		return mono.handle((delta, sink) -> {
-			try (delta) {
-				Buffer prev = delta.previousUnsafe();
-				Buffer curr = delta.currentUnsafe();
-				U newPrev;
-				U newCurr;
-				if (prev != null) {
-					newPrev = mapper.apply(prev);
-				} else {
-					newPrev = null;
-				}
-				if (curr != null) {
-					newCurr = mapper.apply(curr);
-				} else {
-					newCurr = null;
-				}
-				sink.next(new Delta<>(newPrev, newCurr));
-			} catch (SerializationException ex) {
-				sink.error(ex);
+		return Mono.usingWhen(mono, delta -> Mono.fromCallable(() -> {
+			Buffer prev = delta.previousUnsafe();
+			Buffer curr = delta.currentUnsafe();
+			U newPrev;
+			U newCurr;
+			if (prev != null) {
+				newPrev = mapper.apply(prev);
+			} else {
+				newPrev = null;
 			}
-		});
+			if (curr != null) {
+				newCurr = mapper.apply(curr);
+			} else {
+				newCurr = null;
+			}
+			return new Delta<>(newPrev, newCurr);
+		}), delta -> Mono.fromRunnable(delta::close));
 	}
 
 	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {

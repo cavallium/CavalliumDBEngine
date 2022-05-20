@@ -124,17 +124,15 @@ public class DatabaseSingleBucket<K, V, TH>
 
 	@Override
 	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater) {
-		return bucketStage
-				.updateAndGetDelta(oldBucket -> {
-					V oldValue = extractValue(oldBucket);
-					var result = updater.apply(oldValue);
-					if (result == null) {
-						return this.removeValueOrDelete(oldBucket);
-					} else {
-						return this.insertValueOrCreate(oldBucket, result);
-					}
-				})
-				.transform(mono -> LLUtils.mapDelta(mono, this::extractValue));
+		return bucketStage.updateAndGetDelta(oldBucket -> {
+			V oldValue = extractValue(oldBucket);
+			var result = updater.apply(oldValue);
+			if (result == null) {
+				return this.removeValueOrDelete(oldBucket);
+			} else {
+				return this.insertValueOrCreate(oldBucket, result);
+			}
+		}).transform(mono -> LLUtils.mapDelta(mono, this::extractValue));
 	}
 
 	@Override

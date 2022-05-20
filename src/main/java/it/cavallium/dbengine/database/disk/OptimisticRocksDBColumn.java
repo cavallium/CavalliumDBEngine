@@ -96,33 +96,37 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 				boolean committedSuccessfully;
 				int retries = 0;
 				ExponentialPageLimits retryTime = null;
-				Buffer sentPrevData = null;
-				Buffer sentCurData = null;
-				boolean changed;
-				do {
-					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB,
-								"Reading {}: {} (before update)",
-								LLUtils.toStringSafe(key),
-								LLUtils.toStringSafe(prevDataArray)
-						);
-					}
-					Buffer prevData;
-					if (prevDataArray != null) {
-						prevData = MemoryManager.unsafeWrap(prevDataArray);
-						prevDataArray = null;
-					} else {
-						prevData = null;
-					}
-					try (prevData) {
+				Buffer prevData = null;
+				Buffer newData = null;
+				try {
+					boolean changed;
+					do {
+						if (prevData != null && prevData.isAccessible()) {
+							prevData.close();
+						}
+						if (newData != null && newData.isAccessible()) {
+							newData.close();
+						}
+						var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB,
+									"Reading {}: {} (before update)",
+									LLUtils.toStringSafe(key),
+									LLUtils.toStringSafe(prevDataArray)
+							);
+						}
+						if (prevDataArray != null) {
+							prevData = MemoryManager.unsafeWrap(prevDataArray);
+							prevDataArray = null;
+						} else {
+							prevData = null;
+						}
 						Buffer prevDataToSendToUpdater;
 						if (prevData != null) {
 							prevDataToSendToUpdater = prevData.copy().makeReadOnly();
 						} else {
 							prevDataToSendToUpdater = null;
 						}
-						@Nullable Buffer newData;
 						try {
 							newData = updater.apply(prevDataToSendToUpdater);
 						} finally {
@@ -130,119 +134,111 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								prevDataToSendToUpdater.close();
 							}
 						}
-						try (newData) {
-							var newDataArray = newData == null ? null : LLUtils.toArray(newData);
+						var newDataArray = newData == null ? null : LLUtils.toArray(newData);
+						if (logger.isTraceEnabled()) {
+							logger.trace(MARKER_ROCKSDB,
+									"Updating {}. previous data: {}, updated data: {}",
+									LLUtils.toStringSafe(key),
+									LLUtils.toStringSafe(prevDataArray),
+									LLUtils.toStringSafe(newDataArray)
+							);
+						}
+						if (prevData != null && newData == null) {
+							if (logger.isTraceEnabled()) {
+								logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
+							}
+							tx.delete(cfh, keyArray, true);
+							changed = true;
+							committedSuccessfully = commitOptimistically(tx);
+						} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 							if (logger.isTraceEnabled()) {
 								logger.trace(MARKER_ROCKSDB,
-										"Updating {}. previous data: {}, updated data: {}",
+										"Writing {}: {} (after update)",
 										LLUtils.toStringSafe(key),
-										LLUtils.toStringSafe(prevDataArray),
-										LLUtils.toStringSafe(newDataArray)
+										LLUtils.toStringSafe(newData)
 								);
 							}
-							if (prevData != null && newData == null) {
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
-								}
-								tx.delete(cfh, keyArray, true);
-								changed = true;
-								committedSuccessfully = commitOptimistically(tx);
-							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
-								if (logger.isTraceEnabled()) {
-									logger.trace(MARKER_ROCKSDB,
-											"Writing {}: {} (after update)",
-											LLUtils.toStringSafe(key),
-											LLUtils.toStringSafe(newData)
-									);
-								}
-								tx.put(cfh, keyArray, newDataArray);
-								changed = true;
-								committedSuccessfully = commitOptimistically(tx);
-							} else {
-								changed = false;
-								committedSuccessfully = true;
-								tx.rollback();
-							}
-							if (sentPrevData != null && sentPrevData.isAccessible()) {
-								sentPrevData.close();
-							}
-							if (sentCurData != null && sentCurData.isAccessible()) {
-								sentCurData.close();
-							}
-							sentPrevData = prevData == null ? null : prevData.copy();
-							sentCurData = newData == null ? null : newData.copy();
-							if (!committedSuccessfully) {
-								tx.undoGetForUpdate(cfh, keyArray);
-								tx.rollback();
-								if (sentPrevData != null && sentPrevData.isAccessible()) {
-									sentPrevData.close();
-								}
-								if (sentCurData != null && sentCurData.isAccessible()) {
-									sentCurData.close();
-								}
-								retries++;
+							tx.put(cfh, keyArray, newDataArray);
+							changed = true;
+							committedSuccessfully = commitOptimistically(tx);
+						} else {
+							changed = false;
+							committedSuccessfully = true;
+							tx.rollback();
+						}
+						if (!committedSuccessfully) {
+							tx.undoGetForUpdate(cfh, keyArray);
+							tx.rollback();
+							retries++;
 
-								if (retries == 1) {
-									retryTime = new ExponentialPageLimits(0, 2, 2000);
-								}
-								long retryNs = 1000000L * retryTime.getPageLimit(retries);
+							if (retries == 1) {
+								retryTime = new ExponentialPageLimits(0, 2, 2000);
+							}
+							long retryNs = 1000000L * retryTime.getPageLimit(retries);
 
-								// +- 30%
-								retryNs = retryNs + ThreadLocalRandom.current().nextLong(-retryNs * 30L / 100L, retryNs * 30L / 100L);
+							// +- 30%
+							retryNs = retryNs + ThreadLocalRandom.current().nextLong(-retryNs * 30L / 100L, retryNs * 30L / 100L);
 
-								if (retries >= 5 && retries % 5 == 0 || ALWAYS_PRINT_OPTIMISTIC_RETRIES) {
-									logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryNs / 1000000d, retries);
-								} else if (logger.isDebugEnabled(MARKER_ROCKSDB)) {
-									logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
-											+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryNs / 1000000d, retries);
-								}
-								// Wait for n milliseconds
-								if (retryNs > 0) {
-									LockSupport.parkNanos(retryNs);
-								}
+							if (retries >= 5 && retries % 5 == 0 || ALWAYS_PRINT_OPTIMISTIC_RETRIES) {
+								logger.warn(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
+										+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryNs / 1000000d, retries);
+							} else if (logger.isDebugEnabled(MARKER_ROCKSDB)) {
+								logger.debug(MARKER_ROCKSDB, "Failed optimistic transaction {} (update):"
+										+ " waiting {} ms before retrying for the {} time", LLUtils.toStringSafe(key), retryNs / 1000000d, retries);
+							}
+							// Wait for n milliseconds
+							if (retryNs > 0) {
+								LockSupport.parkNanos(retryNs);
 							}
 						}
+					} while (!committedSuccessfully);
+					if (retries > 5) {
+						logger.warn(MARKER_ROCKSDB, "Took {} retries to update key {}", retries, LLUtils.toStringSafe(key));
 					}
-				} while (!committedSuccessfully);
-				if (retries > 5) {
-					logger.warn(MARKER_ROCKSDB, "Took {} retries to update key {}", retries, LLUtils.toStringSafe(key));
+					recordAtomicUpdateTime(changed, prevData != null, newData != null, initNanoTime);
+					optimisticAttempts.record(retries);
+					return switch (returnMode) {
+						case NOTHING -> {
+							if (prevData != null) {
+								prevData.close();
+							}
+							if (newData != null) {
+								newData.close();
+							}
+							yield RESULT_NOTHING;
+						}
+						case CURRENT -> {
+							if (prevData != null) {
+								prevData.close();
+							}
+							yield new UpdateAtomicResultCurrent(newData);
+						}
+						case PREVIOUS -> {
+							if (newData != null) {
+								newData.close();
+							}
+							yield new UpdateAtomicResultPrevious(prevData);
+						}
+						case BINARY_CHANGED -> {
+							if (prevData != null) {
+								prevData.close();
+							}
+							if (newData != null) {
+								newData.close();
+							}
+							yield new UpdateAtomicResultBinaryChanged(changed);
+						}
+						case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(prevData, newData));
+					};
+				} catch (Throwable ex) {
+					if (prevData != null && prevData.isAccessible()) {
+						prevData.close();
+					}
+					if (newData != null && newData.isAccessible()) {
+						newData.close();
+					}
+					throw ex;
 				}
-				recordAtomicUpdateTime(changed, sentPrevData != null, sentCurData != null, initNanoTime);
-				optimisticAttempts.record(retries);
-				return switch (returnMode) {
-					case NOTHING -> {
-						if (sentPrevData != null) {
-							sentPrevData.close();
-						}
-						if (sentCurData != null) {
-							sentCurData.close();
-						}
-						yield RESULT_NOTHING;
-					}
-					case CURRENT -> {
-						if (sentPrevData != null) {
-							sentPrevData.close();
-						}
-						yield new UpdateAtomicResultCurrent(sentCurData);
-					}
-					case PREVIOUS -> {
-						if (sentCurData != null) {
-							sentCurData.close();
-						}
-						yield new UpdateAtomicResultPrevious(sentPrevData);
-					}
-					case BINARY_CHANGED -> {
-						if (sentPrevData != null) {
-							sentPrevData.close();
-						}
-						if (sentCurData != null) {
-							sentCurData.close();
-						}
-						yield new UpdateAtomicResultBinaryChanged(changed);
-					}
-					case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData));
-				};
 			}
 		} catch (Throwable ex) {
 			throw new IOException("Failed to update key " + LLUtils.toStringSafe(key), ex);

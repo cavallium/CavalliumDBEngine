@@ -167,11 +167,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 					} else {
 						return serializeValue(result);
 					}
-				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
-					try (serialized) {
-						return serializer.deserialize(serialized);
-					}
-				}));
+				}).transform(mono -> LLUtils.mapLLDelta(mono, serializer::deserialize));
 	}
 
 	@Override

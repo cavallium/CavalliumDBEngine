@@ -16,6 +16,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RangeSupplier;
+import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializationException;
@@ -370,7 +371,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	}
 
 	@Override
-	public Flux<Entry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+	public Flux<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return dictionary
 				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength, smallRange)
 				.flatMapSequential(groupKeyWithoutExtSend_ -> Mono.using(
@@ -381,7 +382,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 									T deserializedSuffix;
 									try (var splittedGroupSuffix = splitGroupSuffix(groupKeyWithoutExtSend)) {
 										deserializedSuffix = this.deserializeSuffix(splittedGroupSuffix);
-										sink.next(Map.entry(deserializedSuffix, us));
+										sink.next(new SubStageEntry<>(deserializedSuffix, us));
 									} catch (SerializationException ex) {
 										sink.error(ex);
 									}

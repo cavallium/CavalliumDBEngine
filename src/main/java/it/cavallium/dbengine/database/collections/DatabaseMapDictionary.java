@@ -495,11 +495,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	private LLRange getPatchedRange(@NotNull LLRange range, @Nullable T keyMin, @Nullable T keyMax)
 			throws SerializationException {
-		try (range) {
-			Buffer keyMinBuf = requireNonNullElseGet(serializeSuffixForRange(keyMin), range::getMinCopy);
-			Buffer keyMaxBuf = requireNonNullElseGet(serializeSuffixForRange(keyMax), range::getMaxCopy);
-			return LLRange.ofUnsafe(keyMinBuf, keyMaxBuf);
-		}
+		Buffer keyMinBuf = requireNonNullElseGet(serializeSuffixForRange(keyMin), range::getMinCopy);
+		Buffer keyMaxBuf = requireNonNullElseGet(serializeSuffixForRange(keyMax), range::getMaxCopy);
+		return LLRange.ofUnsafe(keyMinBuf, keyMaxBuf);
 	}
 
 	private Buffer serializeSuffixForRange(@Nullable T key) throws SerializationException {
@@ -587,7 +585,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		} else {
 			Mono<LLRange> boundedRangeMono = rangeMono
 					.handle((fullRange, sink) -> {
-						try {
+						try (fullRange) {
 							sink.next(getPatchedRange(fullRange, keyMin, keyMax));
 						} catch (SerializationException e) {
 							sink.error(e);

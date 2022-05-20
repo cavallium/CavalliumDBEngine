@@ -60,6 +60,7 @@ import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -772,13 +773,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<LLEntry> getRangeSingle(LLSnapshot snapshot, Mono<Buffer> keyMono) {
-		return Mono
-				.zip(keyMono, this.get(snapshot, keyMono))
-				.map(result -> LLEntry.of(
-						result.getT1().touch("get-range-single key"),
-						result.getT2().touch("get-range-single value")
-				))
-				.flux();
+		return Mono.zip(keyMono, this.get(snapshot, keyMono), LLEntry::of).flux();
 	}
 
 	private Flux<LLEntry> getRangeMulti(LLSnapshot snapshot,

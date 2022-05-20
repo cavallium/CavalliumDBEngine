@@ -80,13 +80,9 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 		}
 	}
 
-	private void deserializeValue(Buffer value, SynchronousSink<U> sink) {
+	private U deserializeValue(Buffer value) {
 		try {
-			U deserializedValue;
-			try (value) {
-				deserializedValue = serializer.deserialize(value);
-			}
-			sink.next(deserializedValue);
+			return serializer.deserialize(value);
 		} catch (IndexOutOfBoundsException ex) {
 			var exMessage = ex.getMessage();
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
@@ -94,12 +90,12 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 					LOG.error("Unexpected zero-bytes value at "
 							+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName() + ":" + LLUtils.toStringSafe(key));
 				}
-				sink.complete();
+				return null;
 			} else {
-				sink.error(ex);
+				throw ex;
 			}
 		} catch (SerializationException ex) {
-			sink.error(ex);
+			throw ex;
 		}
 	}
 
@@ -118,22 +114,24 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return dictionary
-				.get(resolveSnapshot(snapshot), keyMono)
-				.handle(this::deserializeValue);
+		return Mono.usingWhen(dictionary.get(resolveSnapshot(snapshot), keyMono),
+				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
+				buf -> Mono.fromRunnable(buf::close)
+		);
 	}
 
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
-		return dictionary
-				.put(keyMono, Mono.fromCallable(() -> serializeValue(value)), LLDictionaryResultType.PREVIOUS_VALUE)
-				.handle(this::deserializeValue);
+		return Mono.usingWhen(dictionary
+						.put(keyMono, Mono.fromCallable(() -> serializeValue(value)), LLDictionaryResultType.PREVIOUS_VALUE),
+				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
+				buf -> Mono.fromRunnable(buf::close));
 	}
 
 	@Override
 	public Mono<U> update(SerializationFunction<@Nullable U, @Nullable U> updater,
 			UpdateReturnMode updateReturnMode) {
-		return dictionary
+		var resultMono = dictionary
 				.update(keyMono, (oldValueSer) -> {
 					U result;
 					if (oldValueSer == null) {
@@ -147,8 +145,11 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 					} else {
 						return serializeValue(result);
 					}
-				}, updateReturnMode)
-				.handle(this::deserializeValue);
+				}, updateReturnMode);
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> deserializeValue(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	@Override
@@ -172,9 +173,10 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	public Mono<U> clearAndGetPrevious() {
-		return dictionary
-				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE)
-				.handle(this::deserializeValue);
+		return Mono.usingWhen(dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE),
+				result -> Mono.fromSupplier(() -> deserializeValue(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	@Override

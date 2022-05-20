@@ -4,6 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -24,11 +25,12 @@ public class SubStageGetterSet<T> implements
 	@Override
 	public Mono<DatabaseSetDictionary<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Send<Buffer>> prefixKeyMono) {
-		return prefixKeyMono.map(prefixKeyToReceive -> {
-			var prefixKey = prefixKeyToReceive.receive();
-			return DatabaseSetDictionary.tail(dictionary, prefixKey, keySerializer, null);
-		});
+			Mono<Buffer> prefixKeyMono) {
+		return prefixKeyMono.map(prefixKey -> DatabaseSetDictionary.tail(dictionary,
+				BufSupplier.ofOwned(prefixKey),
+				keySerializer,
+				null
+		));
 	}
 
 	public int getKeyBinaryLength() {

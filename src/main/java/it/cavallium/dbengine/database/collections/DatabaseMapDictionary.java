@@ -50,12 +50,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	private final Serializer<U> valueSerializer;
 
 	protected DatabaseMapDictionary(LLDictionary dictionary,
-			@Nullable Buffer prefixKey,
+			@Nullable BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Runnable onClose) {
 		// Do not retain or release or use the prefixKey here
-		super(dictionary, prefixKey, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0, onClose);
+		super(dictionary, prefixKeySupplier, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0, onClose);
 		this.valueSerializer = valueSerializer;
 	}
 
@@ -67,11 +67,11 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
-			@Nullable Buffer prefixKey,
+			@Nullable BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Runnable onClose) {
-		return new DatabaseMapDictionary<>(dictionary, prefixKey, keySuffixSerializer, valueSerializer, onClose);
+		return new DatabaseMapDictionary<>(dictionary, prefixKeySupplier, keySuffixSerializer, valueSerializer, onClose);
 	}
 
 	public static <K, V> Flux<Entry<K, V>> getLeavesFrom(DatabaseMapDictionary<K, V> databaseMapDictionary,
@@ -134,17 +134,19 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
 				var totalZeroBytesErrors = this.totalZeroBytesErrors.incrementAndGet();
 				if (totalZeroBytesErrors < 512 || totalZeroBytesErrors % 10000 == 0) {
-					try (var keySuffixBytes = serializeKeySuffixToKey(keySuffix)) {
-						LOG.error(
-								"Unexpected zero-bytes value at "
-										+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName()
-										+ ":" + LLUtils.toStringSafe(this.keyPrefix) + ":" + keySuffix
-										+ "(" + LLUtils.toStringSafe(keySuffixBytes) + ") total=" + totalZeroBytesErrors);
-					} catch (SerializationException e) {
-						LOG.error(
-								"Unexpected zero-bytes value at " + dictionary.getDatabaseName() + ":" + dictionary.getColumnName()
-										+ ":" + LLUtils.toStringSafe(this.keyPrefix) + ":" + keySuffix + "(?) total="
-										+ totalZeroBytesErrors);
+					try (var keyPrefix = keyPrefixSupplier.get()) {
+						try (var keySuffixBytes = serializeKeySuffixToKey(keySuffix)) {
+							LOG.error(
+									"Unexpected zero-bytes value at "
+											+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName()
+											+ ":" + LLUtils.toStringSafe(keyPrefix) + ":" + keySuffix
+											+ "(" + LLUtils.toStringSafe(keySuffixBytes) + ") total=" + totalZeroBytesErrors);
+						} catch (SerializationException e) {
+							LOG.error(
+									"Unexpected zero-bytes value at " + dictionary.getDatabaseName() + ":" + dictionary.getColumnName()
+											+ ":" + LLUtils.toStringSafe(keyPrefix) + ":" + keySuffix + "(?) total="
+											+ totalZeroBytesErrors);
+						}
 					}
 				}
 				return null;
@@ -169,8 +171,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	private Buffer serializeKeySuffixToKey(T keySuffix) throws SerializationException {
 		Buffer keyBuf;
-		if (keyPrefix != null) {
-			keyBuf = keyPrefix.copy();
+		if (keyPrefixSupplier != null) {
+			keyBuf = keyPrefixSupplier.get();
 		} else {
 			keyBuf = this.dictionary.getAllocator().allocate(keyPrefixLength + keySuffixLength + keyExtLength);
 		}
@@ -188,11 +190,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	private Buffer toKey(Buffer suffixKey) {
 		assert suffixKeyLengthConsistency(suffixKey.readableBytes());
-		if (keyPrefix != null && keyPrefix.readableBytes() > 0) {
-			var result = LLUtils.compositeBuffer(dictionary.getAllocator(),
-					LLUtils.copy(dictionary.getAllocator(), keyPrefix),
-					suffixKey.send()
-			);
+		if (keyPrefixSupplier != null) {
+			var result = LLUtils.compositeBuffer(dictionary.getAllocator(), keyPrefixSupplier.get().send(), suffixKey.send());
 			try {
 				assert result.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
 				return result;
@@ -489,9 +488,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		if (key == null) {
 			return null;
 		}
-		var keyWithoutExtBuf = keyPrefix == null ? alloc.allocate(keySuffixLength + keyExtLength)
-				// todo: use a read-only copy
-				: keyPrefix.copy();
+		var keyWithoutExtBuf =
+				keyPrefixSupplier == null ? alloc.allocate(keySuffixLength + keyExtLength) : keyPrefixSupplier.get();
 		try {
 			keyWithoutExtBuf.ensureWritable(keySuffixLength + keyExtLength);
 			serializeSuffix(key, keyWithoutExtBuf);

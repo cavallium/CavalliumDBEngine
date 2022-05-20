@@ -4,6 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -22,13 +23,13 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHashed<T, Nothing, TH> {
 
 	protected DatabaseSetDictionaryHashed(LLDictionary dictionary,
-			@Nullable Buffer prefixKey,
+			@Nullable BufSupplier prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
 			Runnable onClose) {
 		super(dictionary,
-				prefixKey,
+				prefixKeySupplier,
 				keySuffixSerializer,
 				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
 				keySuffixHashFunction,
@@ -52,13 +53,13 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> tail(LLDictionary dictionary,
-			@Nullable Buffer prefixKey,
+			@Nullable BufSupplier prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
 			SerializerFixedBinaryLength<TH> keyHashSerializer,
 			Runnable onClose) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
-				prefixKey,
+				prefixKeySupplier,
 				keySuffixSerializer,
 				keyHashFunction,
 				keyHashSerializer,

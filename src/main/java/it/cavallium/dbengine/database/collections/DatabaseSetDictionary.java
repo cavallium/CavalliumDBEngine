@@ -4,6 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -19,10 +20,15 @@ import reactor.core.publisher.Mono;
 public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> {
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
-			Buffer prefixKey,
+			BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Runnable onClose) {
-		super(dictionary, prefixKey, keySuffixSerializer, DatabaseEmpty.nothingSerializer(dictionary.getAllocator()), onClose);
+		super(dictionary,
+				prefixKeySupplier,
+				keySuffixSerializer,
+				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
+				onClose
+		);
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
@@ -32,10 +38,10 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
-			Buffer prefixKey,
+			BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
 			Runnable onClose) {
-		return new DatabaseSetDictionary<>(dictionary, prefixKey, keySuffixSerializer, onClose);
+		return new DatabaseSetDictionary<>(dictionary, prefixKeySupplier, keySuffixSerializer, onClose);
 	}
 
 	public Mono<Set<T>> getKeySet(@Nullable CompositeSnapshot snapshot) {

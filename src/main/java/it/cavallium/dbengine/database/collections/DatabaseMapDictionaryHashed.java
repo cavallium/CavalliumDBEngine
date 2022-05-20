@@ -7,6 +7,7 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import io.netty5.buffer.api.internal.ResourceSupport;
@@ -67,7 +68,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
-			@Nullable Buffer prefixKey,
+			@Nullable BufSupplier prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
@@ -82,7 +83,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 				= new ValueWithHashSerializer<>(keySuffixSerializer, valueSerializer);
 		ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
 				= new ValuesSetSerializer<>(valueWithHashSerializer);
-		this.subDictionary = DatabaseMapDictionary.tail(dictionary, prefixKey, keySuffixHashSerializer,
+		this.subDictionary = DatabaseMapDictionary.tail(dictionary, prefixKeySupplier, keySuffixHashSerializer,
 				valuesSetSerializer, onClose);
 		this.keySuffixHashFunction = keySuffixHashFunction;
 	}
@@ -117,14 +118,14 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
-			@Nullable Buffer prefixKey,
+			@Nullable BufSupplier prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<UH> keySuffixHashSerializer,
 			Runnable onClose) {
 		return new DatabaseMapDictionaryHashed<>(dictionary,
-				prefixKey,
+				prefixKeySupplier,
 				keySuffixSerializer,
 				valueSerializer,
 				keySuffixHashFunction,

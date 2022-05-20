@@ -6,10 +6,10 @@ import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Resource;
-import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
@@ -24,7 +24,6 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
@@ -56,18 +55,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				LOG.error("Failed to close range", ex);
 			}
 			try {
-				if (obj.keyPrefix != null) {
-					obj.keyPrefix.close();
+				if (obj.keyPrefixSupplier != null) {
+					obj.keyPrefixSupplier.close();
 				}
 			} catch (Throwable ex) {
 				LOG.error("Failed to close keyPrefix", ex);
-			}
-			try {
-				if (obj.keySuffixAndExtZeroBuffer != null) {
-					obj.keySuffixAndExtZeroBuffer.close();
-				}
-			} catch (Throwable ex) {
-				LOG.error("Failed to close keySuffixAndExtZeroBuffer", ex);
 			}
 			try {
 				if (obj.onClose != null) {
@@ -100,8 +92,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	protected final Mono<LLRange> rangeMono;
 
 	protected RangeSupplier rangeSupplier;
-	protected Buffer keyPrefix;
-	protected Buffer keySuffixAndExtZeroBuffer;
+	protected BufSupplier keyPrefixSupplier;
 	protected Runnable onClose;
 
 	private static void incrementPrefix(Buffer prefix, int prefixLength) {
@@ -199,73 +190,70 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(
-			LLDictionary dictionary, Buffer prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer,
+			LLDictionary dictionary, BufSupplier prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer,
 			SubStageGetter<U, US> subStageGetter, int keyExtLength, Runnable onClose) {
 		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter,
 				keyExtLength, onClose);
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	protected DatabaseMapDictionaryDeep(LLDictionary dictionary, @Nullable Buffer prefixKey,
+	protected DatabaseMapDictionaryDeep(LLDictionary dictionary, @Nullable BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer, SubStageGetter<U, US> subStageGetter, int keyExtLength,
 			Runnable onClose) {
 		super((Drop<DatabaseMapDictionaryDeep<T, U, US>>) (Drop) DROP);
-		try {
+		try (var prefixKey = prefixKeySupplier != null ? prefixKeySupplier.get() : null) {
 			this.dictionary = dictionary;
 			this.alloc = dictionary.getAllocator();
 			this.subStageGetter = subStageGetter;
 			this.keySuffixSerializer = keySuffixSerializer;
-			assert prefixKey == null || prefixKey.isAccessible();
-			this.keyPrefixLength = prefixKey == null ? 0 : prefixKey.readableBytes();
+			this.keyPrefixLength = prefixKey != null ? prefixKey.readableBytes() : 0;
 			this.keySuffixLength = keySuffixSerializer.getSerializedBinaryLength();
 			this.keyExtLength = keyExtLength;
-			this.keySuffixAndExtZeroBuffer = alloc
+			try (var keySuffixAndExtZeroBuffer = alloc
 					.allocate(keySuffixLength + keyExtLength)
 					.fill((byte) 0)
 					.writerOffset(keySuffixLength + keyExtLength)
-					.makeReadOnly();
-			assert keySuffixAndExtZeroBuffer.readableBytes() == keySuffixLength + keyExtLength :
-					"Key suffix and ext zero buffer readable length is not equal"
-							+ " to the key suffix length + key ext length. keySuffixAndExtZeroBuffer="
-							+ keySuffixAndExtZeroBuffer.readableBytes() + " keySuffixLength=" + keySuffixLength + " keyExtLength="
-							+ keyExtLength;
-			assert keySuffixAndExtZeroBuffer.readableBytes() > 0;
-			var firstKey = prefixKey == null ? alloc.allocate(keyPrefixLength + keySuffixLength + keyExtLength)
-					: prefixKey.copy();
-			try {
-				firstRangeKey(firstKey, keyPrefixLength, keySuffixAndExtZeroBuffer);
-				var nextRangeKey = prefixKey == null ? alloc.allocate(keyPrefixLength + keySuffixLength + keyExtLength)
-						: prefixKey.copy();
+					.makeReadOnly()) {
+				assert keySuffixAndExtZeroBuffer.readableBytes() == keySuffixLength + keyExtLength :
+						"Key suffix and ext zero buffer readable length is not equal"
+								+ " to the key suffix length + key ext length. keySuffixAndExtZeroBuffer="
+								+ keySuffixAndExtZeroBuffer.readableBytes() + " keySuffixLength=" + keySuffixLength + " keyExtLength="
+								+ keyExtLength;
+				assert keySuffixAndExtZeroBuffer.readableBytes() > 0;
+				var firstKey = prefixKey != null ? prefixKeySupplier.get()
+						: alloc.allocate(keyPrefixLength + keySuffixLength + keyExtLength);
 				try {
-					nextRangeKey(nextRangeKey, keyPrefixLength, keySuffixAndExtZeroBuffer);
-					assert prefixKey == null || prefixKey.isAccessible();
-					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
-					if (keyPrefixLength == 0) {
-						this.rangeSupplier = RangeSupplier.ofOwned(LLRange.all());
-						firstKey.close();
+					firstRangeKey(firstKey, keyPrefixLength, keySuffixAndExtZeroBuffer);
+					var nextRangeKey = prefixKey != null ? prefixKeySupplier.get()
+							: alloc.allocate(keyPrefixLength + keySuffixLength + keyExtLength);
+					try {
+						nextRangeKey(nextRangeKey, keyPrefixLength, keySuffixAndExtZeroBuffer);
+						assert prefixKey == null || prefixKey.isAccessible();
+						assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
+						if (keyPrefixLength == 0) {
+							this.rangeSupplier = RangeSupplier.ofOwned(LLRange.all());
+							firstKey.close();
+							nextRangeKey.close();
+						} else {
+							this.rangeSupplier = RangeSupplier.ofOwned(LLRange.ofUnsafe(firstKey, nextRangeKey));
+						}
+						this.rangeMono = Mono.fromSupplier(rangeSupplier);
+						assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
+					} catch (Throwable t) {
 						nextRangeKey.close();
-					} else {
-						this.rangeSupplier = RangeSupplier.ofOwned(LLRange.ofUnsafe(firstKey, nextRangeKey));
+						throw t;
 					}
-					this.rangeMono = Mono.fromSupplier(rangeSupplier);
-					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
 				} catch (Throwable t) {
-					nextRangeKey.close();
+					firstKey.close();
 					throw t;
 				}
-			} catch (Throwable t) {
-				firstKey.close();
-				throw t;
-			}
 
-			this.keyPrefix = prefixKey;
-			this.onClose = onClose;
-		} catch (Throwable t) {
-			if (this.keySuffixAndExtZeroBuffer != null && keySuffixAndExtZeroBuffer.isAccessible()) {
-				keySuffixAndExtZeroBuffer.close();
+				this.keyPrefixSupplier = prefixKeySupplier;
+				this.onClose = onClose;
 			}
-			if (prefixKey != null && prefixKey.isAccessible()) {
-				prefixKey.close();
+		} catch (Throwable t) {
+			if (prefixKeySupplier != null) {
+				prefixKeySupplier.close();
 			}
 			throw t;
 		}
@@ -281,8 +269,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			int keyExtLength,
 			Mono<LLRange> rangeMono,
 			RangeSupplier rangeSupplier,
-			Buffer keyPrefix,
-			Buffer keySuffixAndExtZeroBuffer,
+			BufSupplier keyPrefixSupplier,
 			Runnable onClose) {
 		super((Drop<DatabaseMapDictionaryDeep<T,U,US>>) (Drop) DROP);
 		this.dictionary = dictionary;
@@ -295,8 +282,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		this.rangeMono = rangeMono;
 
 		this.rangeSupplier = rangeSupplier;
-		this.keyPrefix = keyPrefix;
-		this.keySuffixAndExtZeroBuffer = keySuffixAndExtZeroBuffer;
+		this.keyPrefixSupplier = keyPrefixSupplier;
 		this.onClose = onClose;
 	}
 
@@ -349,15 +335,18 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	@Override
 	public Mono<US> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		var suffixKeyWithoutExt = Mono.fromCallable(() -> {
-			try (var keyWithoutExtBuf = keyPrefix == null
-					? alloc.allocate(keySuffixLength + keyExtLength) : keyPrefix.copy()) {
+			var keyWithoutExtBuf = keyPrefixSupplier == null
+				? alloc.allocate(keySuffixLength + keyExtLength) : keyPrefixSupplier.get();
+			try {
 				keyWithoutExtBuf.ensureWritable(keySuffixLength + keyExtLength);
 				serializeSuffix(keySuffix, keyWithoutExtBuf);
-				return keyWithoutExtBuf.send();
+			} catch (Throwable ex) {
+				keyWithoutExtBuf.close();
+				throw ex;
 			}
+			return keyWithoutExtBuf;
 		});
-		return this.subStageGetter
-				.subStage(dictionary, snapshot, suffixKeyWithoutExt);
+		return this.subStageGetter.subStage(dictionary, snapshot, suffixKeyWithoutExt);
 	}
 
 	@Override
@@ -374,21 +363,17 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	public Flux<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return dictionary
 				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength, smallRange)
-				.flatMapSequential(groupKeyWithoutExtSend_ -> Mono.using(
-						() -> groupKeyWithoutExtSend_,
-						groupKeyWithoutExtSend -> this.subStageGetter
-								.subStage(dictionary, snapshot, Mono.fromCallable(() -> groupKeyWithoutExtSend.copy().send()))
-								.handle((us, sink) -> {
-									T deserializedSuffix;
-									try (var splittedGroupSuffix = splitGroupSuffix(groupKeyWithoutExtSend)) {
-										deserializedSuffix = this.deserializeSuffix(splittedGroupSuffix);
-										sink.next(new SubStageEntry<>(deserializedSuffix, us));
-									} catch (SerializationException ex) {
-										sink.error(ex);
-									}
-								}),
-						Resource::close
-				));
+				.flatMapSequential(groupKeyWithoutExt -> this.subStageGetter
+						.subStage(dictionary, snapshot, Mono.fromCallable(groupKeyWithoutExt::copy))
+						.map(us -> {
+							T deserializedSuffix;
+							try (var splittedGroupSuffix = splitGroupSuffix(groupKeyWithoutExt)) {
+								deserializedSuffix = this.deserializeSuffix(splittedGroupSuffix);
+								return new SubStageEntry<>(deserializedSuffix, us);
+							}
+						})
+						.doFinally(s -> groupKeyWithoutExt.close())
+				);
 	}
 
 	/**
@@ -447,7 +432,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	protected T deserializeSuffix(@NotNull Buffer keySuffix) throws SerializationException {
 		assert suffixKeyLengthConsistency(keySuffix.readableBytes());
 		var result = keySuffixSerializer.deserialize(keySuffix);
-		assert keyPrefix == null || keyPrefix.isAccessible();
 		return result;
 	}
 
@@ -457,7 +441,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		keySuffixSerializer.serialize(keySuffix, output);
 		var afterWriterOffset = output.writerOffset();
 		assert suffixKeyLengthConsistency(afterWriterOffset - beforeWriterOffset);
-		assert keyPrefix == null || keyPrefix.isAccessible();
 	}
 
 	@Override
@@ -467,8 +450,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	@Override
 	protected Owned<DatabaseMapDictionaryDeep<T, U, US>> prepareSend() {
-		var keyPrefix = this.keyPrefix.send();
-		var keySuffixAndExtZeroBuffer = this.keySuffixAndExtZeroBuffer.send();
+		var keyPrefixSupplier = this.keyPrefixSupplier;
 		var rangeSupplier = this.rangeSupplier;
 		var onClose = this.onClose;
 		return drop -> {
@@ -481,8 +463,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 					keyExtLength,
 					rangeMono,
 					rangeSupplier,
-					keyPrefix.receive(),
-					keySuffixAndExtZeroBuffer.receive(),
+					keyPrefixSupplier,
 					onClose
 			);
 			drop.attach(instance);
@@ -492,8 +473,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	@Override
 	protected void makeInaccessible() {
-		this.keyPrefix = null;
-		this.keySuffixAndExtZeroBuffer = null;
+		this.keyPrefixSupplier = null;
 		this.rangeSupplier = null;
 		this.onClose = null;
 	}

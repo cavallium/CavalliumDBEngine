@@ -4,6 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
@@ -34,17 +35,14 @@ public class SubStageGetterHashSet<T, TH> implements
 	@Override
 	public Mono<DatabaseSetDictionaryHashed<T, TH>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Send<Buffer>> prefixKeyMono) {
-		return prefixKeyMono.map(prefixKeyToReceive -> {
-			var prefixKey = prefixKeyToReceive.receive();
-			return DatabaseSetDictionaryHashed.tail(dictionary,
-					prefixKey,
-					keySerializer,
-					keyHashFunction,
-					keyHashSerializer,
-					null
-			);
-		});
+			Mono<Buffer> prefixKeyMono) {
+		return prefixKeyMono.map(prefixKey -> DatabaseSetDictionaryHashed.tail(dictionary,
+				BufSupplier.ofOwned(prefixKey),
+				keySerializer,
+				keyHashFunction,
+				keyHashSerializer,
+				null
+		));
 	}
 
 	public int getKeyHashBinaryLength() {

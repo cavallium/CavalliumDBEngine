@@ -11,6 +11,6 @@ public interface SubStageGetter<U, US extends DatabaseStage<U>> {
 
 	Mono<US> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Send<Buffer>> prefixKey);
+			Mono<Buffer> prefixKey);
 
 }

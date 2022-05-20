@@ -5,7 +5,6 @@ import static it.cavallium.dbengine.database.disk.LLTempHugePqEnv.getColumnOptio
 import com.google.common.primitives.Ints;
 import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.io.Closeable;
@@ -24,10 +23,10 @@ import org.rocksdb.RocksDBException;
 public class HugePqEnv implements Closeable {
 
 	private final RocksDB db;
-	private final ArrayList<RocksObj<ColumnFamilyHandle>> defaultCfh;
-	private final Int2ObjectMap<RocksObj<ColumnFamilyHandle>> cfhs = new Int2ObjectOpenHashMap<>();
+	private final ArrayList<ColumnFamilyHandle> defaultCfh;
+	private final Int2ObjectMap<ColumnFamilyHandle> cfhs = new Int2ObjectOpenHashMap<>();
 
-	public HugePqEnv(RocksDB db, ArrayList<RocksObj<ColumnFamilyHandle>> defaultCfh) {
+	public HugePqEnv(RocksDB db, ArrayList<ColumnFamilyHandle> defaultCfh) {
 		this.db = db;
 		this.defaultCfh = defaultCfh;
 	}
@@ -35,8 +34,7 @@ public class HugePqEnv implements Closeable {
 	@Override
 	public void close() throws IOException {
 		for (var cfh : defaultCfh) {
-			db.destroyColumnFamilyHandle(cfh.v());
-			cfh.close();
+			db.destroyColumnFamilyHandle(cfh);
 		}
 		try {
 			db.closeE();
@@ -46,7 +44,7 @@ public class HugePqEnv implements Closeable {
 	}
 
 	public int createColumnFamily(int name, AbstractComparator comparator) throws RocksDBException {
-		var cfh = new RocksObj<>(db.createColumnFamily(new ColumnFamilyDescriptor(Ints.toByteArray(name), getColumnOptions(comparator))));
+		var cfh = db.createColumnFamily(new ColumnFamilyDescriptor(Ints.toByteArray(name), getColumnOptions(comparator)));
 		synchronized (cfhs) {
 			var prev = cfhs.put(name, cfh);
 			if (prev != null) {
@@ -57,19 +55,18 @@ public class HugePqEnv implements Closeable {
 	}
 
 	public void deleteColumnFamily(int db) throws RocksDBException {
-		RocksObj<ColumnFamilyHandle> cfh;
+		ColumnFamilyHandle cfh;
 		synchronized (cfhs) {
 			cfh = cfhs.remove(db);
 		}
 		if (cfh != null) {
-			this.db.dropColumnFamily(cfh.v());
-			this.db.destroyColumnFamilyHandle(cfh.v());
-			cfh.close();
+			this.db.dropColumnFamily(cfh);
+			this.db.destroyColumnFamilyHandle(cfh);
 		}
 	}
 
 	public StandardRocksDBColumn openDb(int hugePqId) {
-		RocksObj<ColumnFamilyHandle> cfh;
+		ColumnFamilyHandle cfh;
 		synchronized (cfhs) {
 			cfh = Objects.requireNonNull(cfhs.get(hugePqId), () -> "column " + hugePqId + " does not exist");
 		}

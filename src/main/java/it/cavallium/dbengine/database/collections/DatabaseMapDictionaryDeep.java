@@ -15,6 +15,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.RangeSupplier;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializationException;
@@ -47,8 +48,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		@Override
 		public void drop(DatabaseMapDictionaryDeep<?, ?, ?> obj) {
 			try {
-				if (obj.range != null) {
-					obj.range.close();
+				if (obj.rangeSupplier != null) {
+					obj.rangeSupplier.close();
 				}
 			} catch (Throwable ex) {
 				LOG.error("Failed to close range", ex);
@@ -95,9 +96,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	protected final int keyPrefixLength;
 	protected final int keySuffixLength;
 	protected final int keyExtLength;
-	protected final Mono<Send<LLRange>> rangeMono;
+	protected final Mono<LLRange> rangeMono;
 
-	protected LLRange range;
+	protected RangeSupplier rangeSupplier;
 	protected Buffer keyPrefix;
 	protected Buffer keySuffixAndExtZeroBuffer;
 	protected Runnable onClose;
@@ -239,13 +240,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 					assert prefixKey == null || prefixKey.isAccessible();
 					assert keyPrefixLength == 0 || !LLUtils.equals(firstKey, nextRangeKey);
 					if (keyPrefixLength == 0) {
-						this.range = LLRange.all();
+						this.rangeSupplier = RangeSupplier.ofOwned(LLRange.all());
 						firstKey.close();
 						nextRangeKey.close();
 					} else {
-						this.range = LLRange.ofUnsafe(firstKey, nextRangeKey);
+						this.rangeSupplier = RangeSupplier.ofOwned(LLRange.ofUnsafe(firstKey, nextRangeKey));
 					}
-					this.rangeMono = LLUtils.lazyRetainRange(this.range);
+					this.rangeMono = Mono.fromSupplier(rangeSupplier);
 					assert subStageKeysConsistency(keyPrefixLength + keySuffixLength + keyExtLength);
 				} catch (Throwable t) {
 					nextRangeKey.close();
@@ -277,10 +278,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			int keyPrefixLength,
 			int keySuffixLength,
 			int keyExtLength,
-			Mono<Send<LLRange>> rangeMono,
-			Send<LLRange> range,
-			Send<Buffer> keyPrefix,
-			Send<Buffer> keySuffixAndExtZeroBuffer,
+			Mono<LLRange> rangeMono,
+			RangeSupplier rangeSupplier,
+			Buffer keyPrefix,
+			Buffer keySuffixAndExtZeroBuffer,
 			Runnable onClose) {
 		super((Drop<DatabaseMapDictionaryDeep<T,U,US>>) (Drop) DROP);
 		this.dictionary = dictionary;
@@ -292,9 +293,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		this.keyExtLength = keyExtLength;
 		this.rangeMono = rangeMono;
 
-		this.range = range.receive();
-		this.keyPrefix = keyPrefix.receive();
-		this.keySuffixAndExtZeroBuffer = keySuffixAndExtZeroBuffer.receive();
+		this.rangeSupplier = rangeSupplier;
+		this.keyPrefix = keyPrefix;
+		this.keySuffixAndExtZeroBuffer = keySuffixAndExtZeroBuffer;
 		this.onClose = onClose;
 	}
 
@@ -373,7 +374,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		return dictionary
 				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength, smallRange)
 				.flatMapSequential(groupKeyWithoutExtSend_ -> Mono.using(
-						groupKeyWithoutExtSend_::receive,
+						() -> groupKeyWithoutExtSend_,
 						groupKeyWithoutExtSend -> this.subStageGetter
 								.subStage(dictionary, snapshot, Mono.fromCallable(() -> groupKeyWithoutExtSend.copy().send()))
 								.handle((us, sink) -> {
@@ -428,19 +429,18 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	@Override
 	public Mono<Void> clear() {
-		return Mono
-				.defer(() -> {
-					if (range.isAll()) {
-						return dictionary.clear();
-					} else if (range.isSingle()) {
-						return dictionary
-								.remove(Mono.fromCallable(range::getSingle), LLDictionaryResultType.VOID)
-								.doOnNext(Send::close)
-								.then();
-					} else {
-						return dictionary.setRange(rangeMono, Flux.empty(), false);
-					}
-				});
+		return Mono.using(rangeSupplier::get, range -> {
+			if (range.isAll()) {
+				return dictionary.clear();
+			} else if (range.isSingle()) {
+				return dictionary
+						.remove(Mono.fromCallable(range::getSingleUnsafe), LLDictionaryResultType.VOID)
+						.doOnNext(Resource::close)
+						.then();
+			} else {
+				return dictionary.setRange(rangeMono, Flux.empty(), false);
+			}
+		}, ResourceSupport::close);
 	}
 
 	protected T deserializeSuffix(@NotNull Buffer keySuffix) throws SerializationException {
@@ -468,7 +468,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	protected Owned<DatabaseMapDictionaryDeep<T, U, US>> prepareSend() {
 		var keyPrefix = this.keyPrefix.send();
 		var keySuffixAndExtZeroBuffer = this.keySuffixAndExtZeroBuffer.send();
-		var range = this.range.send();
+		var rangeSupplier = this.rangeSupplier;
 		var onClose = this.onClose;
 		return drop -> {
 			var instance = new DatabaseMapDictionaryDeep<>(dictionary,
@@ -479,9 +479,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 					keySuffixLength,
 					keyExtLength,
 					rangeMono,
-					range,
-					keyPrefix,
-					keySuffixAndExtZeroBuffer,
+					rangeSupplier,
+					keyPrefix.receive(),
+					keySuffixAndExtZeroBuffer.receive(),
 					onClose
 			);
 			drop.attach(instance);
@@ -493,7 +493,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	protected void makeInaccessible() {
 		this.keyPrefix = null;
 		this.keySuffixAndExtZeroBuffer = null;
-		this.range = null;
+		this.rangeSupplier = null;
 		this.onClose = null;
 	}
 
@@ -539,23 +539,23 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				.dictionary
 				.getRange(deepMap.resolveSnapshot(snapshot), Mono.zip(savedProgressKey1Opt, deepMap.rangeMono).handle((tuple, sink) -> {
 					var firstKey = tuple.getT1();
-					try (var fullRange = tuple.getT2().receive()) {
+					try (var fullRange = tuple.getT2()) {
 						if (firstKey.isPresent()) {
 							try (var key1Buf = deepMap.alloc.allocate(keySuffix1Serializer.getSerializedBinaryLength())) {
 								keySuffix1Serializer.serialize(firstKey.get(), key1Buf);
-								sink.next(LLRange.of(key1Buf.send(), fullRange.getMax()).send());
+								sink.next(LLRange.of(key1Buf.send(), fullRange.getMax()));
 							} catch (SerializationException e) {
 								sink.error(e);
 							}
 						} else {
-							sink.next(fullRange.send());
+							sink.next(fullRange);
 						}
 					}
 				}), false, false)
-				.concatMapIterable(entrySend -> {
+				.concatMapIterable(entry -> {
 					K1 key1 = null;
 					Object key2 = null;
-					try (var entry = entrySend.receive()) {
+					try (entry) {
 						var keyBuf = entry.getKeyUnsafe();
 						var valueBuf = entry.getValueUnsafe();
 						try {

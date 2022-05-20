@@ -70,11 +70,11 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 		}
 	}
 
-	private void deserializeValue(Send<Buffer> value, SynchronousSink<U> sink) {
+	private void deserializeValue(Buffer value, SynchronousSink<U> sink) {
 		try {
 			U deserializedValue;
-			try (var valueBuf = value.receive()) {
-				deserializedValue = serializer.deserialize(valueBuf);
+			try (value) {
+				deserializedValue = serializer.deserialize(value);
 			}
 			sink.next(deserializedValue);
 		} catch (IndexOutOfBoundsException ex) {
@@ -91,12 +91,16 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 		}
 	}
 
-	private Send<Buffer> serializeValue(U value) throws SerializationException {
+	private Buffer serializeValue(U value) throws SerializationException {
 		var valSizeHint = serializer.getSerializedSizeHint();
 		if (valSizeHint == -1) valSizeHint = 128;
-		try (var valBuf = singleton.getAllocator().allocate(valSizeHint)) {
+		var valBuf = singleton.getAllocator().allocate(valSizeHint);
+		try {
 			serializer.serialize(value, valBuf);
-			return valBuf.send();
+			return valBuf;
+		} catch (Throwable ex) {
+			valBuf.close();
+			throw ex;
 		}
 	}
 
@@ -115,7 +119,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 	public Mono<U> setAndGetPrevious(U value) {
 		return Flux
 				.concat(singleton.get(null), singleton.set(Mono.fromCallable(() -> serializeValue(value))).then(Mono.empty()))
-				.singleOrEmpty()
+				.last()
 				.handle(this::deserializeValue);
 	}
 
@@ -135,7 +139,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 						if (result == null) {
 							return null;
 						} else {
-							return serializeValue(result).receive();
+							return serializeValue(result);
 						}
 					}
 				}, updateReturnMode)
@@ -157,12 +161,12 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 						if (result == null) {
 							return null;
 						} else {
-							return serializeValue(result).receive();
+							return serializeValue(result);
 						}
 					}
 				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
-					try (var valueBuf = serialized.receive()) {
-						return serializer.deserialize(valueBuf);
+					try (serialized) {
+						return serializer.deserialize(serialized);
 					}
 				}));
 	}
@@ -176,7 +180,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 	public Mono<U> clearAndGetPrevious() {
 		return Flux
 				.concat(singleton.get(null), singleton.set(Mono.empty()).then(Mono.empty()))
-				.singleOrEmpty()
+				.last()
 				.handle(this::deserializeValue);
 	}
 

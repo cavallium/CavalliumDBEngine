@@ -8,6 +8,7 @@ import static it.cavallium.dbengine.SyncUtils.runVoid;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
@@ -36,7 +37,7 @@ import reactor.core.publisher.Mono;
 public abstract class TestLLDictionary {
 
 	private final Logger log = LogManager.getLogger(this.getClass());
-	private static final Mono<Send<LLRange>> RANGE_ALL = Mono.fromCallable(() -> LLRange.all().send());
+	private static final Mono<LLRange> RANGE_ALL = Mono.fromCallable(LLRange::all);
 	private TestAllocator allocator;
 	private TempDb tempDb;
 	private LLKeyValueDatabase db;
@@ -80,11 +81,11 @@ public abstract class TestLLDictionary {
 
 	private LLDictionary getDict(UpdateMode updateMode) {
 		var dict = DbTestUtils.tempDictionary(db, updateMode).blockOptional().orElseThrow();
-		var key1 = Mono.fromCallable(() -> fromString("test-key-1").send());
-		var key2 = Mono.fromCallable(() -> fromString("test-key-2").send());
-		var key3 = Mono.fromCallable(() -> fromString("test-key-3").send());
-		var key4 = Mono.fromCallable(() -> fromString("test-key-4").send());
-		var value = Mono.fromCallable(() -> fromString("test-value").send());
+		var key1 = Mono.fromCallable(() -> fromString("test-key-1"));
+		var key2 = Mono.fromCallable(() -> fromString("test-key-2"));
+		var key3 = Mono.fromCallable(() -> fromString("test-key-3"));
+		var key4 = Mono.fromCallable(() -> fromString("test-key-4"));
+		var value = Mono.fromCallable(() -> fromString("test-value"));
 		dict.put(key1, value, LLDictionaryResultType.VOID).block();
 		dict.put(key2, value, LLDictionaryResultType.VOID).block();
 		dict.put(key3, value, LLDictionaryResultType.VOID).block();
@@ -107,8 +108,8 @@ public abstract class TestLLDictionary {
 		}
 	}
 
-	private String toString(Send<Buffer> b) {
-		try (var bb = b.receive()) {
+	private String toString(Buffer bb) {
+		try (bb) {
 			byte[] data = new byte[bb.readableBytes()];
 			bb.copyInto(bb.readerOffset(), data, 0, data.length);
 			return new String(data, StandardCharsets.UTF_8);
@@ -153,8 +154,8 @@ public abstract class TestLLDictionary {
 	@MethodSource("provideArguments")
 	public void testGet(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
-		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
+		var keyEx = Mono.fromCallable(() -> fromString("test-key-1"));
+		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent"));
 		Assertions.assertEquals("test-value", run(dict.get(null, keyEx).map(this::toString)));
 		Assertions.assertEquals("test-value", run(dict.get(null, keyEx).map(this::toString)));
 		Assertions.assertEquals("test-value", run(dict.get(null, keyEx).map(this::toString)));
@@ -167,12 +168,12 @@ public abstract class TestLLDictionary {
 	@MethodSource("providePutArguments")
 	public void testPutExisting(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
-		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
-		var value = Mono.fromCallable(() -> fromString("test-value").send());
+		var keyEx = Mono.fromCallable(() -> fromString("test-key-1"));
+		var value = Mono.fromCallable(() -> fromString("test-value"));
 
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 
-		runVoid(dict.put(keyEx, value, resultType).then().doOnDiscard(Send.class, Send::close));
+		runVoid(dict.put(keyEx, value, resultType).then().doOnDiscard(Resource.class, Resource::close));
 
 		var afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		Assertions.assertEquals(0, afterSize - beforeSize);
@@ -182,14 +183,14 @@ public abstract class TestLLDictionary {
 	@MethodSource("providePutArguments")
 	public void testPutNew(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
-		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
-		var value = Mono.fromCallable(() -> fromString("test-value").send());
+		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent"));
+		var value = Mono.fromCallable(() -> fromString("test-value"));
 
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 
-		runVoid(dict.put(keyNonEx, value, resultType).then().doOnDiscard(Send.class, Send::close));
+		runVoid(dict.put(keyNonEx, value, resultType).then().doOnDiscard(Resource.class, Resource::close));
 
-		var afterSize = run(dict.sizeRange(null, Mono.fromCallable(() -> LLRange.all().send()), false));
+		var afterSize = run(dict.sizeRange(null, Mono.fromCallable(LLRange::all), false));
 		Assertions.assertEquals(1, afterSize - beforeSize);
 
 		Assertions.assertTrue(run(dict.getRangeKeys(null, RANGE_ALL, false, false).map(this::toString).collectList()).contains("test-nonexistent"));
@@ -207,21 +208,21 @@ public abstract class TestLLDictionary {
 	@MethodSource("provideUpdateArguments")
 	public void testUpdateExisting(UpdateMode updateMode, UpdateReturnMode updateReturnMode) {
 		var dict = getDict(updateMode);
-		var keyEx = Mono.fromCallable(() -> fromString("test-key-1").send());
+		var keyEx = Mono.fromCallable(() -> fromString("test-key-1"));
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Resource::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Resource::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
+				dict.update(keyEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Resource::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(0, afterSize - beforeSize);
@@ -232,21 +233,21 @@ public abstract class TestLLDictionary {
 	public void testUpdateNew(UpdateMode updateMode, UpdateReturnMode updateReturnMode) {
 		int expected = updateMode == UpdateMode.DISALLOW ? 0 : 1;
 		var dict = getDict(updateMode);
-		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent").send());
+		var keyNonEx = Mono.fromCallable(() -> fromString("test-nonexistent"));
 		var beforeSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		long afterSize;
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Resource::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Resource::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);
 		runVoid(updateMode == UpdateMode.DISALLOW,
-				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Send::close).then()
+				dict.update(keyNonEx, old -> fromString("test-value"), updateReturnMode).doOnNext(Resource::close).then()
 		);
 		afterSize = run(dict.sizeRange(null, RANGE_ALL, false));
 		assertEquals(expected, afterSize - beforeSize);

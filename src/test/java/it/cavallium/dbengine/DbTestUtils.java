@@ -4,8 +4,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.MemoryManager;
+import io.netty5.buffer.api.internal.LeakDetection;
+import io.netty5.buffer.api.internal.LifecycleTracer;
 import io.netty5.buffer.api.pool.PoolArenaMetric;
 import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.util.ResourceLeakDetector;
+import io.netty5.util.ResourceLeakDetector.Level;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.LuceneIndexImpl;
@@ -13,6 +17,7 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
@@ -33,6 +38,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public class DbTestUtils {
+
+	static {
+		LLUtils.initHooks();
+	}
 
 	public static final String BIG_STRING = generateBigString();
 	public static final int MAX_IN_MEMORY_RESULT_ENTRIES = 8192;
@@ -93,6 +102,8 @@ public class DbTestUtils {
 	}
 
 	public static void ensureNoLeaks(TestAllocatorImpl allocator, boolean printStats, boolean useClassicException) {
+		ResourceLeakDetector.setLevel(Level.PARANOID);
+		System.gc();
 		if (allocator != null) {
 			var allocs = getActiveAllocations(allocator, printStats);
 			if (useClassicException) {

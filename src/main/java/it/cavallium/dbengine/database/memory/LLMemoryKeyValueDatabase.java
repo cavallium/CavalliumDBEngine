@@ -73,7 +73,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 						.transform(mono -> {
 							if (defaultValue != null) {
 								return mono.switchIfEmpty(singleton
-										.set(Mono.fromSupplier(() -> allocator.copyOf(defaultValue).send()))
+										.set(Mono.fromSupplier(() -> allocator.copyOf(defaultValue)))
 										.then(Mono.empty()));
 							} else {
 								return mono;

@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.collections;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.Nullable;
@@ -20,7 +21,7 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 	public Mono<DatabaseStageEntry<T>> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
 			Mono<Send<Buffer>> keyPrefixMono) {
-		return keyPrefixMono.map(keyPrefix -> new DatabaseMapSingle<>(dictionary, keyPrefix.receive(), serializer, null));
+		return keyPrefixMono.map(keyPrefix -> new DatabaseMapSingle<>(dictionary, BufSupplier.of(keyPrefix), serializer, null));
 	}
 
 }

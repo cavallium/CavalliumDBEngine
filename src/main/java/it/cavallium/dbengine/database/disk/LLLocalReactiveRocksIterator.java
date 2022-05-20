@@ -11,7 +11,6 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -57,29 +56,27 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	private final RocksDBColumn db;
 	private LLRange rangeShared;
 	private final boolean allowNettyDirect;
-	private RocksObj<ReadOptions> readOptions;
+	private ReadOptions readOptions;
 	private final boolean readValues;
 	private final boolean reverse;
 	private final boolean smallRange;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalReactiveRocksIterator(RocksDBColumn db,
-			Send<LLRange> range,
+			LLRange range,
 			boolean allowNettyDirect,
-			RocksObj<ReadOptions> readOptions,
+			ReadOptions readOptions,
 			boolean readValues,
 			boolean reverse,
 			boolean smallRange) {
 		super((Drop<LLLocalReactiveRocksIterator<T>>) (Drop) DROP);
-		try (range) {
-			this.db = db;
-			this.rangeShared = range.receive();
-			this.allowNettyDirect = allowNettyDirect;
-			this.readOptions = readOptions;
-			this.readValues = readValues;
-			this.reverse = reverse;
-			this.smallRange = smallRange;
-		}
+		this.db = db;
+		this.rangeShared = range;
+		this.allowNettyDirect = allowNettyDirect;
+		this.readOptions = readOptions;
+		this.readValues = readValues;
+		this.reverse = reverse;
+		this.smallRange = smallRange;
 	}
 
 	public final Flux<T> flux() {
@@ -99,7 +96,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 					} else {
 						key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
 					}
-					try (key) {
+					try {
 						Buffer value;
 						if (readValues) {
 							if (allowNettyDirect) {
@@ -126,12 +123,17 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 							} else {
 								rocksIterator.next();
 							}
-							sink.next(getEntry(key.send(), value == null ? null : value.send()));
+							sink.next(getEntry(key, value));
 						} finally {
-							if (value != null) {
+							if (value != null && value.isAccessible()) {
 								value.close();
 							}
 						}
+					} catch (Throwable ex) {
+						if (key.isAccessible()) {
+							key.close();
+						}
+						throw ex;
 					}
 				} else {
 					if (logger.isTraceEnabled()) {
@@ -149,7 +151,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 		}, RocksIterWithReadOpts::close);
 	}
 
-	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
+	public abstract T getEntry(@Nullable Buffer key, @Nullable Buffer value);
 
 	@Override
 	protected final RuntimeException createResourceClosedException() {
@@ -160,8 +162,8 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 	protected Owned<LLLocalReactiveRocksIterator<T>> prepareSend() {
 		var range = this.rangeShared.send();
 		var readOptions = this.readOptions;
-		return drop -> new LLLocalReactiveRocksIterator<>(db,
-				range,
+		return drop -> new LLLocalReactiveRocksIterator<T>(db,
+				range.receive(),
 				allowNettyDirect,
 				readOptions,
 				readValues,
@@ -169,7 +171,7 @@ public abstract class LLLocalReactiveRocksIterator<T> extends
 				smallRange
 		) {
 			@Override
-			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {
+			public T getEntry(@Nullable Buffer key, @Nullable Buffer value) {
 				return LLLocalReactiveRocksIterator.this.getEntry(key, value);
 			}
 		};

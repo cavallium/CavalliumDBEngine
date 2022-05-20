@@ -20,7 +20,6 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -32,6 +31,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.AbstractSlice;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
@@ -65,7 +65,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final T db;
 	private final boolean nettyDirect;
 	private final BufferAllocator alloc;
-	private final RocksObj<ColumnFamilyHandle> cfh;
+	private final ColumnFamilyHandle cfh;
 
 	protected final MeterRegistry meterRegistry;
 	protected final StampedLock closeLock;
@@ -100,7 +100,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String databaseName,
-			RocksObj<ColumnFamilyHandle> cfh,
+			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
 			StampedLock closeLock) {
 		this.db = db;
@@ -109,7 +109,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		this.cfh = cfh;
 		String columnName;
 		try {
-			columnName = new String(cfh.v().getName(), StandardCharsets.UTF_8);
+			columnName = new String(cfh.getName(), StandardCharsets.UTF_8);
 		} catch (RocksDBException e) {
 			throw new IllegalStateException(e);
 		}
@@ -246,30 +246,30 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the key
 	 */
-	static RocksObj<? extends AbstractSlice<?>> setIterateBound(boolean allowNettyDirect,
-			RocksObj<ReadOptions> readOpts, IterateBound boundType, Buffer key) {
+	static AbstractSlice<?> setIterateBound(boolean allowNettyDirect,
+			ReadOptions readOpts, IterateBound boundType, Buffer key) {
 		requireNonNull(key);
-		RocksObj<? extends AbstractSlice<?>> slice;
+		AbstractSlice<?> slice;
 		if (allowNettyDirect && USE_DIRECT_BUFFER_BOUNDS && isReadOnlyDirect(key)) {
 			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
-			slice = new RocksObj<>(new DirectSlice(keyInternalByteBuffer, key.readableBytes()));
-			assert slice.v().size() == key.readableBytes();
+			slice = new DirectSlice(keyInternalByteBuffer, key.readableBytes());
+			assert slice.size() == key.readableBytes();
 		} else {
-			slice = new RocksObj<>(new Slice(requireNonNull(LLUtils.toArray(key))));
+			slice = new Slice(requireNonNull(LLUtils.toArray(key)));
 		}
 		if (boundType == IterateBound.LOWER) {
-			readOpts.v().setIterateLowerBound(slice.v());
+			readOpts.setIterateLowerBound(slice);
 		} else {
-			readOpts.v().setIterateUpperBound(slice.v());
+			readOpts.setIterateUpperBound(slice);
 		}
 		return slice;
 	}
 
-	static RocksObj<Slice> newEmptyReleasableSlice() {
+	static Slice newEmptyReleasableSlice() {
 		var arr = new byte[0];
 
-		return new RocksObj<>(new Slice(arr));
+		return new Slice(arr);
 	}
 
 	/**
@@ -277,7 +277,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	 */
 	@NotNull
 	public RocksIteratorObj newRocksIterator(boolean allowNettyDirect,
-			RocksObj<ReadOptions> readOptions,
+			ReadOptions readOptions,
 			LLRange range,
 			boolean reverse) throws RocksDBException {
 		assert !Schedulers.isInNonBlockingThread() : "Called getRocksIterator in a nonblocking thread";
@@ -307,7 +307,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		return db;
 	}
 
-	protected RocksObj<ColumnFamilyHandle> getCfh() {
+	protected ColumnFamilyHandle getCfh() {
 		return cfh;
 	}
 
@@ -315,7 +315,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		RocksDBUtils.ensureOpen(db, cfh);
 	}
 
-	protected void ensureOwned(RocksObj<?> rocksObject) {
+	protected void ensureOwned(AbstractImmutableNativeReference rocksObject) {
 		RocksDBUtils.ensureOwned(rocksObject);
 	}
 
@@ -331,7 +331,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public @Nullable Buffer get(@NotNull RocksObj<ReadOptions> readOptions, Buffer key) throws RocksDBException {
+	public @Nullable Buffer get(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -366,7 +366,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 							assert resultBuffer.writerOffset() == 0;
 							var resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
 
-							var keyMayExist = db.keyMayExist(cfh.v(), readOptions.v(), keyNioBuffer.rewind(),
+							var keyMayExist = db.keyMayExist(cfh, readOptions, keyNioBuffer.rewind(),
 									resultWritable.clear());
 							KeyMayExistEnum keyMayExistState = keyMayExist.exists;
 							int keyMayExistValueLength = keyMayExist.valueLength;
@@ -397,7 +397,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 										resultWritable.clear();
 										readAttemptsCount++;
 										// real data size
-										size = db.get(cfh.v(), readOptions.v(), keyNioBuffer.rewind(), resultWritable.clear());
+										size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
 										if (size == RocksDB.NOT_FOUND) {
 											resultBuffer.close();
 											readValueNotFoundWithMayExistBloomBufferSize.record(0);
@@ -423,7 +423,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 										assert resultBuffer.writerOffset() == 0;
 
 										readAttemptsCount++;
-										size = db.get(cfh.v(), readOptions.v(), keyNioBuffer.rewind(), resultWritable.clear());
+										size = db.get(cfh, readOptions, keyNioBuffer.rewind(), resultWritable.clear());
 										if (size == RocksDB.NOT_FOUND) {
 											readValueNotFoundWithMayExistBloomBufferSize.record(0);
 											resultBuffer.close();
@@ -452,7 +452,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					byte[] keyArray = LLUtils.toArray(key);
 					requireNonNull(keyArray);
 					Holder<byte[]> data = new Holder<>();
-					if (db.keyMayExist(cfh.v(), readOptions.v(), keyArray, data)) {
+					if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
 						// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
 						//  returns an empty array, as if it exists
 						if (data.getValue() != null && data.getValue().length > 0) {
@@ -460,7 +460,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 							return LLUtils.fromByteArray(alloc, data.getValue());
 						} else {
 							readAttemptsCount++;
-							byte[] result = db.get(cfh.v(), readOptions.v(), keyArray);
+							byte[] result = db.get(cfh, readOptions, keyArray);
 							if (result == null) {
 								if (data.getValue() != null) {
 									readValueNotFoundWithBloomBufferSize.record(0);
@@ -487,7 +487,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public void put(@NotNull RocksObj<WriteOptions> writeOptions, Buffer key, Buffer value) throws RocksDBException {
+	public void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -534,7 +534,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					}
 
 					try {
-						db.put(cfh.v(), writeOptions.v(), keyNioBuffer, valueNioBuffer);
+						db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
 					} finally {
 						if (mustCloseValue) {
 							value.close();
@@ -546,7 +546,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					}
 				}
 			} else {
-				db.put(cfh.v(), writeOptions.v(), LLUtils.toArray(key), LLUtils.toArray(value));
+				db.put(cfh, writeOptions, LLUtils.toArray(key), LLUtils.toArray(value));
 			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);
@@ -554,7 +554,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public boolean exists(@NotNull RocksObj<ReadOptions> readOptions, Buffer key) throws RocksDBException {
+	public boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -578,8 +578,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
 				try {
-					if (db.keyMayExist(cfh.v(), keyNioBuffer)) {
-						int size = db.get(cfh.v(), readOptions.v(), keyNioBuffer.position(0), LLUtils.EMPTY_BYTE_BUFFER);
+					if (db.keyMayExist(cfh, keyNioBuffer)) {
+						int size = db.get(cfh, readOptions, keyNioBuffer.position(0), LLUtils.EMPTY_BYTE_BUFFER);
 						boolean found = size != RocksDB.NOT_FOUND;
 						if (found) {
 							readValueFoundWithBloomSimpleBufferSize.record(size);
@@ -602,12 +602,12 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				byte[] keyBytes = LLUtils.toArray(key);
 				Holder<byte[]> data = new Holder<>();
 				boolean mayExistHit = false;
-				if (db.keyMayExist(cfh.v(), readOptions.v(), keyBytes, data)) {
+				if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
 					mayExistHit = true;
 					if (data.getValue() != null) {
 						size = data.getValue().length;
 					} else {
-						size = db.get(cfh.v(), readOptions.v(), keyBytes, NO_DATA);
+						size = db.get(cfh, readOptions, keyBytes, NO_DATA);
 					}
 				}
 				boolean found = size != RocksDB.NOT_FOUND;
@@ -628,7 +628,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public boolean mayExists(@NotNull RocksObj<ReadOptions> readOptions, Buffer key) throws RocksDBException {
+	public boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -652,7 +652,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
 				try {
-					return db.keyMayExist(cfh.v(), readOptions.v(), keyNioBuffer);
+					return db.keyMayExist(cfh, readOptions, keyNioBuffer);
 				} finally {
 					if (mustCloseKey) {
 						key.close();
@@ -660,7 +660,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				}
 			} else {
 				byte[] keyBytes = LLUtils.toArray(key);
-				return db.keyMayExist(cfh.v(), readOptions.v(), keyBytes, null);
+				return db.keyMayExist(cfh, readOptions, keyBytes, null);
 			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);
@@ -668,7 +668,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public void delete(RocksObj<WriteOptions> writeOptions, Buffer key) throws RocksDBException {
+	public void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -693,14 +693,14 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
 				try {
-					db.delete(cfh.v(), writeOptions.v(), keyNioBuffer);
+					db.delete(cfh, writeOptions, keyNioBuffer);
 				} finally {
 					if (mustCloseKey) {
 						key.close();
 					}
 				}
 			} else {
-				db.delete(cfh.v(), writeOptions.v(), LLUtils.toArray(key));
+				db.delete(cfh, writeOptions, LLUtils.toArray(key));
 			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);
@@ -708,20 +708,20 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public void delete(RocksObj<WriteOptions> writeOptions, byte[] key) throws RocksDBException {
+	public void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
 			keyBufferSize.record(key.length);
-			db.delete(cfh.v(), writeOptions.v(), key);
+			db.delete(cfh, writeOptions, key);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public List<byte[]> multiGetAsList(RocksObj<ReadOptions> readOptions, List<byte[]> keys) throws RocksDBException {
+	public List<byte[]> multiGetAsList(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -729,8 +729,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			for (byte[] key : keys) {
 				keyBufferSize.record(key.length);
 			}
-			var columnFamilyHandles = new RepeatedElementList<>(cfh.v(), keys.size());
-			return db.multiGetAsList(readOptions.v(), columnFamilyHandles, keys);
+			var columnFamilyHandles = new RepeatedElementList<>(cfh, keys.size());
+			return db.multiGetAsList(readOptions, columnFamilyHandles, keys);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -741,31 +741,31 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
-			db.suggestCompactRange(cfh.v());
+			db.suggestCompactRange(cfh);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void compactRange(byte[] begin, byte[] end, RocksObj<CompactRangeOptions> options) throws RocksDBException {
+	public void compactRange(byte[] begin, byte[] end, CompactRangeOptions options) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			 ensureOpen();
 			 ensureOwned(options);
-			db.compactRange(cfh.v(), begin, end, options.v());
+			db.compactRange(cfh, begin, end, options);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void flush(RocksObj<FlushOptions> options) throws RocksDBException {
+	public void flush(FlushOptions options) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(options);
-			db.flush(options.v(), cfh.v());
+			db.flush(options, cfh);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -787,20 +787,20 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
-			return db.getLongProperty(cfh.v(), property);
+			return db.getLongProperty(cfh, property);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void write(RocksObj<WriteOptions> writeOptions, WriteBatch writeBatch) throws RocksDBException {
+	public void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
 			ensureOwned(writeBatch);
-			db.write(writeOptions.v(), writeBatch);
+			db.write(writeOptions, writeBatch);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -809,14 +809,14 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	/**
 	 * @return true if committed successfully
 	 */
-	protected abstract boolean commitOptimistically(RocksObj<Transaction> tx) throws RocksDBException;
+	protected abstract boolean commitOptimistically(Transaction tx) throws RocksDBException;
 
-	protected abstract RocksObj<Transaction> beginTransaction(@NotNull RocksObj<WriteOptions> writeOptions,
-			RocksObj<TransactionOptions> txOpts);
+	protected abstract Transaction beginTransaction(@NotNull WriteOptions writeOptions,
+			TransactionOptions txOpts);
 
 	@Override
-	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull RocksObj<ReadOptions> readOptions,
-			@NotNull RocksObj<WriteOptions> writeOptions,
+	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
+			@NotNull WriteOptions writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
@@ -858,15 +858,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		timer.record(duration, TimeUnit.NANOSECONDS);
 	}
 
-	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull RocksObj<ReadOptions> readOptions,
-			@NotNull RocksObj<WriteOptions> writeOptions,
+	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
+			@NotNull WriteOptions writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException;
 
 	@Override
 	@NotNull
-	public RocksIteratorObj newIterator(@NotNull RocksObj<ReadOptions> readOptions,
+	public RocksIteratorObj newIterator(@NotNull ReadOptions readOptions,
 			@Nullable Buffer min,
 			@Nullable Buffer max) {
 		var closeReadLock = closeLock.readLock();
@@ -875,8 +875,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			ensureOwned(readOptions);
 			ensureOwned(min);
 			ensureOwned(max);
-			RocksObj<? extends AbstractSlice<?>> sliceMin;
-			RocksObj<? extends AbstractSlice<?>> sliceMax;
+			AbstractSlice<?> sliceMin;
+			AbstractSlice<?> sliceMax;
 			if (min != null) {
 				sliceMin = setIterateBound(nettyDirect, readOptions, IterateBound.LOWER, min);
 			} else {
@@ -889,7 +889,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					sliceMax = null;
 				}
 				try {
-					var it = db.newIterator(cfh.v(), readOptions.v());
+					var it = db.newIterator(cfh, readOptions);
 					try {
 						return new RocksIteratorObj(it,
 								sliceMin,
@@ -932,7 +932,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try {
 			newData = updater.apply(prevDataToSendToUpdater);
 		} finally {
-			if (prevDataToSendToUpdater != newData && prevDataToSendToUpdater != null) {
+			if (prevDataToSendToUpdater != newData && prevDataToSendToUpdater != null
+					&& prevDataToSendToUpdater.isAccessible()) {
 				prevDataToSendToUpdater.close();
 			}
 		}
@@ -943,7 +944,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
-			return RocksDBUtils.getLevels(db, cfh.v());
+			return RocksDBUtils.getLevels(db, cfh);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -954,14 +955,14 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
-			RocksDBUtils.forceCompaction(db, db.getName(), cfh.v(), volumeId, logger);
+			RocksDBUtils.forceCompaction(db, db.getName(), cfh, volumeId, logger);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public RocksObj<ColumnFamilyHandle> getColumnFamilyHandle() {
+	public ColumnFamilyHandle getColumnFamilyHandle() {
 		return cfh;
 	}
 

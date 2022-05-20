@@ -86,12 +86,16 @@ public abstract class TestLLDictionaryLeaks {
 		return dict;
 	}
 
-	private Send<Buffer> fromString(String s) {
+	private Buffer fromString(String s) {
 		var sb = s.getBytes(StandardCharsets.UTF_8);
-		try (var b = db.getAllocator().allocate(sb.length)) {
+		var b = db.getAllocator().allocate(sb.length);
+		try {
 			b.writeBytes(sb);
 			assert b.readableBytes() == sb.length;
-			return b.send();
+			return b;
+		} catch (Throwable ex) {
+			b.close();
+			throw ex;
 		}
 	}
 
@@ -143,7 +147,7 @@ public abstract class TestLLDictionaryLeaks {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
 		var value = Mono.fromCallable(() -> fromString("test-value"));
-		runVoid(dict.put(key, value, resultType).then().doOnDiscard(Send.class, Send::close));
+		runVoid(dict.put(key, value, resultType).then().doOnDiscard(Buffer.class, Buffer::close));
 	}
 
 	@ParameterizedTest
@@ -170,7 +174,8 @@ public abstract class TestLLDictionaryLeaks {
 	}
 
 	private Buffer pass(@Nullable Buffer old) {
-		return old;
+		if (old == null) return null;
+		return old.copy();
 	}
 
 	@ParameterizedTest
@@ -201,6 +206,6 @@ public abstract class TestLLDictionaryLeaks {
 	public void testRemove(UpdateMode updateMode, LLDictionaryResultType resultType) {
 		var dict = getDict(updateMode);
 		var key = Mono.fromCallable(() -> fromString("test-key"));
-		runVoid(dict.remove(key, resultType).then().doOnDiscard(Send.class, Send::close));
+		runVoid(dict.remove(key, resultType).then().doOnDiscard(Buffer.class, Buffer::close));
 	}
 }

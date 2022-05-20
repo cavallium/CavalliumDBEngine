@@ -246,12 +246,12 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
-							public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
+							public Mono<Buffer> get(@Nullable LLSnapshot snapshot) {
 								return sendRequest(new SingletonGet(singletonId, NullableLLSnapshot.ofNullable(snapshot)))
 										.cast(BinaryOptional.class)
 										.mapNotNull(result -> {
 											if (result.val().isPresent()) {
-												return allocator.copyOf(QuicUtils.toArrayNoCopy(result.val().get().val())).send();
+												return allocator.copyOf(QuicUtils.toArrayNoCopy(result.val().get().val()));
 											} else {
 												return null;
 											}
@@ -259,13 +259,13 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
-							public Mono<Void> set(Mono<Send<Buffer>> valueMono) {
+							public Mono<Void> set(Mono<Buffer> valueMono) {
 								return QuicUtils.toBytes(valueMono)
 										.flatMap(valueSendOpt -> sendRequest(new SingletonSet(singletonId, valueSendOpt)).then());
 							}
 
 							@Override
-							public Mono<Send<Buffer>> update(BinarySerializationFunction updater, UpdateReturnMode updateReturnMode) {
+							public Mono<Buffer> update(BinarySerializationFunction updater, UpdateReturnMode updateReturnMode) {
 								return LLQuicConnection.this.<BinaryOptional, SingletonUpdateOldData>sendUpdateRequest(new SingletonUpdateInit(singletonId, updateReturnMode), prev -> {
 									byte[] oldData = toArrayNoCopy(prev);
 									Buffer oldDataBuf;
@@ -289,7 +289,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 									}
 								}).mapNotNull(result -> {
 									if (result.val().isPresent()) {
-										return allocator.copyOf(QuicUtils.toArrayNoCopy(result.val().get().val())).send();
+										return allocator.copyOf(QuicUtils.toArrayNoCopy(result.val().get().val()));
 									} else {
 										return null;
 									}
@@ -297,7 +297,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 							}
 
 							@Override
-							public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
+							public Mono<LLDelta> updateAndGetDelta(BinarySerializationFunction updater) {
 								return Mono.error(new UnsupportedOperationException());
 							}
 

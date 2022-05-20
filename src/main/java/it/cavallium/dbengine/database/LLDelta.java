@@ -18,14 +18,14 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 		@Override
 		public void drop(LLDelta obj) {
 			try {
-				if (obj.previous != null) {
+				if (obj.previous != null && obj.previous.isAccessible()) {
 					obj.previous.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close previous", ex);
 			}
 			try {
-				if (obj.current != null) {
+				if (obj.current != null && obj.current.isAccessible()) {
 					obj.current.close();
 				}
 			} catch (Throwable ex) {
@@ -58,11 +58,11 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 	@Nullable
 	private Runnable onClose;
 
-	private LLDelta(@Nullable Send<Buffer> previous, @Nullable Send<Buffer> current, @Nullable Runnable onClose) {
+	private LLDelta(@Nullable Buffer previous, @Nullable Buffer current, @Nullable Runnable onClose) {
 		super(DROP);
 		assert isAllAccessible();
-		this.previous = previous != null ? previous.receive().makeReadOnly() : null;
-		this.current = current != null ? current.receive().makeReadOnly() : null;
+		this.previous = previous != null ? previous.makeReadOnly() : null;
+		this.current = current != null ? current.makeReadOnly() : null;
 		this.onClose = onClose;
 	}
 
@@ -74,7 +74,7 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 		return true;
 	}
 
-	public static LLDelta of(Send<Buffer> previous, Send<Buffer> current) {
+	public static LLDelta of(Buffer previous, Buffer current) {
 		assert (previous == null && current == null) || (previous != current);
 		return new LLDelta(previous, current, null);
 	}
@@ -87,6 +87,16 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 	public Send<Buffer> current() {
 		ensureOwned();
 		return current != null ? current.copy().send() : null;
+	}
+
+	public Buffer currentUnsafe() {
+		ensureOwned();
+		return current;
+	}
+
+	public Buffer previousUnsafe() {
+		ensureOwned();
+		return previous;
 	}
 
 	public boolean isModified() {
@@ -149,7 +159,11 @@ public class LLDelta extends ResourceSupport<LLDelta, LLDelta> {
 		Send<Buffer> maxSend = this.current != null ? this.current.send() : null;
 		Runnable onClose = this.onClose;
 		return drop -> {
-			var instance = new LLDelta(minSend, maxSend, onClose);
+			var instance = new LLDelta(
+					minSend != null ? minSend.receive() : null,
+					maxSend != null ? maxSend.receive() : null,
+					onClose
+			);
 			drop.attach(instance);
 			return instance;
 		};

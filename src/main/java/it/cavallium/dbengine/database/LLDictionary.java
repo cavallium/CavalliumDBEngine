@@ -21,13 +21,13 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	BufferAllocator getAllocator();
 
-	Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot, Mono<Send<Buffer>> key);
+	Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> key);
 
-	Mono<Send<Buffer>> put(Mono<Send<Buffer>> key, Mono<Send<Buffer>> value, LLDictionaryResultType resultType);
+	Mono<Buffer> put(Mono<Buffer> key, Mono<Buffer> value, LLDictionaryResultType resultType);
 
 	Mono<UpdateMode> getUpdateMode();
 
-	default Mono<Send<Buffer>> update(Mono<Send<Buffer>> key,
+	default Mono<Buffer> update(Mono<Buffer> key,
 			BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return this
@@ -35,51 +35,51 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
 	}
 
-	Mono<Send<LLDelta>> updateAndGetDelta(Mono<Send<Buffer>> key, BinarySerializationFunction updater);
+	Mono<LLDelta> updateAndGetDelta(Mono<Buffer> key, BinarySerializationFunction updater);
 
 	Mono<Void> clear();
 
-	Mono<Send<Buffer>> remove(Mono<Send<Buffer>> key, LLDictionaryResultType resultType);
+	Mono<Buffer> remove(Mono<Buffer> key, LLDictionaryResultType resultType);
 
-	Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Send<Buffer>> keys);
+	Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys);
 
-	Mono<Void> putMulti(Flux<Send<LLEntry>> entries);
+	Mono<Void> putMulti(Flux<LLEntry> entries);
 
-	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Send<Buffer>> serializedKeys,
-			KVSerializationFunction<K, @Nullable Send<Buffer>, @Nullable Buffer> updateFunction);
+	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Buffer> serializedKeys,
+			KVSerializationFunction<K, @Nullable Buffer, @Nullable Buffer> updateFunction);
 
-	Flux<Send<LLEntry>> getRange(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
+	Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot,
+			Mono<LLRange> range,
 			boolean reverse,
 			boolean smallRange);
 
-	Flux<List<Send<LLEntry>>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
+	Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			Mono<LLRange> range,
 			int prefixLength,
 			boolean smallRange);
 
-	Flux<Send<Buffer>> getRangeKeys(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
+	Flux<Buffer> getRangeKeys(@Nullable LLSnapshot snapshot,
+			Mono<LLRange> range,
 			boolean reverse,
 			boolean smallRange);
 
-	Flux<List<Send<Buffer>>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
+	Flux<List<Buffer>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
+			Mono<LLRange> range,
 			int prefixLength,
 			boolean smallRange);
 
-	Flux<Send<Buffer>> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
-			Mono<Send<LLRange>> range,
+	Flux<Buffer> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
+			Mono<LLRange> range,
 			int prefixLength,
 			boolean smallRange);
 
-	Flux<BadBlock> badBlocks(Mono<Send<LLRange>> range);
+	Flux<BadBlock> badBlocks(Mono<LLRange> range);
 
-	Mono<Void> setRange(Mono<Send<LLRange>> range, Flux<Send<LLEntry>> entries, boolean smallRange);
+	Mono<Void> setRange(Mono<LLRange> range, Flux<LLEntry> entries, boolean smallRange);
 
-	default Mono<Void> replaceRange(Mono<Send<LLRange>> range,
+	default Mono<Void> replaceRange(Mono<LLRange> range,
 			boolean canKeysChange,
-			Function<Send<LLEntry>, Mono<Send<LLEntry>>> entriesReplacer,
+			Function<LLEntry, Mono<LLEntry>> entriesReplacer,
 			boolean smallRange) {
 		return Mono.defer(() -> {
 			if (canKeysChange) {
@@ -93,13 +93,13 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 		});
 	}
 
-	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean fillCache);
+	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fillCache);
 
-	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range, boolean fast);
+	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fast);
 
-	Mono<Send<LLEntry>> getOne(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
+	Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Mono<Send<Buffer>> getOneKey(@Nullable LLSnapshot snapshot, Mono<Send<LLRange>> range);
+	Mono<Buffer> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
 
-	Mono<Send<LLEntry>> removeOne(Mono<Send<LLRange>> range);
+	Mono<LLEntry> removeOne(Mono<LLRange> range);
 }

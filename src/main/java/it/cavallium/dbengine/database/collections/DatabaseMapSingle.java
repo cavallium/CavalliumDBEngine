@@ -7,6 +7,7 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -18,6 +19,7 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -34,10 +36,8 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	private static final Drop<DatabaseMapSingle<?>> DROP = new Drop<>() {
 		@Override
 		public void drop(DatabaseMapSingle<?> obj) {
-			try {
-				obj.key.close();
-			} catch (Throwable ex) {
-				LOG.error("Failed to close key", ex);
+			if (obj.keySupplier != null) {
+				obj.keySupplier.close();
 			}
 			if (obj.onClose != null) {
 				obj.onClose.run();
@@ -56,19 +56,18 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	};
 
 	private final LLDictionary dictionary;
-	private final Mono<Send<Buffer>> keyMono;
+	private final Mono<Buffer> keyMono;
 	private final Serializer<U> serializer;
-
-	private Buffer key;
+	private BufSupplier keySupplier;
 	private Runnable onClose;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	public DatabaseMapSingle(LLDictionary dictionary, Buffer key, Serializer<U> serializer,
+	public DatabaseMapSingle(LLDictionary dictionary, BufSupplier keySupplier, Serializer<U> serializer,
 			Runnable onClose) {
 		super((Drop<DatabaseMapSingle<U>>) (Drop) DROP);
 		this.dictionary = dictionary;
-		this.key = key;
-		this.keyMono = LLUtils.lazyRetain(this.key);
+		this.keySupplier = keySupplier;
+		this.keyMono = Mono.fromSupplier(() -> keySupplier.get());
 		this.serializer = serializer;
 		this.onClose = onClose;
 	}
@@ -81,18 +80,20 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 		}
 	}
 
-	private void deserializeValue(Send<Buffer> value, SynchronousSink<U> sink) {
+	private void deserializeValue(Buffer value, SynchronousSink<U> sink) {
 		try {
 			U deserializedValue;
-			try (var valueBuf = value.receive()) {
-				deserializedValue = serializer.deserialize(valueBuf);
+			try (value) {
+				deserializedValue = serializer.deserialize(value);
 			}
 			sink.next(deserializedValue);
 		} catch (IndexOutOfBoundsException ex) {
 			var exMessage = ex.getMessage();
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-				LOG.error("Unexpected zero-bytes value at "
-						+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName() + ":" + LLUtils.toStringSafe(key));
+				try (var key = keySupplier.get()) {
+					LOG.error("Unexpected zero-bytes value at "
+							+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName() + ":" + LLUtils.toStringSafe(key));
+				}
 				sink.complete();
 			} else {
 				sink.error(ex);
@@ -102,12 +103,16 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 		}
 	}
 
-	private Send<Buffer> serializeValue(U value) throws SerializationException {
+	private Buffer serializeValue(U value) throws SerializationException {
 		var valSizeHint = serializer.getSerializedSizeHint();
 		if (valSizeHint == -1) valSizeHint = 128;
-		try (var valBuf = dictionary.getAllocator().allocate(valSizeHint)) {
+		var valBuf = dictionary.getAllocator().allocate(valSizeHint);
+		try {
 			serializer.serialize(value, valBuf);
-			return valBuf.send();
+			return valBuf;
+		} catch (Throwable ex) {
+			valBuf.close();
+			throw ex;
 		}
 	}
 
@@ -140,7 +145,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 					if (result == null) {
 						return null;
 					} else {
-						return serializeValue(result).receive();
+						return serializeValue(result);
 					}
 				}, updateReturnMode)
 				.handle(this::deserializeValue);
@@ -160,11 +165,11 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 					if (result == null) {
 						return null;
 					} else {
-						return serializeValue(result).receive();
+						return serializeValue(result);
 					}
 				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> {
-					try (var valueBuf = serialized.receive()) {
-						return serializer.deserialize(valueBuf);
+					try (serialized) {
+						return serializer.deserialize(serialized);
 					}
 				}));
 	}
@@ -179,19 +184,19 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::single).map(ResourceSupport::send), false)
+				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::singleUnsafe), false)
 				.map(empty -> empty ? 0L : 1L);
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::single).map(ResourceSupport::send), true);
+				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::singleUnsafe), true);
 	}
 
 	@Override
 	public Flux<BadBlock> badBlocks() {
-		return dictionary.badBlocks(keyMono.map(LLRange::single).map(ResourceSupport::send));
+		return dictionary.badBlocks(keyMono.map(LLRange::singleUnsafe));
 	}
 
 	@Override
@@ -201,11 +206,10 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	protected Owned<DatabaseMapSingle<U>> prepareSend() {
-		var keySend = this.key.send();
+		var keySupplier = this.keySupplier;
 		var onClose = this.onClose;
 		return drop -> {
-			var key = keySend.receive();
-			var instance = new DatabaseMapSingle<>(dictionary, key, serializer, onClose);
+			var instance = new DatabaseMapSingle<>(dictionary, keySupplier, serializer, onClose);
 			drop.attach(instance);
 			return instance;
 		};
@@ -213,7 +217,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	protected void makeInaccessible() {
-		this.key = null;
+		this.keySupplier = null;
 		this.onClose = null;
 	}
 }

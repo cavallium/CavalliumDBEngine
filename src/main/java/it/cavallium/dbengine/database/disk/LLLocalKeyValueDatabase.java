@@ -23,7 +23,6 @@ import it.cavallium.dbengine.database.RocksDBMapProperty;
 import it.cavallium.dbengine.database.RocksDBStringProperty;
 import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.ColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseLevel;
@@ -55,6 +54,7 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.Cache;
@@ -125,10 +125,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	private Statistics statistics;
 	private Cache standardCache;
 	private Cache compressedCache;
-	private final Map<Column, RocksObj<ColumnFamilyHandle>> handles;
+	private final Map<Column, ColumnFamilyHandle> handles;
 
 	private final HashMap<String, PersistentCache> persistentCaches;
-	private final ConcurrentHashMap<Long, RocksObj<Snapshot>> snapshotsHandles = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<Long, Snapshot> snapshotsHandles = new ConcurrentHashMap<>();
 	private final AtomicLong nextSnapshotNumbers = new AtomicLong(1);
 	private final StampedLock closeLock = new StampedLock();
 	private volatile boolean closed = false;
@@ -467,13 +467,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			this.handles = new HashMap<>();
 			if (enableColumnsBug && !inMemory) {
 				for (int i = 0; i < columns.size(); i++) {
-					this.handles.put(columns.get(i), new RocksObj<>(handles.get(i)));
+					this.handles.put(columns.get(i), handles.get(i));
 				}
 			} else {
 				handles: for (ColumnFamilyHandle handle : handles) {
 					for (Column column : columns) {
 						if (Arrays.equals(column.name().getBytes(StandardCharsets.US_ASCII), handle.getName())) {
-							this.handles.put(column, new RocksObj<>(handle));
+							this.handles.put(column, handle);
 							continue handles;
 						}
 					}
@@ -527,11 +527,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		RocksDBUtils.ensureOpen(db, null);
 	}
 
-	protected void ensureOwned(org.rocksdb.RocksObject rocksObject) {
-		RocksDBUtils.ensureOwned(rocksObject);
-	}
-
-	protected void ensureOwned(RocksObj<?> rocksObject) {
+	protected void ensureOwned(AbstractImmutableNativeReference rocksObject) {
 		RocksDBUtils.ensureOwned(rocksObject);
 	}
 
@@ -571,7 +567,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		throw new IllegalArgumentException("Persistent cache " + persistentCacheId.get() + " is not defined");
 	}
 
-	public Map<Column, RocksObj<ColumnFamilyHandle>> getAllColumnFamilyHandles() {
+	public Map<Column, ColumnFamilyHandle> getAllColumnFamilyHandles() {
 		return this.handles;
 	}
 
@@ -586,7 +582,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			ensureOpen();
 			var cfh = handles.get(column);
 			ensureOwned(cfh);
-			return RocksDBUtils.getLevels(db, cfh.v());
+			return RocksDBUtils.getLevels(db, cfh);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -598,7 +594,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			ensureOpen();
 			var cfh = handles.get(column);
 			ensureOwned(cfh);
-			return RocksDBUtils.getColumnFiles(db, cfh.v(), excludeLastLevel);
+			return RocksDBUtils.getColumnFiles(db, cfh, excludeLastLevel);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -610,7 +606,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			ensureOpen();
 			for (var cfh : this.handles.values()) {
 				ensureOwned(cfh);
-				RocksDBUtils.forceCompaction(db, name, cfh.v(), volumeId, logger);
+				RocksDBUtils.forceCompaction(db, name, cfh, volumeId, logger);
 			}
 		} finally {
 			closeLock.unlockRead(closeReadLock);
@@ -658,7 +654,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 								if (closed) {
 									return 0d;
 								}
-								return database.getLongProperty(cfh.v(), propertyName);
+								return database.getLongProperty(cfh, propertyName);
 							} catch (RocksDBException e) {
 								if ("NotFound".equals(e.getMessage())) {
 									return 0d;
@@ -721,7 +717,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			snapshotsHandles.forEach((id, snapshot) -> {
 				try {
 					if (db.isOwningHandle()) {
-						db.releaseSnapshot(snapshot.v());
+						db.releaseSnapshot(snapshot);
 						snapshot.close();
 					}
 				} catch (Exception ex2) {
@@ -1033,7 +1029,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return stats;
 	}
 
-	private RocksObj<Snapshot> getSnapshotLambda(LLSnapshot snapshot) {
+	private Snapshot getSnapshotLambda(LLSnapshot snapshot) {
 		var closeReadSnapLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -1099,7 +1095,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
-			RocksObj<ColumnFamilyHandle> cfh;
+			ColumnFamilyHandle cfh;
 			try {
 				cfh = getCfh(columnName);
 				ensureOwned(cfh);
@@ -1112,7 +1108,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 	}
 
-	private RocksDBColumn getRocksDBColumn(RocksDB db, RocksObj<ColumnFamilyHandle> cfh) {
+	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
 		var nettyDirect = databaseOptions.allowNettyDirect();
 		var closeLock = getCloseLock();
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
@@ -1138,9 +1134,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		}
 	}
 
-	private RocksObj<ColumnFamilyHandle> getCfh(byte[] columnName) throws RocksDBException {
+	private ColumnFamilyHandle getCfh(byte[] columnName) throws RocksDBException {
 		var cfh = handles.get(ColumnUtils.special(ColumnUtils.toString(columnName)));
-		assert enableColumnsBug || Arrays.equals(cfh.v().getName(), columnName);
+		assert enableColumnsBug || Arrays.equals(cfh.getName(), columnName);
 		return cfh;
 	}
 
@@ -1239,7 +1235,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							return db.getMapProperty(property.getName());
 						} else {
 							var cfh = requireNonNull(handles.get(column));
-							return db.getMapProperty(cfh.v(), property.getName());
+							return db.getMapProperty(cfh, property.getName());
 						}
 					} finally {
 						closeLock.unlockRead(closeReadLock);
@@ -1270,7 +1266,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							return db.getProperty(property.getName());
 						} else {
 							var cfh = requireNonNull(handles.get(column));
-							return db.getProperty(cfh.v(), property.getName());
+							return db.getProperty(cfh, property.getName());
 						}
 					} finally {
 						closeLock.unlockRead(closeReadLock);
@@ -1301,7 +1297,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							return db.getLongProperty(property.getName());
 						} else {
 							var cfh = requireNonNull(handles.get(column));
-							return db.getLongProperty(cfh.v(), property.getName());
+							return db.getLongProperty(cfh, property.getName());
 						}
 					} finally {
 						closeLock.unlockRead(closeReadLock);
@@ -1362,7 +1358,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 								aggregatedStats
 										.append(entry.getKey().name())
 										.append("\n")
-										.append(db.getProperty(entry.getValue().v(), "rocksdb.stats"))
+										.append(db.getProperty(entry.getValue(), "rocksdb.stats"))
 										.append("\n");
 							}
 							return aggregatedStats.toString();
@@ -1388,7 +1384,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 							try {
 								if (closed) return null;
 								ensureOpen();
-								return db.getPropertiesOfAllTables(handle.getValue().v());
+								return db.getPropertiesOfAllTables(handle.getValue());
 							} finally {
 								closeLock.unlockRead(closeReadLock);
 							}
@@ -1453,7 +1449,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			try {
 				ensureOpen();
 				return snapshotTime.recordCallable(() -> {
-					var snapshot = new RocksObj<>(db.getSnapshot());
+					var snapshot = db.getSnapshot();
 					long currentSnapshotSequenceNumber = nextSnapshotNumbers.getAndIncrement();
 					this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
 					return new LLSnapshot(currentSnapshotSequenceNumber);
@@ -1476,7 +1472,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						if (!db.isOwningHandle()) {
 							return null;
 						}
-						db.releaseSnapshot(dbSnapshot.v());
+						db.releaseSnapshot(dbSnapshot);
 						return null;
 					} finally {
 						closeLock.unlockRead(closeReadLock);
@@ -1497,7 +1493,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						flushAndCloseDb(db,
 								standardCache,
 								compressedCache,
-								new ArrayList<>(handles.values().stream().map(RocksObj::v).toList())
+								new ArrayList<>(handles.values())
 						);
 						handles.values().forEach(columnFamilyHandleRocksObj -> {
 							if (columnFamilyHandleRocksObj.isAccessible()) {

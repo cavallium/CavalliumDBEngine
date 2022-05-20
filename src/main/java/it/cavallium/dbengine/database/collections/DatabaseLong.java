@@ -24,8 +24,8 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	}
 
 	public Mono<Long> get(@Nullable LLSnapshot snapshot) {
-		return singleton.get(snapshot).handle((dataSend, sink) -> {
-			try (var data = dataSend.receive()) {
+		return singleton.get(snapshot).handle((data, sink) -> {
+			try (data) {
 				if (data.readableBytes() == 4) {
 					sink.next((long) (int) bugSerializer.deserialize(data));
 				} else {
@@ -75,8 +75,8 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 				buf.writeLong(count);
 				return buf;
 			}
-		}, updateReturnMode).map(send -> {
-			try (var buf = send.receive()) {
+		}, updateReturnMode).map(buf -> {
+			try (buf) {
 				return buf.readLong();
 			}
 		}).single();
@@ -84,10 +84,14 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 
 	public Mono<Void> set(long value) {
 		return singleton.set(Mono.fromCallable(() -> {
-			try (var buf = singleton.getAllocator().allocate(Long.BYTES)) {
+			var buf = singleton.getAllocator().allocate(Long.BYTES);
+			try {
 				serializer.serialize(value, buf);
-				return buf.send();
+			} catch (Throwable ex) {
+				buf.close();
+				throw ex;
 			}
+			return buf;
 		}));
 	}
 

@@ -7,7 +7,7 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.rocksdb.ReadOptions;
@@ -29,13 +29,6 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 			} catch (Throwable ex) {
 				logger.error("Failed to close range", ex);
 			}
-			try {
-				if (obj.readOptions != null) {
-					obj.readOptions.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close readOptions", ex);
-			}
 		}
 
 		@Override
@@ -51,17 +44,17 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 
 	private final RocksDBColumn db;
 	private LLRange rangeShared;
-	private RocksObj<ReadOptions> readOptions;
+	private Supplier<ReadOptions> readOptions;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalMigrationReactiveRocksIterator(RocksDBColumn db,
 			Send<LLRange> range,
-			Send<RocksObj<ReadOptions>> readOptions) {
+			Supplier<ReadOptions> readOptions) {
 		super((Drop<LLLocalMigrationReactiveRocksIterator>) (Drop) DROP);
 		try (range) {
 			this.db = db;
 			this.rangeShared = range.receive();
-			this.readOptions = readOptions.receive();
+			this.readOptions = readOptions;
 		}
 	}
 
@@ -69,7 +62,7 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 
 	public Flux<ByteEntry> flux() {
 		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions, false, false, false);
+			var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
 			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(false, readOptions, rangeShared, false));
 		}, (tuple, sink) -> {
 			try {
@@ -97,7 +90,7 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 	@Override
 	protected Owned<LLLocalMigrationReactiveRocksIterator> prepareSend() {
 		var range = this.rangeShared.send();
-		var readOptions = this.readOptions.send();
+		var readOptions = this.readOptions;
 		return drop -> new LLLocalMigrationReactiveRocksIterator(db,
 				range,
 				readOptions

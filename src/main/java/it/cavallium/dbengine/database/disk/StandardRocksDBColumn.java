@@ -7,7 +7,6 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.StampedLock;
@@ -26,26 +25,26 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
-			RocksObj<ColumnFamilyHandle> cfh,
+			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
 			StampedLock closeLock) {
 		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, closeLock);
 	}
 
 	@Override
-	protected boolean commitOptimistically(RocksObj<Transaction> tx) {
+	protected boolean commitOptimistically(Transaction tx) {
 		throw new UnsupportedOperationException("Transactions not supported");
 	}
 
 	@Override
-	protected RocksObj<Transaction> beginTransaction(@NotNull RocksObj<WriteOptions> writeOptions,
-			RocksObj<TransactionOptions> txOpts) {
+	protected Transaction beginTransaction(@NotNull WriteOptions writeOptions,
+			TransactionOptions txOpts) {
 		throw new UnsupportedOperationException("Transactions not supported");
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull RocksObj<ReadOptions> readOptions,
-			@NotNull RocksObj<WriteOptions> writeOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
+			@NotNull WriteOptions writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
@@ -117,15 +116,14 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 							yield RESULT_NOTHING;
 						}
 						case CURRENT -> {
-							yield new UpdateAtomicResultCurrent(newData != null ? newData.send() : null);
+							yield new UpdateAtomicResultCurrent(newData != null ? newData.copy() : null);
 						}
 						case PREVIOUS -> {
-							yield new UpdateAtomicResultPrevious(prevData != null ? prevData.send() : null);
+							yield new UpdateAtomicResultPrevious(prevData != null ? prevData.copy() : null);
 						}
 						case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
 						case DELTA -> new UpdateAtomicResultDelta(LLDelta
-								.of(prevData != null ? prevData.send() : null, newData != null ? newData.send() : null)
-								.send());
+								.of(prevData != null ? prevData.copy() : null, newData != null ? newData.copy() : null));
 					};
 				}
 			}

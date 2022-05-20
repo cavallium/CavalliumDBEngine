@@ -43,9 +43,9 @@ public class QuicUtils {
 	}
 
 	@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
-	public static NullableBytes toBytes(Optional<Send<Buffer>> valueSendOpt) {
+	public static NullableBytes toBytes(Optional<Buffer> valueSendOpt) {
 		if (valueSendOpt.isPresent()) {
-			try (var value = valueSendOpt.get().receive()) {
+			try (var value = valueSendOpt.get()) {
 				var bytes = new byte[value.readableBytes()];
 				value.copyInto(value.readerOffset(), bytes, 0, bytes.length);
 				return NullableBytes.ofNullable(ByteList.of(bytes));
@@ -55,9 +55,9 @@ public class QuicUtils {
 		}
 	}
 
-	public static Mono<NullableBytes> toBytes(Mono<Send<Buffer>> valueSendOptMono) {
+	public static Mono<NullableBytes> toBytes(Mono<Buffer> valueSendOptMono) {
 		return valueSendOptMono.map(valueSendOpt -> {
-			try (var value = valueSendOpt.receive()) {
+			try (var value = valueSendOpt) {
 				var bytes = new byte[value.readableBytes()];
 				value.copyInto(value.readerOffset(), bytes, 0, bytes.length);
 				return NullableBytes.ofNullable(ByteList.of(bytes));

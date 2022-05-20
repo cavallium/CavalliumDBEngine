@@ -18,17 +18,14 @@ public class LLMemorySingleton implements LLSingleton {
 	private final LLMemoryDictionary dict;
 	private final String columnNameString;
 	private final byte[] singletonName;
-	private final Mono<Send<Buffer>> singletonNameBufMono;
+	private final Mono<Buffer> singletonNameBufMono;
 
 	public LLMemorySingleton(LLMemoryDictionary dict, String columnNameString, byte[] singletonName) {
 		this.dict = dict;
 		this.columnNameString = columnNameString;
 		this.singletonName = singletonName;
-		this.singletonNameBufMono = Mono.fromCallable(() -> dict
-				.getAllocator()
-				.allocate(singletonName.length)
-				.writeBytes(singletonName)
-				.send());
+		this.singletonNameBufMono = Mono.fromSupplier(() -> dict.getAllocator().allocate(singletonName.length)
+				.writeBytes(singletonName));
 	}
 
 	@Override
@@ -42,12 +39,12 @@ public class LLMemorySingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
+	public Mono<Buffer> get(@Nullable LLSnapshot snapshot) {
 		return dict.get(snapshot, singletonNameBufMono);
 	}
 
 	@Override
-	public Mono<Void> set(Mono<Send<Buffer>> value) {
+	public Mono<Void> set(Mono<Buffer> value) {
 		var bbKey = singletonNameBufMono;
 		return dict
 				.put(bbKey, value, LLDictionaryResultType.VOID)
@@ -55,13 +52,13 @@ public class LLMemorySingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> update(BinarySerializationFunction updater,
+	public Mono<Buffer> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return dict.update(singletonNameBufMono, updater, updateReturnMode);
 	}
 
 	@Override
-	public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
+	public Mono<LLDelta> updateAndGetDelta(BinarySerializationFunction updater) {
 		return dict.updateAndGetDelta(singletonNameBufMono, updater);
 	}
 

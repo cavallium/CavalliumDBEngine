@@ -10,7 +10,6 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.concurrent.Callable;
@@ -27,16 +26,16 @@ import reactor.core.scheduler.Schedulers;
 
 public class LLLocalSingleton implements LLSingleton {
 	private final RocksDBColumn db;
-	private final Function<LLSnapshot, RocksObj<Snapshot>> snapshotResolver;
+	private final Function<LLSnapshot, Snapshot> snapshotResolver;
 	private final byte[] name;
 	private final String columnName;
-	private final Mono<Send<Buffer>> nameMono;
+	private final Mono<Buffer> nameMono;
 	private final String databaseName;
 	private final Scheduler dbWScheduler;
 	private final Scheduler dbRScheduler;
 
 	public LLLocalSingleton(RocksDBColumn db,
-			Function<LLSnapshot, RocksObj<Snapshot>> snapshotResolver,
+			Function<LLSnapshot, Snapshot> snapshotResolver,
 			String databaseName,
 			byte[] name,
 			String columnName,
@@ -50,18 +49,17 @@ public class LLLocalSingleton implements LLSingleton {
 		this.columnName = columnName;
 		this.nameMono = Mono.fromCallable(() -> {
 			var alloc = db.getAllocator();
-			try (var nameBuf = alloc.allocate(this.name.length)) {
-				nameBuf.writeBytes(this.name);
-				return nameBuf.send();
-			}
+			var nameBuf = alloc.allocate(this.name.length);
+			nameBuf.writeBytes(this.name);
+			return nameBuf;
 		});
 		this.dbWScheduler = dbWScheduler;
 		this.dbRScheduler = dbRScheduler;
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Initialized in a nonblocking thread");
 		}
-		try (var readOptions = new RocksObj<>(new ReadOptions());
-				var writeOptions = new RocksObj<>(new WriteOptions())) {
+		try (var readOptions = new ReadOptions();
+				var writeOptions = new WriteOptions()) {
 			if (defaultValue != null && db.get(readOptions, this.name, true) == null) {
 				db.put(writeOptions, this.name, defaultValue);
 			}
@@ -72,11 +70,11 @@ public class LLLocalSingleton implements LLSingleton {
 		return Mono.fromCallable(callable).subscribeOn(write ? dbWScheduler : dbRScheduler);
 	}
 
-	private RocksObj<ReadOptions> generateReadOptions(LLSnapshot snapshot) {
+	private ReadOptions generateReadOptions(LLSnapshot snapshot) {
 		if (snapshot != null) {
-			return new RocksObj<>(new ReadOptions().setSnapshot(snapshotResolver.apply(snapshot).v()));
+			return new ReadOptions().setSnapshot(snapshotResolver.apply(snapshot));
 		} else {
-			return new RocksObj<>(new ReadOptions());
+			return new ReadOptions();
 		}
 	}
 
@@ -86,54 +84,52 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot) {
-		return nameMono.publishOn(dbRScheduler).handle((nameSend, sink) -> {
-			try (Buffer name = nameSend.receive()) {
+	public Mono<Buffer> get(@Nullable LLSnapshot snapshot) {
+		return nameMono.publishOn(dbRScheduler).handle((name, sink) -> {
+			try (name) {
 				Buffer result;
 				try (var readOptions = generateReadOptions(snapshot)) {
 					result = db.get(readOptions, name);
 				}
 				if (result != null) {
-					sink.next(result.send());
+					sink.next(result);
 				} else {
 					sink.complete();
 				}
 			} catch (RocksDBException ex) {
-				sink.error(new IOException("Failed to read " + Arrays.toString(name), ex));
+				sink.error(new IOException("Failed to read " + LLUtils.toString(name), ex));
 			}
 		});
 	}
 
 	@Override
-	public Mono<Void> set(Mono<Send<Buffer>> valueMono) {
+	public Mono<Void> set(Mono<Buffer> valueMono) {
 		return Mono.zip(nameMono, valueMono).publishOn(dbWScheduler).handle((tuple, sink) -> {
-			var nameSend = tuple.getT1();
-			var valueSend = tuple.getT2();
-			try (Buffer name = nameSend.receive();
-					Buffer value = valueSend.receive();
-					var writeOptions = new RocksObj<>(new WriteOptions())) {
+			var name = tuple.getT1();
+			var value = tuple.getT2();
+			try (name; value; var writeOptions = new WriteOptions()) {
 				db.put(writeOptions, name, value);
 				sink.next(true);
 			} catch (RocksDBException ex) {
-				sink.error(new IOException("Failed to write " + Arrays.toString(name), ex));
+				sink.error(new IOException("Failed to write " + LLUtils.toString(name), ex));
 			}
 		}).switchIfEmpty(unset().thenReturn(true)).then();
 	}
 
 	private Mono<Void> unset() {
-		return nameMono.publishOn(dbWScheduler).handle((nameSend, sink) -> {
-			try (Buffer name = nameSend.receive(); var writeOptions = new RocksObj<>(new WriteOptions())) {
+		return nameMono.publishOn(dbWScheduler).handle((name, sink) -> {
+			try (name; var writeOptions = new WriteOptions()) {
 				db.delete(writeOptions, name);
 			} catch (RocksDBException ex) {
-				sink.error(new IOException("Failed to read " + Arrays.toString(name), ex));
+				sink.error(new IOException("Failed to read " + LLUtils.toString(name), ex));
 			}
 		});
 	}
 
 	@Override
-	public Mono<Send<Buffer>> update(BinarySerializationFunction updater,
+	public Mono<Buffer> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
-		return Mono.usingWhen(nameMono, keySend -> runOnDb(true, () -> {
+		return Mono.usingWhen(nameMono, key -> runOnDb(true, () -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
@@ -143,9 +139,9 @@ public class LLLocalSingleton implements LLSingleton {
 				case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 			};
 			UpdateAtomicResult result;
-			try (var key = keySend.receive();
-					var readOptions = new RocksObj<>(new ReadOptions());
-					var writeOptions = new RocksObj<>(new WriteOptions())) {
+			try (key;
+					var readOptions = new ReadOptions();
+					var writeOptions = new WriteOptions()) {
 				result = db.updateAtomic(readOptions, writeOptions, key, updater, returnMode);
 			}
 			return switch (updateReturnMode) {
@@ -158,15 +154,15 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	@Override
-	public Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater) {
-		return Mono.usingWhen(nameMono, keySend -> runOnDb(true, () -> {
+	public Mono<LLDelta> updateAndGetDelta(BinarySerializationFunction updater) {
+		return Mono.usingWhen(nameMono, key -> runOnDb(true, () -> {
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
 			UpdateAtomicResult result;
-			try (var key = keySend.receive();
-					var readOptions = new RocksObj<>(new ReadOptions());
-					var writeOptions = new RocksObj<>(new WriteOptions())) {
+			try (key;
+					var readOptions = new ReadOptions();
+					var writeOptions = new WriteOptions()) {
 				result = db.updateAtomic(readOptions, writeOptions, key, updater, DELTA);
 			}
 			return ((UpdateAtomicResultDelta) result).delta();

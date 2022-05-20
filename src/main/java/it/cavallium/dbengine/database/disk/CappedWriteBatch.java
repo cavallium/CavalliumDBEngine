@@ -10,7 +10,6 @@ import io.netty5.buffer.api.Send;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.RocksDBColumn;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +27,7 @@ public class CappedWriteBatch extends WriteBatch {
 	private final RocksDBColumn db;
 	private final BufferAllocator alloc;
 	private final int cap;
-	private final RocksObj<WriteOptions> writeOptions;
+	private final WriteOptions writeOptions;
 
 	private final List<Buffer> buffersToRelease;
 	private final List<ByteBuffer> byteBuffersToRelease;
@@ -42,7 +41,7 @@ public class CappedWriteBatch extends WriteBatch {
 			int cap,
 			int reservedWriteBatchSize,
 			long maxWriteBatchSize,
-			RocksObj<WriteOptions> writeOptions) {
+			WriteOptions writeOptions) {
 		super(reservedWriteBatchSize);
 		this.db = db;
 		this.alloc = alloc;

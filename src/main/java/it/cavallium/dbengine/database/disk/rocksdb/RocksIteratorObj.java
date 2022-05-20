@@ -43,8 +43,8 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	};
 
 	private RocksIterator rocksIterator;
-	private RocksObj<? extends AbstractSlice<?>> sliceMin;
-	private RocksObj<? extends AbstractSlice<?>> sliceMax;
+	private AbstractSlice<?> sliceMin;
+	private AbstractSlice<?> sliceMax;
 	private Buffer min;
 	private Buffer max;
 	private final boolean allowNettyDirect;
@@ -58,8 +58,8 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	private Object seekingTo;
 
 	public RocksIteratorObj(RocksIterator rocksIterator,
-			RocksObj<? extends AbstractSlice<?>> sliceMin,
-			RocksObj<? extends AbstractSlice<?>> sliceMax,
+			AbstractSlice<?> sliceMin,
+			AbstractSlice<?> sliceMax,
 			Buffer min,
 			Buffer max,
 			boolean allowNettyDirect,
@@ -87,8 +87,8 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	private RocksIteratorObj(RocksIterator rocksIterator,
-			RocksObj<? extends AbstractSlice<?>> sliceMin,
-			RocksObj<? extends AbstractSlice<?>> sliceMax,
+			AbstractSlice<?> sliceMin,
+			AbstractSlice<?> sliceMax,
 			Buffer min,
 			Buffer max,
 			boolean allowNettyDirect,

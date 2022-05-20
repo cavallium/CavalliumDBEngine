@@ -2,13 +2,13 @@ package it.cavallium.dbengine.database.disk;
 
 import static com.google.common.collect.Lists.partition;
 
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactionJobInfo;
 import org.rocksdb.CompactionOptions;
@@ -97,7 +97,7 @@ public class RocksDBUtils {
 		}
 	}
 
-	public static void ensureOpen(RocksDB db, @Nullable RocksObj<ColumnFamilyHandle> cfh) {
+	public static void ensureOpen(RocksDB db, @Nullable ColumnFamilyHandle cfh) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called in a nonblocking thread");
 		}
@@ -105,14 +105,8 @@ public class RocksDBUtils {
 		ensureOwned(cfh);
 	}
 
-	public static void ensureOwned(@Nullable org.rocksdb.RocksObject rocksObject) {
+	public static void ensureOwned(@Nullable AbstractImmutableNativeReference rocksObject) {
 		if (rocksObject != null && !rocksObject.isOwningHandle()) {
-			throw new IllegalStateException("Not owning handle");
-		}
-	}
-
-	public static void ensureOwned(@Nullable RocksObj<?> rocksObject) {
-		if (rocksObject != null && !rocksObject.isAccessible()) {
 			throw new IllegalStateException("Not owning handle");
 		}
 	}

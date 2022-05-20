@@ -11,7 +11,6 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
@@ -59,7 +58,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	private final int prefixLength;
 	private LLRange range;
 	private final boolean allowNettyDirect;
-	private RocksObj<ReadOptions> readOptions;
+	private ReadOptions readOptions;
 	private final boolean canFillCache;
 	private final boolean readValues;
 	private final boolean smallRange;
@@ -67,23 +66,21 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalGroupedReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
-			Send<LLRange> range,
+			LLRange range,
 			boolean allowNettyDirect,
-			RocksObj<ReadOptions> readOptions,
+			ReadOptions readOptions,
 			boolean canFillCache,
 			boolean readValues,
 			boolean smallRange) {
 		super((Drop<LLLocalGroupedReactiveRocksIterator<T>>) (Drop) DROP);
-		try (range) {
-			this.db = db;
-			this.prefixLength = prefixLength;
-			this.range = range.receive();
-			this.allowNettyDirect = allowNettyDirect;
-			this.readOptions = readOptions != null ? readOptions : new RocksObj<>(new ReadOptions());
-			this.canFillCache = canFillCache;
-			this.readValues = readValues;
-			this.smallRange = smallRange;
-		}
+		this.db = db;
+		this.prefixLength = prefixLength;
+		this.range = range;
+		this.allowNettyDirect = allowNettyDirect;
+		this.readOptions = readOptions != null ? readOptions : new ReadOptions();
+		this.canFillCache = canFillCache;
+		this.readValues = readValues;
+		this.smallRange = smallRange;
 	}
 
 	public final Flux<List<T>> flux() {
@@ -129,7 +126,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 
 							try {
 								rocksIterator.next();
-								T entry = getEntry(key.send(), value == null ? null : value.send());
+								T entry = getEntry(key, value);
 								values.add(entry);
 							} finally {
 								if (value != null) {
@@ -161,7 +158,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		}, RocksIterWithReadOpts::close);
 	}
 
-	public abstract T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value);
+	public abstract T getEntry(@Nullable Buffer key, @Nullable Buffer value);
 
 	@Override
 	protected final RuntimeException createResourceClosedException() {
@@ -174,7 +171,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 		var readOptions = this.readOptions;
 		return drop -> new LLLocalGroupedReactiveRocksIterator<>(db,
 				prefixLength,
-				range,
+				range.receive(),
 				allowNettyDirect,
 				readOptions,
 				canFillCache,
@@ -182,7 +179,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 				smallRange
 		) {
 			@Override
-			public T getEntry(@Nullable Send<Buffer> key, @Nullable Send<Buffer> value) {
+			public T getEntry(@Nullable Buffer key, @Nullable Buffer value) {
 				return LLLocalGroupedReactiveRocksIterator.this.getEntry(key, value);
 			}
 		};

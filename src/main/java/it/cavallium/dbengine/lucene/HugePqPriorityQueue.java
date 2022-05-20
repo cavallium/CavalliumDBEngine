@@ -11,7 +11,6 @@ import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultMode;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,12 +50,12 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 		this.codec = codec;
 	}
 
-	private static RocksObj<ReadOptions> newReadOptions() {
-		return new RocksObj<>(new ReadOptions().setVerifyChecksums(false));
+	private static ReadOptions newReadOptions() {
+		return new ReadOptions().setVerifyChecksums(false);
 	}
 
-	private static RocksObj<WriteOptions> newWriteOptions() {
-		return new RocksObj<>(new WriteOptions().setDisableWAL(true).setSync(false));
+	private static WriteOptions newWriteOptions() {
+		return new WriteOptions().setDisableWAL(true).setSync(false);
 	}
 
 	private Buffer allocate(int size) {
@@ -190,7 +189,7 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	public void clear() {
 		ensureThread();
 		try (var wb = new WriteBatch(); var wo = newWriteOptions()) {
-			wb.deleteRange(rocksDB.getColumnFamilyHandle().v(), new byte[0], getBiggestKey());
+			wb.deleteRange(rocksDB.getColumnFamilyHandle(), new byte[0], getBiggestKey());
 			size = 0;
 			rocksDB.write(wo, wb);
 		} catch (RocksDBException e) {

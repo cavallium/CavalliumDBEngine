@@ -6,7 +6,6 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.database.disk.HugePqEnv;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
@@ -41,12 +40,12 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 		this.virtualSize = size;
 	}
 
-	private static RocksObj<ReadOptions> newReadOptions() {
-		return new RocksObj<>(new ReadOptions().setVerifyChecksums(false));
+	private static ReadOptions newReadOptions() {
+		return new ReadOptions().setVerifyChecksums(false);
 	}
 
-	private static RocksObj<WriteOptions> newWriteOptions() {
-		return new RocksObj<>(new WriteOptions().setDisableWAL(true).setSync(false));
+	private static WriteOptions newWriteOptions() {
+		return new WriteOptions().setDisableWAL(true).setSync(false);
 	}
 
 	public HugePqCodec<V> getValueCodec() {

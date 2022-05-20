@@ -9,7 +9,6 @@ import io.netty5.buffer.api.MemoryManager;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import java.io.IOException;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.StampedLock;
@@ -32,27 +31,27 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			boolean nettyDirect,
 			BufferAllocator alloc,
 			String dbName,
-			RocksObj<ColumnFamilyHandle> cfh,
+			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
 			StampedLock closeLock) {
 		super(db, nettyDirect, alloc, dbName, cfh, meterRegistry, closeLock);
 	}
 
 	@Override
-	protected boolean commitOptimistically(RocksObj<Transaction> tx) throws RocksDBException {
-		tx.v().commit();
+	protected boolean commitOptimistically(Transaction tx) throws RocksDBException {
+		tx.commit();
 		return true;
 	}
 
 	@Override
-	protected RocksObj<Transaction> beginTransaction(@NotNull RocksObj<WriteOptions> writeOptions,
-			RocksObj<TransactionOptions> txOpts) {
-		return new RocksObj<>(getDb().beginTransaction(writeOptions.v(), txOpts.v()));
+	protected Transaction beginTransaction(@NotNull WriteOptions writeOptions,
+			TransactionOptions txOpts) {
+		return getDb().beginTransaction(writeOptions, txOpts);
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull RocksObj<ReadOptions> readOptions,
-			@NotNull RocksObj<WriteOptions> writeOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
+			@NotNull WriteOptions writeOptions,
 			Buffer key,
 			BinarySerializationFunction updater,
 			UpdateAtomicResultMode returnMode) throws IOException {
@@ -63,15 +62,15 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			if (Schedulers.isInNonBlockingThread()) {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
-			try (var txOpts = new RocksObj<>(new TransactionOptions());
+			try (var txOpts = new TransactionOptions();
 					var tx = beginTransaction(writeOptions, txOpts)) {
-				Send<Buffer> sentPrevData;
-				Send<Buffer> sentCurData;
+				Buffer sentPrevData;
+				Buffer sentCurData;
 				boolean changed;
 				if (logger.isTraceEnabled()) {
 					logger.trace(MARKER_ROCKSDB, "Reading {} (before update lock)", LLUtils.toStringSafe(key));
 				}
-				var prevDataArray = tx.v().getForUpdate(readOptions.v(), cfh.v(), keyArray, true);
+				var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
 				try {
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB,
@@ -112,9 +111,9 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 									logger.trace(MARKER_ROCKSDB, "Deleting {} (after update)", LLUtils.toStringSafe(key));
 								}
 								writeValueBufferSize.record(0);
-								tx.v().delete(cfh.v(), keyArray, true);
+								tx.delete(cfh, keyArray, true);
 								changed = true;
-								tx.v().commit();
+								tx.commit();
 							} else if (newData != null && (prevData == null || !LLUtils.equals(prevData, newData))) {
 								if (logger.isTraceEnabled()) {
 									logger.trace(MARKER_ROCKSDB,
@@ -124,19 +123,19 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 									);
 								}
 								writeValueBufferSize.record(newDataArray.length);
-								tx.v().put(cfh.v(), keyArray, newDataArray);
+								tx.put(cfh, keyArray, newDataArray);
 								changed = true;
-								tx.v().commit();
+								tx.commit();
 							} else {
 								changed = false;
-								tx.v().rollback();
+								tx.rollback();
 							}
-							sentPrevData = prevData == null ? null : prevData.send();
-							sentCurData = newData == null ? null : newData.send();
+							sentPrevData = prevData == null ? null : prevData.copy();
+							sentCurData = newData == null ? null : newData.copy();
 						}
 					}
 				} finally {
-					tx.v().undoGetForUpdate(cfh.v(), keyArray);
+					tx.undoGetForUpdate(cfh, keyArray);
 				}
 				recordAtomicUpdateTime(changed, sentPrevData != null, sentCurData != null, initNanoTime);
 				return switch (returnMode) {
@@ -162,7 +161,7 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 						yield new UpdateAtomicResultPrevious(sentPrevData);
 					}
 					case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
-					case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData).send());
+					case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData));
 				};
 			}
 		} catch (Throwable ex) {

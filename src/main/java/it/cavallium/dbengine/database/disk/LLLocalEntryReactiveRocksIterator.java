@@ -4,22 +4,26 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import org.rocksdb.ReadOptions;
 
-public class LLLocalEntryReactiveRocksIterator extends LLLocalReactiveRocksIterator<Send<LLEntry>> {
+public class LLLocalEntryReactiveRocksIterator extends LLLocalReactiveRocksIterator<LLEntry> {
 
 	public LLLocalEntryReactiveRocksIterator(RocksDBColumn db,
-			Send<LLRange> range,
+			LLRange range,
 			boolean allowNettyDirect,
-			RocksObj<ReadOptions> readOptions,
+			ReadOptions readOptions,
 			boolean reverse,
 			boolean smallRange) {
 		super(db, range, allowNettyDirect, readOptions, true, reverse, smallRange);
 	}
 
 	@Override
-	public Send<LLEntry> getEntry(Send<Buffer> key, Send<Buffer> value) {
-		return LLEntry.of(key, value).send();
+	public LLEntry getEntry(Buffer key, Buffer value) {
+		assert key != null;
+		assert value != null;
+		return LLEntry.of(
+				key.touch("iteration entry key"),
+				value.touch("iteration entry value")
+		);
 	}
 }

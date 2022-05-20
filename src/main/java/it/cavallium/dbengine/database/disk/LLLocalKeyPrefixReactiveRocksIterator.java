@@ -11,7 +11,6 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.rocksdb.ReadOptions;
@@ -57,31 +56,29 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 	private final int prefixLength;
 	private LLRange rangeShared;
 	private final boolean allowNettyDirect;
-	private RocksObj<ReadOptions> readOptions;
+	private ReadOptions readOptions;
 	private final boolean canFillCache;
 	private final boolean smallRange;
 
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
-			Send<LLRange> range,
+			LLRange range,
 			boolean allowNettyDirect,
-			RocksObj<ReadOptions> readOptions,
+			ReadOptions readOptions,
 			boolean canFillCache,
 			boolean smallRange) {
 		super(DROP);
-		try (range) {
-			this.db = db;
-			this.prefixLength = prefixLength;
-			this.rangeShared = range.receive();
-			this.allowNettyDirect = allowNettyDirect;
-			this.readOptions = readOptions != null ? readOptions : new RocksObj<>(new ReadOptions());
-			this.canFillCache = canFillCache;
-			this.smallRange = smallRange;
-		}
+		this.db = db;
+		this.prefixLength = prefixLength;
+		this.rangeShared = range;
+		this.allowNettyDirect = allowNettyDirect;
+		this.readOptions = readOptions != null ? readOptions : new ReadOptions();
+		this.canFillCache = canFillCache;
+		this.smallRange = smallRange;
 	}
 
 
-	public Flux<Send<Buffer>> flux() {
+	public Flux<Buffer> flux() {
 		return Flux.generate(() -> {
 			var readOptions = generateCustomReadOptions(this.readOptions,
 					canFillCache,
@@ -132,7 +129,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 							);
 						}
 
-						sink.next(groupKeyPrefix.send());
+						sink.next(groupKeyPrefix);
 					} else {
 						if (logger.isTraceEnabled()) {
 							logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(rangeShared));
@@ -165,7 +162,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 		var readOptions = this.readOptions;
 		return drop -> new LLLocalKeyPrefixReactiveRocksIterator(db,
 				prefixLength,
-				range,
+				range.receive(),
 				allowNettyDirect,
 				readOptions,
 				canFillCache,

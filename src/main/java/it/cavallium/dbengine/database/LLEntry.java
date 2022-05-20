@@ -13,68 +13,27 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
+public class LLEntry implements SafeCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LLEntry.class);
-
-	private static final Drop<LLEntry> DROP = new Drop<>() {
-		@Override
-		public void drop(LLEntry obj) {
-			try {
-				if (obj.key != null) {
-					obj.key.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close key", ex);
-			}
-			try {
-				if (obj.value != null) {
-					obj.value.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close value", ex);
-			}
-		}
-
-		@Override
-		public Drop<LLEntry> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(LLEntry obj) {
-
-		}
-	};
-
-	@Nullable
 	private Buffer key;
-	@Nullable
 	private Buffer value;
 
 	private LLEntry(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value) {
-		super(DROP);
-		this.key = key.receive().makeReadOnly();
-		this.value = value.receive().makeReadOnly();
+		this.key = key.receive();
+		this.value = value.receive();
 		assert isAllAccessible();
 	}
 	private LLEntry(@NotNull Buffer key, @NotNull Buffer value) {
-		super(DROP);
-		this.key = key.makeReadOnly();
-		this.value = value.makeReadOnly();
+		this.key = key;
+		this.value = value;
 		assert isAllAccessible();
 	}
 
 	private boolean isAllAccessible() {
 		assert key != null && key.isAccessible();
 		assert value != null && value.isAccessible();
-		assert this.isAccessible();
-		assert this.isOwned();
 		return true;
-	}
-
-	public static LLEntry of(@NotNull Send<Buffer> key, @NotNull Send<Buffer> value) {
-		return new LLEntry(key, value);
 	}
 
 	public static LLEntry of(@NotNull Buffer key, @NotNull Buffer value) {
@@ -102,19 +61,6 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 
 	private void ensureOwned() {
 		assert isAllAccessible();
-		if (!isOwned()) {
-			if (!isAccessible()) {
-				throw this.createResourceClosedException();
-			} else {
-				throw new IllegalStateException("Resource not owned");
-			}
-		}
-	}
-
-	@Override
-	protected void makeInaccessible() {
-		this.key = null;
-		this.value = null;
 	}
 
 	@Override
@@ -145,20 +91,22 @@ public class LLEntry extends ResourceSupport<LLEntry, LLEntry> {
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<LLEntry> prepareSend() {
-		Send<Buffer> keySend;
-		Send<Buffer> valueSend;
-		keySend = Objects.requireNonNull(this.key).send();
-		valueSend = Objects.requireNonNull(this.value).send();
-		return drop -> {
-			var instance = new LLEntry(keySend, valueSend);
-			drop.attach(instance);
-			return instance;
-		};
+	public void close() {
+		try {
+			if (key != null && key.isAccessible()) {
+				key.close();
+			}
+		} catch (Throwable ex) {
+			logger.error("Failed to close key", ex);
+		}
+		try {
+			if (value != null && value.isAccessible()) {
+				value.close();
+			}
+		} catch (Throwable ex) {
+			logger.error("Failed to close value", ex);
+		}
+		key = null;
+		value = null;
 	}
 }

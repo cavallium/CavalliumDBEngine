@@ -15,18 +15,18 @@ public interface LLSingleton extends LLKeyValueDatabaseStructure {
 
 	BufferAllocator getAllocator();
 
-	Mono<Send<Buffer>> get(@Nullable LLSnapshot snapshot);
+	Mono<Buffer> get(@Nullable LLSnapshot snapshot);
 
-	Mono<Void> set(Mono<Send<Buffer>> value);
+	Mono<Void> set(Mono<Buffer> value);
 
-	default Mono<Send<Buffer>> update(BinarySerializationFunction updater,
+	default Mono<Buffer> update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
 		return this
 				.updateAndGetDelta(updater)
 				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
 	}
 
-	Mono<Send<LLDelta>> updateAndGetDelta(BinarySerializationFunction updater);
+	Mono<LLDelta> updateAndGetDelta(BinarySerializationFunction updater);
 
 	String getColumnName();
 

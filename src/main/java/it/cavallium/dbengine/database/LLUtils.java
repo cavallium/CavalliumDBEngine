@@ -20,7 +20,6 @@ import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksObj;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
@@ -63,6 +62,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import reactor.core.publisher.Flux;
@@ -117,12 +117,19 @@ public class LLUtils {
 		}
 	}
 
+	public static boolean responseToBoolean(Buffer response) {
+		try (response) {
+			assert response.readableBytes() == 1;
+			return response.getByte(response.readerOffset()) == 1;
+		}
+	}
+
 	public static byte[] booleanToResponse(boolean bool) {
 		return bool ? RESPONSE_TRUE : RESPONSE_FALSE;
 	}
 
-	public static Send<Buffer> booleanToResponseByteBuffer(BufferAllocator alloc, boolean bool) {
-		return alloc.allocate(1).writeByte(bool ? (byte) 1 : 0).send();
+	public static Buffer booleanToResponseByteBuffer(BufferAllocator alloc, boolean bool) {
+		return alloc.allocate(1).writeByte(bool ? (byte) 1 : 0);
 	}
 
 	@Nullable
@@ -731,26 +738,26 @@ public class LLUtils {
 	 * @param smallRange true if the range is small
 	 * @return the passed instance of ReadOptions, or a new one if the passed readOptions is null
 	 */
-	public static RocksObj<ReadOptions> generateCustomReadOptions(@Nullable RocksObj<ReadOptions> readOptions,
+	public static ReadOptions generateCustomReadOptions(@Nullable ReadOptions readOptions,
 			boolean canFillCache,
 			boolean boundedRange,
 			boolean smallRange) {
 		if (readOptions == null) {
 			//noinspection resource
-			readOptions = new RocksObj<>(new ReadOptions());
+			readOptions = new ReadOptions();
 		}
 		if (boundedRange || smallRange) {
-			readOptions.v().setFillCache(canFillCache);
+			readOptions.setFillCache(canFillCache);
 		} else {
-			if (readOptions.v().readaheadSize() <= 0) {
-				readOptions.v().setReadaheadSize(4 * 1024 * 1024); // 4MiB
+			if (readOptions.readaheadSize() <= 0) {
+				readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
 			}
-			readOptions.v().setFillCache(false);
-			readOptions.v().setVerifyChecksums(false);
+			readOptions.setFillCache(false);
+			readOptions.setVerifyChecksums(false);
 		}
 
 		if (FORCE_DISABLE_CHECKSUM_VERIFICATION) {
-			readOptions.v().setVerifyChecksums(false);
+			readOptions.setVerifyChecksums(false);
 		}
 
 		return readOptions;
@@ -865,22 +872,22 @@ public class LLUtils {
 		});
 	}
 
-	public static Mono<Send<Buffer>> resolveLLDelta(Mono<Send<LLDelta>> prev, UpdateReturnMode updateReturnMode) {
+	public static Mono<Buffer> resolveLLDelta(Mono<LLDelta> prev, UpdateReturnMode updateReturnMode) {
 		return prev.handle((deltaToReceive, sink) -> {
-			try (var delta = deltaToReceive.receive()) {
+			try (var delta = deltaToReceive) {
 				switch (updateReturnMode) {
 					case GET_NEW_VALUE -> {
-						var current = delta.current();
+						var current = delta.currentUnsafe();
 						if (current != null) {
-							sink.next(current);
+							sink.next(current.copy());
 						} else {
 							sink.complete();
 						}
 					}
 					case GET_OLD_VALUE -> {
-						var previous = delta.previous();
+						var previous = delta.previousUnsafe();
 						if (previous != null) {
-							sink.next(previous);
+							sink.next(previous.copy());
 						} else {
 							sink.complete();
 						}
@@ -917,27 +924,25 @@ public class LLUtils {
 		});
 	}
 
-	public static <U> Mono<Delta<U>> mapLLDelta(Mono<Send<LLDelta>> mono,
-			SerializationFunction<@NotNull Send<Buffer>, @Nullable U> mapper) {
-		return mono.handle((deltaToReceive, sink) -> {
-			try (var delta = deltaToReceive.receive()) {
-				try (Send<Buffer> prev = delta.previous()) {
-					try (Send<Buffer> curr = delta.current()) {
-						U newPrev;
-						U newCurr;
-						if (prev != null) {
-							newPrev = mapper.apply(prev);
-						} else {
-							newPrev = null;
-						}
-						if (curr != null) {
-							newCurr = mapper.apply(curr);
-						} else {
-							newCurr = null;
-						}
-						sink.next(new Delta<>(newPrev, newCurr));
-					}
+	public static <U> Mono<Delta<U>> mapLLDelta(Mono<LLDelta> mono,
+			SerializationFunction<@NotNull Buffer, @Nullable U> mapper) {
+		return mono.handle((delta, sink) -> {
+			try (delta) {
+				Buffer prev = delta.previousUnsafe();
+				Buffer curr = delta.currentUnsafe();
+				U newPrev;
+				U newCurr;
+				if (prev != null) {
+					newPrev = mapper.apply(prev);
+				} else {
+					newPrev = null;
 				}
+				if (curr != null) {
+					newCurr = mapper.apply(curr);
+				} else {
+					newCurr = null;
+				}
+				sink.next(new Delta<>(newPrev, newCurr));
 			} catch (SerializationException ex) {
 				sink.error(ex);
 			}
@@ -946,34 +951,6 @@ public class LLUtils {
 
 	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {
 		return !Objects.equals(delta.previous(), delta.current());
-	}
-
-	public static Mono<Send<Buffer>> lazyRetain(Buffer buf) {
-		return Mono.fromSupplier(() -> {
-			if (buf != null && buf.isAccessible()) {
-				return buf.copy().send();
-			} else {
-				return null;
-			}
-		});
-	}
-
-	public static Mono<Send<LLRange>> lazyRetainRange(LLRange range) {
-		return Mono.fromSupplier(() -> {
-			if (range != null && range.isAccessible()) {
-				return range.copy().send();
-			} else {
-				return null;
-			}
-		});
-	}
-
-	public static Mono<Send<Buffer>> lazyRetain(Callable<Send<Buffer>> bufCallable) {
-		return Mono.fromCallable(bufCallable);
-	}
-
-	public static Mono<Send<LLRange>> lazyRetainRange(Callable<Send<LLRange>> rangeCallable) {
-		return Mono.fromCallable(rangeCallable);
 	}
 
 	public static boolean isDirect(Buffer key) {
@@ -1014,10 +991,10 @@ public class LLUtils {
 			iterable.forEach(LLUtils::onNextDropped);
 		} else if (next instanceof SafeCloseable safeCloseable) {
 			safeCloseable.close();
-		} else if (next instanceof RocksIteratorObj rocksIteratorObj) {
-			rocksIteratorObj.close();
-		} else if (next instanceof RocksObj<?> rocksObj) {
-			rocksObj.close();
+		} else if (next instanceof AbstractImmutableNativeReference rocksObj) {
+			if (rocksObj.isOwningHandle()) {
+				rocksObj.close();
+			}
 		} else if (next instanceof UpdateAtomicResultDelta delta) {
 			delta.delta().close();
 		} else if (next instanceof UpdateAtomicResultCurrent cur) {

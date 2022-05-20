@@ -868,11 +868,15 @@ public class LLLocalDictionary implements LLDictionary {
 			boolean reverse,
 			boolean smallRange) {
 		return rangeMono.flatMapMany(range -> {
-			try (range) {
+			try {
 				if (range.isSingle()) {
 					return this.getRangeKeysSingle(snapshot, rangeMono.map(LLRange::getSingleUnsafe));
 				} else {
 					return this.getRangeKeysMulti(snapshot, rangeMono, reverse, smallRange);
+				}
+			} finally {
+				if (range != null && range.isAccessible()) {
+					range.close();
 				}
 			}
 		});

@@ -156,6 +156,17 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 		}
 	}
 
+	public Buffer getMinCopy() {
+		ensureOwned();
+		if (min != null) {
+			return min.copy();
+		} else if (single != null) {
+			return single.copy();
+		} else {
+			return null;
+		}
+	}
+
 	public boolean hasMax() {
 		ensureOwned();
 		return max != null || single != null;
@@ -180,6 +191,17 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 			return max;
 		} else if (single != null) {
 			return single;
+		} else {
+			return null;
+		}
+	}
+
+	public Buffer getMaxCopy() {
+		ensureOwned();
+		if (max != null) {
+			return max.copy();
+		} else if (single != null) {
+			return single.copy();
 		} else {
 			return null;
 		}

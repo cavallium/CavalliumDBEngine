@@ -67,7 +67,14 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 					prevDataToSendToUpdater = null;
 				}
 
-				@Nullable Buffer newData = applyUpdateAndCloseIfNecessary(updater, prevDataToSendToUpdater);
+				@Nullable Buffer newData;
+				try {
+					newData = updater.apply(prevDataToSendToUpdater);
+				} finally {
+					if (prevDataToSendToUpdater != null && prevDataToSendToUpdater.isAccessible()) {
+						prevDataToSendToUpdater.close();
+					}
+				}
 				try (newData) {
 					boolean changed;
 					assert newData == null || newData.isAccessible();
@@ -112,18 +119,13 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 					}
 					recordAtomicUpdateTime(changed, prevData != null, newData != null, initNanoTime);
 					return switch (returnMode) {
-						case NOTHING -> {
-							yield RESULT_NOTHING;
-						}
-						case CURRENT -> {
-							yield new UpdateAtomicResultCurrent(newData != null ? newData.copy() : null);
-						}
-						case PREVIOUS -> {
-							yield new UpdateAtomicResultPrevious(prevData != null ? prevData.copy() : null);
-						}
+						case NOTHING -> RESULT_NOTHING;
+						case CURRENT -> new UpdateAtomicResultCurrent(newData != null ? newData.copy() : null);
+						case PREVIOUS -> new UpdateAtomicResultPrevious(prevData != null ? prevData.copy() : null);
 						case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
-						case DELTA -> new UpdateAtomicResultDelta(LLDelta
-								.of(prevData != null ? prevData.copy() : null, newData != null ? newData.copy() : null));
+						case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(
+								prevData != null ? prevData.copy() : null,
+								newData != null ? newData.copy() : null));
 					};
 				}
 			}

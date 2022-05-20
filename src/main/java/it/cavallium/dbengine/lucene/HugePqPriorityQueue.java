@@ -77,7 +77,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 		var keyBuf = serializeKey(element);
 		try (keyBuf) {
 			try (var readOptions = newReadOptions(); var writeOptions = newWriteOptions()) {
-				rocksDB.updateAtomic(readOptions, writeOptions, keyBuf, this::incrementOrAdd, UpdateAtomicResultMode.NOTHING);
+				rocksDB
+						.updateAtomic(readOptions, writeOptions, keyBuf, this::incrementOrAdd, UpdateAtomicResultMode.NOTHING)
+						.close();
 			}
 			++size;
 		} catch (IOException e) {
@@ -136,7 +138,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 			if (it.isValid()) {
 				var key = it.key();
 				try (var keyBuf = rocksDB.getAllocator().copyOf(key)) {
-					rocksDB.updateAtomic(readOptions, writeOptions, keyBuf, this::reduceOrRemove, UpdateAtomicResultMode.NOTHING);
+					rocksDB
+							.updateAtomic(readOptions, writeOptions, keyBuf, this::reduceOrRemove, UpdateAtomicResultMode.NOTHING)
+							.close();
 					--size;
 					return deserializeKey(keyBuf);
 				}
@@ -210,21 +214,16 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 		try (var readOptions = newReadOptions();
 				var writeOptions = newWriteOptions();
 				var keyBuf = serializeKey(element)) {
-			UpdateAtomicResultPrevious prev = (UpdateAtomicResultPrevious) rocksDB.updateAtomic(readOptions, writeOptions,
+			try (var prev = (UpdateAtomicResultPrevious) rocksDB.updateAtomic(readOptions, writeOptions,
 					keyBuf,
 					this::reduceOrRemove,
 					UpdateAtomicResultMode.PREVIOUS
-			);
-			try {
+			)) {
 				if (prev.previous() != null) {
 					--size;
 					return true;
 				} else {
 					return false;
-				}
-			} finally {
-				if (prev.previous() != null) {
-					prev.previous().close();
 				}
 			}
 		} catch (IOException ex) {

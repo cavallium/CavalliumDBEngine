@@ -257,87 +257,73 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> keyMono) {
-		return keyMono
-				.publishOn(dbRScheduler)
-				.<Buffer>handle((key, sink) -> {
-					try (key) {
-						logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
-						try {
-							var readOptions = generateReadOptionsOrStatic(snapshot);
-							Buffer result;
-							startedGet.increment();
-							try {
-								result = getTime.recordCallable(() -> db.get(readOptions, key));
-							} finally {
-								endedGet.increment();
-								if (readOptions != EMPTY_READ_OPTIONS) {
-									readOptions.close();
-								}
-							}
-							logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
-							if (result != null) {
-								sink.next(result);
-							} else {
-								sink.complete();
-							}
-						} catch (RocksDBException ex) {
-							sink.error(new IOException("Failed to read " + toStringSafe(key) + ": " + ex.getMessage()));
-						} catch (Exception ex) {
-							sink.error(ex);
-						}
+		return Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
+			logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
+			try {
+				var readOptions = generateReadOptionsOrStatic(snapshot);
+				Buffer result;
+				startedGet.increment();
+				try {
+					result = getTime.recordCallable(() -> db.get(readOptions, key));
+				} finally {
+					endedGet.increment();
+					if (readOptions != EMPTY_READ_OPTIONS) {
+						readOptions.close();
 					}
-				});
+				}
+				logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
+				return result;
+			} catch (RocksDBException ex) {
+				throw new IOException("Failed to read " + toStringSafe(key) + ": " + ex.getMessage());
+			}
+		}), key -> Mono.fromRunnable(key::close));
 	}
 
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fillCache) {
-		return rangeMono.publishOn(dbRScheduler).handle((range, sink) -> {
-			try (range) {
-				assert !Schedulers.isInNonBlockingThread() : "Called isRangeEmpty in a nonblocking thread";
-				startedContains.increment();
-				try {
-					Boolean isRangeEmpty = containsTime.recordCallable(() -> {
-						if (range.isSingle()) {
-							return !containsKey(snapshot, range.getSingleUnsafe());
-						} else {
-							// Temporary resources to release after finished
+		return Mono.usingWhen(rangeMono, range -> runOnDb(false, () -> {
+			assert !Schedulers.isInNonBlockingThread() : "Called isRangeEmpty in a nonblocking thread";
+			startedContains.increment();
+			try {
+				Boolean isRangeEmpty = containsTime.recordCallable(() -> {
+					if (range.isSingle()) {
+						return !containsKey(snapshot, range.getSingleUnsafe());
+					} else {
+						// Temporary resources to release after finished
 
-							try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot),
-									true,
-									isBoundedRange(range),
-									true
-							)) {
-								readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
-								readOpts.setFillCache(fillCache);
-								try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
-									if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
-										if (nettyDirect && isReadOnlyDirect(range.getMinUnsafe())) {
-											var seekBuf = ((ReadableComponent) range.getMinUnsafe()).readableBuffer();
-											rocksIterator.seek(seekBuf);
-										} else {
-											var seekArray = LLUtils.toArray(range.getMinUnsafe());
-											rocksIterator.seek(seekArray);
-										}
+						try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot),
+								true,
+								isBoundedRange(range),
+								true
+						)) {
+							readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
+							readOpts.setFillCache(fillCache);
+							try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
+								if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
+									if (nettyDirect && isReadOnlyDirect(range.getMinUnsafe())) {
+										var seekBuf = ((ReadableComponent) range.getMinUnsafe()).readableBuffer();
+										rocksIterator.seek(seekBuf);
 									} else {
-										rocksIterator.seekToFirst();
+										var seekArray = LLUtils.toArray(range.getMinUnsafe());
+										rocksIterator.seek(seekArray);
 									}
-									return !rocksIterator.isValid();
+								} else {
+									rocksIterator.seekToFirst();
 								}
+								return !rocksIterator.isValid();
 							}
 						}
-					});
-					assert isRangeEmpty != null;
-					sink.next(isRangeEmpty);
-				} catch (RocksDBException ex) {
-					sink.error(new RocksDBException("Failed to read range " + LLUtils.toStringSafe(range)
-							+ ": " + ex.getMessage()));
-				} finally {
-					endedContains.increment();
-				}
-			} catch (Throwable ex) {
-				sink.error(ex);
+					}
+				});
+				assert isRangeEmpty != null;
+				return isRangeEmpty;
+			} catch (RocksDBException ex) {
+				throw new RocksDBException("Failed to read range " + LLUtils.toStringSafe(range)
+						+ ": " + ex.getMessage());
+			} finally {
+				endedContains.increment();
 			}
-		});
+		}), range -> Mono.fromRunnable(range::close));
 	}
 
 	private boolean containsKey(@Nullable LLSnapshot snapshot, Buffer key) throws RocksDBException {
@@ -375,24 +361,16 @@ public class LLLocalDictionary implements LLDictionary {
 				v.touch("put entry value")
 		));
 		// Write the new entry to the database
-		Mono<Buffer> putMono = entryMono
-				.publishOn(dbWScheduler)
-				.handle((entry, sink) -> {
-					try {
-						try (entry) {
-							var key = entry.getKeyUnsafe();
-							var value = entry.getValueUnsafe();
-							assert key != null : "Key is null";
-							assert value != null : "Value is null";
-							key.touch("Dictionary put key");
-							value.touch("Dictionary put value");
-							put(key, value);
-						}
-						sink.complete();
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				});
+		Mono<Buffer> putMono = Mono.usingWhen(entryMono, entry -> runOnDb(true, () -> {
+			var key = entry.getKeyUnsafe();
+			var value = entry.getValueUnsafe();
+			assert key != null : "Key is null";
+			assert value != null : "Value is null";
+			key.touch("Dictionary put key");
+			value.touch("Dictionary put value");
+			put(key, value);
+			return null;
+		}), entry -> Mono.fromRunnable(entry::close));
 		// Read the previous data, then write the new data, then return the previous data
 		return Flux.concatDelayError(Flux.just(previousDataMono, putMono), true, 1).singleOrEmpty();
 	}
@@ -433,87 +411,67 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Buffer> update(Mono<Buffer> keyMono,
 			BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
-		return keyMono
-				.publishOn(dbWScheduler)
-				.handle((key, sink) -> {
-					try (key) {
-						assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
-						if (updateMode == UpdateMode.DISALLOW) {
-							sink.error(new UnsupportedOperationException("update() is disallowed"));
-							return;
-						}
-						UpdateAtomicResultMode returnMode = switch (updateReturnMode) {
-							case NOTHING -> UpdateAtomicResultMode.NOTHING;
-							case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
-							case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
-						};
-						UpdateAtomicResult result;
-						var readOptions = generateReadOptionsOrStatic(null);
-						startedUpdates.increment();
-						try (var writeOptions = new WriteOptions()) {
-							result = updateTime.recordCallable(() ->
-									db.updateAtomic(readOptions, writeOptions, key, updater, returnMode));
-						} finally {
-							endedUpdates.increment();
-							if (readOptions != EMPTY_READ_OPTIONS) {
-								readOptions.close();
-							}
-						}
-						assert result != null;
-						var previous = switch (updateReturnMode) {
-							case NOTHING -> null;
-							case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
-							case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
-						};
-						if (previous != null) {
-							sink.next(previous);
-						} else {
-							sink.complete();
-						}
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				});
+		return Mono.usingWhen(keyMono, key -> runOnDb(true, () -> {
+			assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
+			if (updateMode == UpdateMode.DISALLOW) {
+				throw new UnsupportedOperationException("update() is disallowed");
+			}
+			UpdateAtomicResultMode returnMode = switch (updateReturnMode) {
+				case NOTHING -> UpdateAtomicResultMode.NOTHING;
+				case GET_NEW_VALUE -> UpdateAtomicResultMode.CURRENT;
+				case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
+			};
+			UpdateAtomicResult result;
+			var readOptions = generateReadOptionsOrStatic(null);
+			startedUpdates.increment();
+			try (var writeOptions = new WriteOptions()) {
+				result = updateTime.recordCallable(() -> db.updateAtomic(readOptions, writeOptions, key, updater, returnMode));
+			} finally {
+				endedUpdates.increment();
+				if (readOptions != EMPTY_READ_OPTIONS) {
+					readOptions.close();
+				}
+			}
+			assert result != null;
+			return switch (updateReturnMode) {
+				case NOTHING -> {
+					result.close();
+					yield null;
+				}
+				case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
+				case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
+			};
+		}), key -> Mono.fromRunnable(key::close));
 	}
 
 	@SuppressWarnings("DuplicatedCode")
 	@Override
-	public Mono<LLDelta> updateAndGetDelta(Mono<Buffer> keyMono,
-			BinarySerializationFunction updater) {
-		return keyMono
-				.publishOn(dbWScheduler)
-				.handle((key, sink) -> {
-					try (key) {
-						key.touch("low-level dictionary update");
-						assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
-						if (updateMode == UpdateMode.DISALLOW) {
-							sink.error(new UnsupportedOperationException("update() is disallowed"));
-							return;
-						}
-						if (updateMode == UpdateMode.ALLOW && !db.supportsTransactions()) {
-							sink.error(new UnsupportedOperationException("update() is disallowed because the database doesn't support"
-									+ "safe atomic operations"));
-							return;
-						}
+	public Mono<LLDelta> updateAndGetDelta(Mono<Buffer> keyMono, BinarySerializationFunction updater) {
+		return Mono.usingWhen(keyMono, key -> runOnDb(true, () -> {
+			key.touch("low-level dictionary update");
+			assert !Schedulers.isInNonBlockingThread() : "Called update in a nonblocking thread";
+			if (updateMode == UpdateMode.DISALLOW) {
+				throw new UnsupportedOperationException("update() is disallowed");
+			}
+			if (updateMode == UpdateMode.ALLOW && !db.supportsTransactions()) {
+				throw new UnsupportedOperationException("update() is disallowed because the database doesn't support"
+						+ "safe atomic operations");
+			}
 
-						UpdateAtomicResult result;
-						var readOptions = generateReadOptionsOrStatic(null);
-						startedUpdates.increment();
-						try (var writeOptions = new WriteOptions()) {
-							result = updateTime.recordCallable(() ->
-									db.updateAtomic(readOptions, writeOptions, key, updater, DELTA));
-						} finally {
-							endedUpdates.increment();
-							if (readOptions != EMPTY_READ_OPTIONS) {
-								readOptions.close();
-							}
-						}
-						assert result != null;
-						sink.next(((UpdateAtomicResultDelta) result).delta());
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				});
+			UpdateAtomicResult result;
+			var readOptions = generateReadOptionsOrStatic(null);
+			startedUpdates.increment();
+			try (var writeOptions = new WriteOptions()) {
+				result = updateTime.recordCallable(() -> db.updateAtomic(readOptions, writeOptions, key, updater, DELTA));
+			} finally {
+				endedUpdates.increment();
+				if (readOptions != EMPTY_READ_OPTIONS) {
+					readOptions.close();
+				}
+			}
+			assert result != null;
+			return ((UpdateAtomicResultDelta) result).delta();
+		}), key -> Mono.fromRunnable(key::close));
 	}
 
 	@Override
@@ -521,67 +479,47 @@ public class LLLocalDictionary implements LLDictionary {
 		// Obtain the previous value from the database
 		Mono<Buffer> previousDataMono = this.getPreviousData(keyMono, resultType);
 		// Delete the value from the database
-		Mono<Buffer> removeMono = keyMono
-				.publishOn(dbWScheduler)
-				.handle((key, sink) -> {
-					try (key) {
-						logger.trace(MARKER_ROCKSDB, "Deleting {}", () -> toStringSafe(key));
-						startedRemove.increment();
-						try (var writeOptions = new WriteOptions()) {
-							removeTime.recordCallable(() -> {
-								db.delete(writeOptions, key);
-								return null;
-							});
-						} finally {
-							endedRemove.increment();
-						}
-						sink.complete();
-					} catch (RocksDBException ex) {
-						sink.error(new RocksDBException("Failed to delete: " + ex.getMessage()));
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				});
+		Mono<Buffer> removeMono = Mono.usingWhen(keyMono, key -> runOnDb(true, () -> {
+			try {
+				logger.trace(MARKER_ROCKSDB, "Deleting {}", () -> toStringSafe(key));
+				startedRemove.increment();
+				try (var writeOptions = new WriteOptions()) {
+					removeTime.recordCallable(() -> {
+						db.delete(writeOptions, key);
+						return null;
+					});
+				} finally {
+					endedRemove.increment();
+				}
+				return null;
+			} catch (RocksDBException ex) {
+				throw new RocksDBException("Failed to delete: " + ex.getMessage());
+			}
+		}), key -> Mono.fromRunnable(key::close));
 		// Read the previous data, then delete the data, then return the previous data
 		return Flux.concat(previousDataMono, removeMono).singleOrEmpty();
 	}
 
 	private Mono<Buffer> getPreviousData(Mono<Buffer> keyMono, LLDictionaryResultType resultType) {
 		return switch (resultType) {
-			case PREVIOUS_VALUE_EXISTENCE -> keyMono
-					.publishOn(dbRScheduler)
-					.handle((key, sink) -> {
-						try (key) {
-							var contained = containsKey(null, key);
-							sink.next(LLUtils.booleanToResponseByteBuffer(alloc, contained));
-						} catch (Throwable ex) {
-							sink.error(ex);
-						}
-					});
-			case PREVIOUS_VALUE -> keyMono
-					.publishOn(dbRScheduler)
-					.handle((key, sink) -> {
-						try (key) {
-							assert !Schedulers.isInNonBlockingThread() : "Called getPreviousData in a nonblocking thread";
-							Buffer result;
-							var readOptions = generateReadOptionsOrStatic(null);
-							try {
-								result = db.get(readOptions, key);
-							} finally {
-								if (readOptions != EMPTY_READ_OPTIONS) {
-									readOptions.close();
-								}
-							}
-							logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
-							if (result == null) {
-								sink.complete();
-							} else {
-								sink.next(result);
-							}
-						} catch (Throwable ex) {
-							sink.error(ex);
-						}
-					});
+			case PREVIOUS_VALUE_EXISTENCE -> Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
+				var contained = containsKey(null, key);
+				return LLUtils.booleanToResponseByteBuffer(alloc, contained);
+			}), key -> Mono.fromRunnable(key::close));
+			case PREVIOUS_VALUE -> Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
+				assert !Schedulers.isInNonBlockingThread() : "Called getPreviousData in a nonblocking thread";
+				Buffer result;
+				var readOptions = generateReadOptionsOrStatic(null);
+				try {
+					result = db.get(readOptions, key);
+				} finally {
+					if (readOptions != EMPTY_READ_OPTIONS) {
+						readOptions.close();
+					}
+				}
+				logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
+				return result;
+			}), key -> Mono.fromRunnable(key::close));
 			case VOID -> Mono.empty();
 		};
 	}
@@ -818,7 +756,6 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 	}
 
-	@SuppressWarnings("resource")
 	private Flux<LLEntry> getRangeSingle(LLSnapshot snapshot, Mono<Buffer> keyMono) {
 		return Mono
 				.zip(keyMono, this.get(snapshot, keyMono))
@@ -963,20 +900,13 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	private Flux<Buffer> getRangeKeysSingle(LLSnapshot snapshot, Mono<Buffer> keyMono) {
-		return keyMono
-				.publishOn(dbRScheduler)
-				.<Buffer>handle((key, sink) -> {
-					try (key) {
-						if (containsKey(snapshot, key)) {
-							sink.next(key);
-						} else {
-							sink.complete();
-						}
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				})
-				.flux();
+		return Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
+			if (containsKey(snapshot, key)) {
+				return key;
+			} else {
+				return null;
+			}
+		}), key -> Mono.fromRunnable(key::close)).flux();
 	}
 
 	private record RocksObjTuple<T extends AbstractNativeReference, U extends Resource<?>>(T t1, U t2) implements SafeCloseable {
@@ -1006,30 +936,23 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Mono<Void> setRange(Mono<LLRange> rangeMono, Flux<LLEntry> entries, boolean smallRange) {
 		if (USE_WINDOW_IN_SET_RANGE) {
-			return rangeMono
-					.publishOn(dbWScheduler)
-					.<Boolean>handle((range, sink) -> {
+			return Mono
+					.usingWhen(rangeMono, range -> runOnDb(true, () -> {
 						try (var writeOptions = new WriteOptions(); range) {
 							assert !Schedulers.isInNonBlockingThread() : "Called setRange in a nonblocking thread";
 							if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
-								try (var opts = LLUtils.generateCustomReadOptions(null,
-										true,
-										isBoundedRange(range),
-										smallRange
-								)) {
-										SafeCloseable seekTo;
-										try (var it = db.newIterator(opts, range.getMinUnsafe(), range.getMaxUnsafe())) {
-											if (!PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
-												it.seekTo(range.getMinUnsafe());
-											} else {
-												seekTo = null;
-												it.seekToFirst();
-											}
-											while (it.isValid()) {
-												db.delete(writeOptions, it.key());
-												it.next();
-											}
+								try (var opts = LLUtils.generateCustomReadOptions(null, true, isBoundedRange(range), smallRange)) {
+									try (var it = db.newIterator(opts, range.getMinUnsafe(), range.getMaxUnsafe())) {
+										if (!PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
+											it.seekTo(range.getMinUnsafe());
+										} else {
+											it.seekToFirst();
 										}
+										while (it.isValid()) {
+											db.delete(writeOptions, it.key());
+											it.next();
+										}
+									}
 								}
 							} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
 								try (var batch = new CappedWriteBatch(db,
@@ -1057,60 +980,56 @@ public class LLLocalDictionary implements LLDictionary {
 									batch.clear();
 								}
 							}
-							sink.next(true);
+							return true;
 						} catch (RocksDBException ex) {
-							sink.error(new RocksDBException("Failed to set a range: " + ex.getMessage()));
+							throw new RocksDBException("Failed to set a range: " + ex.getMessage());
 						}
-					})
+					}), range -> Mono.fromRunnable(range::close))
 					.thenMany(entries.window(MULTI_GET_WINDOW))
 					.flatMap(keysWindowFlux -> keysWindowFlux
 							.collectList()
-							.flatMap(entriesList -> this
-									.<Void>runOnDb(true, () -> {
-										try (var writeOptions = new WriteOptions()) {
-											if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
-												for (LLEntry entry : entriesList) {
-													db.put(writeOptions, entry.getKeyUnsafe(), entry.getValueUnsafe());
-												}
-											} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
-												try (var batch = new CappedWriteBatch(db,
-														alloc,
-														CAPPED_WRITE_BATCH_CAP,
-														RESERVED_WRITE_BATCH_SIZE,
-														MAX_WRITE_BATCH_SIZE,
-														writeOptions
-												)) {
-													for (LLEntry entry : entriesList) {
-														if (nettyDirect) {
-															batch.put(cfh, entry.getKeyUnsafe().send(), entry.getValueUnsafe().send());
-														} else {
-															batch.put(cfh,
-																	LLUtils.toArray(entry.getKeyUnsafe()),
-																	LLUtils.toArray(entry.getValueUnsafe())
-															);
-														}
-													}
-													batch.flush();
-												}
-											} else {
-												try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
-													for (LLEntry entry : entriesList) {
-														batch.put(cfh, LLUtils.toArray(entry.getKeyUnsafe()),
-																LLUtils.toArray(entry.getValueUnsafe()));
-													}
-													db.write(writeOptions, batch);
-													batch.clear();
-												}
-											}
-											return null;
-										} finally {
-											for (LLEntry entry : entriesList) {
-												entry.close();
-											}
+							.flatMap(entriesList -> this.<Void>runOnDb(true, () -> {
+								try (var writeOptions = new WriteOptions()) {
+									if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
+										for (LLEntry entry : entriesList) {
+											db.put(writeOptions, entry.getKeyUnsafe(), entry.getValueUnsafe());
 										}
-									})
-							)
-					)
+									} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
+										try (var batch = new CappedWriteBatch(db,
+												alloc,
+												CAPPED_WRITE_BATCH_CAP,
+												RESERVED_WRITE_BATCH_SIZE,
+												MAX_WRITE_BATCH_SIZE,
+												writeOptions
+										)) {
+											for (LLEntry entry : entriesList) {
+												if (nettyDirect) {
+													batch.put(cfh, entry.getKeyUnsafe().send(), entry.getValueUnsafe().send());
+												} else {
+													batch.put(cfh,
+															LLUtils.toArray(entry.getKeyUnsafe()),
+															LLUtils.toArray(entry.getValueUnsafe())
+													);
+												}
+											}
+											batch.flush();
+										}
+									} else {
+										try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
+											for (LLEntry entry : entriesList) {
+												batch.put(cfh, LLUtils.toArray(entry.getKeyUnsafe()), LLUtils.toArray(entry.getValueUnsafe()));
+											}
+											db.write(writeOptions, batch);
+											batch.clear();
+										}
+									}
+									return null;
+								} finally {
+									for (LLEntry entry : entriesList) {
+										entry.close();
+									}
+								}
+							})))
 					.then()
 					.onErrorMap(cause -> new IOException("Failed to write range", cause));
 		} else {
@@ -1131,19 +1050,16 @@ public class LLLocalDictionary implements LLDictionary {
 					})
 					.then(Mono.<Void>empty());
 
-			var putMono = entries
-					.publishOn(dbWScheduler)
-					.handle((entry, sink) -> {
-						try (entry) {
-							if (entry.getKeyUnsafe() != null && entry.getValueUnsafe() != null) {
-								this.put(entry.getKeyUnsafe(), entry.getValueUnsafe());
-							}
-							sink.next(true);
-						} catch (RocksDBException ex) {
-							sink.error(new RocksDBException("Failed to write range: " + ex.getMessage()));
-						}
-					})
-					.then(Mono.<Void>empty());
+			var putMono = entries.publishOn(dbWScheduler).handle((entry, sink) -> {
+				try (entry) {
+					if (entry.getKeyUnsafe() != null && entry.getValueUnsafe() != null) {
+						this.put(entry.getKeyUnsafe(), entry.getValueUnsafe());
+					}
+					sink.next(true);
+				} catch (RocksDBException ex) {
+					sink.error(new RocksDBException("Failed to write range: " + ex.getMessage()));
+				}
+			}).then(Mono.<Void>empty());
 
 			return deleteMono.then(putMono);
 		}
@@ -1263,11 +1179,11 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fast) {
-		return rangeMono.publishOn(dbRScheduler).handle((range, sink) -> {
-			try (range) {
+		return Mono.usingWhen(rangeMono, range -> runOnDb(false, () -> {
+			try {
 				assert !Schedulers.isInNonBlockingThread() : "Called sizeRange in a nonblocking thread";
 				if (range.isAll()) {
-					sink.next(fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot));
+					return fast ? fastSizeAll(snapshot) : exactSizeAll(snapshot);
 				} else {
 					try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot),
 							false,
@@ -1291,20 +1207,20 @@ public class LLLocalDictionary implements LLDictionary {
 								rocksIterator.next();
 								i++;
 							}
-							sink.next(i);
+							return i;
 						}
 					}
 				}
 			} catch (RocksDBException ex) {
-				sink.error(new RocksDBException("Failed to get size of range: " + ex.getMessage()));
+				throw new RocksDBException("Failed to get size of range: " + ex.getMessage());
 			}
-		});
+		}), range -> Mono.fromRunnable(range::close));
 	}
 
 	@Override
 	public Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
-		return rangeMono.publishOn(dbRScheduler).handle((range, sink) -> {
-			try (range) {
+		return Mono.usingWhen(rangeMono, range -> runOnDb(false, () -> {
+			try {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOne in a nonblocking thread";
 				try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), true, true, true)) {
 					try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
@@ -1316,24 +1232,24 @@ public class LLLocalDictionary implements LLDictionary {
 						if (rocksIterator.isValid()) {
 							try (var key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
 								try (var value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value)) {
-									sink.next(LLEntry.of(key.touch("get-one key"), value.touch("get-one value")));
+									return LLEntry.of(key.touch("get-one key"), value.touch("get-one value"));
 								}
 							}
 						} else {
-							sink.complete();
+							return null;
 						}
 					}
 				}
 			} catch (RocksDBException ex) {
-				sink.error(new RocksDBException("Failed to get one entry: " + ex.getMessage()));
+				throw new RocksDBException("Failed to get one entry: " + ex.getMessage());
 			}
-		});
+		}), range -> Mono.fromRunnable(range::close));
 	}
 
 	@Override
 	public Mono<Buffer> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
-		return rangeMono.publishOn(dbRScheduler).handle((range, sink) -> {
-			try (range) {
+		return Mono.usingWhen(rangeMono, range -> runOnDb(false, () -> {
+			try {
 				assert !Schedulers.isInNonBlockingThread() : "Called getOneKey in a nonblocking thread";
 				try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), true, true, true)) {
 					try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
@@ -1343,16 +1259,16 @@ public class LLLocalDictionary implements LLDictionary {
 							rocksIterator.seekToFirst();
 						}
 						if (rocksIterator.isValid()) {
-							sink.next(LLUtils.readDirectNioBuffer(alloc, rocksIterator::key));
+							return LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
 						} else {
-							sink.complete();
+							return null;
 						}
 					}
 				}
 			} catch (RocksDBException ex) {
-				sink.error(new RocksDBException("Failed to get one key: " + ex.getMessage()));
+				throw new RocksDBException("Failed to get one key: " + ex.getMessage());
 			}
-		});
+		}), range -> Mono.fromRunnable(range::close));
 	}
 
 	private long fastSizeAll(@Nullable LLSnapshot snapshot) throws RocksDBException {
@@ -1467,31 +1383,26 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<LLEntry> removeOne(Mono<LLRange> rangeMono) {
-		return rangeMono.publishOn(dbWScheduler).handle((range, sink) -> {
-			try (range) {
-				assert !Schedulers.isInNonBlockingThread() : "Called removeOne in a nonblocking thread";
-				try (var readOpts = new ReadOptions();
-						var writeOpts = new WriteOptions()) {
-					try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
-						if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
-							rocksIterator.seekTo(range.getMinUnsafe());
-						} else {
-							rocksIterator.seekToFirst();
-						}
-						if (!rocksIterator.isValid()) {
-							sink.complete();
-							return;
-						}
-						Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-						Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
-						db.delete(writeOpts, key);
-						sink.next(LLEntry.of(key, value));
+		return Mono.usingWhen(rangeMono, range -> runOnDb(true, () -> {
+			assert !Schedulers.isInNonBlockingThread() : "Called removeOne in a nonblocking thread";
+			try (var readOpts = new ReadOptions();
+					var writeOpts = new WriteOptions()) {
+				try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
+					if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
+						rocksIterator.seekTo(range.getMinUnsafe());
+					} else {
+						rocksIterator.seekToFirst();
 					}
+					if (!rocksIterator.isValid()) {
+						return null;
+					}
+					Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+					Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+					db.delete(writeOpts, key);
+					return LLEntry.of(key, value);
 				}
-			} catch (RocksDBException ex) {
-				sink.error(ex);
 			}
-		});
+		}), range -> Mono.fromRunnable(range::close));
 	}
 
 }

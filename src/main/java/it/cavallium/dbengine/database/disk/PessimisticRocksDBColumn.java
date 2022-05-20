@@ -95,7 +95,14 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 							prevDataToSendToUpdater = null;
 						}
 
-						@Nullable Buffer newData = applyUpdateAndCloseIfNecessary(updater, prevDataToSendToUpdater);
+						@Nullable Buffer newData;
+						try {
+							newData = updater.apply(prevDataToSendToUpdater);
+						} finally {
+							if (prevDataToSendToUpdater != null && prevDataToSendToUpdater.isAccessible()) {
+								prevDataToSendToUpdater.close();
+							}
+						}
 						try (newData) {
 							var newDataArray = newData == null ? null : LLUtils.toArray(newData);
 							if (logger.isTraceEnabled()) {
@@ -160,7 +167,15 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 						}
 						yield new UpdateAtomicResultPrevious(sentPrevData);
 					}
-					case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
+					case BINARY_CHANGED -> {
+						if (sentPrevData != null) {
+							sentPrevData.close();
+						}
+						if (sentCurData != null) {
+							sentCurData.close();
+						}
+						yield new UpdateAtomicResultBinaryChanged(changed);
+					}
 					case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData));
 				};
 			}

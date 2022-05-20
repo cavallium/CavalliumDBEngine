@@ -1,3 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
-public final class UpdateAtomicResultNothing implements UpdateAtomicResult {}
+public record UpdateAtomicResultNothing() implements UpdateAtomicResult {
+
+	@Override
+	public void close() {
+
+	}
+}

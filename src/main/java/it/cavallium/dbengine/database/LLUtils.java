@@ -543,23 +543,6 @@ public class LLUtils {
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
 	 */
-	public static <U, T extends Resource<T>> Mono<U> usingSend(Mono<Send<T>> resourceSupplier,
-			Function<Send<T>, Mono<U>> resourceClosure,
-			boolean cleanupOnSuccess) {
-		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
-			if (cleanupOnSuccess) {
-				return Mono.fromRunnable(() -> r.close());
-			} else {
-				return Mono.empty();
-			}
-		}, (r, ex) -> Mono.fromRunnable(() -> r.close()), r -> Mono.fromRunnable(() -> r.close()));
-	}
-
-	// todo: remove this ugly method
-	/**
-	 * cleanup resource
-	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
-	 */
 	public static <U, T extends Resource<? extends T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
 			Function<V, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
@@ -618,71 +601,12 @@ public class LLUtils {
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
 	 */
-	public static <U, T extends Resource<T>, V extends T> Flux<U> usingEachResource(Flux<V> resourceSupplier,
-			Function<V, Mono<U>> resourceClosure,
-			boolean cleanupOnSuccess) {
-		return resourceSupplier
-				.concatMap(resource -> Mono.usingWhen(Mono.just(resource), resourceClosure, r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> {
-							if (r.isAccessible()) {
-								r.close();
-							}
-						});
-					} else {
-						return Mono.empty();
-					}
-				}, (r, ex) -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}), r -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				})));
-	}
-
-	// todo: remove this ugly method
-	/**
-	 * cleanup resource
-	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
-	 */
 	public static <U, T extends Resource<T>> Mono<U> usingSendResource(Mono<Send<T>> resourceSupplier,
 			Function<T, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
 		return Mono.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
 					if (cleanupOnSuccess) {
 						return Mono.fromRunnable(() -> r.close());
-					} else {
-						return Mono.empty();
-					}
-				}, (r, ex) -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}), r -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}));
-	}
-
-	// todo: remove this ugly method
-	/**
-	 * cleanup resource
-	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
-	 */
-	public static <U, T extends Resource<T>> Flux<U> usingSendResources(Mono<Send<T>> resourceSupplier,
-			Function<T, Flux<U>> resourceClosure,
-			boolean cleanupOnSuccess) {
-		return Flux.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> {
-							if (r.isAccessible()) {
-								r.close();
-							}
-						});
 					} else {
 						return Mono.empty();
 					}
@@ -873,28 +797,40 @@ public class LLUtils {
 	}
 
 	public static Mono<Buffer> resolveLLDelta(Mono<LLDelta> prev, UpdateReturnMode updateReturnMode) {
-		return prev.handle((deltaToReceive, sink) -> {
-			try (var delta = deltaToReceive) {
-				switch (updateReturnMode) {
-					case GET_NEW_VALUE -> {
-						var current = delta.currentUnsafe();
-						if (current != null) {
-							sink.next(current.copy());
-						} else {
-							sink.complete();
-						}
+		return prev.handle((delta, sink) -> {
+			final Buffer previous = delta.previousUnsafe();
+			final Buffer current = delta.currentUnsafe();
+			switch (updateReturnMode) {
+				case GET_NEW_VALUE -> {
+					if (previous != null && previous.isAccessible()) {
+						previous.close();
 					}
-					case GET_OLD_VALUE -> {
-						var previous = delta.previousUnsafe();
-						if (previous != null) {
-							sink.next(previous.copy());
-						} else {
-							sink.complete();
-						}
+					if (current != null) {
+						sink.next(current);
+					} else {
+						sink.complete();
 					}
-					case NOTHING -> sink.complete();
-					default -> sink.error(new IllegalStateException());
 				}
+				case GET_OLD_VALUE -> {
+					if (current != null && current.isAccessible()) {
+						current.close();
+					}
+					if (previous != null) {
+						sink.next(previous);
+					} else {
+						sink.complete();
+					}
+				}
+				case NOTHING -> {
+					if (previous != null && previous.isAccessible()) {
+						previous.close();
+					}
+					if (current != null && current.isAccessible()) {
+						current.close();
+					}
+					sink.complete();
+				}
+				default -> sink.error(new IllegalStateException());
 			}
 		});
 	}
@@ -985,7 +921,7 @@ public class LLUtils {
 	private static void onNextDropped(Object next) {
 		if (next instanceof Send<?> send) {
 			send.close();
-		} else if (next instanceof Resource<?> resource) {
+		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();
 		} else if (next instanceof Iterable<?> iterable) {
 			iterable.forEach(LLUtils::onNextDropped);
@@ -995,12 +931,6 @@ public class LLUtils {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();
 			}
-		} else if (next instanceof UpdateAtomicResultDelta delta) {
-			delta.delta().close();
-		} else if (next instanceof UpdateAtomicResultCurrent cur) {
-			cur.current().close();
-		} else if (next instanceof UpdateAtomicResultPrevious cur) {
-			cur.previous().close();
 		} else if (next instanceof Optional<?> optional) {
 			optional.ifPresent(LLUtils::onNextDropped);
 		} else if (next instanceof Map.Entry<?, ?> entry) {

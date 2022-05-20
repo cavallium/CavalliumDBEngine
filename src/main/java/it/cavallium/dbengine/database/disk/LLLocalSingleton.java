@@ -139,13 +139,14 @@ public class LLLocalSingleton implements LLSingleton {
 				case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 			};
 			UpdateAtomicResult result;
-			try (key;
-					var readOptions = new ReadOptions();
-					var writeOptions = new WriteOptions()) {
+			try (var readOptions = new ReadOptions(); var writeOptions = new WriteOptions()) {
 				result = db.updateAtomic(readOptions, writeOptions, key, updater, returnMode);
 			}
 			return switch (updateReturnMode) {
-				case NOTHING -> null;
+				case NOTHING -> {
+					result.close();
+					yield null;
+				}
 				case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
 				case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
 			};
@@ -160,9 +161,7 @@ public class LLLocalSingleton implements LLSingleton {
 				throw new UnsupportedOperationException("Called update in a nonblocking thread");
 			}
 			UpdateAtomicResult result;
-			try (key;
-					var readOptions = new ReadOptions();
-					var writeOptions = new WriteOptions()) {
+			try (var readOptions = new ReadOptions(); var writeOptions = new WriteOptions()) {
 				result = db.updateAtomic(readOptions, writeOptions, key, updater, DELTA);
 			}
 			return ((UpdateAtomicResultDelta) result).delta();

@@ -925,21 +925,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 	}
 
-	protected final Buffer applyUpdateAndCloseIfNecessary(BinarySerializationFunction updater,
-			@Nullable Buffer prevDataToSendToUpdater)
-			throws SerializationException {
-		@Nullable Buffer newData = null;
-		try {
-			newData = updater.apply(prevDataToSendToUpdater);
-		} finally {
-			if (prevDataToSendToUpdater != newData && prevDataToSendToUpdater != null
-					&& prevDataToSendToUpdater.isAccessible()) {
-				prevDataToSendToUpdater.close();
-			}
-		}
-		return newData;
-	}
-
 	protected int getLevels() {
 		var closeReadLock = closeLock.readLock();
 		try {

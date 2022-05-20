@@ -96,8 +96,8 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 				boolean committedSuccessfully;
 				int retries = 0;
 				ExponentialPageLimits retryTime = null;
-				Buffer sentPrevData;
-				Buffer sentCurData;
+				Buffer sentPrevData = null;
+				Buffer sentCurData = null;
 				boolean changed;
 				do {
 					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);
@@ -122,8 +122,14 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 						} else {
 							prevDataToSendToUpdater = null;
 						}
-
-						@Nullable Buffer newData = applyUpdateAndCloseIfNecessary(updater, prevDataToSendToUpdater);
+						@Nullable Buffer newData;
+						try {
+							newData = updater.apply(prevDataToSendToUpdater);
+						} finally {
+							if (prevDataToSendToUpdater != null && prevDataToSendToUpdater.isAccessible()) {
+								prevDataToSendToUpdater.close();
+							}
+						}
 						try (newData) {
 							var newDataArray = newData == null ? null : LLUtils.toArray(newData);
 							if (logger.isTraceEnabled()) {
@@ -157,15 +163,21 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 								committedSuccessfully = true;
 								tx.rollback();
 							}
+							if (sentPrevData != null && sentPrevData.isAccessible()) {
+								sentPrevData.close();
+							}
+							if (sentCurData != null && sentCurData.isAccessible()) {
+								sentCurData.close();
+							}
 							sentPrevData = prevData == null ? null : prevData.copy();
 							sentCurData = newData == null ? null : newData.copy();
 							if (!committedSuccessfully) {
 								tx.undoGetForUpdate(cfh, keyArray);
 								tx.rollback();
-								if (sentPrevData != null) {
+								if (sentPrevData != null && sentPrevData.isAccessible()) {
 									sentPrevData.close();
 								}
-								if (sentCurData != null) {
+								if (sentCurData != null && sentCurData.isAccessible()) {
 									sentCurData.close();
 								}
 								retries++;
@@ -220,7 +232,15 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 						}
 						yield new UpdateAtomicResultPrevious(sentPrevData);
 					}
-					case BINARY_CHANGED -> new UpdateAtomicResultBinaryChanged(changed);
+					case BINARY_CHANGED -> {
+						if (sentPrevData != null) {
+							sentPrevData.close();
+						}
+						if (sentCurData != null) {
+							sentCurData.close();
+						}
+						yield new UpdateAtomicResultBinaryChanged(changed);
+					}
 					case DELTA -> new UpdateAtomicResultDelta(LLDelta.of(sentPrevData, sentCurData));
 				};
 			}

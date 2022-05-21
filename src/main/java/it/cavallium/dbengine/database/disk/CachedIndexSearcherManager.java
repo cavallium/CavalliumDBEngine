@@ -7,6 +7,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
@@ -86,6 +87,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime))
 				.takeUntilOther(closeRequestedMono.asMono())
 				.doAfterTerminate(refresherClosed::tryEmitEmpty)
+				.transform(LLUtils::handleDiscard)
 				.subscribe();
 
 		this.cachedSnapshotSearchers = CacheBuilder.newBuilder()

@@ -11,7 +11,6 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
@@ -90,7 +89,6 @@ import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.Constants;
 import org.apache.lucene.util.StringHelper;
 import org.jetbrains.annotations.NotNull;
@@ -235,7 +233,7 @@ public class LuceneUtils {
 			DatabaseMapDictionaryDeep<T, Object2ObjectSortedMap<U, V>, ? extends DatabaseStageMap<U, V, ? extends DatabaseStageEntry<V>>> dictionaryDeep) {
 		return entry -> Mono.usingWhen(dictionaryDeep.at(snapshot, entry.getKey()),
 				sub -> sub.getValue(snapshot, entry.getValue()),
-				LLUtils::closeResource
+				LLUtils::finalizeResource
 		);
 	}
 

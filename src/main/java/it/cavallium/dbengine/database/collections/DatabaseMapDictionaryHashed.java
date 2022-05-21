@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
@@ -237,7 +236,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return entries.flatMap(entry -> Mono.usingWhen(this.at(null, entry.getKey()),
 				stage -> stage.setAndGetPrevious(entry.getValue()).map(prev -> Map.entry(entry.getKey(), prev)),
-				LLUtils::closeResource
+				LLUtils::finalizeResource
 		));
 	}
 

@@ -440,7 +440,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		var beforeWriterOffset = output.writerOffset();
 		keySuffixSerializer.serialize(keySuffix, output);
 		var afterWriterOffset = output.writerOffset();
-		assert suffixKeyLengthConsistency(afterWriterOffset - beforeWriterOffset);
+		assert suffixKeyLengthConsistency(afterWriterOffset - beforeWriterOffset)
+				: "Invalid key suffix length: " + (afterWriterOffset - beforeWriterOffset) + ". Expected: " + keySuffixLength;
 	}
 
 	@Override

@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import static reactor.core.publisher.Mono.fromRunnable;
-
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -34,14 +32,14 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	default Mono<Boolean> containsKey(@Nullable CompositeSnapshot snapshot, T key) {
 		return Mono.usingWhen(this.at(snapshot, key),
 				stage -> stage.isEmpty(snapshot).map(empty -> !empty),
-				LLUtils::closeResource
+				LLUtils::finalizeResource
 		);
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
 		return Mono.usingWhen(this.at(snapshot, key),
 				stage -> stage.get(snapshot, existsAlmostCertainly),
-				LLUtils::closeResource
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -54,7 +52,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return Mono.usingWhen(at(null, key).single(), stage -> stage.set(value), LLUtils::closeResource);
+		return Mono.usingWhen(at(null, key).single(), stage -> stage.set(value), LLUtils::finalizeResource);
 	}
 
 	Mono<UpdateMode> getUpdateMode();
@@ -64,7 +62,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		return Mono.usingWhen(at(null, key).single(),
 				stage -> stage.update(updater, updateReturnMode),
-				LLUtils::closeResource
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -87,7 +85,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
 		return Mono.usingWhen(at(null, key).single(),
 				stage -> stage.setAndGetPrevious(value),
-				LLUtils::closeResource
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -96,7 +94,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	 */
 	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
 		return Mono
-				.usingWhen(at(null, key).single(), stage -> stage.setAndGetChanged(value), LLUtils::closeResource)
+				.usingWhen(at(null, key).single(), stage -> stage.setAndGetChanged(value), LLUtils::finalizeResource)
 				.single();
 	}
 
@@ -105,7 +103,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return Mono.usingWhen(at(null, key), DatabaseStage::clearAndGetPrevious, LLUtils::closeResource);
+		return Mono.usingWhen(at(null, key), DatabaseStage::clearAndGetPrevious, LLUtils::finalizeResource);
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {

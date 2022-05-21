@@ -57,6 +57,7 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.reactivestreams.Publisher;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -86,6 +87,11 @@ public class LLUtils {
 
 	public static final boolean FORCE_DISABLE_CHECKSUM_VERIFICATION
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checksum.disable.force", "false"));
+
+	public static final boolean DEBUG_ALL_DROPS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.drops.log", "false"));
+	public static final boolean DEBUG_ALL_DISCARDS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.discards.log", "false"));
 
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
@@ -624,8 +630,16 @@ public class LLUtils {
 		return readOptions;
 	}
 
-	public static Mono<Void> closeResource(Resource<?> resource) {
-		return Mono.fromRunnable(resource::close);
+	public static Mono<Void> finalizeResource(Resource<?> resource) {
+		return Mono.fromRunnable(() -> LLUtils.closeResource(resource));
+	}
+
+	public static <V> Flux<V> handleDiscard(Flux<V> flux) {
+		return flux.doOnDiscard(Object.class, LLUtils::onDiscard);
+	}
+
+	public static <V> Mono<V> handleDiscard(Mono<V> flux) {
+		return flux.doOnDiscard(Object.class, LLUtils::onDiscard);
 	}
 
 	@Deprecated
@@ -847,6 +861,20 @@ public class LLUtils {
 	}
 
 	private static void onNextDropped(Object next) {
+		if (DEBUG_ALL_DROPS) {
+			logger.trace("Dropped: {}", () -> next.getClass().getName());
+		}
+		closeResource(next);
+	}
+
+	public static void onDiscard(Object next) {
+		if (DEBUG_ALL_DISCARDS) {
+			logger.trace("Discarded: {}", () -> next.getClass().getName());
+		}
+		closeResource(next);
+	}
+
+	public static void closeResource(Object next) {
 		if (next instanceof Send<?> send) {
 			send.close();
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {

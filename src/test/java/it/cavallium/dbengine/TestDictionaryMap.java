@@ -6,8 +6,6 @@ import static it.cavallium.dbengine.SyncUtils.*;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
-import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
@@ -24,6 +22,7 @@ import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -132,8 +131,8 @@ public abstract class TestDictionaryMap {
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
 						.flatMap(map -> Mono
-								.usingWhen(map.at(null, key), v -> v.set(value), LLUtils::closeResource)
-								.then(Mono.usingWhen(map.at(null, key), v -> v.get(null), LLUtils::closeResource))
+								.usingWhen(map.at(null, key), v -> v.set(value), LLUtils::finalizeResource)
+								.then(Mono.usingWhen(map.at(null, key), v -> v.get(null), LLUtils::finalizeResource))
 								.doFinally(s -> map.close())
 						)
 				));
@@ -322,6 +321,21 @@ public abstract class TestDictionaryMap {
 		}
 	}
 
+	@Test
+	public void testUpdateGetWithCancel() {
+		tempDb(getTempDbGenerator(), allocator, db -> {
+			var mapMono = tempDictionary(db, UpdateMode.ALLOW)
+					.map(dict -> tempDatabaseMapDictionaryMap(dict, MapType.MAP, 5));
+
+			var keys = Flux.range(10, 89).map(n -> "key" + n).repeat(100);
+
+			return Mono.usingWhen(mapMono,
+					map -> keys.flatMap(key -> map.updateValue(key, prevValue -> key + "-val")).then(),
+					LLUtils::finalizeResource
+			);
+		}).take(50).blockLast();
+	}
+
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testPutAndGetChanged(MapType mapType, UpdateMode updateMode, String key, String value, boolean shouldFail) {
@@ -427,7 +441,7 @@ public abstract class TestDictionaryMap {
 										Flux<String> keysFlux = entriesFlux.map(Entry::getKey);
 										Flux<Optional<String>> resultsFlux = map.setAllValues(entriesFlux).thenMany(map.getMulti(null, keysFlux));
 										return Flux.zip(keysFlux, resultsFlux, Map::entry);
-									}, LLUtils::closeResource)
+									}, LLUtils::finalizeResource)
 									.filter(k -> k.getValue().isPresent()).map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()));
 						}
 				));

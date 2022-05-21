@@ -281,10 +281,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Void> putValue(T keySuffix, U value) {
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix)).single();
 		var valueMono = Mono.fromCallable(() -> serializeValue(value)).single();
-		return dictionary
-				.put(keyMono, valueMono, LLDictionaryResultType.VOID)
-				.doOnNext(Resource::close)
-				.then();
+		return Mono.usingWhen(dictionary.put(keyMono, valueMono, LLDictionaryResultType.VOID),
+				v -> Mono.empty(),
+				v -> Mono.fromRunnable(v::close)
+		);
 	}
 
 	@Override
@@ -316,7 +316,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			if (oldSerialized == null) {
 				result = updater.apply(null);
 			} else {
-				result = updater.apply(valueSerializer.deserialize(oldSerialized));
+				try (oldSerialized) {
+					result = updater.apply(valueSerializer.deserialize(oldSerialized));
+				}
 			}
 			if (result == null) {
 				return null;

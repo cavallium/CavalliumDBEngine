@@ -809,8 +809,8 @@ public class LLUtils {
 	public static <U> Mono<Delta<U>> mapLLDelta(Mono<LLDelta> mono,
 			SerializationFunction<@NotNull Buffer, @Nullable U> mapper) {
 		return Mono.usingWhen(mono, delta -> Mono.fromCallable(() -> {
-			Buffer prev = delta.previousUnsafe();
-			Buffer curr = delta.currentUnsafe();
+			try (Buffer prev = delta.previousUnsafe();
+			Buffer curr = delta.currentUnsafe()) {
 			U newPrev;
 			U newCurr;
 			if (prev != null) {
@@ -824,6 +824,7 @@ public class LLUtils {
 				newCurr = null;
 			}
 			return new Delta<>(newPrev, newCurr);
+			}
 		}), delta -> Mono.fromRunnable(delta::close));
 	}
 

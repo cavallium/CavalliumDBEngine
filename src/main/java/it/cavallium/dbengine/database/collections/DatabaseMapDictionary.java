@@ -484,10 +484,11 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		if (keyMin == null && keyMax == null) {
 			return getAllStages(snapshot, smallRange);
 		} else {
-			Mono<LLRange> boundedRangeMono = Mono.usingWhen(rangeMono,
-					range -> Mono.fromCallable(() -> getPatchedRange(range, keyMin, keyMax)),
-					range -> Mono.fromRunnable(range::close)
-			);
+			Mono<LLRange> boundedRangeMono = rangeMono.map(range -> {
+				try (range) {
+					return getPatchedRange(range, keyMin, keyMax);
+				}
+			});
 			return getAllStages(snapshot, boundedRangeMono, reverse, smallRange);
 		}
 	}

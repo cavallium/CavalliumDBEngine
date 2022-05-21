@@ -128,6 +128,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 							prevDataToSendToUpdater = null;
 						}
 						try {
+							assert newData == null || !newData.isAccessible();
 							newData = updater.apply(prevDataToSendToUpdater);
 						} finally {
 							if (prevDataToSendToUpdater != null && prevDataToSendToUpdater.isAccessible()) {

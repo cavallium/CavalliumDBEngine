@@ -33,6 +33,8 @@ import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -260,14 +262,16 @@ public class LLLocalDictionary implements LLDictionary {
 		);
 	}
 
-	private Buffer getSync(LLSnapshot snapshot, Buffer key) throws Exception {
+	private Buffer getSync(LLSnapshot snapshot, Buffer key) throws IOException {
 		logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
 		try {
 			var readOptions = generateReadOptionsOrStatic(snapshot);
 			Buffer result;
 			startedGet.increment();
 			try {
-				result = getTime.recordCallable(() -> db.get(readOptions, key));
+				var initTime = System.nanoTime();
+				result = db.get(readOptions, key);
+				getTime.record(Duration.ofNanos(System.nanoTime() - initTime));
 			} finally {
 				endedGet.increment();
 				if (readOptions != EMPTY_READ_OPTIONS) {
@@ -543,7 +547,15 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Flux<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys) {
-		return keys.flatMapSequential(key -> runOnDb(false, () -> OptionalBuf.ofNullable(getSync(snapshot, key))));
+		return keys
+				.publishOn(dbRScheduler)
+				.handle((key, sink) -> {
+					try (key) {
+						sink.next(OptionalBuf.ofNullable(getSync(snapshot, key)));
+					} catch (IOException ex) {
+						sink.error(ex);
+					}
+				});
 	}
 
 	@Override

@@ -3,7 +3,6 @@ package it.cavallium.dbengine.database.collections;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -19,13 +18,11 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SynchronousSink;
 
 public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseMapSingle<U>> implements
 		DatabaseStageEntry<U> {
@@ -113,7 +110,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	}
 
 	@Override
-	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	public Mono<U> get(@Nullable CompositeSnapshot snapshot) {
 		return Mono.usingWhen(dictionary.get(resolveSnapshot(snapshot), keyMono),
 				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
 				buf -> Mono.fromRunnable(buf::close)

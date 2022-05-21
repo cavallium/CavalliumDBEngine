@@ -37,7 +37,6 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.SynchronousSink;
 
 /**
  * Optimized implementation of "DatabaseMapDictionary with SubStageGetterSingle"
@@ -206,7 +205,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), rangeMono, false, true)
 				.map(entry -> {
@@ -231,7 +230,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		return this
-				.get(null, false)
+				.get(null)
 				.concatWith(dictionary.setRange(rangeMono, Flux
 						.fromIterable(Collections.unmodifiableMap(value).entrySet())
 						.map(this::serializeEntry), true).then(Mono.empty()))
@@ -271,7 +270,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T keySuffix, boolean existsAlmostCertainly) {
+	public Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono.usingWhen(dictionary
 				.get(resolveSnapshot(snapshot), Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix))),
 				value -> Mono.fromCallable(() -> deserializeValue(keySuffix, value)),
@@ -398,13 +397,17 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
+	public Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
 		var mappedKeys = keys.map(this::serializeKeySuffixToKey);
 		return dictionary
 				.getMulti(resolveSnapshot(snapshot), mappedKeys)
 				.map(valueBufOpt -> {
 					try (valueBufOpt) {
-						return valueBufOpt.map(valueSerializer::deserialize);
+						if (valueBufOpt.isPresent()) {
+							return Optional.of(valueSerializer.deserialize(valueBufOpt.get()));
+						} else {
+							return Optional.empty();
+						}
 					}
 				});
 	}
@@ -491,29 +494,23 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			Mono<LLRange> sliceRangeMono, boolean reverse, boolean smallRange) {
 		return dictionary
 				.getRangeKeys(resolveSnapshot(snapshot), sliceRangeMono, reverse, smallRange)
-				.flatMapSequential(keyBuf -> Mono
-						.<SubStageEntry<T, DatabaseStageEntry<U>>>fromCallable(() -> {
-							assert keyBuf.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
-							// Remove prefix. Keep only the suffix and the ext
-							splitPrefix(keyBuf).close();
-							suffixKeyLengthConsistency(keyBuf.readableBytes());
-							T keySuffix;
-							try (var keyBufCopy = keyBuf.copy()) {
-								keySuffix = deserializeSuffix(keyBufCopy);
-							}
-							var bufSupplier = BufSupplier.ofOwned(toKey(keyBuf));
+				.map(keyBuf -> {
+					try (keyBuf) {
+						assert keyBuf.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
+						// Remove prefix. Keep only the suffix and the ext
+						splitPrefix(keyBuf).close();
+						suffixKeyLengthConsistency(keyBuf.readableBytes());
+						var bufSupplier = BufSupplier.ofOwned(toKey(keyBuf.copy()));
+						try {
+							T keySuffix = deserializeSuffix(keyBuf);
 							var subStage = new DatabaseMapSingle<>(dictionary, bufSupplier, valueSerializer, null);
 							return new SubStageEntry<>(keySuffix, subStage);
-						}).doOnCancel(() -> {
-							if (keyBuf.isAccessible()) {
-								keyBuf.close();
-							}
-						}).doOnError(ex -> {
-							if (keyBuf.isAccessible()) {
-								keyBuf.close();
-							}
-						})
-				);
+						} catch (Throwable ex) {
+							bufSupplier.close();
+							throw ex;
+						}
+					}
+				});
 	}
 
 	@Override

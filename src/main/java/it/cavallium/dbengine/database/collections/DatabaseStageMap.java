@@ -36,15 +36,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 		);
 	}
 
-	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
+	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
 		return Mono.usingWhen(this.at(snapshot, key),
-				stage -> stage.get(snapshot, existsAlmostCertainly),
+				stage -> stage.get(snapshot),
 				LLUtils::finalizeResource
 		);
-	}
-
-	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
-		return getValue(snapshot, key, false);
 	}
 
 	default Mono<U> getValueOrDefault(@Nullable CompositeSnapshot snapshot, T key, Mono<U> defaultValue) {
@@ -113,18 +109,12 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	/**
 	 * GetMulti must return the elements in sequence!
 	 */
-	default Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		return keys.flatMapSequential(key -> this
-				.getValue(snapshot, key, existsAlmostCertainly)
-				.map(Optional::of)
-				.defaultIfEmpty(Optional.empty()));
-	}
-
-	/**
-	 * GetMulti must return the elements in sequence!
-	 */
 	default Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
-		return getMulti(snapshot, keys, false);
+		return keys.flatMapSequential(key -> this
+				.getValue(snapshot, key)
+				.map(Optional::of)
+				.defaultIfEmpty(Optional.empty())
+		);
 	}
 
 	default Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
@@ -138,7 +128,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 				.getAllStages(snapshot, smallRange)
 				.flatMapSequential(stage -> stage
 						.getValue()
-						.get(snapshot, true)
+						.get(snapshot)
 						.map(value -> Map.entry(stage.getKey(), value))
 						.doFinally(s -> stage.getValue().close())
 				);
@@ -253,7 +243,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	@Override
-	default Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	default Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot) {
 		return this
 				.getAllValues(snapshot, true)
 				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)

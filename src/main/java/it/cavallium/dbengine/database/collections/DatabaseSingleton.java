@@ -3,12 +3,10 @@ package it.cavallium.dbengine.database.collections;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
@@ -16,7 +14,6 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -105,7 +102,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 	}
 
 	@Override
-	public Mono<U> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
+	public Mono<U> get(@Nullable CompositeSnapshot snapshot) {
 		return singleton.get(resolveSnapshot(snapshot))
 				.handle(this::deserializeValue);
 	}

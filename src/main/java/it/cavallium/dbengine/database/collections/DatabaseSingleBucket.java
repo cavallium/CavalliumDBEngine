@@ -82,8 +82,8 @@ public class DatabaseSingleBucket<K, V, TH>
 	}
 
 	@Override
-	public Mono<V> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return bucketStage.get(snapshot, existsAlmostCertainly).flatMap(this::extractValueTransformation);
+	public Mono<V> get(@Nullable CompositeSnapshot snapshot) {
+		return bucketStage.get(snapshot).flatMap(this::extractValueTransformation);
 	}
 
 	@Override

@@ -261,13 +261,6 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	}
 
 	@Override
-	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return subDictionary
-				.get(snapshot, existsAlmostCertainly)
-				.map(this::deserializeMap);
-	}
-
-	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return subDictionary.leavesCount(snapshot, fast);
 	}

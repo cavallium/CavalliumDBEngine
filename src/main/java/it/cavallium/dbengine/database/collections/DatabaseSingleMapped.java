@@ -8,7 +8,6 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.Mapper;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
@@ -79,8 +78,8 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 	}
 
 	@Override
-	public Mono<A> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
-		return serializedSingle.get(snapshot, existsAlmostCertainly).handle(this::deserializeSink);
+	public Mono<A> get(@Nullable CompositeSnapshot snapshot) {
+		return serializedSingle.get(snapshot).handle(this::deserializeSink);
 	}
 
 	@Override

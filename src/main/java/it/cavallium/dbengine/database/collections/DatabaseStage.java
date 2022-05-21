@@ -8,23 +8,18 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.Objects;
-import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface DatabaseStage<T> extends DatabaseStageWithEntry<T>, Resource<DatabaseStage<T>> {
 
-	default Mono<T> get(@Nullable CompositeSnapshot snapshot) {
-		return get(snapshot, false);
-	}
-
-	Mono<T> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly);
+	Mono<T> get(@Nullable CompositeSnapshot snapshot);
 
 	default Mono<T> getOrDefault(@Nullable CompositeSnapshot snapshot,
 			Mono<T> defaultValue,
 			boolean existsAlmostCertainly) {
-		return get(snapshot, existsAlmostCertainly).switchIfEmpty(defaultValue).single();
+		return get(snapshot).switchIfEmpty(defaultValue).single();
 	}
 
 	default Mono<T> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<T> defaultValue) {

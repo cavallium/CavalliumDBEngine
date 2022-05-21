@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
+import static reactor.core.publisher.Mono.fromRunnable;
+
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -30,13 +32,17 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
 
 	default Mono<Boolean> containsKey(@Nullable CompositeSnapshot snapshot, T key) {
-		return LLUtils.usingResource(this.at(snapshot, key),
-				stage -> stage.isEmpty(snapshot).map(empty -> !empty), true);
+		return Mono.usingWhen(this.at(snapshot, key),
+				stage -> stage.isEmpty(snapshot).map(empty -> !empty),
+				LLUtils::closeResource
+		);
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key, boolean existsAlmostCertainly) {
-		return LLUtils.usingResource(this.at(snapshot, key),
-				stage -> stage.get(snapshot, existsAlmostCertainly), true);
+		return Mono.usingWhen(this.at(snapshot, key),
+				stage -> stage.get(snapshot, existsAlmostCertainly),
+				LLUtils::closeResource
+		);
 	}
 
 	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
@@ -48,8 +54,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<Void> putValue(T key, U value) {
-		return LLUtils.usingResource(at(null, key).single(),
-				stage -> stage.set(value), true);
+		return Mono.usingWhen(at(null, key).single(), stage -> stage.set(value), LLUtils::closeResource);
 	}
 
 	Mono<UpdateMode> getUpdateMode();
@@ -57,8 +62,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	default Mono<U> updateValue(T key,
 			UpdateReturnMode updateReturnMode,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return LLUtils.usingResource(this.at(null, key).single(),
-				stage -> stage.update(updater, updateReturnMode), true);
+		return Mono.usingWhen(at(null, key).single(),
+				stage -> stage.update(updater, updateReturnMode),
+				LLUtils::closeResource
+		);
 	}
 
 	default Flux<Boolean> updateMulti(Flux<T> keys, KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
@@ -78,14 +85,19 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return LLUtils.usingResource(at(null, key).single(), stage -> stage.setAndGetPrevious(value), true);
+		return Mono.usingWhen(at(null, key).single(),
+				stage -> stage.setAndGetPrevious(value),
+				LLUtils::closeResource
+		);
 	}
 
 	/**
 	 * @return true if the key was associated with any value, false if the key didn't exist.
 	 */
 	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
-		return LLUtils.usingResource(at(null, key).single(), stage -> stage.setAndGetChanged(value), true).single();
+		return Mono
+				.usingWhen(at(null, key).single(), stage -> stage.setAndGetChanged(value), LLUtils::closeResource)
+				.single();
 	}
 
 	default Mono<Void> remove(T key) {
@@ -93,7 +105,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return LLUtils.usingResource(at(null, key), DatabaseStage::clearAndGetPrevious, true);
+		return Mono.usingWhen(at(null, key), DatabaseStage::clearAndGetPrevious, LLUtils::closeResource);
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {
@@ -104,10 +116,10 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	 * GetMulti must return the elements in sequence!
 	 */
 	default Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		return keys
-				.flatMapSequential(key -> this.getValue(snapshot, key, existsAlmostCertainly))
+		return keys.flatMapSequential(key -> this
+				.getValue(snapshot, key, existsAlmostCertainly)
 				.map(Optional::of)
-				.defaultIfEmpty(Optional.empty());
+				.defaultIfEmpty(Optional.empty()));
 	}
 
 	/**

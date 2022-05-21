@@ -16,7 +16,6 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.Resource;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;
@@ -26,6 +25,7 @@ import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -35,7 +35,6 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
@@ -49,10 +48,8 @@ import org.apache.logging.log4j.util.Supplier;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractNativeReference;
-import org.rocksdb.AbstractSlice;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
-import org.rocksdb.DirectSlice;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
@@ -60,7 +57,6 @@ import org.rocksdb.Slice;
 import org.rocksdb.Snapshot;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
-import reactor.core.Exceptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
@@ -258,26 +254,31 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> keyMono) {
-		return Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
-			logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
+		return Mono.usingWhen(keyMono,
+				key -> runOnDb(false, () -> this.getSync(snapshot, key)),
+				key -> Mono.fromRunnable(key::close)
+		);
+	}
+
+	private Buffer getSync(LLSnapshot snapshot, Buffer key) throws Exception {
+		logger.trace(MARKER_ROCKSDB, "Reading {}", () -> toStringSafe(key));
+		try {
+			var readOptions = generateReadOptionsOrStatic(snapshot);
+			Buffer result;
+			startedGet.increment();
 			try {
-				var readOptions = generateReadOptionsOrStatic(snapshot);
-				Buffer result;
-				startedGet.increment();
-				try {
-					result = getTime.recordCallable(() -> db.get(readOptions, key));
-				} finally {
-					endedGet.increment();
-					if (readOptions != EMPTY_READ_OPTIONS) {
-						readOptions.close();
-					}
+				result = getTime.recordCallable(() -> db.get(readOptions, key));
+			} finally {
+				endedGet.increment();
+				if (readOptions != EMPTY_READ_OPTIONS) {
+					readOptions.close();
 				}
-				logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
-				return result;
-			} catch (RocksDBException ex) {
-				throw new IOException("Failed to read " + toStringSafe(key) + ": " + ex.getMessage());
 			}
-		}), key -> Mono.fromRunnable(key::close));
+			logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
+			return result;
+		} catch (RocksDBException ex) {
+			throw new IOException("Failed to read " + toStringSafe(key) + ": " + ex.getMessage());
+		}
 	}
 
 	@Override
@@ -541,46 +542,8 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys) {
-		return keys
-				.buffer(MULTI_GET_WINDOW)
-				.publishOn(dbRScheduler)
-				.<ArrayList<Optional<Buffer>>>handle((keysWindow, sink) -> {
-					try {
-						assert !Schedulers.isInNonBlockingThread() : "Called getMulti in a nonblocking thread";
-						ArrayList<Optional<Buffer>> mappedResults;
-						var readOptions = generateReadOptionsOrStatic(snapshot);
-						try {
-							List<byte[]> results = db.multiGetAsList(readOptions, LLUtils.toArray(keysWindow));
-							mappedResults = new ArrayList<>(results.size());
-							for (int i = 0; i < results.size(); i++) {
-								byte[] val = results.get(i);
-								Optional<Buffer> valueOpt;
-								if (val != null) {
-									// free memory
-									results.set(i, null);
-
-									valueOpt = Optional.of(LLUtils.fromByteArray(alloc, val));
-								} else {
-									valueOpt = Optional.empty();
-								}
-								mappedResults.add(valueOpt);
-							}
-						} finally {
-							if (readOptions != EMPTY_READ_OPTIONS) {
-								readOptions.close();
-							}
-						}
-						sink.next(mappedResults);
-					} catch (RocksDBException ex) {
-						sink.error(new RocksDBException("Failed to read keys: " + ex.getMessage()));
-					} finally {
-						for (Buffer buffer : keysWindow) {
-							buffer.close();
-						}
-					}
-				})
-				.flatMapIterable(list -> list);
+	public Flux<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys) {
+		return keys.flatMapSequential(key -> runOnDb(false, () -> OptionalBuf.ofNullable(getSync(snapshot, key))));
 	}
 
 	@Override
@@ -641,7 +604,7 @@ public class LLLocalDictionary implements LLDictionary {
 						for (Tuple2<K, Buffer> objects : entriesWindow) {
 							keyBufsWindow.add(objects.getT2());
 						}
-						ArrayList<Tuple3<K, Buffer, Optional<Buffer>>> mappedInputs;
+						ArrayList<Tuple3<K, Buffer, OptionalBuf>> mappedInputs;
 						{
 							var readOptions = generateReadOptionsOrStatic(null);
 							try {
@@ -654,13 +617,13 @@ public class LLLocalDictionary implements LLDictionary {
 										mappedInputs.add(Tuples.of(
 												entriesWindow.get(i).getT1(),
 												keyBufsWindow.get(i),
-												Optional.of(fromByteArray(alloc, val))
+												OptionalBuf.of(fromByteArray(alloc, val))
 										));
 									} else {
 										mappedInputs.add(Tuples.of(
 												entriesWindow.get(i).getT1(),
 												keyBufsWindow.get(i),
-												Optional.empty()
+												OptionalBuf.empty()
 										));
 									}
 								}

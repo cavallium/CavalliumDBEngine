@@ -233,8 +233,10 @@ public class LuceneUtils {
 	public static <T, U, V> ValueGetter<Entry<T, U>, V> getAsyncDbValueGetterDeep(
 			CompositeSnapshot snapshot,
 			DatabaseMapDictionaryDeep<T, Object2ObjectSortedMap<U, V>, ? extends DatabaseStageMap<U, V, ? extends DatabaseStageEntry<V>>> dictionaryDeep) {
-		return entry -> LLUtils.usingResource(dictionaryDeep
-				.at(snapshot, entry.getKey()), sub -> sub.getValue(snapshot, entry.getValue()), true);
+		return entry -> Mono.usingWhen(dictionaryDeep.at(snapshot, entry.getKey()),
+				sub -> sub.getValue(snapshot, entry.getValue()),
+				LLUtils::closeResource
+		);
 	}
 
 	public static PerFieldAnalyzerWrapper toPerFieldAnalyzerWrapper(IndicizerAnalyzers indicizerAnalyzers) {

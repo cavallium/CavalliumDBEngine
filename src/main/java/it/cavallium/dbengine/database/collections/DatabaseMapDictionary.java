@@ -209,23 +209,19 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot, boolean existsAlmostCertainly) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), rangeMono, false, true)
-				.<Entry<T, U>>handle((entry, sink) -> {
+				.map(entry -> {
 					Entry<T, U> deserializedEntry;
-					try {
-						try (entry) {
-							T key;
-							var serializedKey = entry.getKeyUnsafe();
-							var serializedValue = entry.getValueUnsafe();
-							splitPrefix(serializedKey).close();
-							suffixKeyLengthConsistency(serializedKey.readableBytes());
-							key = deserializeSuffix(serializedKey);
-							U value = valueSerializer.deserialize(serializedValue);
-							deserializedEntry = Map.entry(key, value);
-						}
-						sink.next(deserializedEntry);
-					} catch (Throwable ex) {
-						sink.error(ex);
+					try (entry) {
+						T key;
+						var serializedKey = entry.getKeyUnsafe();
+						var serializedValue = entry.getValueUnsafe();
+						splitPrefix(serializedKey).close();
+						suffixKeyLengthConsistency(serializedKey.readableBytes());
+						key = deserializeSuffix(serializedKey);
+						U value = valueSerializer.deserialize(serializedValue);
+						deserializedEntry = Map.entry(key, value);
 					}
+					return deserializedEntry;
 				})
 				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
 				.map(map -> (Object2ObjectSortedMap<T, U>) map)
@@ -238,7 +234,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.get(null, false)
 				.concatWith(dictionary.setRange(rangeMono, Flux
 						.fromIterable(Collections.unmodifiableMap(value).entrySet())
-						.handle(this::serializeEntrySink), true).then(Mono.empty()))
+						.map(this::serializeEntry), true).then(Mono.empty()))
 				.singleOrEmpty();
 	}
 
@@ -403,23 +399,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys, boolean existsAlmostCertainly) {
-		var mappedKeys = keys
-				.<Buffer>handle((keySuffix, sink) -> {
-					try {
-						sink.next(serializeKeySuffixToKey(keySuffix));
-					} catch (Throwable ex) {
-						sink.error(ex);
-					}
-				});
+		var mappedKeys = keys.map(this::serializeKeySuffixToKey);
 		return dictionary
 				.getMulti(resolveSnapshot(snapshot), mappedKeys)
-				.handle((valueBufOpt, sink) -> {
-					try {
-						sink.next(valueBufOpt.map(valueSerializer::deserialize));
-					} catch (Throwable ex) {
-						sink.error(ex);
-					} finally {
-						valueBufOpt.ifPresent(Resource::close);
+				.map(valueBufOpt -> {
+					try (valueBufOpt) {
+						return valueBufOpt.map(valueSerializer::deserialize);
 					}
 				});
 	}
@@ -435,24 +420,13 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		}
 	}
 
-	private void serializeEntrySink(Entry<T,U> entry, SynchronousSink<LLEntry> sink) {
-		try {
-			sink.next(serializeEntry(entry.getKey(), entry.getValue()));
-		} catch (Throwable e) {
-			sink.error(e);
-		}
+	private LLEntry serializeEntry(Entry<T, U> entry) throws SerializationException {
+		return serializeEntry(entry.getKey(), entry.getValue());
 	}
 
 	@Override
 	public Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
-		var serializedEntries = entries
-				.<LLEntry>handle((entry, sink) -> {
-					try {
-						sink.next(serializeEntry(entry.getKey(), entry.getValue()));
-					} catch (Throwable e) {
-						sink.error(e);
-					}
-				});
+		var serializedEntries = entries.map(this::serializeEntry);
 		return dictionary.putMulti(serializedEntries);
 	}
 
@@ -460,14 +434,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Flux<Boolean> updateMulti(Flux<T> keys,
 			KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
 		var sharedKeys = keys.publish().refCount(2);
-		var serializedKeys = sharedKeys.<Buffer>handle((key, sink) -> {
-			try {
-				Buffer serializedKey = serializeKeySuffixToKey(key);
-				sink.next(serializedKey);
-			} catch (Throwable ex) {
-				sink.error(ex);
-			}
-		});
+		var serializedKeys = sharedKeys.map(this::serializeKeySuffixToKey);
 		var serializedUpdater = getSerializedUpdater(updater);
 		return dictionary.updateMulti(sharedKeys, serializedKeys, serializedUpdater);
 	}
@@ -578,34 +545,30 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			boolean reverse, boolean smallRange) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), sliceRangeMono, reverse, smallRange)
-				.handle((serializedEntry, sink) -> {
-					try {
-						Entry<T, U> entry;
-						try (serializedEntry) {
-							var keyBuf = serializedEntry.getKeyUnsafe();
-							assert keyBuf != null;
-							assert keyBuf.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
-							// Remove prefix. Keep only the suffix and the ext
-							splitPrefix(keyBuf).close();
-							assert suffixKeyLengthConsistency(keyBuf.readableBytes());
-							T keySuffix = deserializeSuffix(keyBuf);
+				.map((serializedEntry) -> {
+					Entry<T, U> entry;
+					try (serializedEntry) {
+						var keyBuf = serializedEntry.getKeyUnsafe();
+						assert keyBuf != null;
+						assert keyBuf.readableBytes() == keyPrefixLength + keySuffixLength + keyExtLength;
+						// Remove prefix. Keep only the suffix and the ext
+						splitPrefix(keyBuf).close();
+						assert suffixKeyLengthConsistency(keyBuf.readableBytes());
+						T keySuffix = deserializeSuffix(keyBuf);
 
-							assert serializedEntry.getValueUnsafe() != null;
-							U value = valueSerializer.deserialize(serializedEntry.getValueUnsafe());
-							entry = Map.entry(keySuffix, value);
-						}
-						sink.next(entry);
-					} catch (Throwable e) {
-						sink.error(e);
+						assert serializedEntry.getValueUnsafe() != null;
+						U value = valueSerializer.deserialize(serializedEntry.getValueUnsafe());
+						entry = Map.entry(keySuffix, value);
 					}
+					return entry;
 				});
 	}
 
 	@Override
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		return Flux.concat(
-				this.getAllValues(null, false),
-				dictionary.setRange(rangeMono, entries.handle(this::serializeEntrySink), false).then(Mono.empty())
+		return Flux.usingWhen(Mono.just(true),
+				b -> this.getAllValues(null, false),
+				b -> dictionary.setRange(rangeMono, entries.map(this::serializeEntry), false)
 		);
 	}
 

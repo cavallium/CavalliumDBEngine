@@ -41,7 +41,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Buffer> remove(Mono<Buffer> key, LLDictionaryResultType resultType);
 
-	Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys);
+	Flux<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys);
 
 	Mono<Void> putMulti(Flux<LLEntry> entries);
 

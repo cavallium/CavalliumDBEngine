@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
@@ -270,14 +271,14 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Flux<Optional<Buffer>> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys) {
+	public Flux<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys) {
 		return keys.map(key -> {
 			try (key) {
 				ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(key.copy().send()));
 				if (v != null) {
-					return Optional.of(kkB(v));
+					return OptionalBuf.of(kkB(v));
 				} else {
-					return Optional.empty();
+					return OptionalBuf.empty();
 				}
 			}
 		});

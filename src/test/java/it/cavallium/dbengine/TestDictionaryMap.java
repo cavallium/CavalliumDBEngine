@@ -6,6 +6,8 @@ import static it.cavallium.dbengine.SyncUtils.*;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
+import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
@@ -14,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -128,9 +131,9 @@ public abstract class TestDictionaryMap {
 		var stpVer = StepVerifier
 				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
 						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMap(map -> LLUtils
-								.usingResource(map.at(null, key), v -> v.set(value), true)
-								.then(LLUtils.usingResource(map.at(null, key), v -> v.get(null), true))
+						.flatMap(map -> Mono
+								.usingWhen(map.at(null, key), v -> v.set(value), LLUtils::closeResource)
+								.then(Mono.usingWhen(map.at(null, key), v -> v.get(null), LLUtils::closeResource))
 								.doFinally(s -> map.close())
 						)
 				));
@@ -417,18 +420,16 @@ public abstract class TestDictionaryMap {
 	public void testSetAllValuesGetMulti(MapType mapType, UpdateMode updateMode, Object2ObjectSortedMap<String, String> entries, boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Entry<String, String>, Boolean>().keySet(true);
 		Step<Entry<String, String>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5))
-						.flatMapMany(map -> {
-							var entriesFlux = Flux.fromIterable(entries.entrySet());
-							var keysFlux = entriesFlux.map(Entry::getKey);
-							var resultsFlux = map
-											.setAllValues(entriesFlux)
-											.thenMany(map.getMulti(null, keysFlux));
-							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
-						})
-						.filter(k -> k.getValue().isPresent())
-						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
+				.create(tempDb(getTempDbGenerator(), allocator, db -> {
+					var mapMono = tempDictionary(db, updateMode).map(dict -> tempDatabaseMapDictionaryMap(dict, mapType, 5));
+							return Flux.usingWhen(mapMono, map -> {
+										Flux<Entry<String, String>> entriesFlux = Flux.fromIterable(entries.entrySet());
+										Flux<String> keysFlux = entriesFlux.map(Entry::getKey);
+										Flux<Optional<String>> resultsFlux = map.setAllValues(entriesFlux).thenMany(map.getMulti(null, keysFlux));
+										return Flux.zip(keysFlux, resultsFlux, Map::entry);
+									}, LLUtils::closeResource)
+									.filter(k -> k.getValue().isPresent()).map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()));
+						}
 				));
 		if (shouldFail) {
 			this.checkLeaks = false;

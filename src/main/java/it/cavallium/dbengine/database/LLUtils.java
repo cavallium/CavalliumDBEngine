@@ -16,10 +16,6 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.buffer.api.internal.Statics;
 import io.netty5.util.IllegalReferenceCountException;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResultCurrent;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResultDelta;
-import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
@@ -32,7 +28,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
@@ -543,64 +538,6 @@ public class LLUtils {
 	 * cleanup resource
 	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
 	 */
-	public static <U, T extends Resource<? extends T>, V extends T> Mono<U> usingResource(Mono<V> resourceSupplier,
-			Function<V, Mono<U>> resourceClosure,
-			boolean cleanupOnSuccess) {
-		return Mono.usingWhen(resourceSupplier, resourceClosure, r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> {
-							if (r.isAccessible()) {
-								r.close();
-							}
-						});
-					} else {
-						return Mono.empty();
-					}
-				}, (r, ex) -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}), r -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}));
-	}
-
-	// todo: remove this ugly method
-	/**
-	 * cleanup resource
-	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
-	 */
-	public static <U, T extends Resource<T>, V extends T> Flux<U> usingResources(Mono<V> resourceSupplier,
-			Function<V, Flux<U>> resourceClosure,
-			boolean cleanupOnSuccess) {
-		return Flux.usingWhen(resourceSupplier, resourceClosure, r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> {
-							if (r.isAccessible()) {
-								r.close();
-							}
-						});
-					} else {
-						return Mono.empty();
-					}
-				}, (r, ex) -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}), r -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}));
-	}
-
-	// todo: remove this ugly method
-	/**
-	 * cleanup resource
-	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
-	 */
 	public static <U, T extends Resource<T>> Mono<U> usingSendResource(Mono<Send<T>> resourceSupplier,
 			Function<T, Mono<U>> resourceClosure,
 			boolean cleanupOnSuccess) {
@@ -685,6 +622,10 @@ public class LLUtils {
 		}
 
 		return readOptions;
+	}
+
+	public static Mono<Void> closeResource(Resource<?> resource) {
+		return Mono.fromRunnable(resource::close);
 	}
 
 	@Deprecated

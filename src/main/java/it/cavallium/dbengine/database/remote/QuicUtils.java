@@ -4,6 +4,7 @@ import io.netty.handler.codec.ByteToMessageCodec;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Send;
 import it.cavallium.data.generator.nativedata.NullableString;
+import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.rpc.current.data.RPCCrash;
 import it.cavallium.dbengine.rpc.current.data.RPCEvent;
 import it.cavallium.dbengine.rpc.current.data.nullables.NullableBytes;
@@ -42,8 +43,7 @@ public class QuicUtils {
 		return new String(QuicUtils.toArrayNoCopy(b), StandardCharsets.UTF_8);
 	}
 
-	@SuppressWarnings("OptionalUsedAsFieldOrParameterType")
-	public static NullableBytes toBytes(Optional<Buffer> valueSendOpt) {
+	public static NullableBytes toBytes(OptionalBuf valueSendOpt) {
 		if (valueSendOpt.isPresent()) {
 			try (var value = valueSendOpt.get()) {
 				var bytes = new byte[value.readableBytes()];
@@ -161,7 +161,7 @@ public class QuicUtils {
 
 	private static <R> R mapErrors(R value) {
 		if (value instanceof RPCCrash crash) {
-			throw new RPCException(crash.code(), crash.message().orElse(null));
+			throw new RPCException(crash.code(), crash.message().getNullable());
 		} else {
 			return value;
 		}

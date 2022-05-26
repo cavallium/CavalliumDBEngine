@@ -130,17 +130,19 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 			UpdateReturnMode updateReturnMode) {
 		var resultMono = dictionary
 				.update(keyMono, (oldValueSer) -> {
-					U result;
-					if (oldValueSer == null) {
-						result = updater.apply(null);
-					} else {
-						U deserializedValue = serializer.deserialize(oldValueSer);
-						result = updater.apply(deserializedValue);
-					}
-					if (result == null) {
-						return null;
-					} else {
-						return serializeValue(result);
+					try (oldValueSer) {
+						U result;
+						if (oldValueSer == null) {
+							result = updater.apply(null);
+						} else {
+							U deserializedValue = serializer.deserialize(oldValueSer);
+							result = updater.apply(deserializedValue);
+						}
+						if (result == null) {
+							return null;
+						} else {
+							return serializeValue(result);
+						}
 					}
 				}, updateReturnMode);
 		return Mono.usingWhen(resultMono,

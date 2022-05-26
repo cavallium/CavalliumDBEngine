@@ -67,24 +67,22 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 		}
 	}
 
-	private void deserializeValue(Buffer value, SynchronousSink<U> sink) {
+	private U deserializeValue(Buffer value) {
 		try {
 			U deserializedValue;
 			try (value) {
 				deserializedValue = serializer.deserialize(value);
 			}
-			sink.next(deserializedValue);
+			return deserializedValue;
 		} catch (IndexOutOfBoundsException ex) {
 			var exMessage = ex.getMessage();
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-				LOG.error("Unexpected zero-bytes value at "
-						+ singleton.getDatabaseName() + ":" + singleton.getColumnName() + ":" + singleton.getName());
-				sink.complete();
+				LOG.error("Unexpected zero-bytes value at " + singleton.getDatabaseName()
+						+ ":" + singleton.getColumnName() + ":" + singleton.getName());
+				return null;
 			} else {
-				sink.error(ex);
+				throw ex;
 			}
-		} catch (SerializationException ex) {
-			sink.error(ex);
 		}
 	}
 
@@ -103,8 +101,11 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot) {
-		return singleton.get(resolveSnapshot(snapshot))
-				.handle(this::deserializeValue);
+		var resultMono = singleton.get(resolveSnapshot(snapshot));
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	@Override
@@ -114,33 +115,39 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
-		return Flux
+		var resultMono = Flux
 				.concat(singleton.get(null), singleton.set(Mono.fromCallable(() -> serializeValue(value))).then(Mono.empty()))
-				.last()
-				.handle(this::deserializeValue);
+				.last();
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	@Override
 	public Mono<U> update(SerializationFunction<@Nullable U, @Nullable U> updater,
 			UpdateReturnMode updateReturnMode) {
-		return singleton
-				.update((oldValueSer) -> {
-					try (oldValueSer) {
-						U result;
-						if (oldValueSer == null) {
-							result = updater.apply(null);
-						} else {
-							U deserializedValue = serializer.deserialize(oldValueSer);
-							result = updater.apply(deserializedValue);
-						}
-						if (result == null) {
-							return null;
-						} else {
-							return serializeValue(result);
-						}
+		var resultMono = singleton
+			.update((oldValueSer) -> {
+				try (oldValueSer) {
+					U result;
+					if (oldValueSer == null) {
+						result = updater.apply(null);
+					} else {
+						U deserializedValue = serializer.deserialize(oldValueSer);
+						result = updater.apply(deserializedValue);
 					}
-				}, updateReturnMode)
-				.handle(this::deserializeValue);
+					if (result == null) {
+						return null;
+					} else {
+						return serializeValue(result);
+					}
+				}
+			}, updateReturnMode);
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	@Override
@@ -171,10 +178,11 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 
 	@Override
 	public Mono<U> clearAndGetPrevious() {
-		return Flux
-				.concat(singleton.get(null), singleton.set(Mono.empty()).then(Mono.empty()))
-				.last()
-				.handle(this::deserializeValue);
+		var resultMono = Flux.concat(singleton.get(null), singleton.set(Mono.empty()).then(Mono.empty())).last();
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	@Override

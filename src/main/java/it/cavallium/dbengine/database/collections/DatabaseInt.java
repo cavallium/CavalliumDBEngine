@@ -20,13 +20,11 @@ public class DatabaseInt implements LLKeyValueDatabaseStructure {
 	}
 
 	public Mono<Integer> get(@Nullable LLSnapshot snapshot) {
-		return singleton.get(snapshot).handle((data, sink) -> {
-			try (data) {
-				sink.next(serializer.deserialize(data));
-			} catch (SerializationException e) {
-				sink.error(e);
-			}
-		});
+		var resultMono = singleton.get(snapshot);
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> serializer.deserialize(result)),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	public Mono<Void> set(int value) {

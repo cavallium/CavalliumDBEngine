@@ -24,17 +24,17 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	}
 
 	public Mono<Long> get(@Nullable LLSnapshot snapshot) {
-		return singleton.get(snapshot).handle((data, sink) -> {
-			try (data) {
-				if (data.readableBytes() == 4) {
-					sink.next((long) (int) bugSerializer.deserialize(data));
-				} else {
-					sink.next(serializer.deserialize(data));
-				}
-			} catch (SerializationException e) {
-				sink.error(e);
-			}
-		});
+		var resultMono = singleton.get(snapshot);
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(() -> {
+					if (result.readableBytes() == 4) {
+						return (long) (int) bugSerializer.deserialize(result);
+					} else {
+						return serializer.deserialize(result);
+					}
+				}),
+				result -> Mono.fromRunnable(result::close)
+		);
 	}
 
 	public Mono<Long> incrementAndGet() {
@@ -62,24 +62,26 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	}
 
 	private Mono<Long> addAnd(long count, UpdateReturnMode updateReturnMode) {
-		return singleton.update(prev -> {
-			if (prev != null) {
-				var prevLong = prev.readLong();
-				var alloc = singleton.getAllocator();
-				var buf = alloc.allocate(Long.BYTES);
-				buf.writeLong(prevLong + count);
-				return buf;
-			} else {
-				var alloc = singleton.getAllocator();
-				var buf = alloc.allocate(Long.BYTES);
-				buf.writeLong(count);
-				return buf;
+		var resultMono = singleton.update(prev -> {
+			try (prev) {
+				if (prev != null) {
+					var prevLong = prev.readLong();
+					var alloc = singleton.getAllocator();
+					var buf = alloc.allocate(Long.BYTES);
+					buf.writeLong(prevLong + count);
+					return buf;
+				} else {
+					var alloc = singleton.getAllocator();
+					var buf = alloc.allocate(Long.BYTES);
+					buf.writeLong(count);
+					return buf;
+				}
 			}
-		}, updateReturnMode).map(buf -> {
-			try (buf) {
-				return buf.readLong();
-			}
-		}).single();
+		}, updateReturnMode);
+		return Mono.usingWhen(resultMono,
+				result -> Mono.fromSupplier(result::readLong),
+				result -> Mono.fromRunnable(result::close)
+		).single();
 	}
 
 	public Mono<Void> set(long value) {

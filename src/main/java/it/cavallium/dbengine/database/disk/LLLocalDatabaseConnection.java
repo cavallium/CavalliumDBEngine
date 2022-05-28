@@ -6,7 +6,6 @@ import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
-import it.cavallium.dbengine.netty.JMXNettyMonitoringManager;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
@@ -25,10 +24,6 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class LLLocalDatabaseConnection implements LLDatabaseConnection {
-
-	static {
-		JMXNettyMonitoringManager.initialize();
-	}
 
 	private final AtomicBoolean connected = new AtomicBoolean();
 	private final BufferAllocator allocator;

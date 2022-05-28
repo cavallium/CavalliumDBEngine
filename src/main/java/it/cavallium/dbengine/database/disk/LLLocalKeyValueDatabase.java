@@ -338,8 +338,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						.setPartitionFilters(columnOptions.partitionFilters().orElse(false))
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.setIndexType(columnOptions.partitionFilters().orElse(false) ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
-						//todo: replace with kxxhash3
-						.setChecksumType(ChecksumType.kCRC32c)
+						.setChecksumType(ChecksumType.kXXH3)
 						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
@@ -428,7 +427,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				} else {
 					this.dbRScheduler = Schedulers.newBoundedElastic(threadCap,
 							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-							new ShortNamedThreadFactory("db-write-" + name).setDaemon(true).withGroup(new ThreadGroup("database-read")),
+							new ShortNamedThreadFactory("db-read-" + name).setDaemon(true).withGroup(new ThreadGroup("database-read")),
 							60
 					);
 				}

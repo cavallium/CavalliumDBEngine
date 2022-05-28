@@ -3,6 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES;
 import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
+import static java.lang.Boolean.parseBoolean;
+import static java.lang.System.getProperty;
 import static java.util.Objects.requireNonNull;
 import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithValue;
 import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithoutValue;
@@ -57,6 +59,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	 * Default: true
 	 */
 	private static final boolean USE_DIRECT_BUFFER_BOUNDS = true;
+	private static final boolean WORKAROUND_MAY_EXIST_FAKE_ZERO
+			= parseBoolean(getProperty("it.cavallium.dbengine.workaround_may_exist_fake_zero", "false"));
 	private static final byte[] NO_DATA = new byte[0];
 	protected static final UpdateAtomicResult RESULT_NOTHING = new UpdateAtomicResultNothing();
 
@@ -385,7 +389,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 								case kExistsWithoutValue: {
 									if (keyMayExistState == kExistsWithoutValue) {
 										isKExistsWithoutValue = true;
-									} else {
+									} else if (WORKAROUND_MAY_EXIST_FAKE_ZERO) {
 										// todo: "size == 0 || resultWritable.limit() == 0" is checked because keyMayExist is broken,
 										//  and sometimes it returns an empty array, as if it exists
 										if (size == 0 || resultWritable.limit() == 0) {
@@ -455,7 +459,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					if (db.keyMayExist(cfh, readOptions, keyArray, data)) {
 						// todo: "data.getValue().length > 0" is checked because keyMayExist is broken, and sometimes it
 						//  returns an empty array, as if it exists
-						if (data.getValue() != null && data.getValue().length > 0) {
+						if (data.getValue() != null && (!WORKAROUND_MAY_EXIST_FAKE_ZERO || data.getValue().length > 0)) {
 							readValueFoundWithBloomCacheBufferSize.record(data.getValue().length);
 							return LLUtils.fromByteArray(alloc, data.getValue());
 						} else {

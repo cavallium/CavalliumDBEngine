@@ -1,4 +1,5 @@
 module dbengine {
+	uses io.netty5.buffer.api.pool.BufferAllocatorMetricProvider;
 	exports it.cavallium.dbengine.lucene;
 	exports it.cavallium.dbengine.database;
 	exports it.cavallium.dbengine.rpc.current.data;

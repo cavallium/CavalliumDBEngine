@@ -924,21 +924,21 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				compressedCache = null;
 			}
 
-			if (databaseOptions.spinning()) {
-				options
-						// method documentation
-						.setCompactionReadaheadSize(16 * SizeUnit.MB)
-						// guessed
-						.setWritableFileMaxBufferSize(16 * SizeUnit.MB);
-			}
 			if (databaseOptions.useDirectIO()) {
 				options
 						// Option to enable readahead in compaction
 						// If not set, it will be set to 2MB internally
 						.setCompactionReadaheadSize(2 * SizeUnit.MB) // recommend at least 2MB
 						// Option to tune write buffer for direct writes
-						.setWritableFileMaxBufferSize(2 * SizeUnit.MB)
+						.setWritableFileMaxBufferSize(SizeUnit.MB)
 				;
+			}
+			if (databaseOptions.spinning()) {
+				options
+						// method documentation
+						.setCompactionReadaheadSize(4 * SizeUnit.MB)
+						// guessed
+						.setWritableFileMaxBufferSize(2 * SizeUnit.MB);
 			}
 		} else {
 			// HIGH MEMORY
@@ -965,10 +965,17 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				options
 						// Option to enable readahead in compaction
 						// If not set, it will be set to 2MB internally
-						.setCompactionReadaheadSize(4 * 1024 * 1024) // recommend at least 2MB
+						.setCompactionReadaheadSize(4 * SizeUnit.MB) // recommend at least 2MB
 						// Option to tune write buffer for direct writes
-						.setWritableFileMaxBufferSize(4 * 1024 * 1024)
+						.setWritableFileMaxBufferSize(2 * SizeUnit.MB)
 				;
+			}
+			if (databaseOptions.spinning()) {
+				options
+						// method documentation
+						.setCompactionReadaheadSize(16 * SizeUnit.MB)
+						// guessed
+						.setWritableFileMaxBufferSize(8 * SizeUnit.MB);
 			}
 			options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 		}
@@ -977,6 +984,8 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			var writeBufferManager = new WriteBufferManager(writeBufferManagerSize, blockCache, false);
 			refs.track(writeBufferManager);
 			options.setWriteBufferManager(writeBufferManager);
+		} else {
+			options.setWriteBufferManager(null);
 		}
 
 		if (databaseOptions.useDirectIO()) {
@@ -991,7 +1000,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setAllowMmapWrites(databaseOptions.allowMemoryMapping());
 		}
 
-		if (!databaseOptions.allowMemoryMapping()) {
+		if (databaseOptions.useDirectIO() || !databaseOptions.allowMemoryMapping()) {
 			options.setUseDirectIoForFlushAndCompaction(true);
 		}
 

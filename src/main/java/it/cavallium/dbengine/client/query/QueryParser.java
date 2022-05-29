@@ -46,8 +46,20 @@ import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.LowerCaseFilter;
+import org.apache.lucene.analysis.StopFilter;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.Tokenizer;
+import org.apache.lucene.analysis.core.KeywordTokenizer;
+import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
+import org.apache.lucene.analysis.en.PorterStemFilter;
+import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.analysis.miscellaneous.SetKeywordMarkerFilter;
+import org.apache.lucene.analysis.standard.StandardTokenizer;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
@@ -78,7 +90,16 @@ public class QueryParser {
 		switch (query.getBasicType$()) {
 			case StandardQuery:
 				var standardQuery = (it.cavallium.dbengine.client.query.current.data.StandardQuery) query;
+
+				// Fix the analyzer
+				Map<String, Analyzer> customAnalyzers = standardQuery
+						.termFields()
+						.stream()
+						.collect(Collectors.toMap(Function.identity(), term -> new NoOpAnalyzer()));
+				analyzer = new PerFieldAnalyzerWrapper(analyzer, customAnalyzers);
+
 				var standardQueryParser = new StandardQueryParser(analyzer);
+
 				standardQueryParser.setPointsConfigMap(standardQuery
 						.pointsConfig()
 						.stream()

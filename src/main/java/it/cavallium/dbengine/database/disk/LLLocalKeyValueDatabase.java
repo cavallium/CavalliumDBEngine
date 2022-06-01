@@ -215,6 +215,18 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setDisableAutoCompactions(true);
 				}
+				columnFamilyOptions.setEnableBlobFiles(columnOptions.blobFiles());
+				if (columnOptions.blobFileSize().isPresent()) {
+					columnFamilyOptions.setBlobFileSize(columnOptions.blobFileSize().get());
+				}
+				if (columnOptions.minBlobSize().isPresent()) {
+					columnFamilyOptions.setMinBlobSize(columnOptions.minBlobSize().get());
+				}
+				if (columnOptions.blobCompressionType().isPresent()) {
+					columnFamilyOptions.setCompressionType(columnOptions.blobCompressionType().get().getType());
+				}
+				columnFamilyOptions.setBlobCompactionReadaheadSize(4 * SizeUnit.MB);
+				columnFamilyOptions.setEnableBlobGarbageCollection(true);
 
 				// This option is not supported with multiple db paths
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html

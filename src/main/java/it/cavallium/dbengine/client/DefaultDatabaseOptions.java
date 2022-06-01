@@ -10,6 +10,7 @@ import it.cavallium.dbengine.rpc.current.data.DefaultColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.DefaultColumnOptionsBuilder;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptionsBuilder;
+import it.cavallium.dbengine.rpc.current.data.nullables.NullableCompression;
 import it.cavallium.dbengine.rpc.current.data.nullables.NullableFilter;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
@@ -27,7 +28,11 @@ public class DefaultDatabaseOptions {
 			NullableFilter.empty(),
 			Nullableint.empty(),
 			NullableString.empty(),
-			Nullablelong.empty()
+			Nullablelong.empty(),
+			false,
+			Nullablelong.empty(),
+			Nullablelong.empty(),
+			NullableCompression.empty()
 	);
 
 	public static NamedColumnOptions DEFAULT_NAMED_COLUMN_OPTIONS = new NamedColumnOptions(
@@ -39,7 +44,11 @@ public class DefaultDatabaseOptions {
 			NullableFilter.empty(),
 			Nullableint.empty(),
 			NullableString.empty(),
-			Nullablelong.empty()
+			Nullablelong.empty(),
+			false,
+			Nullablelong.empty(),
+			Nullablelong.empty(),
+			NullableCompression.empty()
 	);
 
 	public static DatabaseOptions DEFAULT_DATABASE_OPTIONS = new DatabaseOptions(List.of(),

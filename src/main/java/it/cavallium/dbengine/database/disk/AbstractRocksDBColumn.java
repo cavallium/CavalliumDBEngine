@@ -60,7 +60,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	 */
 	private static final boolean USE_DIRECT_BUFFER_BOUNDS = true;
 	private static final boolean WORKAROUND_MAY_EXIST_FAKE_ZERO
-			= parseBoolean(getProperty("it.cavallium.dbengine.workaround_may_exist_fake_zero", "false"));
+			= parseBoolean(getProperty("it.cavallium.dbengine.workaround_may_exist_fake_zero", "true"));
 	private static final byte[] NO_DATA = new byte[0];
 	protected static final UpdateAtomicResult RESULT_NOTHING = new UpdateAtomicResultNothing();
 

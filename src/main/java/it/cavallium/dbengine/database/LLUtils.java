@@ -226,7 +226,13 @@ public class LLUtils {
 			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Store.YES);
 			case SortedNumericDocValuesField -> new SortedNumericDocValuesField(item.getName(), item.longData());
 			case NumericDocValuesField -> new NumericDocValuesField(item.getName(), item.longData());
-			case StringField -> new StringField(item.getName(), item.stringValue(), Store.NO);
+			case StringField -> {
+				if (item.getData() instanceof BytesRef bytesRef) {
+					yield new StringField(item.getName(), bytesRef, Store.NO);
+				} else {
+					yield new StringField(item.getName(), item.stringValue(), Store.NO);
+				}
+			}
 			case StringFieldStored -> {
 				if (item.getData() instanceof BytesRef bytesRef) {
 					yield new StringField(item.getName(), bytesRef, Store.YES);

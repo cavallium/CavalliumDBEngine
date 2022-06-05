@@ -121,7 +121,9 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 					.take(queryParams.limitLong(), true);
 
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
-				indexSearchers.close();
+				if (indexSearchers.isAccessible()) {
+					indexSearchers.close();
+				}
 				data.close();
 			});
 		});

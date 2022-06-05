@@ -54,8 +54,16 @@ public class PagedLocalSearcher implements LocalSearcher {
 					.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers.shards(),
 							keyFieldName, queryParams2))
 					// Compute other results
-					.transform(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams2,
-							keyFieldName, indexSearchers::close))
+					.transform(firstResult -> this.computeOtherResults(firstResult,
+							indexSearchers.shards(),
+							queryParams2,
+							keyFieldName,
+							() -> {
+								if (indexSearchers.isAccessible()) {
+									indexSearchers.close();
+								}
+							}
+					))
 					// Ensure that one LuceneSearchResult is always returned
 					.single()
 			);

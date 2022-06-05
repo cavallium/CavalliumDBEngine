@@ -53,7 +53,11 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 						.skip(queryParams2.offsetLong())
 						.take(queryParams2.limitLong(), true);
 
-				return new LuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers::close);
+				return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
+					if (indexSearchers.isAccessible()) {
+						indexSearchers.close();
+					}
+				});
 			});
 		}, false);
 	}

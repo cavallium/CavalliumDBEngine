@@ -62,8 +62,16 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
 									keyFieldName, queryParams2))
 							// Compute other results
-							.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(),
-									queryParams2, keyFieldName, indexSearchers::close))
+							.map(firstResult -> this.computeOtherResults(firstResult,
+									indexSearchers.shards(),
+									queryParams2,
+									keyFieldName,
+									() -> {
+										if (indexSearchers.isAccessible()) {
+											indexSearchers.close();
+										}
+									}
+							))
 							// Ensure that one LuceneSearchResult is always returned
 							.single(),
 					false);

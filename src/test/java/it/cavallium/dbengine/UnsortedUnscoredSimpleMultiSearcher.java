@@ -74,9 +74,13 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 
 									return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
 										for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
-											luceneSearchResult.close();
+											if (luceneSearchResult.isAccessible()) {
+												luceneSearchResult.close();
+											}
 										}
-										indexSearchers.close();
+										if (indexSearchers.isAccessible()) {
+											indexSearchers.close();
+										}
 									});
 								})
 								.doFirst(() -> {

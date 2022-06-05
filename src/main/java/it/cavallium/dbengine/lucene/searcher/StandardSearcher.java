@@ -143,7 +143,11 @@ public class StandardSearcher implements MultiSearcher {
 					.skip(queryParams.offsetLong())
 					.take(queryParams.limitLong(), true);
 
-			return new LuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers::close);
+			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
+				if (indexSearchers.isAccessible()) {
+					indexSearchers.close();
+				}
+			});
 		});
 	}
 

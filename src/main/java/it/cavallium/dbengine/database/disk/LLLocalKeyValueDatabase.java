@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+import static java.lang.Boolean.parseBoolean;
 import static java.util.Objects.requireNonNull;
 import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET;
 
@@ -425,7 +426,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						threadCap = threadCapProperty;
 					}
 				}
-				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.write.shared", "true"))) {
+				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.write.shared", "true"))) {
 					this.dbWScheduler = Schedulers.boundedElastic();
 				} else {
 					this.dbWScheduler = Schedulers.newBoundedElastic(threadCap,
@@ -442,7 +443,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						threadCap = threadCapProperty;
 					}
 				}
-				if (Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.read.shared", "true"))) {
+				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.read.shared", "true"))) {
 					this.dbRScheduler = Schedulers.boundedElastic();
 				} else {
 					this.dbRScheduler = Schedulers.newBoundedElastic(threadCap,
@@ -545,12 +546,12 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	public static boolean isDisableAutoCompactions() {
-		return Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.compactions.auto.disable", "false"));
+		return parseBoolean(System.getProperty("it.cavallium.dbengine.compactions.auto.disable", "false"));
 	}
 
 	public static boolean isDisableSlowdown() {
 		return isDisableAutoCompactions()
-				|| Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.disableslowdown", "false"));
+				|| parseBoolean(System.getProperty("it.cavallium.dbengine.disableslowdown", "false"));
 	}
 
 	protected void ensureOpen() {
@@ -924,6 +925,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 		Cache blockCache;
 		Cache compressedCache;
+		final boolean useDirectIO = databaseOptions.useDirectIO();
+		final boolean allowMmapReads = !useDirectIO && databaseOptions.allowMemoryMapping();
+		final boolean allowMmapWrites = !useDirectIO && (databaseOptions.allowMemoryMapping()
+				|| parseBoolean(System.getProperty("it.cavallium.dbengine.mmapwrites.enable", "false")));
 		if (databaseOptions.lowMemory()) {
 			// LOW MEMORY
 			options
@@ -945,7 +950,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				compressedCache = null;
 			}
 
-			if (databaseOptions.useDirectIO()) {
+			if (useDirectIO) {
 				options
 						// Option to enable readahead in compaction
 						// If not set, it will be set to 2MB internally
@@ -982,7 +987,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				compressedCache = null;
 			}
 
-			if (databaseOptions.useDirectIO()) {
+			if (useDirectIO) {
 				options
 						// Option to enable readahead in compaction
 						// If not set, it will be set to 2MB internally
@@ -1009,7 +1014,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			options.setWriteBufferManager(null);
 		}
 
-		if (databaseOptions.useDirectIO()) {
+		if (useDirectIO) {
 			options
 					.setAllowMmapReads(false)
 					.setAllowMmapWrites(false)
@@ -1017,11 +1022,11 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			;
 		} else {
 			options
-					.setAllowMmapReads(databaseOptions.allowMemoryMapping())
-					.setAllowMmapWrites(databaseOptions.allowMemoryMapping());
+					.setAllowMmapReads(allowMmapReads)
+					.setAllowMmapWrites(allowMmapWrites);
 		}
 
-		if (databaseOptions.useDirectIO() || !databaseOptions.allowMemoryMapping()) {
+		if (useDirectIO || !allowMmapWrites) {
 			options.setUseDirectIoForFlushAndCompaction(true);
 		}
 

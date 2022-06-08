@@ -5,6 +5,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
+import static java.util.Objects.requireNonNull;
 import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE;
 import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE;
 
@@ -155,7 +156,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				rocksDBManager);
 		boolean isFilesystemCompressed = LuceneUtils.getIsFilesystemCompressed(luceneOptions.directoryOptions());
 
-		var snapshotter = new SnapshotDeletionPolicy(new KeepOnlyLastCommitDeletionPolicy());
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 		this.rocksDBManager = rocksDBManager;
@@ -169,24 +169,27 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);
-		indexWriterConfig.setOpenMode(IndexWriterConfig.OpenMode.CREATE_OR_APPEND);
+		var snapshotter = new SnapshotDeletionPolicy(requireNonNull(indexWriterConfig.getIndexDeletionPolicy()));
 		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
 		indexWriterConfig.setCommitOnClose(true);
-		var mergePolicy = new TieredMergePolicy();
-		indexWriterConfig.setMergePolicy(mergePolicy);
-		indexWriterConfig.setMergedSegmentWarmer(new SimpleMergedSegmentWarmer(InfoStream.getDefault()));
 		int writerSchedulerMaxThreadCount;
 		MergeScheduler mergeScheduler;
 		if (lowMemory) {
 			mergeScheduler = new SerialMergeScheduler();
 			writerSchedulerMaxThreadCount = 1;
 		} else {
-			var concurrentMergeScheduler = new ConcurrentMergeScheduler();
-			// false means SSD, true means HDD
-			concurrentMergeScheduler.setDefaultMaxMergesAndThreads(false);
-			if (LuceneUtils.getManagedPath(luceneOptions.directoryOptions()).isEmpty()) {
-				concurrentMergeScheduler.disableAutoIOThrottle();
+			ConcurrentMergeScheduler concurrentMergeScheduler;
+			if (indexWriterConfig.getMergeScheduler() instanceof ConcurrentMergeScheduler defaultScheduler) {
+				concurrentMergeScheduler = defaultScheduler;
 			} else {
+				//noinspection resource
+				concurrentMergeScheduler = new ConcurrentMergeScheduler();
+			}
+			// false means SSD, true means HDD
+			boolean spins = false;
+			concurrentMergeScheduler.setDefaultMaxMergesAndThreads(spins);
+			// It's true by default, but this makes sure it's true if it's a managed path
+			if (LuceneUtils.getManagedPath(luceneOptions.directoryOptions()).isPresent()) {
 				concurrentMergeScheduler.enableAutoIOThrottle();
 			}
 			writerSchedulerMaxThreadCount = concurrentMergeScheduler.getMaxThreadCount();

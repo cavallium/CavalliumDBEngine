@@ -861,6 +861,20 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		} else {
 			databasesDirPath = null;
 		}
+		//noinspection ConstantConditions
+		if (databaseOptions.persistentCaches() != null) {
+			for (var persistentCache : databaseOptions.persistentCaches()) {
+				var persistentCachePath = Paths.get(persistentCache.path());
+				if (Files.notExists(persistentCachePath)) {
+					Files.createDirectories(persistentCachePath);
+					if (!Files.isDirectory(persistentCachePath)) {
+						throw new IllegalArgumentException(
+								"Persistent cache \"" + persistentCache.id() + "\" path \"" + persistentCachePath
+										+ "\" is not a directory!");
+					}
+				}
+			}
+		}
 
 		// the Options class contains a set of configurable DB options
 		// that determines the behaviour of the database.

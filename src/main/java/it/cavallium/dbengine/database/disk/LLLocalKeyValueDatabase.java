@@ -1024,8 +1024,6 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 			var writeBufferManager = new WriteBufferManager(writeBufferManagerSize, blockCache, false);
 			refs.track(writeBufferManager);
 			options.setWriteBufferManager(writeBufferManager);
-		} else {
-			options.setWriteBufferManager(null);
 		}
 
 		if (useDirectIO) {

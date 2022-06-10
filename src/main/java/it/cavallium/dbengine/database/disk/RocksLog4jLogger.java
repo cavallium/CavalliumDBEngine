@@ -4,7 +4,7 @@ import org.apache.logging.log4j.Logger;
 import org.rocksdb.DBOptions;
 import org.rocksdb.InfoLogLevel;
 
-class RocksLog4jLogger extends org.rocksdb.Logger {
+public class RocksLog4jLogger extends org.rocksdb.Logger {
 
 	private final Logger logger;
 

@@ -205,4 +205,11 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 		return closeMono;
 	}
 
+	public long getActiveSearchers() {
+		return activeSearchers.get();
+	}
+
+	public long getActiveRefreshes() {
+		return activeRefreshes.get();
+	}
 }

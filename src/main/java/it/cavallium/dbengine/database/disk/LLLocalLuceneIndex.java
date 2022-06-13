@@ -12,6 +12,7 @@ import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE;
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.QueryParser;
@@ -201,6 +202,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		logger.trace("WriterSchedulerMaxThreadCount: {}", writerSchedulerMaxThreadCount);
 		indexWriterConfig.setMergeScheduler(mergeScheduler);
+		indexWriterConfig.setMergePolicy(new TieredMergePolicy());
 		if (luceneOptions.indexWriterRAMBufferSizeMB().isPresent()) {
 			indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterRAMBufferSizeMB().get());
 		}
@@ -213,7 +215,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
 		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter);
-		this.searcherManager = new CachedIndexSearcherManager(indexWriter,
+		var searcherManager = new CachedIndexSearcherManager(indexWriter,
 				snapshotsManager,
 				luceneHeavyTasksScheduler,
 				getLuceneSimilarity(),
@@ -221,6 +223,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				luceneOptions.writeAllDeletes().orElse(false),
 				luceneOptions.queryRefreshDebounceTime()
 		);
+		this.searcherManager = searcherManager;
 
 		this.startedDocIndexings = meterRegistry.counter("index.write.doc.started.counter", "index.name", clusterName);
 		this.endeddDocIndexings = meterRegistry.counter("index.write.doc.ended.counter", "index.name", clusterName);
@@ -230,6 +233,42 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.commitTime = Timer.builder("index.write.commit.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
 		this.mergeTime = Timer.builder("index.write.merge.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
 		this.refreshTime = Timer.builder("index.search.refresh.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
+		meterRegistry.gauge("index.snapshot.counter", List.of(Tag.of("index.name", clusterName)), snapshotter, SnapshotDeletionPolicy::getSnapshotCount);
+		meterRegistry.gauge("index.write.flushing.bytes", List.of(Tag.of("index.name", clusterName)), indexWriter, IndexWriter::getFlushingBytes);
+		meterRegistry.gauge("index.write.sequence.completed.max", List.of(Tag.of("index.name", clusterName)), indexWriter, IndexWriter::getMaxCompletedSequenceNumber);
+		meterRegistry.gauge("index.write.doc.pending.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, IndexWriter::getPendingNumDocs);
+		meterRegistry.gauge("index.write.segment.merging.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> iw.getMergingSegments().size());
+		meterRegistry.gauge("index.directory.deletion.pending.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> {
+			try {
+				return iw.getDirectory().getPendingDeletions().size();
+			} catch (IOException | NullPointerException e) {
+				return 0;
+			}
+		});
+		meterRegistry.gauge("index.doc.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> {
+			try {
+				return iw.getDocStats().numDocs;
+			} catch (NullPointerException e) {
+				return 0;
+			}
+		});
+		meterRegistry.gauge("index.doc.max", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> {
+			try {
+				return iw.getDocStats().maxDoc;
+			} catch (NullPointerException e) {
+				return 0;
+			}
+		});
+		meterRegistry.gauge("index.searcher.refreshes.active.count",
+				List.of(Tag.of("index.name", clusterName)),
+				searcherManager,
+				CachedIndexSearcherManager::getActiveRefreshes
+		);
+		meterRegistry.gauge("index.searcher.searchers.active.count",
+				List.of(Tag.of("index.name", clusterName)),
+				searcherManager,
+				CachedIndexSearcherManager::getActiveSearchers
+		);
 
 		// Start scheduled tasks
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();

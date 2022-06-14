@@ -25,9 +25,21 @@ import org.jetbrains.annotations.NotNull;
 @SuppressWarnings("unused")
 public class QueryUtils {
 
-	public static Query approximateSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
+	/**
+	 * @param fraction of query terms [0..1] that should match
+	 */
+	public static Query sparseWordsSearch(TextFieldsAnalyzer preferredAnalyzer,
+			String field,
+			String text,
+			float fraction) {
 		var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
-		var luceneQuery = qb.createMinShouldMatchQuery(field, text, 0.75f);
+		var luceneQuery = qb.createMinShouldMatchQuery(field, text, fraction);
+		return transformQuery(field, luceneQuery);
+	}
+
+	public static Query phraseSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text, int slop) {
+		var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
+		var luceneQuery = qb.createPhraseQuery(field, text, slop);
 		return transformQuery(field, luceneQuery);
 	}
 

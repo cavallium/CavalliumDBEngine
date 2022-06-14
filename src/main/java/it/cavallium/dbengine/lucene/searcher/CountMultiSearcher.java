@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -73,11 +74,7 @@ public class CountMultiSearcher implements MultiSearcher {
 									.take(queryParams2.limitLong(), true);
 
 							return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-								for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
-									if (luceneSearchResult.isAccessible()) {
-										luceneSearchResult.close();
-									}
-								}
+								resultsToDrop.forEach(SimpleResource::close);
 								try {
 									indexSearchers.close();
 								} catch (IOException e) {

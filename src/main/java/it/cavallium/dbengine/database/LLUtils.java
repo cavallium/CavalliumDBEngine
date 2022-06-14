@@ -22,6 +22,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -645,6 +646,10 @@ public class LLUtils {
 		return Mono.fromRunnable(() -> LLUtils.closeResource(resource));
 	}
 
+	public static Mono<Void> finalizeResource(SimpleResource resource) {
+		return Mono.fromRunnable(() -> LLUtils.closeResource(resource));
+	}
+
 	public static <V> Flux<V> handleDiscard(Flux<V> flux) {
 		return flux.doOnDiscard(Object.class, LLUtils::onDiscard);
 	}
@@ -917,6 +922,8 @@ public class LLUtils {
 	public static void closeResource(Object next) {
 		if (next instanceof Send<?> send) {
 			send.close();
+		} if (next instanceof SimpleResource simpleResource) {
+			simpleResource.close();
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();
 		} else if (next instanceof Iterable<?> iterable) {
@@ -927,8 +934,6 @@ public class LLUtils {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();
 			}
-		} else if (next instanceof Hits<?> hits) {
-			hits.close();
 		} else if (next instanceof LLIndexSearcher searcher) {
 			try {
 				searcher.close();
@@ -941,8 +946,6 @@ public class LLUtils {
 			} catch (IOException e) {
 				logger.error("Failed to close searchers {}", searchers, e);
 			}
-		} else if (next instanceof LLSearchResultShard shard) {
-			shard.close();
 		} else if (next instanceof Optional<?> optional) {
 			optional.ifPresent(LLUtils::onNextDropped);
 		} else if (next instanceof Map.Entry<?, ?> entry) {

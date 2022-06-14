@@ -15,6 +15,7 @@ import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -123,8 +124,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.flatMap(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
 				.single()
-				.doOnDiscard(LLSearchResultShard.class, ResourceSupport::close)
-				.doOnDiscard(Hits.class, ResourceSupport::close);
+				.doOnDiscard(LLSearchResultShard.class, SimpleResource::close)
+				.doOnDiscard(Hits.class, SimpleResource::close);
 	}
 
 	@Override
@@ -207,7 +208,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return Mono.fromCallable(() -> {
 			TotalHitsCount count = null;
 			ObjectArrayList<Flux<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
-			ObjectArrayList<Resource<?>> resources = new ObjectArrayList<>(shards.size());
+			ObjectArrayList<SimpleResource> resources = new ObjectArrayList<>(shards.size());
 			for (LLSearchResultShard shard : shards) {
 				if (count == null) {
 					count = shard.totalHitsCount();
@@ -228,7 +229,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				resultsFlux = Flux.merge(results);
 			}
 			return new LLSearchResultShard(resultsFlux, count, () -> {
-				for (Resource<?> resource : resources) {
+				for (var resource : resources) {
 					resource.close();
 				}
 			});

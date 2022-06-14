@@ -4,60 +4,33 @@ import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import reactor.core.publisher.Flux;
 
-public final class LLSearchResultShard extends ResourceSupport<LLSearchResultShard, LLSearchResultShard> {
+public final class LLSearchResultShard extends SimpleResource {
 
 	private static final Logger logger = LogManager.getLogger(LLSearchResultShard.class);
 
-	private static final Drop<LLSearchResultShard> DROP = new Drop<>() {
-		@Override
-		public void drop(LLSearchResultShard obj) {
-			try {
-				if (obj.onClose != null) {
-					obj.onClose.run();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close onClose", ex);
-			}
-		}
-
-		@Override
-		public Drop<LLSearchResultShard> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(LLSearchResultShard obj) {
-
-		}
-	};
-
-	private Flux<LLKeyScore> results;
-	private TotalHitsCount totalHitsCount;
-	private Runnable onClose;
+	private final Flux<LLKeyScore> results;
+	private final TotalHitsCount totalHitsCount;
+	private final Runnable onClose;
 
 	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Runnable onClose) {
-		super(DROP);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 		this.onClose = onClose;
 	}
 
 	public Flux<LLKeyScore> results() {
-		if (!isOwned()) {
-			throw attachTrace(new IllegalStateException("LLSearchResultShard must be owned to be used"));
-		}
+		ensureOpen();
 		return results;
 	}
 
 	public TotalHitsCount totalHitsCount() {
-		if (!isOwned()) {
-			throw attachTrace(new IllegalStateException("LLSearchResultShard must be owned to be used"));
-		}
+		ensureOpen();
 		return totalHitsCount;
 	}
 
@@ -82,21 +55,14 @@ public final class LLSearchResultShard extends ResourceSupport<LLSearchResultSha
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<LLSearchResultShard> prepareSend() {
-		var results = this.results;
-		var totalHitsCount = this.totalHitsCount;
-		var onClose = this.onClose;
-		return drop -> new LLSearchResultShard(results, totalHitsCount, onClose);
-	}
-
-	protected void makeInaccessible() {
-		this.results = null;
-		this.totalHitsCount = null;
-		this.onClose = null;
+	public void onClose() {
+		try {
+			var onClose = this.onClose;
+			if (onClose != null) {
+				onClose.run();
+			}
+		} catch (Throwable ex) {
+			logger.error("Failed to close onClose", ex);
+		}
 	}
 }

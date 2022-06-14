@@ -7,6 +7,7 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.function.Function;
@@ -14,34 +15,12 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
-public final class Hits<T> extends ResourceSupport<Hits<T>, Hits<T>> {
-
-	private static final Drop<Hits<?>> DROP = new Drop<>() {
-		@Override
-		public void drop(Hits<?> obj) {
-			if (obj.onClose != null) {
-				obj.onClose.run();
-			}
-		}
-
-		@Override
-		public Drop<Hits<?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(Hits<?> obj) {
-
-		}
-	};
-
+public final class Hits<T> extends SimpleResource {
 	private Flux<T> results;
 	private TotalHitsCount totalHitsCount;
 	private Runnable onClose;
 
-	@SuppressWarnings({"unchecked", "rawtypes"})
 	public Hits(Flux<T> results, TotalHitsCount totalHitsCount, Runnable onClose) {
-		super((Drop<Hits<T>>) (Drop) DROP);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 		this.onClose = onClose;
@@ -102,10 +81,12 @@ public final class Hits<T> extends ResourceSupport<Hits<T>, Hits<T>> {
 	}
 
 	public Flux<T> results() {
+		ensureOpen();
 		return results;
 	}
 
 	public TotalHitsCount totalHitsCount() {
+		ensureOpen();
 		return totalHitsCount;
 	}
 
@@ -115,25 +96,9 @@ public final class Hits<T> extends ResourceSupport<Hits<T>, Hits<T>> {
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<Hits<T>> prepareSend() {
-		var results = this.results;
-		var totalHitsCount = this.totalHitsCount;
-		var onClose = this.onClose;
-		return drop -> {
-			var instance = new Hits<>(results, totalHitsCount, onClose);
-			drop.attach(instance);
-			return instance;
-		};
-	}
-
-	protected void makeInaccessible() {
-		this.results = null;
-		this.totalHitsCount = null;
-		this.onClose = null;
+	protected void onClose() {
+		if (onClose != null) {
+			onClose.run();
+		}
 	}
 }

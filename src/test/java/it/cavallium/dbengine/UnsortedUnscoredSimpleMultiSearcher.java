@@ -14,6 +14,7 @@ import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -75,11 +76,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 											.take(queryParams2.limitLong(), true);
 
 									return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-										for (LuceneSearchResult luceneSearchResult : resultsToDrop) {
-											if (luceneSearchResult.isAccessible()) {
-												luceneSearchResult.close();
-											}
-										}
+										resultsToDrop.forEach(SimpleResource::close);
 										try {
 											indexSearchers.close();
 										} catch (IOException e) {

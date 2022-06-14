@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
@@ -37,7 +38,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return indexSearchersMono.flatMap(indexSearchers -> {
+		return singleOrClose(indexSearchersMono, indexSearchers -> {
 			Mono<LocalQueryParams> queryParamsMono;
 			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 				queryParamsMono = Mono.just(queryParams);

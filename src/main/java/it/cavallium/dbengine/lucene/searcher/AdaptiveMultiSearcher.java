@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import io.netty5.buffer.api.Send;
@@ -44,7 +45,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return indexSearchersMono.flatMap(indexSearchers -> {
+		return singleOrClose(indexSearchersMono, indexSearchers -> {
 			if (transformer == NO_REWRITE) {
 				return transformedCollectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 			} else {

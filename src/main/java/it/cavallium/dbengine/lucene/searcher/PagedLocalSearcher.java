@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
@@ -39,7 +40,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 			GlobalQueryRewrite transformer) {
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		return indexSearcherMono.flatMap(indexSearcher -> {
+		return singleOrClose(indexSearcherMono, indexSearcher -> {
 			var indexSearchers = LLIndexSearchers.unsharded(indexSearcher);
 
 			Mono<LocalQueryParams> queryParamsMono;

@@ -1,18 +1,16 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
-import io.netty5.buffer.api.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
-import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
-import reactor.util.function.Tuples;
 
 public class AdaptiveLocalSearcher implements LocalSearcher {
 
@@ -46,7 +44,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return indexSearcherMono.flatMap(indexSearcher -> {
+		return singleOrClose(indexSearcherMono, indexSearcher -> {
 			var indexSearchers = LLIndexSearchers.unsharded(indexSearcher);
 
 			if (transformer == NO_REWRITE) {

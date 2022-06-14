@@ -5,7 +5,6 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
@@ -36,7 +35,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
-	private static final Logger logger = LogManager.getLogger(CachedIndexSearcherManager.class);
+	private static final Logger LOG = LogManager.getLogger(CachedIndexSearcherManager.class);
 	private final ExecutorService searchExecutor = Executors.newFixedThreadPool(
 			Runtime.getRuntime().availableProcessors(),
 			new ShortNamedThreadFactory("lucene-search")
@@ -60,7 +59,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	private final Empty<Void> closeRequestedMono = Sinks.empty();
 	private final Mono<Void> closeMono;
 
-	private final Cleaner cleaner = Cleaner.create();
+	private static final Cleaner CLEANER = Cleaner.create();
 
 	public CachedIndexSearcherManager(IndexWriter indexWriter,
 			SnapshotsManager snapshotsManager,
@@ -82,7 +81,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					try {
 						maybeRefresh();
 					} catch (Exception ex) {
-						logger.error("Failed to refresh the searcher manager", ex);
+						LOG.error("Failed to refresh the searcher manager", ex);
 					}
 				})
 				.subscribeOn(luceneHeavyTasksScheduler)
@@ -107,26 +106,26 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 		this.closeMono = Mono
 				.fromRunnable(() -> {
-					logger.debug("Closing IndexSearcherManager...");
+					LOG.debug("Closing IndexSearcherManager...");
 					this.closeRequested.set(true);
 					this.closeRequestedMono.tryEmitEmpty();
 				})
 				.then(refresherClosed.asMono())
 				.then(Mono.<Void>fromRunnable(() -> {
-					logger.debug("Closed IndexSearcherManager");
-					logger.debug("Closing refreshes...");
+					LOG.debug("Closed IndexSearcherManager");
+					LOG.debug("Closing refreshes...");
 					long initTime = System.nanoTime();
 					while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 						LockSupport.parkNanos(50000000);
 					}
-					logger.debug("Closed refreshes...");
-					logger.debug("Closing active searchers...");
+					LOG.debug("Closed refreshes...");
+					LOG.debug("Closing active searchers...");
 					initTime = System.nanoTime();
 					while (activeSearchers.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 						LockSupport.parkNanos(50000000);
 					}
-					logger.debug("Closed active searchers");
-					logger.debug("Stopping searcher executor...");
+					LOG.debug("Closed active searchers");
+					LOG.debug("Stopping searcher executor...");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
 					searchExecutor.shutdown();
@@ -136,9 +135,9 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 							searchExecutor.shutdownNow();
 						}
 					} catch (InterruptedException e) {
-						logger.error("Failed to stop executor", e);
+						LOG.error("Failed to stop executor", e);
 					}
-					logger.debug("Stopped searcher executor");
+					LOG.debug("Stopped searcher executor");
 				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 				.publishOn(Schedulers.parallel())
 				.cache();
@@ -161,23 +160,25 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 			}
 			indexSearcher.setSimilarity(similarity);
 			assert indexSearcher.getIndexReader().getRefCount() > 0;
+			var closed = new AtomicBoolean();
 			LLIndexSearcher llIndexSearcher;
 			if (fromSnapshot) {
-				llIndexSearcher = new SnapshotIndexSearcher(indexSearcher);
+				llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
 			} else {
-				var released = new AtomicBoolean();
-				llIndexSearcher = new MainIndexSearcher(indexSearcher, released);
-				cleaner.register(llIndexSearcher, () -> {
-					if (released.compareAndSet(false, true)) {
-						logger.warn("An index searcher was not closed!");
+				llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
+			}
+			CLEANER.register(llIndexSearcher, () -> {
+				if (closed.compareAndSet(false, true)) {
+					LOG.warn("An index searcher was not closed!");
+					if (!fromSnapshot) {
 						try {
 							searcherManager.release(indexSearcher);
 						} catch (IOException e) {
-							logger.error("Failed to release the index searcher", e);
+							LOG.error("Failed to release the index searcher", e);
 						}
 					}
-				});
-			}
+				}
+			});
 			return llIndexSearcher;
 		});
 	}
@@ -235,17 +236,14 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private class MainIndexSearcher extends LLIndexSearcher {
 
-		private final AtomicBoolean released;
-
 		public MainIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean released) {
-			super(indexSearcher);
-			this.released = released;
+			super(indexSearcher, released);
 		}
 
 		@Override
 		public void onClose() throws IOException {
 			dropCachedIndexSearcher();
-			if (released.compareAndSet(false, true)) {
+			if (getClosed().compareAndSet(false, true)) {
 				searcherManager.release(indexSearcher);
 			}
 		}
@@ -253,8 +251,8 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private class SnapshotIndexSearcher extends LLIndexSearcher {
 
-		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
-			super(indexSearcher);
+		public SnapshotIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed) {
+			super(indexSearcher, closed);
 		}
 
 		@Override

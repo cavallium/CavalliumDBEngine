@@ -16,9 +16,14 @@ import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.buffer.api.internal.Statics;
 import io.netty5.util.IllegalReferenceCountException;
+import it.cavallium.dbengine.client.Hits;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import java.io.Closeable;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -48,6 +53,7 @@ import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
@@ -57,7 +63,6 @@ import org.apache.lucene.util.BytesRef;
 import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.reactivestreams.Publisher;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
@@ -648,6 +653,35 @@ public class LLUtils {
 		return flux.doOnDiscard(Object.class, LLUtils::onDiscard);
 	}
 
+	/**
+	 * Obtain the resource, then run the closure.
+	 * If the closure publisher returns a single element, then the resource is kept open,
+	 * otherwise it is closed.
+	 */
+	public static <T extends AutoCloseable, U> Mono<U> singleOrClose(Mono<T> resourceMono,
+			Function<T, Mono<U>> closure) {
+		return Mono.usingWhen(resourceMono,
+				resource -> closure.apply(resource).doOnSuccess(s -> {
+					if (s == null) {
+						try {
+							resource.close();
+						} catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					}
+				}),
+				resource -> Mono.empty(),
+				(resource, ex) -> Mono.fromCallable(() -> {
+					resource.close();
+					return null;
+				}),
+				resource -> Mono.fromCallable(() -> {
+					resource.close();
+					return null;
+				})
+		);
+	}
+
 	@Deprecated
 	public record DirectBuffer(@NotNull Buffer buffer, @NotNull ByteBuffer byteBuffer) {}
 
@@ -893,6 +927,22 @@ public class LLUtils {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();
 			}
+		} else if (next instanceof Hits<?> hits) {
+			hits.close();
+		} else if (next instanceof LLIndexSearcher searcher) {
+			try {
+				searcher.close();
+			} catch (IOException e) {
+				logger.error("Failed to close searcher {}", searcher, e);
+			}
+		} else if (next instanceof LLIndexSearchers searchers) {
+			try {
+				searchers.close();
+			} catch (IOException e) {
+				logger.error("Failed to close searchers {}", searchers, e);
+			}
+		} else if (next instanceof LLSearchResultShard shard) {
+			shard.close();
 		} else if (next instanceof Optional<?> optional) {
 			optional.ifPresent(LLUtils::onNextDropped);
 		} else if (next instanceof Map.Entry<?, ?> entry) {

@@ -17,10 +17,16 @@ public abstract class LLIndexSearcher implements Closeable {
 	protected static final Logger LOG = LogManager.getLogger(LLIndexSearcher.class);
 
 	protected final IndexSearcher indexSearcher;
-	private final AtomicBoolean closed = new AtomicBoolean();
+	private final AtomicBoolean closed;
 
 	public LLIndexSearcher(IndexSearcher indexSearcher) {
 		this.indexSearcher = indexSearcher;
+		this.closed = new AtomicBoolean();
+	}
+
+	public LLIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed) {
+		this.indexSearcher = indexSearcher;
+		this.closed = closed;
 	}
 
 	public IndexReader getIndexReader() {
@@ -31,6 +37,10 @@ public abstract class LLIndexSearcher implements Closeable {
 	public IndexSearcher getIndexSearcher() {
 		if (closed.get()) throw new IllegalStateException("Closed");
 		return indexSearcher;
+	}
+
+	public AtomicBoolean getClosed() {
+		return closed;
 	}
 
 	@Override

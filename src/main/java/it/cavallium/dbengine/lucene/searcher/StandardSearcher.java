@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static java.util.Objects.requireNonNull;
 
 import io.netty5.buffer.api.Send;
@@ -36,7 +37,7 @@ public class StandardSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return indexSearchersMono.flatMap(indexSearchers -> {
+		return singleOrClose(indexSearchersMono, indexSearchers -> {
 			Mono<LocalQueryParams> queryParamsMono;
 			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 				queryParamsMono = Mono.just(queryParams);

@@ -147,14 +147,20 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	private Mono<LLIndexSearchers> getIndexSearchers(LLSnapshot snapshot) {
-		return luceneIndicesFlux
-				.index()
+		return luceneIndicesFlux.index()
 				// Resolve the snapshot of each shard
 				.flatMap(tuple -> Mono
 						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
 						.flatMap(luceneSnapshot -> tuple.getT2().retrieveSearcher(luceneSnapshot.orElse(null)))
 				)
 				.collectList()
+				.doOnDiscard(LLIndexSearcher.class, indexSearcher -> {
+					try {
+						indexSearcher.close();
+					} catch (IOException ex) {
+						LOG.error("Failed to close an index searcher", ex);
+					}
+				})
 				.map(LLIndexSearchers::of);
 	}
 

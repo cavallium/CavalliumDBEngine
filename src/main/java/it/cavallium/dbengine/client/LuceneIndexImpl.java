@@ -1,11 +1,13 @@
 package it.cavallium.dbengine.client;
 
 import io.netty5.buffer.api.Resource;
+import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
+import it.cavallium.dbengine.database.LLSearchResult;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
@@ -120,7 +122,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.collectList()
 				.flatMap(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
-				.single();
+				.single()
+				.doOnDiscard(LLSearchResultShard.class, ResourceSupport::close)
+				.doOnDiscard(Hits.class, ResourceSupport::close);
 	}
 
 	@Override

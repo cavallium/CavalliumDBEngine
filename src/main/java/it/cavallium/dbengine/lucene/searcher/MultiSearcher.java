@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
@@ -30,7 +32,8 @@ public interface MultiSearcher extends LocalSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		Mono<LLIndexSearchers> searchers = indexSearcherMono.map(LLIndexSearchers::unsharded);
+		Mono<LLIndexSearchers> searchers = singleOrClose(indexSearcherMono, indexSearcher ->
+				Mono.just(LLIndexSearchers.unsharded(indexSearcher)));
 		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);
 	}
 

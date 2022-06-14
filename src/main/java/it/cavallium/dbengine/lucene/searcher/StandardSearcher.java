@@ -4,7 +4,6 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static java.util.Objects.requireNonNull;
 
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
@@ -75,51 +74,54 @@ public class StandardSearcher implements MultiSearcher {
 					}
 				})
 				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.flatMap(sharedManager -> Flux.fromIterable(indexSearchers).<TopDocsCollector<?>>handle((shard, sink) -> {
-					LLUtils.ensureBlocking();
-					try {
-						var collector = sharedManager.newCollector();
-						assert queryParams.computePreciseHitsCount() == null || (queryParams.computePreciseHitsCount() == collector
-								.scoreMode()
-								.isExhaustive());
+				.flatMap(sharedManager -> Flux
+						.fromIterable(indexSearchers)
+						.<TopDocsCollector<?>>handle((shard, sink) -> {
+							LLUtils.ensureBlocking();
+							try {
+								var collector = sharedManager.newCollector();
+								assert queryParams.computePreciseHitsCount() == null || (queryParams.computePreciseHitsCount()
+										== collector.scoreMode().isExhaustive());
 
-						shard.search(queryParams.query(), LuceneUtils.withTimeout(collector, queryParams.timeout()));
-						sink.next(collector);
-					} catch (IOException e) {
-						sink.error(e);
-					}
-				}).collectList().handle((collectors, sink) -> {
-					LLUtils.ensureBlocking();
-					try {
-						if (collectors.size() <= 1) {
-							sink.next(sharedManager.reduce((List) collectors));
-						} else if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
-							final TopFieldDocs[] topDocs = new TopFieldDocs[collectors.size()];
-							int i = 0;
-							for (var collector : collectors) {
-								var topFieldDocs = ((TopFieldCollector) collector).topDocs();
-								for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
-									scoreDoc.shardIndex = i;
-								}
-								topDocs[i++] = topFieldDocs;
+								shard.search(queryParams.query(), LuceneUtils.withTimeout(collector, queryParams.timeout()));
+								sink.next(collector);
+							} catch (IOException e) {
+								sink.error(e);
 							}
-							sink.next(TopDocs.merge(requireNonNull(queryParams.sort()), 0, queryParams.limitInt(), topDocs));
-						} else {
-							final TopDocs[] topDocs = new TopDocs[collectors.size()];
-							int i = 0;
-							for (var collector : collectors) {
-								var topScoreDocs = collector.topDocs();
-								for (ScoreDoc scoreDoc : topScoreDocs.scoreDocs) {
-									scoreDoc.shardIndex = i;
+						})
+						.collectList()
+						.handle((collectors, sink) -> {
+							LLUtils.ensureBlocking();
+							try {
+								if (collectors.size() <= 1) {
+									sink.next(sharedManager.reduce((List) collectors));
+								} else if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
+									final TopFieldDocs[] topDocs = new TopFieldDocs[collectors.size()];
+									int i = 0;
+									for (var collector : collectors) {
+										var topFieldDocs = ((TopFieldCollector) collector).topDocs();
+										for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
+											scoreDoc.shardIndex = i;
+										}
+										topDocs[i++] = topFieldDocs;
+									}
+									sink.next(TopDocs.merge(requireNonNull(queryParams.sort()), 0, queryParams.limitInt(), topDocs));
+								} else {
+									final TopDocs[] topDocs = new TopDocs[collectors.size()];
+									int i = 0;
+									for (var collector : collectors) {
+										var topScoreDocs = collector.topDocs();
+										for (ScoreDoc scoreDoc : topScoreDocs.scoreDocs) {
+											scoreDoc.shardIndex = i;
+										}
+										topDocs[i++] = topScoreDocs;
+									}
+									sink.next(TopDocs.merge(0, queryParams.limitInt(), topDocs));
 								}
-								topDocs[i++] = topScoreDocs;
+							} catch (IOException ex) {
+								sink.error(ex);
 							}
-							sink.next(TopDocs.merge(0, queryParams.limitInt(), topDocs));
-						}
-					} catch (IOException ex) {
-						sink.error(ex);
-					}
-				}));
+						}));
 	}
 
 	/**

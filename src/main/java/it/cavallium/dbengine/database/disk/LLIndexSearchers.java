@@ -5,6 +5,7 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.Closeable;
 import java.io.IOException;
@@ -13,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexReader;
@@ -98,12 +100,19 @@ public interface LLIndexSearchers extends Closeable {
 		private final List<IndexSearcher> indexSearchersVals;
 
 		public ShardedIndexSearchers(List<LLIndexSearcher> indexSearchers) {
-			this.indexSearchers = new ArrayList<>(indexSearchers.size());
-			this.indexSearchersVals = new ArrayList<>(indexSearchers.size());
+			var shardedIndexSearchers = new ArrayList<LLIndexSearcher>(indexSearchers.size());
+			List<IndexSearcher> shardedIndexSearchersVals = new ArrayList<>(indexSearchers.size());
 			for (LLIndexSearcher indexSearcher : indexSearchers) {
-				this.indexSearchers.add(indexSearcher);
-				this.indexSearchersVals.add(indexSearcher.getIndexSearcher());
+				shardedIndexSearchersVals.add(indexSearcher.getIndexSearcher());
 			}
+			shardedIndexSearchersVals = ShardIndexSearcher.create(shardedIndexSearchersVals);
+			int i = 0;
+			for (IndexSearcher shardedIndexSearcher : shardedIndexSearchersVals) {
+				shardedIndexSearchers.add(new WrappedLLIndexSearcher(shardedIndexSearcher, indexSearchers.get(i)));
+				i++;
+			}
+			this.indexSearchers = shardedIndexSearchers;
+			this.indexSearchersVals = shardedIndexSearchersVals;
 		}
 
 		@Override
@@ -154,6 +163,31 @@ public interface LLIndexSearchers extends Closeable {
 		public void close() throws IOException {
 			for (LLIndexSearcher indexSearcher : indexSearchers) {
 				indexSearcher.close();
+			}
+		}
+
+		private static class WrappedLLIndexSearcher extends LLIndexSearcher {
+
+			private final LLIndexSearcher parent;
+
+			public WrappedLLIndexSearcher(IndexSearcher indexSearcher, LLIndexSearcher parent) {
+				super(indexSearcher, parent.getClosed());
+				this.parent = parent;
+			}
+
+			@Override
+			public IndexSearcher getIndexSearcher() {
+				return indexSearcher;
+			}
+
+			@Override
+			public IndexReader getIndexReader() {
+				return indexSearcher.getIndexReader();
+			}
+
+			@Override
+			protected void onClose() throws IOException {
+				parent.onClose();
 			}
 		}
 	}

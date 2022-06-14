@@ -1,6 +1,7 @@
 package it.cavallium.dbengine;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import io.netty5.buffer.api.Send;
@@ -14,6 +15,7 @@ import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
+import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -40,7 +42,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {
 
-		return indexSearchersMono.flatMap(indexSearchers -> {
+		return singleOrClose(indexSearchersMono, indexSearchers -> {
 			Mono<LocalQueryParams> queryParamsMono;
 			if (transformer == NO_REWRITE) {
 				queryParamsMono = Mono.just(queryParams);

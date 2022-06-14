@@ -183,7 +183,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 						(DoubleRange[]) bucketRanges
 				);
 			}
-			FacetResult children = facets.getTopChildren(0, bucketField);
+			FacetResult children = facets.getTopChildren(1, bucketField);
 			if (AMORTIZE && randomSamplingEnabled) {
 				var cfg = new FacetsConfig();
 				for (Range bucketRange : bucketRanges) {

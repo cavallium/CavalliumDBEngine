@@ -14,13 +14,18 @@ import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
 public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
+
+	private static final Logger LOG = LogManager.getLogger(UnsortedUnscoredSimpleMultiSearcher.class);
 
 	private final LocalSearcher localSearcher;
 
@@ -29,30 +34,27 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {
 
-		return LLUtils.usingSendResource(indexSearchersMono,
-				indexSearchers -> {
-					Mono<LocalQueryParams> queryParamsMono;
-					if (transformer == NO_REWRITE) {
-						queryParamsMono = Mono.just(queryParams);
-					} else {
-						queryParamsMono = Mono
-								.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-								.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-					}
+		return indexSearchersMono.flatMap(indexSearchers -> {
+			Mono<LocalQueryParams> queryParamsMono;
+			if (transformer == NO_REWRITE) {
+				queryParamsMono = Mono.just(queryParams);
+			} else {
+				queryParamsMono = Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
+			}
 
-					return queryParamsMono.flatMap(queryParams2 -> {
+			return queryParamsMono.flatMap(queryParams2 -> {
 						var localQueryParams = getLocalQueryParams(queryParams2);
 						return Flux
-								.fromIterable(indexSearchers.shards())
-								.flatMap(searcher -> {
-									var llSearcher = Mono.fromCallable(() -> new LLIndexSearcher(searcher, false, null).send());
-									return localSearcher.collect(llSearcher, localQueryParams, keyFieldName, transformer);
-								})
+								.fromIterable(indexSearchers.llShards())
+								.flatMap(searcher ->
+										localSearcher.collect(Mono.just(searcher), localQueryParams, keyFieldName, transformer))
 								.collectList()
 								.map(results -> {
 									List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
@@ -78,8 +80,10 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 												luceneSearchResult.close();
 											}
 										}
-										if (indexSearchers.isAccessible()) {
+										try {
 											indexSearchers.close();
+										} catch (IOException e) {
+											LOG.error("Can't close index searchers", e);
 										}
 									});
 								})
@@ -94,11 +98,9 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
 									}
 								});
-							}
-					);
-				},
-				false
-		);
+					}
+			);
+		});
 	}
 
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {

@@ -27,7 +27,7 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	public Mono<LuceneSearchResult> collect(Mono<LLIndexSearcher> indexSearcherMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
@@ -52,7 +52,7 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {

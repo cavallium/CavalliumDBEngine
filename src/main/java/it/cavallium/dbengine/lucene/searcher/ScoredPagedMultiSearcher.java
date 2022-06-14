@@ -27,54 +27,54 @@ import reactor.core.scheduler.Schedulers;
 
 public class ScoredPagedMultiSearcher implements MultiSearcher {
 
-	protected static final Logger logger = LogManager.getLogger(ScoredPagedMultiSearcher.class);
+	protected static final Logger LOG = LogManager.getLogger(ScoredPagedMultiSearcher.class);
 
 	public ScoredPagedMultiSearcher() {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		Mono<LocalQueryParams> queryParamsMono;
-		if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-			queryParamsMono = Mono.just(queryParams);
-		} else {
-			queryParamsMono = indexSearchersMono
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-					.handle((indexSearchers, sink) -> {
-						try {
-							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
-						} catch (IOException ex) {
-							sink.error(ex);
-						}
-					});
-		}
+		return indexSearchersMono.flatMap(indexSearchers -> {
+			Mono<LocalQueryParams> queryParamsMono;
+			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
+				queryParamsMono = Mono.just(queryParams);
+			} else {
+				queryParamsMono = Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
+			}
 
-		return queryParamsMono.flatMap(queryParams2 -> {
-			PaginationInfo paginationInfo = getPaginationInfo(queryParams2);
+			return queryParamsMono.flatMap(queryParams2 -> {
+				PaginationInfo paginationInfo = getPaginationInfo(queryParams2);
 
-			return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
-							// Search first page results
-							.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
-							// Compute the results of the first page
-							.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers,
-									keyFieldName, queryParams2))
-							// Compute other results
-							.map(firstResult -> this.computeOtherResults(firstResult,
-									indexSearchers.shards(),
-									queryParams2,
-									keyFieldName,
-									() -> {
-										if (indexSearchers.isAccessible()) {
-											indexSearchers.close();
-										}
+				return this
+						// Search first page results
+						.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
+						// Compute the results of the first page
+						.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono,
+								indexSearchers,
+								keyFieldName,
+								queryParams2
+						))
+						// Compute other results
+						.map(firstResult -> this.computeOtherResults(firstResult,
+								indexSearchers.shards(),
+								queryParams2,
+								keyFieldName,
+								() -> {
+									try {
+										indexSearchers.close();
+									} catch (IOException e) {
+										LOG.error("Can't close index searchers", e);
 									}
-							))
-							// Ensure that one LuceneSearchResult is always returned
-							.single(),
-					false);
+								}
+						))
+						// Ensure that one LuceneSearchResult is always returned
+						.single();
+			});
 		});
 	}
 
@@ -155,10 +155,10 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 					AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
 					return Mono
 							.fromSupplier(currentPageInfoRef::get)
-							.doOnNext(s -> logger.trace("Current page info: {}", s))
+							.doOnNext(s -> LOG.trace("Current page info: {}", s))
 							.flatMap(currentPageInfo -> this.searchPage(queryParams, indexSearchers, true,
 									queryParams.pageLimits(), 0, currentPageInfo))
-							.doOnNext(s -> logger.trace("Next page info: {}", s.nextPageInfo()))
+							.doOnNext(s -> LOG.trace("Next page info: {}", s.nextPageInfo()))
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})

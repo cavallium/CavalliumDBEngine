@@ -14,22 +14,25 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
 
 public class DecimalBucketMultiSearcher {
 
 	protected static final Logger logger = LogManager.getLogger(DecimalBucketMultiSearcher.class);
 
-	public Mono<Buckets> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<Buckets> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			BucketParams bucketParams,
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery) {
 
-		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
-						// Search results
-						.search(indexSearchers.shards(), bucketParams, queries, normalizationQuery)
-						// Ensure that one result is always returned
-						.single(),
-				true);
+		return Mono.usingWhen(indexSearchersMono, indexSearchers -> this
+				// Search results
+				.search(indexSearchers.shards(), bucketParams, queries, normalizationQuery)
+				// Ensure that one result is always returned
+				.single(), indexSearchers -> Mono.fromCallable(() -> {
+			indexSearchers.close();
+			return null;
+		}).subscribeOn(Schedulers.boundedElastic()));
 	}
 
 	private Mono<Buckets> search(Iterable<IndexSearcher> indexSearchers,

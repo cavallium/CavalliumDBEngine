@@ -12,6 +12,7 @@ import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.function.Tuples;
 
 public class AdaptiveLocalSearcher implements LocalSearcher {
 
@@ -41,28 +42,22 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcher,
+	public Mono<LuceneSearchResult> collect(Mono<LLIndexSearcher> indexSearcherMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		Mono<Send<LLIndexSearchers>> indexSearchersMono = indexSearcher
-				.map(LLIndexSearchers::unsharded)
-				.map(ResourceSupport::send);
+		return indexSearcherMono.flatMap(indexSearcher -> {
+			var indexSearchers = LLIndexSearchers.unsharded(indexSearcher);
 
-		if (transformer == NO_REWRITE) {
-			return transformedCollect(indexSearcher, queryParams, keyFieldName, transformer);
-		} else {
-			return indexSearchersMono
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-					.<LocalQueryParams>handle((indexSearchers, sink) -> {
-						try {
-							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
-						} catch (IOException ex) {
-							sink.error(ex);
-						}
-					})
-					.flatMap(queryParams2 -> transformedCollect(indexSearcher, queryParams2, keyFieldName, NO_REWRITE));
-		}
+			if (transformer == NO_REWRITE) {
+				return transformedCollect(indexSearcher, queryParams, keyFieldName, transformer);
+			} else {
+				return Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.flatMap(queryParams2 -> transformedCollect(indexSearcher, queryParams2, keyFieldName, NO_REWRITE));
+			}
+		});
 	}
 
 	@Override
@@ -71,7 +66,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	}
 
 	// Remember to change also AdaptiveMultiSearcher
-	public Mono<LuceneSearchResult> transformedCollect(Mono<Send<LLIndexSearcher>> indexSearcher,
+	public Mono<LuceneSearchResult> transformedCollect(LLIndexSearcher indexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {
@@ -81,36 +76,36 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
 		if (queryParams.limitLong() == 0) {
-			return countSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
+			return countSearcher.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 		} else if (realLimit <= maxInMemoryResultEntries) {
-			return standardSearcher.collect(indexSearcher, queryParams, keyFieldName, transformer);
+			return standardSearcher.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 		} else if (queryParams.isSorted()) {
 			if (realLimit <= maxAllowedInMemoryLimit) {
-				return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
+				return scoredPaged.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 			} else {
 				if (queryParams.isSortedByScore()) {
 					if (queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedByScoreFull != null) {
-						return sortedByScoreFull.collect(indexSearcher, queryParams, keyFieldName, transformer);
+						return sortedByScoreFull.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 					} else {
-						return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
+						return scoredPaged.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 					}
 				} else {
 					if (queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedScoredFull != null) {
-						return sortedScoredFull.collect(indexSearcher, queryParams, keyFieldName, transformer);
+						return sortedScoredFull.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 					} else {
-						return scoredPaged.collect(indexSearcher, queryParams, keyFieldName, transformer);
+						return scoredPaged.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 					}
 				}
 			}
 		} else {
 			// Run large/unbounded searches using the continuous multi searcher
-			return unsortedUnscoredContinuous.collect(indexSearcher, queryParams, keyFieldName, transformer);
+			return unsortedUnscoredContinuous.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 		}
 	}
 }

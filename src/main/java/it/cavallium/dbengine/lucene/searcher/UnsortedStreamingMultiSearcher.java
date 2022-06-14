@@ -9,8 +9,11 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
+import java.io.IOException;
 import java.util.List;
 import it.cavallium.dbengine.lucene.hugepq.search.CustomHitsThresholdChecker;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.jetbrains.annotations.Nullable;
@@ -20,13 +23,15 @@ import reactor.core.scheduler.Schedulers;
 
 public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 
+
+	protected static final Logger LOG = LogManager.getLogger(UnsortedStreamingMultiSearcher.class);
+
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-
-		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
+		return indexSearchersMono.flatMap(indexSearchers -> {
 			Mono<LocalQueryParams> queryParamsMono;
 			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
 				queryParamsMono = Mono.just(queryParams);
@@ -54,12 +59,14 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 						.take(queryParams2.limitLong(), true);
 
 				return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-					if (indexSearchers.isAccessible()) {
+					try {
 						indexSearchers.close();
+					} catch (IOException e) {
+						LOG.error("Can't close index searchers", e);
 					}
 				});
 			});
-		}, false);
+		});
 	}
 
 	private Flux<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {

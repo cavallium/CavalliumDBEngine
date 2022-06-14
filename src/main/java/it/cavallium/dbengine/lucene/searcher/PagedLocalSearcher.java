@@ -15,6 +15,8 @@ import it.cavallium.dbengine.lucene.collector.TopDocsCollectorMultiManager;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
@@ -28,47 +30,52 @@ import reactor.core.scheduler.Schedulers;
 
 public class PagedLocalSearcher implements LocalSearcher {
 
+	private static final Logger LOG = LogManager.getLogger(PagedLocalSearcher.class);
+
 	@Override
-	public Mono<LuceneSearchResult> collect(Mono<Send<LLIndexSearcher>> indexSearcherMono,
+	public Mono<LuceneSearchResult> collect(Mono<LLIndexSearcher> indexSearcherMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded).map(ResourceSupport::send);
+		return indexSearcherMono.flatMap(indexSearcher -> {
+			var indexSearchers = LLIndexSearchers.unsharded(indexSearcher);
 
-		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
-					Mono<LocalQueryParams> queryParamsMono;
-					if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-						queryParamsMono = Mono.just(queryParams);
-					} else {
-						queryParamsMono = Mono
-								.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-								.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-					}
+			Mono<LocalQueryParams> queryParamsMono;
+			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
+				queryParamsMono = Mono.just(queryParams);
+			} else {
+				queryParamsMono = Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
+			}
 
-					return queryParamsMono.flatMap(queryParams2 -> this
+			return queryParamsMono.flatMap(queryParams2 -> this
 					// Search first page results
 					.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
 					// Compute the results of the first page
-					.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers.shards(),
-							keyFieldName, queryParams2))
+					.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono,
+							indexSearchers.shards(),
+							keyFieldName,
+							queryParams2
+					))
 					// Compute other results
 					.transform(firstResult -> this.computeOtherResults(firstResult,
 							indexSearchers.shards(),
 							queryParams2,
 							keyFieldName,
 							() -> {
-								if (indexSearchers.isAccessible()) {
-									indexSearchers.close();
+								try {
+									indexSearcher.close();
+								} catch (IOException e) {
+									LOG.error(e);
 								}
 							}
 					))
 					// Ensure that one LuceneSearchResult is always returned
-					.single()
-			);
-		},
-		false);
+					.single());
+		});
 	}
 
 	@Override

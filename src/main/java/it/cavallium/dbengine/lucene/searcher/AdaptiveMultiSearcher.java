@@ -40,28 +40,23 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		if (transformer == NO_REWRITE) {
-			return transformedCollectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-		} else {
-			return indexSearchersMono
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-					.<LocalQueryParams>handle((indexSearchers, sink) -> {
-						try {
-							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
-						} catch (IOException ex) {
-							sink.error(ex);
-						}
-					})
-					.flatMap(queryParams2 -> transformedCollectMulti(indexSearchersMono, queryParams2, keyFieldName, NO_REWRITE));
-		}
+		return indexSearchersMono.flatMap(indexSearchers -> {
+			if (transformer == NO_REWRITE) {
+				return transformedCollectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+			} else {
+				return Mono.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.flatMap(queryParams2 -> transformedCollectMulti(indexSearchers, queryParams2, keyFieldName, NO_REWRITE));
+			}
+		});
 	}
 
 	// Remember to change also AdaptiveLocalSearcher
-	public Mono<LuceneSearchResult> transformedCollectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> transformedCollectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
@@ -70,40 +65,38 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		long maxAllowedInMemoryLimit
 				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
-		return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> {
-			if (queryParams.limitLong() == 0) {
-				return count.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-			} else if (realLimit <= maxInMemoryResultEntries) {
-				return standardSearcher.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-			} else if (queryParams.isSorted()) {
-				if (realLimit <= maxAllowedInMemoryLimit) {
-					return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-				} else {
-					if (queryParams.isSortedByScore()) {
-						if (queryParams.limitLong() < maxInMemoryResultEntries) {
-							throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
-						}
-						if (sortedByScoreFull != null) {
-							return sortedByScoreFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-						} else {
-							return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-						}
+		if (queryParams.limitLong() == 0) {
+			return count.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
+		} else if (realLimit <= maxInMemoryResultEntries) {
+			return standardSearcher.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
+		} else if (queryParams.isSorted()) {
+			if (realLimit <= maxAllowedInMemoryLimit) {
+				return scoredPaged.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
+			} else {
+				if (queryParams.isSortedByScore()) {
+					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
+					}
+					if (sortedByScoreFull != null) {
+						return sortedByScoreFull.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
 					} else {
-						if (queryParams.limitLong() < maxInMemoryResultEntries) {
-							throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
-						}
-						if (sortedScoredFull != null) {
-							return sortedScoredFull.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-						} else {
-							return scoredPaged.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
-						}
+						return scoredPaged.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
+					}
+				} else {
+					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
+					}
+					if (sortedScoredFull != null) {
+						return sortedScoredFull.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
+					} else {
+						return scoredPaged.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
 					}
 				}
-			} else {
-				// Run large/unbounded searches using the continuous multi searcher
-				return unsortedUnscoredContinuous.collectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
 			}
-		}, true);
+		} else {
+			// Run large/unbounded searches using the continuous multi searcher
+			return unsortedUnscoredContinuous.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
+		}
 	}
 
 	@Override

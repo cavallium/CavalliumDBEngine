@@ -9,6 +9,7 @@ import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
+import java.lang.ref.Cleaner;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -52,12 +53,14 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	private final AtomicLong activeSearchers = new AtomicLong(0);
 	private final AtomicLong activeRefreshes = new AtomicLong(0);
 
-	private final LoadingCache<LLSnapshot, Mono<Send<LLIndexSearcher>>> cachedSnapshotSearchers;
-	private final Mono<Send<LLIndexSearcher>> cachedMainSearcher;
+	private final LoadingCache<LLSnapshot, Mono<LLIndexSearcher>> cachedSnapshotSearchers;
+	private final Mono<LLIndexSearcher> cachedMainSearcher;
 
 	private final AtomicBoolean closeRequested = new AtomicBoolean();
 	private final Empty<Void> closeRequestedMono = Sinks.empty();
 	private final Mono<Void> closeMono;
+
+	private final Cleaner cleaner = Cleaner.create();
 
 	public CachedIndexSearcherManager(IndexWriter indexWriter,
 			SnapshotsManager snapshotsManager,
@@ -96,7 +99,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				.maximumSize(3)
 				.build(new CacheLoader<>() {
 					@Override
-					public Mono<Send<LLIndexSearcher>> load(@NotNull LLSnapshot snapshot) {
+					public Mono<LLIndexSearcher> load(@NotNull LLSnapshot snapshot) {
 						return CachedIndexSearcherManager.this.generateCachedSearcher(snapshot);
 					}
 				});
@@ -141,25 +144,42 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				.cache();
 	}
 
-	private Mono<Send<LLIndexSearcher>> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
+	private Mono<LLIndexSearcher> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
 		return Mono.fromCallable(() -> {
-					if (closeRequested.get()) {
-						return null;
+			if (closeRequested.get()) {
+				return null;
+			}
+			activeSearchers.incrementAndGet();
+			IndexSearcher indexSearcher;
+			boolean fromSnapshot;
+			if (snapshot == null) {
+				indexSearcher = searcherManager.acquire();
+				fromSnapshot = false;
+			} else {
+				indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(searchExecutor);
+				fromSnapshot = true;
+			}
+			indexSearcher.setSimilarity(similarity);
+			assert indexSearcher.getIndexReader().getRefCount() > 0;
+			LLIndexSearcher llIndexSearcher;
+			if (fromSnapshot) {
+				llIndexSearcher = new SnapshotIndexSearcher(indexSearcher);
+			} else {
+				var released = new AtomicBoolean();
+				llIndexSearcher = new MainIndexSearcher(indexSearcher, released);
+				cleaner.register(llIndexSearcher, () -> {
+					if (released.compareAndSet(false, true)) {
+						logger.warn("An index searcher was not closed!");
+						try {
+							searcherManager.release(indexSearcher);
+						} catch (IOException e) {
+							logger.error("Failed to release the index searcher", e);
+						}
 					}
-					activeSearchers.incrementAndGet();
-					IndexSearcher indexSearcher;
-					boolean decRef;
-					if (snapshot == null) {
-						indexSearcher = searcherManager.acquire();
-						decRef = true;
-					} else {
-						indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(searchExecutor);
-						decRef = false;
-					}
-					indexSearcher.setSimilarity(similarity);
-					assert indexSearcher.getIndexReader().getRefCount() > 0;
-					return new LLIndexSearcher(indexSearcher, decRef, this::dropCachedIndexSearcher).send();
 				});
+			}
+			return llIndexSearcher;
+		});
 	}
 
 	private void dropCachedIndexSearcher() {
@@ -192,7 +212,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	}
 
 	@Override
-	public Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot) {
+	public Mono<LLIndexSearcher> retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		if (snapshot == null) {
 			return this.cachedMainSearcher;
 		} else {
@@ -211,5 +231,35 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	public long getActiveRefreshes() {
 		return activeRefreshes.get();
+	}
+
+	private class MainIndexSearcher extends LLIndexSearcher {
+
+		private final AtomicBoolean released;
+
+		public MainIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean released) {
+			super(indexSearcher);
+			this.released = released;
+		}
+
+		@Override
+		public void onClose() throws IOException {
+			dropCachedIndexSearcher();
+			if (released.compareAndSet(false, true)) {
+				searcherManager.release(indexSearcher);
+			}
+		}
+	}
+
+	private class SnapshotIndexSearcher extends LLIndexSearcher {
+
+		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
+			super(indexSearcher);
+		}
+
+		@Override
+		public void onClose() {
+			dropCachedIndexSearcher();
+		}
 	}
 }

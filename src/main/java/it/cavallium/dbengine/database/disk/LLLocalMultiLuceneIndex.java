@@ -146,7 +146,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 		return clusterName;
 	}
 
-	private Mono<Send<LLIndexSearchers>> getIndexSearchers(LLSnapshot snapshot) {
+	private Mono<LLIndexSearchers> getIndexSearchers(LLSnapshot snapshot) {
 		return luceneIndicesFlux
 				.index()
 				// Resolve the snapshot of each shard
@@ -155,7 +155,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 						.flatMap(luceneSnapshot -> tuple.getT2().retrieveSearcher(luceneSnapshot.orElse(null)))
 				)
 				.collectList()
-				.map(searchers -> LLIndexSearchers.of(searchers).send());
+				.map(LLIndexSearchers::of);
 	}
 
 	@Override

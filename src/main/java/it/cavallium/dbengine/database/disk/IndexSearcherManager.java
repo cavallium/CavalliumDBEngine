@@ -15,7 +15,7 @@ public interface IndexSearcherManager {
 
 	void maybeRefresh() throws IOException;
 
-	Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot);
+	Mono<LLIndexSearcher> retrieveSearcher(@Nullable LLSnapshot snapshot);
 
 	Mono<Void> close();
 }

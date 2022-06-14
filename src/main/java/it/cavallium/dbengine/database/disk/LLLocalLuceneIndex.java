@@ -27,6 +27,7 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -510,14 +511,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			localQueries.add(QueryParser.toQuery(query, luceneAnalyzer));
 		}
 		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
-		var searchers = searcherManager
+		Mono<LLIndexSearchers> searchers = searcherManager
 				.retrieveSearcher(snapshot)
-				.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher).send());
+				.map(LLIndexSearchers::unsharded);
 
 		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
 	}
 
-	public Mono<Send<LLIndexSearcher>> retrieveSearcher(@Nullable LLSnapshot snapshot) {
+	public Mono<LLIndexSearcher> retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		return searcherManager.retrieveSearcher(snapshot);
 	}
 

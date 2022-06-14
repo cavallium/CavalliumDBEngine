@@ -22,7 +22,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 
-	protected static final Logger logger = LogManager.getLogger(SortedByScoreFullMultiSearcher.class);
+	protected static final Logger LOG = LogManager.getLogger(SortedByScoreFullMultiSearcher.class);
 
 	private final LLTempHugePqEnv env;
 
@@ -31,40 +31,34 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<Send<LLIndexSearchers>> indexSearchersMono,
+	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		Mono<LocalQueryParams> queryParamsMono;
-		if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-			queryParamsMono = Mono.just(queryParams);
-		} else {
-			queryParamsMono = indexSearchersMono
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-					.handle((indexSearchers, sink) -> {
-						try {
-							sink.next(transformer.rewrite(indexSearchers.receive(), queryParams));
-						} catch (IOException ex) {
-							sink.error(ex);
-						}
-					});
-		}
-
-		return queryParamsMono.flatMap(queryParams2 -> {
-			if (queryParams2.isSorted() && !queryParams2.isSortedByScore()) {
-				throw new IllegalArgumentException(SortedByScoreFullMultiSearcher.this.getClass().getSimpleName()
-						+ " doesn't support sorted queries");
+		return indexSearchersMono.flatMap(indexSearchers -> {
+			Mono<LocalQueryParams> queryParamsMono;
+			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
+				queryParamsMono = Mono.just(queryParams);
+			} else {
+				queryParamsMono = Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
 			}
 
-			return LLUtils.usingSendResource(indexSearchersMono, indexSearchers -> this
-							// Search results
-							.search(indexSearchers.shards(), queryParams2)
-							// Compute the results
-							.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers,
-									keyFieldName, queryParams2))
-							// Ensure that one LuceneSearchResult is always returned
-							.single(),
-					false);
+			return queryParamsMono.flatMap(queryParams2 -> {
+				if (queryParams2.isSorted() && !queryParams2.isSortedByScore()) {
+					throw new IllegalArgumentException(SortedByScoreFullMultiSearcher.this.getClass().getSimpleName()
+							+ " doesn't support sorted queries");
+				}
+
+				return this
+						// Search results
+						.search(indexSearchers.shards(), queryParams2)
+						// Compute the results
+						.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers, keyFieldName, queryParams2))
+						// Ensure that one LuceneSearchResult is always returned
+						.single();
+			});
 		});
 	}
 
@@ -127,13 +121,15 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 					.take(queryParams.limitLong(), true);
 
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
-				if (indexSearchers.isAccessible()) {
+				try {
 					indexSearchers.close();
+				} catch (IOException e) {
+					LOG.error("Can't close index searchers", e);
 				}
 				try {
 					data.close();
 				} catch (Exception e) {
-					logger.error("Failed to discard data", e);
+					LOG.error("Failed to discard data", e);
 				}
 			});
 		});

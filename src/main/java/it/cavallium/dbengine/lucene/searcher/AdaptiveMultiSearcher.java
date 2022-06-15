@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher.FORCE_HUGE_PQ;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import io.netty5.buffer.api.Send;
@@ -35,8 +36,8 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
 	public AdaptiveMultiSearcher(LLTempHugePqEnv env, boolean useHugePq, int maxInMemoryResultEntries) {
-		sortedByScoreFull = useHugePq ? new SortedByScoreFullMultiSearcher(env) : null;
-		sortedScoredFull = useHugePq ?  new SortedScoredFullMultiSearcher(env) : null;
+		sortedByScoreFull = (FORCE_HUGE_PQ || useHugePq) ? new SortedByScoreFullMultiSearcher(env) : null;
+		sortedScoredFull = (FORCE_HUGE_PQ || useHugePq) ?  new SortedScoredFullMultiSearcher(env) : null;
 		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 
@@ -66,16 +67,16 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		long maxAllowedInMemoryLimit
 				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
-		if (queryParams.limitLong() == 0) {
+		if (!FORCE_HUGE_PQ && queryParams.limitLong() == 0) {
 			return count.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
-		} else if (realLimit <= maxInMemoryResultEntries) {
+		} else if (!FORCE_HUGE_PQ && realLimit <= maxInMemoryResultEntries) {
 			return standardSearcher.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
-		} else if (queryParams.isSorted()) {
-			if (realLimit <= maxAllowedInMemoryLimit) {
+		} else if (FORCE_HUGE_PQ || queryParams.isSorted()) {
+			if (!FORCE_HUGE_PQ && realLimit <= maxAllowedInMemoryLimit) {
 				return scoredPaged.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
 			} else {
 				if (queryParams.isSortedByScore()) {
-					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+					if (!FORCE_HUGE_PQ && queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedByScoreFull != null) {
@@ -84,7 +85,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 						return scoredPaged.collectMulti(Mono.just(indexSearchers), queryParams, keyFieldName, transformer);
 					}
 				} else {
-					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+					if (!FORCE_HUGE_PQ && queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedScoredFull != null) {

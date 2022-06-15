@@ -9,6 +9,8 @@ import it.cavallium.dbengine.lucene.HugePqPriorityQueue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -68,6 +70,20 @@ public class TestHugePq {
 			queue.add(i);
 		}
 		Assertions.assertEquals(0, queue.top());
+	}
+
+	@Test
+	public void testAddRandomMulti() {
+		var list = new ArrayList<Integer>(1000);
+		for (int i = 0; i < 1000; i++) {
+			var n = ThreadLocalRandom.current().nextInt(-20, 20);
+			queue.add(n);
+			list.add(n);
+		}
+		list.sort(Comparator.reverseOrder());
+		for (int i = 0; i < 1000; i++) {
+			Assertions.assertEquals(list.remove(list.size() - 1), queue.pop());
+		}
 	}
 
 	@Test

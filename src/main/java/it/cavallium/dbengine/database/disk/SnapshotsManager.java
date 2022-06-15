@@ -88,12 +88,9 @@ public class SnapshotsManager {
 					throw new IOException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
 				}
 
-				indexSnapshot.close();
-
 				var luceneIndexSnapshot = indexSnapshot.getSnapshot();
 				snapshotter.release(luceneIndexSnapshot);
-				// Delete unused files after releasing the snapshot
-				indexWriter.deleteUnusedFiles();
+				indexSnapshot.close();
 				return null;
 			} finally {
 				activeTasks.arriveAndDeregister();

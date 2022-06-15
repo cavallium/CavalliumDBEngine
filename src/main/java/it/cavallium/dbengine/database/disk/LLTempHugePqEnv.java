@@ -15,6 +15,7 @@ import org.rocksdb.ChecksumType;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
+import org.rocksdb.CompressionType;
 import org.rocksdb.DBOptions;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.RocksDB;
@@ -81,10 +82,13 @@ public class LLTempHugePqEnv implements Closeable {
 		var opts = new ColumnFamilyOptions()
 				.setOptimizeFiltersForHits(true)
 				.setParanoidFileChecks(false)
+				.setEnableBlobFiles(true)
+				.setBlobCompressionType(CompressionType.LZ4_COMPRESSION)
 				.optimizeLevelStyleCompaction()
 				.setLevelCompactionDynamicLevelBytes(true)
 				.setTableFormatConfig(new BlockBasedTableConfig()
 						.setOptimizeFiltersForMemory(true)
+						.setVerifyCompression(false)
 						.setChecksumType(ChecksumType.kNoChecksum));
 		if (comparator != null) {
 			opts.setComparator(comparator);

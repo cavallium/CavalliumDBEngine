@@ -11,8 +11,10 @@ import it.cavallium.dbengine.lucene.PriorityQueue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Random;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import org.apache.lucene.search.HitQueue;
 import org.apache.lucene.search.ScoreDoc;
@@ -146,6 +148,22 @@ public class TestHugePqHitQueue {
 			testingPriorityQueue.addUnsafe(item);
 		}
 		assertEqualsScoreDoc(new TextDescription("top value of %s", testingPriorityQueue), new ScoreDoc(1, 0, -1), testingPriorityQueue.top());
+	}
+
+	@Test
+	public void testAddMultiRandom() {
+		var list = new ArrayList<Integer>(1000);
+		for (int i = 0; i < 1000; i++) {
+			var ri = ThreadLocalRandom.current().nextInt(0, 20);
+			list.add(ri);
+			var item = new ScoreDoc(ri, ri << 1, ri % 4);
+			testingPriorityQueue.addUnsafe(item);
+		}
+		list.sort(Comparator.reverseOrder());
+		for (int i = 0; i < 1000; i++) {
+			var top = list.remove(list.size() - 1);
+			assertEqualsScoreDoc(new TextDescription("%d value of %s", i, testingPriorityQueue), new ScoreDoc(top, top << 1, top % 4), testingPriorityQueue.pop());
+		}
 	}
 
 	@Test

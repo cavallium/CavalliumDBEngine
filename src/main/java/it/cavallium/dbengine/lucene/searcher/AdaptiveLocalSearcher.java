@@ -14,6 +14,9 @@ import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveLocalSearcher implements LocalSearcher {
 
+	static final boolean FORCE_HUGE_PQ
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.hugepq.force", "false"));
+
 	private static final StandardSearcher standardSearcher = new StandardSearcher();
 
 	private static final LocalSearcher scoredPaged = new PagedLocalSearcher();
@@ -34,8 +37,8 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	private final SortedScoredFullMultiSearcher sortedScoredFull;
 
 	public AdaptiveLocalSearcher(LLTempHugePqEnv env, boolean useHugePq, int maxInMemoryResultEntries) {
-		sortedByScoreFull = useHugePq ? new SortedByScoreFullMultiSearcher(env) : null;
-		sortedScoredFull = useHugePq ? new SortedScoredFullMultiSearcher(env) : null;
+		sortedByScoreFull = (FORCE_HUGE_PQ || useHugePq) ? new SortedByScoreFullMultiSearcher(env) : null;
+		sortedScoredFull = (FORCE_HUGE_PQ || useHugePq) ? new SortedScoredFullMultiSearcher(env) : null;
 		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 
@@ -73,16 +76,16 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 		long maxAllowedInMemoryLimit
 				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
-		if (queryParams.limitLong() == 0) {
+		if (!FORCE_HUGE_PQ && queryParams.limitLong() == 0) {
 			return countSearcher.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
-		} else if (realLimit <= maxInMemoryResultEntries) {
+		} else if (!FORCE_HUGE_PQ && realLimit <= maxInMemoryResultEntries) {
 			return standardSearcher.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
-		} else if (queryParams.isSorted()) {
-			if (realLimit <= maxAllowedInMemoryLimit) {
+		} else if (FORCE_HUGE_PQ || queryParams.isSorted()) {
+			if (!FORCE_HUGE_PQ && realLimit <= maxAllowedInMemoryLimit) {
 				return scoredPaged.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 			} else {
 				if (queryParams.isSortedByScore()) {
-					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+					if (!FORCE_HUGE_PQ && queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedByScoreFull != null) {
@@ -91,7 +94,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 						return scoredPaged.collect(Mono.just(indexSearcher), queryParams, keyFieldName, transformer);
 					}
 				} else {
-					if (queryParams.limitLong() < maxInMemoryResultEntries) {
+					if (!FORCE_HUGE_PQ && queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
 					if (sortedScoredFull != null) {

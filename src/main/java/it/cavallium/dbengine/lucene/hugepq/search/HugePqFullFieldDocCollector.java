@@ -471,7 +471,7 @@ public abstract class HugePqFullFieldDocCollector extends
 	final void updateBottom(int doc) {
 		// bottom.score is already set to Float.NaN in add().
 		var bottom = pq.top();
-		pq.replaceTop(new LLSlotDoc(docBase + doc, bottom.score(), bottom.shardIndex(), bottom.slot()));
+		pq.replaceTop(bottom, new LLSlotDoc(docBase + doc, bottom.score(), bottom.shardIndex(), bottom.slot()));
 	}
 
 	/*

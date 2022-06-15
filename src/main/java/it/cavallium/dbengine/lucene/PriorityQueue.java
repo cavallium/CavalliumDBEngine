@@ -23,7 +23,7 @@ public interface PriorityQueue<T> extends ResourceIterable<T>, SafeCloseable {
 	/**
 	 * Replace the top of the pq with {@code newTop}
 	 */
-	void replaceTop(T newTop);
+	void replaceTop(T oldTop, T newTop);
 
 	/**
 	 * Returns the number of elements currently stored in the PriorityQueue.

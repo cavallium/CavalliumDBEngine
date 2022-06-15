@@ -8,6 +8,6 @@ class LLDocElementScoreComparator implements Comparator<LLDoc> {
 
 	@Override
 	public int compare(LLDoc hitA, LLDoc hitB) {
-		return Float.compare(hitA.score(), hitB.score());
+		return Float.compare(hitB.score(), hitA.score());
 	}
 }

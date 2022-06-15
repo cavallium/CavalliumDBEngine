@@ -4,6 +4,7 @@ import it.cavallium.dbengine.lucene.PriorityQueue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.apache.lucene.search.HitQueue;
 import reactor.core.publisher.Flux;
 
@@ -35,7 +36,8 @@ public class PriorityQueueAdaptor<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public void replaceTop(T newTop) {
+	public void replaceTop(T oldTop, T newTop) {
+		assert Objects.equals(oldTop, hitQueue.top());
 		hitQueue.updateTop(newTop);
 	}
 

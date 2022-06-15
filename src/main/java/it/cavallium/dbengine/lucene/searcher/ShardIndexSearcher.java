@@ -8,6 +8,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.Set;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermStates;
@@ -16,17 +17,16 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.QueryVisitor;
 import org.apache.lucene.search.TermStatistics;
+import org.jetbrains.annotations.Nullable;
 
 public class ShardIndexSearcher extends IndexSearcher {
 	public final int myNodeID;
 	private final IndexSearcher[] searchers;
 
-	private final Map<FieldAndShar, CollectionStatistics> collectionStatsCache;
+	private final Map<FieldAndShar, CachedCollectionStatistics> collectionStatsCache;
 	private final Map<TermAndShard, TermStatistics> termStatsCache;
 
-	public ShardIndexSearcher(SharedShardStatistics sharedShardStatistics,
-			List<IndexSearcher> searchers,
-			int nodeID) {
+	public ShardIndexSearcher(SharedShardStatistics sharedShardStatistics, List<IndexSearcher> searchers, int nodeID) {
 		super(searchers.get(nodeID).getIndexReader(), searchers.get(nodeID).getExecutor());
 		this.collectionStatsCache = sharedShardStatistics.collectionStatsCache;
 		this.termStatsCache = sharedShardStatistics.termStatsCache;
@@ -93,15 +93,13 @@ public class ShardIndexSearcher extends IndexSearcher {
 
 			final Set<Term> missing = new HashSet<>();
 			for (Term term : terms) {
-				final TermAndShard key =
-						new TermAndShard(nodeID, term);
+				final TermAndShard key = new TermAndShard(nodeID, term);
 				if (!termStatsCache.containsKey(key)) {
 					missing.add(term);
 				}
 			}
 			if (missing.size() != 0) {
-				for (Map.Entry<Term, TermStatistics> ent :
-						getNodeTermStats(missing, nodeID).entrySet()) {
+				for (Map.Entry<Term, TermStatistics> ent : getNodeTermStats(missing, nodeID).entrySet()) {
 					if (ent.getValue() != null) {
 						final TermAndShard key = new TermAndShard(nodeID, ent.getKey());
 						termStatsCache.put(key, ent.getValue());
@@ -115,8 +113,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 
 	// Mock: in a real env, this would hit the wire and get
 	// term stats from remote node
-	Map<Term, TermStatistics> getNodeTermStats(Set<Term> terms, int nodeID)
-			throws IOException {
+	Map<Term, TermStatistics> getNodeTermStats(Set<Term> terms, int nodeID) throws IOException {
 		var s = searchers[nodeID];
 		final Map<Term, TermStatistics> stats = new HashMap<>();
 		if (s == null) {
@@ -143,8 +140,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 			if (nodeID == myNodeID) {
 				subStats = super.termStatistics(term, docFreq, totalTermFreq);
 			} else {
-				final TermAndShard key =
-						new TermAndShard(nodeID, term);
+				final TermAndShard key = new TermAndShard(nodeID, term);
 				subStats = termStatsCache.get(key);
 				if (subStats == null) {
 					continue; // term not found
@@ -176,8 +172,14 @@ public class ShardIndexSearcher extends IndexSearcher {
 			final CollectionStatistics nodeStats;
 			if (nodeID == myNodeID) {
 				nodeStats = super.collectionStatistics(field);
+				collectionStatsCache.put(key, new CachedCollectionStatistics(nodeStats));
 			} else {
-				nodeStats = collectionStatsCache.get(key);
+				var nodeStatsOptional = collectionStatsCache.get(key);
+				if (nodeStatsOptional == null) {
+					nodeStatsOptional = new CachedCollectionStatistics(computeNodeCollectionStatistics(key));
+					collectionStatsCache.put(key, nodeStatsOptional);
+				}
+				nodeStats = nodeStatsOptional.collectionStatistics();
 			}
 			if (nodeStats == null) {
 				continue; // field not in sub at all
@@ -202,6 +204,13 @@ public class ShardIndexSearcher extends IndexSearcher {
 			return new CollectionStatistics(field, maxDoc, docCount, sumTotalTermFreq, sumDocFreq);
 		}
 	}
+
+	private CollectionStatistics computeNodeCollectionStatistics(FieldAndShar fieldAndShard) throws IOException {
+		var searcher = searchers[fieldAndShard.nodeID];
+		return searcher.collectionStatistics(fieldAndShard.field);
+	}
+
+	public record CachedCollectionStatistics(@Nullable CollectionStatistics collectionStatistics) {}
 
 	public static class TermAndShard {
 		private final int nodeID;

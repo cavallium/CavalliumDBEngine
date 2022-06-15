@@ -311,9 +311,9 @@ public class TestHugePqHitQueue {
 		}
 
 		@Override
-		public void replaceTop(ScoreDoc newTop) {
-			referenceQueue.replaceTop(newTop);
-			myQueue.replaceTop(newTop);
+		public void replaceTop(ScoreDoc oldTop, ScoreDoc newTop) {
+			referenceQueue.replaceTop(oldTop, newTop);
+			myQueue.replaceTop(oldTop, newTop);
 		}
 
 		@Override

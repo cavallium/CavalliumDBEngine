@@ -34,9 +34,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 		FullDocs<T> docs = new FullDocs<>() {
 			@Override
 			public void close() {
-				for (FullDocs<T> fullDoc : fullDocs) {
-					fullDoc.close();
-				}
+				mergedIterable.close();
 			}
 
 			@Override
@@ -78,7 +76,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 	static <T extends LLDoc> ResourceIterable<T> mergeResourceIterable(
 			@Nullable Sort sort,
 			FullDocs<T>[] fullDocs) {
-		return new ResourceIterable<T>() {
+		return new ResourceIterable<>() {
 			@Override
 			public void close() {
 				for (FullDocs<T> fullDoc : fullDocs) {
@@ -138,7 +136,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 				@SuppressWarnings("unchecked") Flux<T>[] fluxes = new Flux[fullDocs.length];
 				for (int i = 0; i < iterables.length; i++) {
 					var shardIndex = i;
-					fluxes[i] = iterables[i].<T>map(shard -> {
+					fluxes[i] = iterables[i].map(shard -> {
 						if (shard instanceof LLScoreDoc scoreDoc) {
 							//noinspection unchecked
 							return (T) new LLScoreDoc(scoreDoc.doc(), scoreDoc.score(), shardIndex);

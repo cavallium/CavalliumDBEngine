@@ -33,6 +33,7 @@ import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorable;
+import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.TotalHits;
 import org.jetbrains.annotations.NotNull;
@@ -106,8 +107,7 @@ public abstract class HugePqFullScoreDocCollector extends
 
 					// If there is a limit, and it's reached, use the replacement logic
 					if (limit != null && pq.size() >= limit) {
-						var pqTop = pq.top();
-						if (pqTop != null && score <= pqTop.score()) {
+						if (pq.top() != null && score <= pq.top().score()) {
 							if (totalHitsRelation == TotalHits.Relation.EQUAL_TO) {
 								// we just reached totalHitsThreshold, we can start setting the min
 								// competitive score now
@@ -119,7 +119,7 @@ public abstract class HugePqFullScoreDocCollector extends
 							return;
 						} else {
 							// Remove the top element, then add the following element
-							pq.replaceTop(new LLScoreDoc(doc + docBase, score, -1));
+							pq.replaceTop(pq.top(), new LLScoreDoc(doc + docBase, score, -1));
 							// The minimum competitive score will be updated later
 						}
 					} else {
@@ -296,13 +296,12 @@ public abstract class HugePqFullScoreDocCollector extends
 	}
 
 	protected void updateMinCompetitiveScore(Scorable scorer) throws IOException {
-		var pqTop = pq.top();
 		if (hitsThresholdChecker.isThresholdReached(true)
-				&& pqTop != null
-				&& pqTop.score() != Float.NEGATIVE_INFINITY) { // -Infinity is the score of sentinels
+				&& pq.top() != null
+				&& pq.top().score() != Float.NEGATIVE_INFINITY) { // -Infinity is the score of sentinels
 			// since we tie-break on doc id and collect in doc id order, we can require
 			// the next float
-			float localMinScore = Math.nextUp(pqTop.score());
+			float localMinScore = Math.nextUp(pq.top().score());
 			if (localMinScore > minCompetitiveScore) {
 				scorer.setMinCompetitiveScore(localMinScore);
 				totalHitsRelation = TotalHits.Relation.GREATER_THAN_OR_EQUAL_TO;
@@ -311,7 +310,7 @@ public abstract class HugePqFullScoreDocCollector extends
 					// we don't use the next float but we register the document
 					// id so that other leaves can require it if they are after
 					// the current maximum
-					minScoreAcc.accumulate(docBase, pqTop.score());
+					minScoreAcc.accumulate(docBase, pq.top().score());
 				}
 			}
 		}

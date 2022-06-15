@@ -10,7 +10,6 @@ import it.cavallium.dbengine.database.disk.RocksIterWithReadOpts;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultMode;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
-import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -41,6 +40,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	private final HugePqCodec<T> codec;
 
 	private long size = 0;
+
+	private T cachedTop;
+	private boolean cachedTopSet = false;
 
 	public HugePqPriorityQueue(LLTempHugePqEnv env, HugePqCodec<T> codec) {
 		this.tempEnv = env;
@@ -74,6 +76,7 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	public void add(T element) {
 		ensureThread();
 
+		cachedTopSet = false;
 		var keyBuf = serializeKey(element);
 		try (keyBuf) {
 			try (var readOptions = newReadOptions(); var writeOptions = newWriteOptions()) {
@@ -107,6 +110,9 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 
 	@Override
 	public T top() {
+		if (cachedTopSet) {
+			return cachedTop;
+		}
 		ensureThread();
 		return databaseTop();
 	}
@@ -118,9 +124,14 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 			if (it.isValid()) {
 				var key = it.key();
 				try (var keyBuf = rocksDB.getAllocator().copyOf(key)) {
-					return deserializeKey(keyBuf);
+					var top = deserializeKey(keyBuf);
+					cachedTop = top;
+					cachedTopSet = true;
+					return top;
 				}
 			} else {
+				cachedTop = null;
+				cachedTopSet = true;
 				return null;
 			}
 		} catch (RocksDBException e) {
@@ -131,6 +142,7 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	@Override
 	public T pop() {
 		ensureThread();
+		cachedTopSet = false;
 		try (var readOptions = newReadOptions();
 				var writeOptions = newWriteOptions();
 				var it  = rocksDB.newRocksIterator(true, readOptions, LLRange.all(), false)) {
@@ -177,10 +189,36 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	}
 
 	@Override
-	public void replaceTop(T newTop) {
+	public void replaceTop(T oldTop, T newTop) {
 		ensureThread();
-		this.pop();
-		this.add(newTop);
+		cachedTopSet = false;
+		if (oldTop == null) {
+			add(newTop);
+			cachedTop = newTop;
+			cachedTopSet = true;
+		} else {
+			try (var readOptions = newReadOptions();
+					var writeOptions = newWriteOptions();
+					var oldKeyBuf = serializeKey(oldTop);
+					var newKeyBuf = serializeKey(newTop);
+					var ignored = rocksDB.updateAtomic(readOptions,
+							writeOptions,
+							oldKeyBuf,
+							this::reduceOrRemove,
+							UpdateAtomicResultMode.NOTHING
+					);
+					var ignored2 = rocksDB.updateAtomic(readOptions,
+							writeOptions,
+							newKeyBuf,
+							this::incrementOrAdd,
+							UpdateAtomicResultMode.NOTHING
+					)) {
+				cachedTop = newTop;
+				cachedTopSet = true;
+			} catch (IOException ex) {
+				throw new IllegalStateException(ex);
+			}
+		}
 	}
 
 	@Override
@@ -192,6 +230,7 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	@Override
 	public void clear() {
 		ensureThread();
+		cachedTopSet = false;
 		try (var wb = new WriteBatch(); var wo = newWriteOptions()) {
 			wb.deleteRange(rocksDB.getColumnFamilyHandle(), new byte[0], getBiggestKey());
 			size = 0;
@@ -211,6 +250,7 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	public boolean remove(@NotNull T element) {
 		ensureThread();
 		Objects.requireNonNull(element);
+		cachedTopSet = false;
 		try (var readOptions = newReadOptions();
 				var writeOptions = newWriteOptions();
 				var keyBuf = serializeKey(element)) {
@@ -294,7 +334,11 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 			}
 
 			return t;
-		}, RocksIterWithReadOpts::close).concatMapIterable(item -> item);
+		}, rocksIterWithReadOpts -> {
+			if (rocksIterWithReadOpts != null) {
+				rocksIterWithReadOpts.close();
+			}
+		}).concatMapIterable(item -> item);
 	}
 
 	@Override
@@ -309,7 +353,6 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	@Override
 	public void close() {
 		if (closed.compareAndSet(false, true)) {
-			ensureThread();
 			this.tempEnv.freeDb(hugePqId);
 			if (this.codec instanceof SafeCloseable closeable) {
 				closeable.close();

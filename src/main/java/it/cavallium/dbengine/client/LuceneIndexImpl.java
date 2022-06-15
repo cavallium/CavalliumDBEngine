@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
@@ -146,20 +147,15 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return this
-				.search(ClientQueryParams
-						.builder()
-						.snapshot(snapshot)
-						.query(query)
-						.timeout(Duration.ofSeconds(30))
-						.limit(0)
-						.build())
-				.single()
-				.map(searchResultKeys -> {
-					try (searchResultKeys) {
-						return searchResultKeys.totalHitsCount();
-					}
-				});
+		return Mono.usingWhen(this.search(ClientQueryParams
+				.builder()
+				.snapshot(snapshot)
+				.query(query)
+				.timeout(Duration.ofSeconds(30))
+				.limit(0)
+				.build()), searchResultKeys -> {
+			return Mono.just(searchResultKeys.totalHitsCount());
+		}, LLUtils::finalizeResource);
 	}
 
 	@Override

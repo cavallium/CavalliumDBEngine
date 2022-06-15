@@ -18,7 +18,7 @@ versions:
           DoubleNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, FloatPointExactQuery,
           FloatPointExactQuery, DoublePointExactQuery, LongNDPointExactQuery, FloatNDPointExactQuery,
           DoubleNDPointExactQuery, IntPointSetQuery, LongPointSetQuery, FloatPointSetQuery, DoublePointSetQuery,
-          StandardQuery
+          StandardQuery, FieldExistsQuery
       ]
       Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
       Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
@@ -130,6 +130,10 @@ versions:
         data:
           field: String
           value: double[]
+      # Query that matches the existence of a field.
+      FieldExistsQuery:
+        data:
+          field: String
       # Query that matches a phrase.
       PhraseQuery:
         data:

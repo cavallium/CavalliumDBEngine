@@ -11,6 +11,7 @@ import it.cavallium.dbengine.client.query.current.data.DoublePointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.DoublePointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.DoublePointSetQuery;
 import it.cavallium.dbengine.client.query.current.data.DoubleTermQuery;
+import it.cavallium.dbengine.client.query.current.data.FieldExistsQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatNDPointExactQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatNDPointRangeQuery;
 import it.cavallium.dbengine.client.query.current.data.FloatNDTermQuery;
@@ -223,6 +224,9 @@ public class QueryParser {
 				return new org.apache.lucene.search.TermQuery(new Term(doubleNDTermQuery.field(),
 						DoublePoint.pack(doubleNDTermQuery.value().toDoubleArray())
 				));
+			case FieldExistsQuery:
+				var fieldExistQuery = (FieldExistsQuery) query;
+				return new org.apache.lucene.search.FieldExistsQuery(fieldExistQuery.field());
 			case BoostQuery:
 				var boostQuery = (BoostQuery) query;
 				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.query(), analyzer), boostQuery.scoreBoost());

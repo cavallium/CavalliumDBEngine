@@ -36,12 +36,12 @@ import reactor.core.scheduler.Schedulers;
 public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger LOG = LogManager.getLogger(CachedIndexSearcherManager.class);
-	private final ExecutorService searchExecutor = Executors.newFixedThreadPool(
+	private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
 			Runtime.getRuntime().availableProcessors(),
 			new ShortNamedThreadFactory("lucene-search")
 					.setDaemon(true).withGroup(new ThreadGroup("lucene-search"))
 	);
-	private final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(searchExecutor);
+	private static final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
 
 	private final SnapshotsManager snapshotsManager;
 	private final Scheduler luceneHeavyTasksScheduler;
@@ -128,11 +128,11 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					LOG.debug("Stopping searcher executor...");
 					cachedSnapshotSearchers.invalidateAll();
 					cachedSnapshotSearchers.cleanUp();
-					searchExecutor.shutdown();
+					SEARCH_EXECUTOR.shutdown();
 					try {
 						//noinspection BlockingMethodInNonBlockingContext
-						if (!searchExecutor.awaitTermination(15, TimeUnit.SECONDS)) {
-							searchExecutor.shutdownNow();
+						if (!SEARCH_EXECUTOR.awaitTermination(15, TimeUnit.SECONDS)) {
+							SEARCH_EXECUTOR.shutdownNow();
 						}
 					} catch (InterruptedException e) {
 						LOG.error("Failed to stop executor", e);
@@ -155,7 +155,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				indexSearcher = searcherManager.acquire();
 				fromSnapshot = false;
 			} else {
-				indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(searchExecutor);
+				indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
 				fromSnapshot = true;
 			}
 			indexSearcher.setSimilarity(similarity);

@@ -58,6 +58,7 @@ import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.Cache;
 import org.rocksdb.ChecksumType;
+import org.rocksdb.ClockCache;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
@@ -98,6 +99,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 	private static final boolean DELETE_LOG_FILES = false;
 	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = true;
+	private static final boolean USE_CLOCK_CACHE
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.clockcache.enable", "true"));
+
+	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
 
 	static {
 		RocksDB.loadLibrary();
@@ -954,11 +959,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(0)
 					.setMaxTotalWalSize(0) // automatic
 			;
-			// DO NOT USE ClockCache! IT'S BROKEN!
-			blockCache = new LRUCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 8L * SizeUnit.MB));
+			blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse(8L * SizeUnit.MB));
 			refs.track(blockCache);
 			if (databaseOptions.compressedBlockCache().isPresent()) {
-				compressedCache = new LRUCache(databaseOptions.compressedBlockCache().get());
+				compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
 				refs.track(compressedCache);
 			} else {
 				compressedCache = null;
@@ -991,11 +995,10 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalSizeLimitMB(0) // Auto
 					.setMaxTotalWalSize(0) // Auto
 			;
-			// DO NOT USE ClockCache! IT'S BROKEN!
-			blockCache = new LRUCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
+			blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
 			refs.track(blockCache);
 			if (databaseOptions.compressedBlockCache().isPresent()) {
-				compressedCache = new LRUCache(databaseOptions.compressedBlockCache().get());
+				compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
 				refs.track(compressedCache);
 			} else {
 				compressedCache = null;

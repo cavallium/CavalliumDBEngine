@@ -8,7 +8,7 @@ public record RocksIterWithReadOpts(ReadOptions readOptions, RocksIteratorObj it
 
 	@Override
 	public void close() {
-		if (readOptions != null) {
+		if (readOptions != null && readOptions.isAccessible()) {
 			readOptions.close();
 		}
 		iter.close();

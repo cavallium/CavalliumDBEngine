@@ -1108,7 +1108,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		try {
 			ensureOpen();
 			var snapshotHandle = snapshotsHandles.get(snapshot.getSequenceNumber());
-			ensureOwned(snapshotHandle);
+			//ensureOwned(snapshotHandle);
 			return snapshotHandle;
 		} finally {
 			closeLock.unlockRead(closeReadSnapLock);

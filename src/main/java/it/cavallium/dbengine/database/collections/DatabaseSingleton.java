@@ -104,7 +104,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 		var resultMono = singleton.get(resolveSnapshot(snapshot));
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -120,7 +120,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 				.last();
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -146,7 +146,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 			}, updateReturnMode);
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -181,7 +181,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 		var resultMono = Flux.concat(singleton.get(null), singleton.set(Mono.empty()).then(Mono.empty())).last();
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 

@@ -5,6 +5,7 @@ import com.google.common.primitives.Longs;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -33,7 +34,7 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 						return serializer.deserialize(result);
 					}
 				}),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -80,7 +81,7 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 		}, updateReturnMode);
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(result::readLong),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		).single();
 	}
 

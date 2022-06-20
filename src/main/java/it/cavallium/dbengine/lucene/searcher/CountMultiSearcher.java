@@ -74,7 +74,7 @@ public class CountMultiSearcher implements MultiSearcher {
 									.take(queryParams2.limitLong(), true);
 
 							return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-								resultsToDrop.forEach(SimpleResource::close);
+								resultsToDrop.forEach(LLUtils::finalizeResourceNow);
 								try {
 									indexSearchers.close();
 								} catch (IOException e) {

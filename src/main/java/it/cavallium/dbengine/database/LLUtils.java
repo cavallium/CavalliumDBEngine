@@ -643,11 +643,21 @@ public class LLUtils {
 	}
 
 	public static Mono<Void> finalizeResource(Resource<?> resource) {
-		return Mono.fromRunnable(() -> LLUtils.closeResource(resource));
+		return Mono.fromRunnable(() -> LLUtils.finalizeResourceNow(resource));
 	}
 
 	public static Mono<Void> finalizeResource(SimpleResource resource) {
-		return Mono.fromRunnable(() -> LLUtils.closeResource(resource));
+		return Mono.fromRunnable(resource::close);
+	}
+
+	public static void finalizeResourceNow(Resource<?> resource) {
+		if (resource.isAccessible()) {
+			resource.close();
+		}
+	}
+
+	public static void finalizeResourceNow(SimpleResource resource) {
+		resource.close();
 	}
 
 	public static <V> Flux<V> handleDiscard(Flux<V> flux) {
@@ -869,7 +879,7 @@ public class LLUtils {
 				newCurr = null;
 			}
 			return new Delta<>(newPrev, newCurr);
-		}), delta -> Mono.fromRunnable(delta::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {

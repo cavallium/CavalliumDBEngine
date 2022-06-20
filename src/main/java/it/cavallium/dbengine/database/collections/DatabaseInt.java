@@ -4,6 +4,7 @@ import com.google.common.primitives.Ints;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.Nullable;
@@ -23,7 +24,7 @@ public class DatabaseInt implements LLKeyValueDatabaseStructure {
 		var resultMono = singleton.get(snapshot);
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> serializer.deserialize(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 

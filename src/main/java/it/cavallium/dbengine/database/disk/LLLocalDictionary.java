@@ -258,7 +258,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> keyMono) {
 		return Mono.usingWhen(keyMono,
 				key -> runOnDb(false, () -> this.getSync(snapshot, key)),
-				key -> Mono.fromRunnable(key::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -329,7 +329,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} finally {
 				endedContains.increment();
 			}
-		}), range -> Mono.fromRunnable(range::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	private boolean containsKey(@Nullable LLSnapshot snapshot, Buffer key) throws RocksDBException {
@@ -454,7 +454,7 @@ public class LLLocalDictionary implements LLDictionary {
 				}
 				throw ex;
 			}
-		}), key -> Mono.fromRunnable(key::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	@SuppressWarnings("DuplicatedCode")
@@ -492,7 +492,7 @@ public class LLLocalDictionary implements LLDictionary {
 				}
 				throw ex;
 			}
-		}), key -> Mono.fromRunnable(key::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -516,7 +516,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} catch (RocksDBException ex) {
 				throw new RocksDBException("Failed to delete: " + ex.getMessage());
 			}
-		}), key -> Mono.fromRunnable(key::close));
+		}), LLUtils::finalizeResource);
 		// Read the previous data, then delete the data, then return the previous data
 		return Flux.concat(previousDataMono, removeMono).singleOrEmpty();
 	}
@@ -526,7 +526,7 @@ public class LLLocalDictionary implements LLDictionary {
 			case PREVIOUS_VALUE_EXISTENCE -> Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
 				var contained = containsKey(null, key);
 				return LLUtils.booleanToResponseByteBuffer(alloc, contained);
-			}), key -> Mono.fromRunnable(key::close));
+			}), LLUtils::finalizeResource);
 			case PREVIOUS_VALUE -> Mono.usingWhen(keyMono, key -> runOnDb(false, () -> {
 				assert !Schedulers.isInNonBlockingThread() : "Called getPreviousData in a nonblocking thread";
 				Buffer result;
@@ -540,7 +540,7 @@ public class LLLocalDictionary implements LLDictionary {
 				}
 				logger.trace(MARKER_ROCKSDB, "Read {}: {}", () -> toStringSafe(key), () -> toStringSafe(result));
 				return result;
-			}), key -> Mono.fromRunnable(key::close));
+			}), LLUtils::finalizeResource);
 			case VOID -> Mono.empty();
 		};
 	}
@@ -671,7 +671,7 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						} finally {
 							for (var mappedInput : mappedInputs) {
-								mappedInput.getT3().ifPresent(Resource::close);
+								mappedInput.getT3().ifPresent(LLUtils::finalizeResourceNow);
 							}
 						}
 
@@ -761,7 +761,7 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
-				iterator -> Mono.fromRunnable(iterator::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -780,7 +780,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return Flux.usingWhen(
 				iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
-				iterator -> Mono.fromRunnable(iterator::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -821,7 +821,7 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbRScheduler, false),
-				iterator -> Mono.fromRunnable(iterator::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -860,7 +860,7 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						})
 						.subscribeOn(dbRScheduler),
-				range -> Mono.fromRunnable(range::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -880,7 +880,7 @@ public class LLLocalDictionary implements LLDictionary {
 		});
 		return Flux.usingWhen(iteratorMono,
 				iterator -> iterator.flux().subscribeOn(dbRScheduler),
-				iterator -> Mono.fromRunnable(iterator::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -891,7 +891,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} else {
 				return null;
 			}
-		}), key -> Mono.fromRunnable(key::close)).flux();
+		}), LLUtils::finalizeResource).flux();
 	}
 
 	private record RocksObjTuple<T extends AbstractNativeReference, U extends Resource<?>>(T t1, U t2) implements SafeCloseable {
@@ -969,7 +969,7 @@ public class LLLocalDictionary implements LLDictionary {
 						} catch (RocksDBException ex) {
 							throw new RocksDBException("Failed to set a range: " + ex.getMessage());
 						}
-					}), range -> Mono.fromRunnable(range::close))
+					}), LLUtils::finalizeResource)
 					.thenMany(entries.window(MULTI_GET_WINDOW))
 					.flatMap(keysWindowFlux -> keysWindowFlux
 							.collectList()
@@ -1199,7 +1199,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} catch (RocksDBException ex) {
 				throw new RocksDBException("Failed to get size of range: " + ex.getMessage());
 			}
-		}), range -> Mono.fromRunnable(range::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -1228,7 +1228,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} catch (RocksDBException ex) {
 				throw new RocksDBException("Failed to get one entry: " + ex.getMessage());
 			}
-		}), range -> Mono.fromRunnable(range::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -1253,7 +1253,7 @@ public class LLLocalDictionary implements LLDictionary {
 			} catch (RocksDBException ex) {
 				throw new RocksDBException("Failed to get one key: " + ex.getMessage());
 			}
-		}), range -> Mono.fromRunnable(range::close));
+		}), LLUtils::finalizeResource);
 	}
 
 	private long fastSizeAll(@Nullable LLSnapshot snapshot) throws RocksDBException {
@@ -1387,7 +1387,7 @@ public class LLLocalDictionary implements LLDictionary {
 					return LLEntry.of(key, value);
 				}
 			}
-		}), range -> Mono.fromRunnable(range::close));
+		}), LLUtils::finalizeResource);
 	}
 
 }

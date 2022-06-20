@@ -184,7 +184,7 @@ public class LLMemoryDictionary implements LLDictionary {
 						.fromCallable(() -> snapshots.get(resolveSnapshot(snapshot)).get(kShr(key)))
 						.map(this::kkB)
 						.onErrorMap(cause -> new IOException("Failed to read", cause)),
-				key -> Mono.fromRunnable(key::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -238,7 +238,7 @@ public class LLMemoryDictionary implements LLDictionary {
 					var oldVal = oldRef.get();
 					return LLDelta.of(oldVal != null ? kkB(oldRef.get()) : null, newValue != null ? kkB(newValue) : null);
 				}),
-				key -> Mono.fromRunnable(key::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -266,7 +266,7 @@ public class LLMemoryDictionary implements LLDictionary {
 							}
 						}))
 						.onErrorMap(cause -> new IOException("Failed to read", cause)),
-				key -> Mono.fromRunnable(key::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -330,7 +330,7 @@ public class LLMemoryDictionary implements LLDictionary {
 						})
 						.map(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())));
 			}
-		}, range -> Mono.fromRunnable(range::close));
+		}, LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -362,7 +362,7 @@ public class LLMemoryDictionary implements LLDictionary {
 							);
 				}
 			}
-		}, range -> Mono.fromRunnable(range::close));
+		}, LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -397,7 +397,7 @@ public class LLMemoryDictionary implements LLDictionary {
 								.map(this::kkB);
 					}
 				},
-				range -> Mono.fromRunnable(range::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -434,7 +434,7 @@ public class LLMemoryDictionary implements LLDictionary {
 							);
 				}
 			}
-		}, range -> Mono.fromRunnable(range::close));
+		}, LLUtils::finalizeResource);
 	}
 
 	@SuppressWarnings("RedundantCast")
@@ -466,7 +466,7 @@ public class LLMemoryDictionary implements LLDictionary {
 							.map(this::kkB);
 				}
 			}
-		}, range -> Mono.fromRunnable(range::close));
+		}, LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -503,7 +503,7 @@ public class LLMemoryDictionary implements LLDictionary {
 						}
 					})
 					.then();
-		}, range -> Mono.fromRunnable(range::close));
+		}, LLUtils::finalizeResource);
 	}
 
 	private boolean isInsideRange(BLRange range, ByteList key) {
@@ -528,7 +528,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fillCache) {
 		return getRangeKeys(snapshot, rangeMono, false, false)
-				.doOnNext(Resource::close)
+				.doOnNext(LLUtils::finalizeResourceNow)
 				.count()
 				.map(count -> count == 0);
 	}
@@ -537,7 +537,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fast) {
 		return Mono.usingWhen(rangeMono,
 				range -> Mono.fromCallable(() -> (long) mapSlice(snapshot, range).size()),
-				range -> Mono.fromRunnable(range::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -587,7 +587,7 @@ public class LLMemoryDictionary implements LLDictionary {
 							.map(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())));
 				}
 			}
-		}, range -> Mono.fromRunnable(range::close));
+		}, LLUtils::finalizeResource);
 	}
 
 	@Override

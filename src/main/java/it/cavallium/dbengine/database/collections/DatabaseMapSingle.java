@@ -113,7 +113,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	public Mono<U> get(@Nullable CompositeSnapshot snapshot) {
 		return Mono.usingWhen(dictionary.get(resolveSnapshot(snapshot), keyMono),
 				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
-				buf -> Mono.fromRunnable(buf::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -122,7 +122,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 		return Mono.usingWhen(dictionary
 						.put(keyMono, Mono.fromCallable(() -> serializeValue(value)), LLDictionaryResultType.PREVIOUS_VALUE),
 				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
-				buf -> Mono.fromRunnable(buf::close));
+				LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -147,7 +147,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 				}, updateReturnMode);
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> deserializeValue(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -174,7 +174,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	public Mono<U> clearAndGetPrevious() {
 		return Mono.usingWhen(dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE),
 				result -> Mono.fromSupplier(() -> deserializeValue(result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 

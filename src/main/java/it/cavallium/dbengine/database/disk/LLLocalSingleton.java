@@ -151,7 +151,7 @@ public class LLLocalSingleton implements LLSingleton {
 				case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
 			};
 		}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-		keySend -> Mono.fromRunnable(keySend::close));
+				LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -166,7 +166,7 @@ public class LLLocalSingleton implements LLSingleton {
 			}
 			return ((UpdateAtomicResultDelta) result).delta();
 		}).onErrorMap(cause -> new IOException("Failed to read or write", cause)),
-		keySend -> Mono.fromRunnable(keySend::close));
+				LLUtils::finalizeResource);
 	}
 
 	@Override

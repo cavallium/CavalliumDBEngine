@@ -421,12 +421,12 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			} else if (range.isSingle()) {
 				return dictionary
 						.remove(Mono.fromCallable(range::getSingleUnsafe), LLDictionaryResultType.VOID)
-						.doOnNext(Resource::close)
+						.doOnNext(LLUtils::finalizeResourceNow)
 						.then();
 			} else {
 				return dictionary.setRange(rangeMono, Flux.empty(), false);
 			}
-		}, ResourceSupport::close);
+		}, LLUtils::finalizeResourceNow);
 	}
 
 	protected T deserializeSuffix(@NotNull Buffer keySuffix) throws SerializationException {

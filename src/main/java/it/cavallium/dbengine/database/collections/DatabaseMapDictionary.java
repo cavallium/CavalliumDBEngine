@@ -274,7 +274,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return Mono.usingWhen(dictionary
 				.get(resolveSnapshot(snapshot), Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix))),
 				value -> Mono.fromCallable(() -> deserializeValue(keySuffix, value)),
-				value -> Mono.fromRunnable(value::close));
+				LLUtils::finalizeResource);
 	}
 
 	@Override
@@ -283,7 +283,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var valueMono = Mono.fromCallable(() -> serializeValue(value)).single();
 		return Mono.usingWhen(dictionary.put(keyMono, valueMono, LLDictionaryResultType.VOID),
 				v -> Mono.empty(),
-				v -> Mono.fromRunnable(v::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -298,7 +298,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix));
 		return Mono.usingWhen(dictionary.update(keyMono, getSerializedUpdater(updater), updateReturnMode),
 				result -> Mono.fromCallable(() -> deserializeValue(keySuffix, result)),
-				result -> Mono.fromRunnable(result::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -355,7 +355,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var valueMono = Mono.fromCallable(() -> serializeValue(value));
 		return Mono.usingWhen(dictionary.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE),
 				valueBuf -> Mono.fromCallable(() -> deserializeValue(keySuffix, valueBuf)),
-				valueBuf -> Mono.fromRunnable(valueBuf::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -366,7 +366,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		return Mono
 				.usingWhen(dictionary.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE),
 						valueBuf -> Mono.fromCallable(() -> deserializeValue(keySuffix, valueBuf)),
-						valueBuf -> Mono.fromRunnable(valueBuf::close)
+						LLUtils::finalizeResource
 				)
 				.map(oldValue -> !Objects.equals(oldValue, value))
 				.defaultIfEmpty(value != null);
@@ -377,7 +377,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix));
 		return dictionary
 				.remove(keyMono, LLDictionaryResultType.VOID)
-				.doOnNext(Resource::close)
+				.doOnNext(LLUtils::finalizeResourceNow)
 				.then();
 	}
 
@@ -386,7 +386,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix));
 		return Mono.usingWhen(dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE),
 				valueBuf -> Mono.fromCallable(() -> deserializeValue(keySuffix, valueBuf)),
-				valueBuf -> Mono.fromRunnable(valueBuf::close)
+				LLUtils::finalizeResource
 		);
 	}
 
@@ -535,7 +535,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		} else {
 			Mono<LLRange> boundedRangeMono = Mono.usingWhen(rangeMono,
 					range -> Mono.fromCallable(() -> getPatchedRange(range, keyMin, keyMax)),
-					range -> Mono.fromRunnable(range::close));
+					LLUtils::finalizeResource);
 			return getAllValues(snapshot, boundedRangeMono, reverse, smallRange);
 		}
 	}
@@ -580,12 +580,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			} else if (range.isSingle()) {
 				return dictionary
 						.remove(Mono.fromCallable(range::getSingleUnsafe), LLDictionaryResultType.VOID)
-						.doOnNext(Resource::close)
+						.doOnNext(LLUtils::finalizeResourceNow)
 						.then();
 			} else {
 				return dictionary.setRange(rangeMono, Flux.empty(), false);
 			}
-		}, ResourceSupport::close);
+		}, LLUtils::finalizeResourceNow);
 	}
 
 }

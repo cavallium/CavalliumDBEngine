@@ -16,18 +16,26 @@ import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
 public final class Hits<T> extends SimpleResource {
+
+	private static final Hits<?> EMPTY_HITS = new Hits<>(Flux.empty(), TotalHitsCount.of(0, true), null, false);
 	private Flux<T> results;
 	private TotalHitsCount totalHitsCount;
 	private Runnable onClose;
 
 	public Hits(Flux<T> results, TotalHitsCount totalHitsCount, Runnable onClose) {
+		this(results, totalHitsCount, onClose, true);
+	}
+
+	private Hits(Flux<T> results, TotalHitsCount totalHitsCount, Runnable onClose, boolean canClose) {
+		super(canClose);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 		this.onClose = onClose;
 	}
 
+	@SuppressWarnings("unchecked")
 	public static <T> Hits<T> empty() {
-		return new Hits<>(Flux.empty(), TotalHitsCount.of(0, true), null);
+		return (Hits<T>) EMPTY_HITS;
 	}
 
 	public static <K, V> Hits<LazyHitEntry<K, V>> withValuesLazy(Hits<LazyHitKey<K>> hits,

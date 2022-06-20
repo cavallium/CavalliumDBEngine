@@ -124,7 +124,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.collectList()
 				.flatMap(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
-				.single()
+				.defaultIfEmpty(Hits.empty())
 				.doOnDiscard(LLSearchResultShard.class, SimpleResource::close)
 				.doOnDiscard(Hits.class, SimpleResource::close);
 	}
@@ -153,9 +153,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.query(query)
 				.timeout(Duration.ofSeconds(30))
 				.limit(0)
-				.build()), searchResultKeys -> {
-			return Mono.just(searchResultKeys.totalHitsCount());
-		}, LLUtils::finalizeResource);
+				.build()), searchResultKeys -> Mono.just(searchResultKeys.totalHitsCount()), LLUtils::finalizeResource);
 	}
 
 	@Override

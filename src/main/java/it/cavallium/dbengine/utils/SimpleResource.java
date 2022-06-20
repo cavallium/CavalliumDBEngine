@@ -6,20 +6,29 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public abstract class SimpleResource implements SafeCloseable {
 
 	private final AtomicBoolean closed = new AtomicBoolean();
+	private final boolean canClose;
+
+	public SimpleResource() {
+		canClose = true;
+	}
+
+	protected SimpleResource(boolean canClose) {
+		this.canClose = canClose;
+	}
 
 	@Override
 	public final void close() {
-		if (closed.compareAndSet(false, true)) {
+		if (canClose && closed.compareAndSet(false, true)) {
 			onClose();
 		}
 	}
 
 	private boolean isClosed() {
-		return closed.get();
+		return canClose && closed.get();
 	}
 
 	protected void ensureOpen() {
-		if (closed.get()) {
+		if (canClose && closed.get()) {
 			throw new IllegalStateException("Resource is closed");
 		}
 	}

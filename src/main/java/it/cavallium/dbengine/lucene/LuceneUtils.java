@@ -4,6 +4,9 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
+import it.cavallium.data.generator.nativedata.Nullabledouble;
+import it.cavallium.data.generator.nativedata.Nullableint;
+import it.cavallium.data.generator.nativedata.Nullablelong;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
@@ -33,6 +36,7 @@ import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneDirectoryOptions;
 import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
+import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.rpc.current.data.MemoryMappedFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NIOFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NRTCachingDirectory;
@@ -67,6 +71,8 @@ import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.MergePolicy;
+import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
@@ -98,6 +104,7 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
+import org.rocksdb.util.SizeUnit;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -140,6 +147,16 @@ public class LuceneUtils {
 	private static final PageLimits DEFAULT_PAGE_LIMITS = new ExponentialPageLimits();
 	private static final CharArraySet ENGLISH_AND_ITALIAN_STOP_WORDS;
 	private static final LuceneIndexStructure SINGLE_STRUCTURE = new LuceneIndexStructure(1, IntList.of(0));
+	private static final it.cavallium.dbengine.rpc.current.data.TieredMergePolicy DEFAULT_MERGE_POLICY = new it.cavallium.dbengine.rpc.current.data.TieredMergePolicy(
+			Nullabledouble.empty(),
+			Nullabledouble.empty(),
+			Nullableint.empty(),
+			Nullablelong.empty(),
+			Nullablelong.empty(),
+			Nullabledouble.empty(),
+			Nullablelong.empty(),
+			Nullabledouble.empty()
+	);
 
 	static {
 		var cas = new CharArraySet(
@@ -608,8 +625,8 @@ public class LuceneUtils {
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
 			var delegateDirectory = createLuceneDirectory(nrtCachingDirectory.delegate(), directoryName, rocksDBManager);
 			return new org.apache.lucene.store.NRTCachingDirectory(delegateDirectory,
-					nrtCachingDirectory.maxMergeSizeBytes() / 1024D / 1024D,
-					nrtCachingDirectory.maxCachedBytes() / 1024D / 1024D
+					toMB(nrtCachingDirectory.maxMergeSizeBytes()),
+					toMB(nrtCachingDirectory.maxCachedBytes())
 			);
 		} else if (directoryOptions instanceof RocksDBSharedDirectory rocksDBSharedDirectory) {
 			var dbInstance = rocksDBManager.getOrCreate(rocksDBSharedDirectory.managedPath());
@@ -686,5 +703,44 @@ public class LuceneUtils {
 
 	public static LuceneIndexStructure shardsStructure(int count) {
 		return new LuceneIndexStructure(count, intListTo(count));
+	}
+
+	public static MergePolicy getMergePolicy(LuceneOptions luceneOptions) {
+		var mergePolicy = new TieredMergePolicy();
+		var mergePolicyOptions = luceneOptions.mergePolicy();
+		if (mergePolicyOptions.deletesPctAllowed().isPresent()) {
+			mergePolicy.setDeletesPctAllowed(mergePolicyOptions.deletesPctAllowed().get());
+		}
+		if (mergePolicyOptions.forceMergeDeletesPctAllowed().isPresent()) {
+			mergePolicy.setForceMergeDeletesPctAllowed(mergePolicyOptions.forceMergeDeletesPctAllowed().get());
+		}
+		if (mergePolicyOptions.maxMergeAtOnce().isPresent()) {
+			mergePolicy.setMaxMergeAtOnce(mergePolicyOptions.maxMergeAtOnce().get());
+		}
+		if (mergePolicyOptions.maxMergedSegmentBytes().isPresent()) {
+			mergePolicy.setMaxMergedSegmentMB(toMB(mergePolicyOptions.maxMergedSegmentBytes().get()));
+		}
+		if (mergePolicyOptions.floorSegmentBytes().isPresent()) {
+			mergePolicy.setFloorSegmentMB(toMB(mergePolicyOptions.floorSegmentBytes().get()));
+		}
+		if (mergePolicyOptions.segmentsPerTier().isPresent()) {
+			mergePolicy.setSegmentsPerTier(mergePolicyOptions.segmentsPerTier().get());
+		}
+		if (mergePolicyOptions.maxCFSSegmentSizeBytes().isPresent()) {
+			mergePolicy.setMaxCFSSegmentSizeMB(toMB(mergePolicyOptions.maxCFSSegmentSizeBytes().get()));
+		}
+		if (mergePolicyOptions.noCFSRatio().isPresent()) {
+			mergePolicy.setNoCFSRatio(mergePolicyOptions.noCFSRatio().get());
+		}
+		return mergePolicy;
+	}
+
+	public static double toMB(long bytes) {
+		if (bytes == Long.MAX_VALUE) return Double.MAX_VALUE;
+		return ((double) bytes) / 1024D / 1024D;
+	}
+
+	public static it.cavallium.dbengine.rpc.current.data.TieredMergePolicy getDefaultMergePolicy() {
+		return DEFAULT_MERGE_POLICY;
 	}
 }

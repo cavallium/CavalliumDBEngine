@@ -42,7 +42,8 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 			Nullableboolean.empty(),
 			Nullableboolean.empty(),
 			false,
-			MAX_IN_MEMORY_RESULT_ENTRIES
+			MAX_IN_MEMORY_RESULT_ENTRIES,
+			LuceneUtils.getDefaultMergePolicy()
 	);
 
 	@Override

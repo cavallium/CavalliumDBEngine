@@ -332,6 +332,17 @@ versions:
           writeAllDeletes: -boolean
           allowNonVolatileCollection: boolean
           maxInMemoryResultEntries: int
+          mergePolicy: TieredMergePolicy
+      TieredMergePolicy:
+        data:
+          forceMergeDeletesPctAllowed: -double
+          deletesPctAllowed: -double
+          maxMergeAtOnce: -int
+          maxMergedSegmentBytes: -long
+          floorSegmentBytes: -long
+          segmentsPerTier: -double
+          maxCFSSegmentSizeBytes: -long
+          noCFSRatio: -double
       ByteBuffersDirectory: { data: { } }
       MemoryMappedFSDirectory:
         data:

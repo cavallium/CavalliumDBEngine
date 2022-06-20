@@ -203,7 +203,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		logger.trace("WriterSchedulerMaxThreadCount: {}", writerSchedulerMaxThreadCount);
 		indexWriterConfig.setMergeScheduler(mergeScheduler);
-		indexWriterConfig.setMergePolicy(new TieredMergePolicy());
+		indexWriterConfig.setMergePolicy(LuceneUtils.getMergePolicy(luceneOptions));
 		if (luceneOptions.indexWriterRAMBufferSizeMB().isPresent()) {
 			indexWriterConfig.setRAMBufferSizeMB(luceneOptions.indexWriterRAMBufferSizeMB().get());
 		}

@@ -399,6 +399,11 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
+					public Mono<Void> preClose() {
+						return null;
+					}
+
+					@Override
 					public Mono<Void> close() {
 						return sendRequest(new CloseDatabase(id)).then();
 					}

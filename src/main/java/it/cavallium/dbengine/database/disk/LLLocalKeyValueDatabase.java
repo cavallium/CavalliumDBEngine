@@ -75,6 +75,8 @@ import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.IngestExternalFileOptions;
 import org.rocksdb.LRUCache;
+import org.rocksdb.LogFile;
+import org.rocksdb.MutableDBOptions;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
 import org.rocksdb.RocksDB;
@@ -317,9 +319,9 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 						// tableOptions.setOptimizeFiltersForMemory(true);
 						columnFamilyOptions.setWriteBufferSize(256 * SizeUnit.MB);
 					}
-					if (columnOptions.writeBufferSize().isPresent()) {
-						columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
-					}
+				}
+				if (columnOptions.writeBufferSize().isPresent()) {
+					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
 				}
 				tableOptions.setVerifyCompression(false);
 				if (columnOptions.filter().isPresent()) {
@@ -660,10 +662,28 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		try {
 			ensureOpen();
 			ensureOwned(flushOptions);
-			db.flush(flushOptions);
+			db.flush(flushOptions, List.copyOf(getAllColumnFamilyHandles().values()));
+			db.flushWal(true);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
+	}
+
+	@Override
+	public Mono<Void> preClose() {
+		return Mono.<Void>fromCallable(() -> {
+			var closeReadLock = closeLock.readLock();
+			try {
+				ensureOpen();
+				try (var fo = new FlushOptions().setWaitForFlush(true)) {
+					flush(fo);
+				}
+				db.cancelAllBackgroundWork(true);
+				return null;
+			} finally {
+				closeLock.unlockRead(closeReadLock);
+			}
+		}).subscribeOn(dbWScheduler);
 	}
 
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
@@ -955,7 +975,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setWalBytesPerSync(0) // default
 					.setIncreaseParallelism(1)
 					.setDbWriteBufferSize(8 * SizeUnit.MB)
-					.setWalTtlSeconds(0)
+					.setWalTtlSeconds(60)
 					.setWalSizeLimitMB(0)
 					.setMaxTotalWalSize(0) // automatic
 			;
@@ -991,7 +1011,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setBytesPerSync(64 * SizeUnit.MB)
 					.setWalBytesPerSync(64 * SizeUnit.MB)
 
-					.setWalTtlSeconds(0) // Auto
+					.setWalTtlSeconds(60) // Auto
 					.setWalSizeLimitMB(0) // Auto
 					.setMaxTotalWalSize(0) // Auto
 			;
@@ -1507,8 +1527,13 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 		return Mono.<Void>fromCallable(() -> {
 			try (var fo = new FlushOptions().setWaitForFlush(true)) {
 				this.flush(fo);
-				return null;
+			} catch (RocksDBException ex) {
+				if (!"ShutdownInProgress".equals(ex.getMessage())) {
+					throw ex;
+				}
+				logger.warn("Shutdown in progress. Flush cancelled", ex);
 			}
+			return null;
 		}).subscribeOn(dbWScheduler);
 	}
 

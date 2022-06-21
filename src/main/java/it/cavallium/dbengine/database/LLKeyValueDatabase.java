@@ -64,5 +64,6 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	MeterRegistry getMeterRegistry();
 
+	Mono<Void> preClose();
 	Mono<Void> close();
 }

@@ -171,16 +171,20 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
+	public Mono<Void> preClose() {
+		return null;
+	}
+
+	@Override
 	public Mono<Void> close() {
-		return Mono
-				.fromRunnable(() -> {
-					snapshots.forEach((snapshot, dbs) -> dbs.forEach((columnName, db) -> {
-						db.clear();
-					}));
-					mainDb.forEach((columnName, db) -> {
-						db.clear();
-					});
-				});
+		return Mono.fromRunnable(() -> {
+			snapshots.forEach((snapshot, dbs) -> dbs.forEach((columnName, db) -> {
+				db.clear();
+			}));
+			mainDb.forEach((columnName, db) -> {
+				db.clear();
+			});
+		});
 	}
 
 	@Override

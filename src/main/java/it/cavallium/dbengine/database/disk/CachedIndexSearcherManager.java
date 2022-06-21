@@ -149,37 +149,42 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				return null;
 			}
 			activeSearchers.incrementAndGet();
-			IndexSearcher indexSearcher;
-			boolean fromSnapshot;
-			if (snapshot == null) {
-				indexSearcher = searcherManager.acquire();
-				fromSnapshot = false;
-			} else {
-				indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
-				fromSnapshot = true;
-			}
-			indexSearcher.setSimilarity(similarity);
-			assert indexSearcher.getIndexReader().getRefCount() > 0;
-			var closed = new AtomicBoolean();
-			LLIndexSearcher llIndexSearcher;
-			if (fromSnapshot) {
-				llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
-			} else {
-				llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
-			}
-			CLEANER.register(llIndexSearcher, () -> {
-				if (closed.compareAndSet(false, true)) {
-					LOG.warn("An index searcher was not closed!");
-					if (!fromSnapshot) {
-						try {
-							searcherManager.release(indexSearcher);
-						} catch (IOException e) {
-							LOG.error("Failed to release the index searcher", e);
+			try {
+				IndexSearcher indexSearcher;
+				boolean fromSnapshot;
+				if (snapshot == null) {
+					indexSearcher = searcherManager.acquire();
+					fromSnapshot = false;
+				} else {
+					indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
+					fromSnapshot = true;
+				}
+				indexSearcher.setSimilarity(similarity);
+				assert indexSearcher.getIndexReader().getRefCount() > 0;
+				var closed = new AtomicBoolean();
+				LLIndexSearcher llIndexSearcher;
+				if (fromSnapshot) {
+					llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
+				} else {
+					llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
+				}
+				CLEANER.register(llIndexSearcher, () -> {
+					if (closed.compareAndSet(false, true)) {
+						LOG.warn("An index searcher was not closed!");
+						if (!fromSnapshot) {
+							try {
+								searcherManager.release(indexSearcher);
+							} catch (IOException e) {
+								LOG.error("Failed to release the index searcher", e);
+							}
 						}
 					}
-				}
-			});
-			return llIndexSearcher;
+				});
+				return llIndexSearcher;
+			} catch (Throwable ex) {
+				activeSearchers.decrementAndGet();
+				throw ex;
+			}
 		});
 	}
 

@@ -25,6 +25,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
@@ -117,7 +118,8 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> deleteAll() {
-		return luceneIndicesFlux.flatMap(LLLuceneIndex::deleteAll).then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::deleteAll).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	@Override
@@ -192,17 +194,32 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> close() {
-		return luceneIndicesFlux.flatMap(LLLuceneIndex::close).then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::close).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	@Override
 	public Mono<Void> flush() {
-		return luceneIndicesFlux.flatMap(LLLuceneIndex::flush).then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::flush).iterator();
+		return Mono.whenDelayError(it);
+	}
+
+	@Override
+	public Mono<Void> waitForMerges() {
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::waitForMerges).iterator();
+		return Mono.whenDelayError(it);
+	}
+
+	@Override
+	public Mono<Void> waitForLastMerges() {
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::waitForLastMerges).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	@Override
 	public Mono<Void> refresh(boolean force) {
-		return luceneIndicesFlux.flatMap(index -> index.refresh(force)).then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(index -> index.refresh(force)).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	@Override

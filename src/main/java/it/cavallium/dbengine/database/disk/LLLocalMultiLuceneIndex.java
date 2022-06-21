@@ -249,9 +249,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> deleteAll() {
-		return luceneIndicesFlux
-				.flatMap(LLLocalLuceneIndex::deleteAll)
-				.then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::deleteAll).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	private LLSnapshot resolveSnapshot(LLSnapshot multiSnapshot, int instanceId) {
@@ -316,8 +315,9 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> close() {
-		return luceneIndicesFlux
-				.flatMap(LLLocalLuceneIndex::close)
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLocalLuceneIndex::close).iterator();
+		var indicesCloseMono = Mono.whenDelayError(it);
+		return indicesCloseMono
 				.then(Mono.fromCallable(() -> {
 					if (multiSearcher instanceof Closeable closeable) {
 						//noinspection BlockingMethodInNonBlockingContext
@@ -331,16 +331,26 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> flush() {
-		return luceneIndicesFlux
-				.flatMap(LLLocalLuceneIndex::flush)
-				.then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::flush).iterator();
+		return Mono.whenDelayError(it);
+	}
+
+	@Override
+	public Mono<Void> waitForMerges() {
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::waitForMerges).iterator();
+		return Mono.whenDelayError(it);
+	}
+
+	@Override
+	public Mono<Void> waitForLastMerges() {
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::waitForLastMerges).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	@Override
 	public Mono<Void> refresh(boolean force) {
-		return luceneIndicesFlux
-				.flatMap(index -> index.refresh(force))
-				.then();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(index -> index.refresh(force)).iterator();
+		return Mono.whenDelayError(it);
 	}
 
 	@Override

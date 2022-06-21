@@ -82,6 +82,14 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	 */
 	Mono<Void> flush();
 
+	Mono<Void> waitForMerges();
+
+	/**
+	 * Wait for the latest pending merge
+	 * This disables future merges until shutdown!
+	 */
+	Mono<Void> waitForLastMerges();
+
 	/**
 	 * Refresh index searcher
 	 */

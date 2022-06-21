@@ -70,5 +70,9 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	Mono<Void> flush();
 
+	Mono<Void> waitForMerges();
+
+	Mono<Void> waitForLastMerges();
+
 	Mono<Void> refresh(boolean force);
 }

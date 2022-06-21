@@ -514,6 +514,16 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
+					public Mono<Void> waitForMerges() {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> waitForLastMerges() {
+						return null;
+					}
+
+					@Override
 					public Mono<Void> refresh(boolean force) {
 						return null;
 					}

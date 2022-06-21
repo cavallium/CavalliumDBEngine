@@ -8,6 +8,8 @@ import reactor.core.publisher.Mono;
 
 public interface CompositeDatabase extends DatabaseProperties {
 
+	Mono<Void> preClose();
+
 	Mono<Void> close();
 
 	/**

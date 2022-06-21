@@ -451,8 +451,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	private LLRange getPatchedRange(@NotNull LLRange range, @Nullable T keyMin, @Nullable T keyMax)
 			throws SerializationException {
-		Buffer keyMinBuf = requireNonNullElseGet(serializeSuffixForRange(keyMin), range::getMinCopy);
-		Buffer keyMaxBuf = requireNonNullElseGet(serializeSuffixForRange(keyMax), range::getMaxCopy);
+		Buffer keyMinBuf = serializeSuffixForRange(keyMin);
+		if (keyMinBuf == null) {
+			keyMinBuf = range.getMinCopy();
+		}
+		Buffer keyMaxBuf = serializeSuffixForRange(keyMax);
+		if (keyMaxBuf == null) {
+			keyMaxBuf = range.getMaxCopy();
+		}
 		return LLRange.ofUnsafe(keyMinBuf, keyMaxBuf);
 	}
 

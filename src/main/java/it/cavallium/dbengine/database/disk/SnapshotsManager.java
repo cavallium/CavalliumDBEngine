@@ -98,6 +98,13 @@ public class SnapshotsManager {
 		}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())).publishOn(Schedulers.parallel());
 	}
 
+	/**
+	 * Returns the total number of snapshots currently held.
+	 */
+	public int getSnapshotsCount() {
+		return snapshotter.getSnapshotCount();
+	}
+
 	public void close() {
 		if (!activeTasks.isTerminated()) {
 			activeTasks.arriveAndAwaitAdvance();

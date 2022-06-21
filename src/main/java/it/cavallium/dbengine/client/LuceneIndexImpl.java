@@ -174,6 +174,16 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex.flush();
 	}
 
+	@Override
+	public Mono<Void> waitForMerges() {
+		return luceneIndex.waitForMerges();
+	}
+
+	@Override
+	public Mono<Void> waitForLastMerges() {
+		return luceneIndex.waitForLastMerges();
+	}
+
 	/**
 	 * Refresh index searcher
 	 */

@@ -63,6 +63,7 @@ import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.MergeScheduler;
+import org.apache.lucene.index.NoMergePolicy;
 import org.apache.lucene.index.SerialMergeScheduler;
 import org.apache.lucene.index.SimpleMergedSegmentWarmer;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
@@ -234,32 +235,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		this.commitTime = Timer.builder("index.write.commit.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
 		this.mergeTime = Timer.builder("index.write.merge.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
 		this.refreshTime = Timer.builder("index.search.refresh.timer").publishPercentiles(0.2, 0.5, 0.95).publishPercentileHistogram().tag("index.name", clusterName).register(meterRegistry);
-		meterRegistry.gauge("index.snapshot.counter", List.of(Tag.of("index.name", clusterName)), snapshotter, SnapshotDeletionPolicy::getSnapshotCount);
-		meterRegistry.gauge("index.write.flushing.bytes", List.of(Tag.of("index.name", clusterName)), indexWriter, IndexWriter::getFlushingBytes);
-		meterRegistry.gauge("index.write.sequence.completed.max", List.of(Tag.of("index.name", clusterName)), indexWriter, IndexWriter::getMaxCompletedSequenceNumber);
-		meterRegistry.gauge("index.write.doc.pending.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, IndexWriter::getPendingNumDocs);
-		meterRegistry.gauge("index.write.segment.merging.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> iw.getMergingSegments().size());
-		meterRegistry.gauge("index.directory.deletion.pending.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> {
-			try {
-				return iw.getDirectory().getPendingDeletions().size();
-			} catch (IOException | NullPointerException e) {
-				return 0;
-			}
-		});
-		meterRegistry.gauge("index.doc.counter", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> {
-			try {
-				return iw.getDocStats().numDocs;
-			} catch (NullPointerException e) {
-				return 0;
-			}
-		});
-		meterRegistry.gauge("index.doc.max", List.of(Tag.of("index.name", clusterName)), indexWriter, iw -> {
-			try {
-				return iw.getDocStats().maxDoc;
-			} catch (NullPointerException e) {
-				return 0;
-			}
-		});
+		meterRegistry.gauge("index.snapshot.counter", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getSnapshotsCount);
+		meterRegistry.gauge("index.write.flushing.bytes", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getIndexWriterFlushingBytes);
+		meterRegistry.gauge("index.write.sequence.completed.max", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getIndexWriterMaxCompletedSequenceNumber);
+		meterRegistry.gauge("index.write.doc.pending.counter", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getIndexWriterPendingNumDocs);
+		meterRegistry.gauge("index.write.segment.merging.counter", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getIndexWriterMergingSegmentsSize);
+		meterRegistry.gauge("index.directory.deletion.pending.counter", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getDirectoryPendingDeletionsCount);
+		meterRegistry.gauge("index.doc.counter", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getDocCount);
+		meterRegistry.gauge("index.doc.max", List.of(Tag.of("index.name", clusterName)), this, LLLocalLuceneIndex::getMaxDoc);
 		meterRegistry.gauge("index.searcher.refreshes.active.count",
 				List.of(Tag.of("index.name", clusterName)),
 				searcherManager,
@@ -582,6 +565,53 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
+	public Mono<Void> waitForMerges() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					if (activeTasks.isTerminated()) return null;
+					shutdownLock.lock();
+					try {
+						if (closeRequested.get()) {
+							return null;
+						}
+						var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
+						if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
+							concurrentMergeScheduler.sync();
+						}
+					} finally {
+						shutdownLock.unlock();
+					}
+					return null;
+				})
+				.subscribeOn(luceneHeavyTasksScheduler)
+				.transform(this::ensureOpen);
+	}
+
+	@Override
+	public Mono<Void> waitForLastMerges() {
+		return Mono
+				.<Void>fromCallable(() -> {
+					if (activeTasks.isTerminated()) return null;
+					shutdownLock.lock();
+					try {
+						if (closeRequested.get()) {
+							return null;
+						}
+						indexWriter.getConfig().setMergePolicy(NoMergePolicy.INSTANCE);
+						var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
+						if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
+							concurrentMergeScheduler.sync();
+						}
+					} finally {
+						shutdownLock.unlock();
+					}
+					return null;
+				})
+				.subscribeOn(luceneHeavyTasksScheduler)
+				.transform(this::ensureOpen);
+	}
+
+	@Override
 	public Mono<Void> refresh(boolean force) {
 		return Mono
 				.<Void>fromCallable(() -> {
@@ -655,6 +685,114 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	@Override
 	public boolean isLowMemoryMode() {
 		return lowMemory;
+	}
+
+	private double getSnapshotsCount() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			return snapshotsManager.getSnapshotsCount();
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getIndexWriterFlushingBytes() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			return indexWriter.getFlushingBytes();
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getIndexWriterMaxCompletedSequenceNumber() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			return indexWriter.getMaxCompletedSequenceNumber();
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getIndexWriterPendingNumDocs() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			return indexWriter.getPendingNumDocs();
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getIndexWriterMergingSegmentsSize() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			return indexWriter.getMergingSegments().size();
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getDirectoryPendingDeletionsCount() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			return indexWriter.getDirectory().getPendingDeletions().size();
+		} catch (IOException e) {
+			return 0d;
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getDocCount() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			var docStats = indexWriter.getDocStats();
+			if (docStats != null) {
+				return docStats.numDocs;
+			} else {
+				return 0d;
+			}
+		} finally {
+			shutdownLock.unlock();
+		}
+	}
+
+	private double getMaxDoc() {
+		shutdownLock.lock();
+		try {
+			if (closeRequested.get()) {
+				return 0d;
+			}
+			var docStats = indexWriter.getDocStats();
+			if (docStats != null) {
+				return docStats.maxDoc;
+			} else {
+				return 0d;
+			}
+		} finally {
+			shutdownLock.unlock();
+		}
 	}
 
 	@Override

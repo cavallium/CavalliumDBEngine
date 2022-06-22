@@ -450,6 +450,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 				indexWriter.deleteAll();
 				indexWriter.forceMergeDeletes(true);
 				indexWriter.commit();
+				indexWriter.deleteUnusedFiles();
 			} finally {
 				shutdownLock.unlock();
 			}
@@ -602,6 +603,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
 							concurrentMergeScheduler.sync();
 						}
+						indexWriter.deleteUnusedFiles();
 					} finally {
 						shutdownLock.unlock();
 					}
@@ -653,6 +655,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			}
 			commitTime.recordCallable(() -> {
 				indexWriter.commit();
+				indexWriter.deleteUnusedFiles();
 				return null;
 			});
 		} catch (Exception ex) {

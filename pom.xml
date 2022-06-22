@@ -203,7 +203,7 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.rocksdb</groupId>
+			<groupId>it.cavallium</groupId>
 			<artifactId>rocksdbjni</artifactId>
 			<version>7.3.1</version>
 		</dependency>
@@ -391,7 +391,7 @@
 		<dependency>
 			<groupId>it.cavallium</groupId>
 			<artifactId>data-generator-runtime</artifactId>
-			<version>1.0.70</version>
+			<version>1.0.76</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.jetbrains</groupId>
@@ -487,7 +487,7 @@
 			<plugin>
 				<groupId>it.cavallium</groupId>
 				<artifactId>data-generator</artifactId>
-				<version>0.9.135</version>
+				<version>0.9.143</version>
 				<executions>
 					<execution>
 						<id>generate-lucene-query-sources</id>

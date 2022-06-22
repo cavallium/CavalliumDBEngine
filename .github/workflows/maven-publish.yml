@@ -14,7 +14,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - { os: ubuntu-20.04, arch: "linux/amd64" }
+          - { os: ubuntu-21.04, arch: "linux/amd64" }
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v2
@@ -27,11 +27,11 @@ jobs:
           export REVISION=${{ github.run_number }}
 
           echo "REVISION=$REVISION" >> $GITHUB_ENV
-      - name: Set up JDK 17
+      - name: Set up JDK 18
         if: github.ref == 'refs/heads/master'
         uses: actions/setup-java@v1
         with:
-          java-version: 17
+          java-version: 18
           server-id: mchv-release-distribution
           server-username: MAVEN_USERNAME
           server-password: MAVEN_PASSWORD

@@ -35,7 +35,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 // todo: deduplicate code between Cached and Simple searcher managers
-public class CachedIndexSearcherManager implements IndexSearcherManager {
+public class SimpleIndexSearcherManager implements IndexSearcherManager {
 
 	private static final Logger LOG = LogManager.getLogger(SimpleIndexSearcherManager.class);
 	private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
@@ -52,17 +52,16 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	private final SearcherManager searcherManager;
 	private final Duration queryRefreshDebounceTime;
 
+	private Mono<LLIndexSearcher> noSnapshotSearcherMono;
+
 	private final AtomicLong activeSearchers = new AtomicLong(0);
 	private final AtomicLong activeRefreshes = new AtomicLong(0);
-
-	private final LoadingCache<LLSnapshot, Mono<LLIndexSearcher>> cachedSnapshotSearchers;
-	private final Mono<LLIndexSearcher> cachedMainSearcher;
 
 	private final AtomicBoolean closeRequested = new AtomicBoolean();
 	private final Empty<Void> closeRequestedMono = Sinks.empty();
 	private final Mono<Void> closeMono;
 
-	public CachedIndexSearcherManager(IndexWriter indexWriter,
+	public SimpleIndexSearcherManager(IndexWriter indexWriter,
 			@Nullable SnapshotsManager snapshotsManager,
 			Scheduler luceneHeavyTasksScheduler,
 			Similarity similarity,
@@ -93,18 +92,6 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				.transform(LLUtils::handleDiscard)
 				.subscribe();
 
-		this.cachedSnapshotSearchers = CacheBuilder.newBuilder()
-				.expireAfterWrite(queryRefreshDebounceTime)
-				// Max 3 cached non-main index writers
-				.maximumSize(3)
-				.build(new CacheLoader<>() {
-					@Override
-					public Mono<LLIndexSearcher> load(@NotNull LLSnapshot snapshot) {
-						return CachedIndexSearcherManager.this.generateCachedSearcher(snapshot);
-					}
-				});
-		this.cachedMainSearcher = this.generateCachedSearcher(null);
-
 		this.closeMono = Mono
 				.fromRunnable(() -> {
 					LOG.debug("Closing IndexSearcherManager...");
@@ -128,8 +115,6 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					}
 					LOG.debug("Closed active searchers");
 					LOG.debug("Stopping searcher executor...");
-					cachedSnapshotSearchers.invalidateAll();
-					cachedSnapshotSearchers.cleanUp();
 					SEARCH_EXECUTOR.shutdown();
 					try {
 						//noinspection BlockingMethodInNonBlockingContext
@@ -143,54 +128,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 				.publishOn(Schedulers.parallel())
 				.cache();
-	}
-
-	private Mono<LLIndexSearcher> generateCachedSearcher(@Nullable LLSnapshot snapshot) {
-		return Mono.fromCallable(() -> {
-			if (closeRequested.get()) {
-				return null;
-			}
-			activeSearchers.incrementAndGet();
-			try {
-				IndexSearcher indexSearcher;
-				boolean fromSnapshot;
-				if (snapshotsManager == null || snapshot == null) {
-					indexSearcher = searcherManager.acquire();
-					fromSnapshot = false;
-				} else {
-					//noinspection resource
-					indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
-					fromSnapshot = true;
-				}
-				indexSearcher.setSimilarity(similarity);
-				assert indexSearcher.getIndexReader().getRefCount() > 0;
-				var closed = new AtomicBoolean();
-				LLIndexSearcher llIndexSearcher;
-				if (fromSnapshot) {
-					llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
-				} else {
-					llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
-				}
-				SimpleResource.CLEANER.register(llIndexSearcher, () -> {
-					if (closed.compareAndSet(false, true)) {
-						LOG.warn("An index searcher was not closed!");
-						if (!fromSnapshot) {
-							try {
-								searcherManager.release(indexSearcher);
-							} catch (IOException e) {
-								LOG.error("Failed to release the index searcher", e);
-							}
-						}
-					}
-				});
-				return llIndexSearcher;
-			} catch (Throwable ex) {
-				activeSearchers.decrementAndGet();
-				throw ex;
-			}
-		})
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.publishOn(Schedulers.parallel());
+		this.noSnapshotSearcherMono = retrieveSearcherInternal(null);
 	}
 
 	private void dropCachedIndexSearcher() {
@@ -225,10 +163,58 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 	@Override
 	public Mono<LLIndexSearcher> retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		if (snapshot == null) {
-			return this.cachedMainSearcher;
+			return noSnapshotSearcherMono;
 		} else {
-			return this.cachedSnapshotSearchers.getUnchecked(snapshot);
+			return retrieveSearcherInternal(snapshot);
 		}
+	}
+
+	private Mono<LLIndexSearcher> retrieveSearcherInternal(@Nullable LLSnapshot snapshot) {
+		return Mono.fromCallable(() -> {
+					if (closeRequested.get()) {
+						return null;
+					}
+					activeSearchers.incrementAndGet();
+					try {
+						IndexSearcher indexSearcher;
+						boolean fromSnapshot;
+						if (snapshotsManager == null || snapshot == null) {
+							indexSearcher = searcherManager.acquire();
+							fromSnapshot = false;
+						} else {
+							//noinspection resource
+							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
+							fromSnapshot = true;
+						}
+						indexSearcher.setSimilarity(similarity);
+						assert indexSearcher.getIndexReader().getRefCount() > 0;
+						var closed = new AtomicBoolean();
+						LLIndexSearcher llIndexSearcher;
+						if (fromSnapshot) {
+							llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
+						} else {
+							llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
+						}
+						SimpleResource.CLEANER.register(llIndexSearcher, () -> {
+							if (closed.compareAndSet(false, true)) {
+								LOG.warn("An index searcher was not closed!");
+								if (!fromSnapshot) {
+									try {
+										searcherManager.release(indexSearcher);
+									} catch (IOException e) {
+										LOG.error("Failed to release the index searcher", e);
+									}
+								}
+							}
+						});
+						return llIndexSearcher;
+					} catch (Throwable ex) {
+						activeSearchers.decrementAndGet();
+						throw ex;
+					}
+				})
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel());
 	}
 
 	@Override

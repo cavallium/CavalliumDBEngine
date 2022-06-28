@@ -100,6 +100,14 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	));
 	private static final Scheduler bulkScheduler = luceneWriteScheduler;
 
+	private static final boolean ENABLE_SNAPSHOTS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.lucene.snapshot.enable", "true"));
+
+	private static final boolean CACHE_SEARCHER_MANAGER
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.lucene.cachedsearchermanager.enable", "true"));
+
+	private static final LLSnapshot DUMMY_SNAPSHOT = new LLSnapshot(-1);
+
 	static {
 		LLUtils.initHooks();
 	}
@@ -169,7 +177,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);
 		IndexDeletionPolicy deletionPolicy;
 		deletionPolicy = requireNonNull(indexWriterConfig.getIndexDeletionPolicy());
-		deletionPolicy = new SnapshotDeletionPolicy(deletionPolicy);
+		if (ENABLE_SNAPSHOTS) {
+			deletionPolicy = new SnapshotDeletionPolicy(deletionPolicy);
+		}
 		indexWriterConfig.setIndexDeletionPolicy(deletionPolicy);
 		indexWriterConfig.setCommitOnClose(true);
 		int writerSchedulerMaxThreadCount;
@@ -213,15 +223,30 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
-		this.snapshotsManager = new SnapshotsManager(indexWriter, (SnapshotDeletionPolicy) deletionPolicy);
-		var searcherManager = new CachedIndexSearcherManager(indexWriter,
-				snapshotsManager,
-				luceneHeavyTasksScheduler,
-				getLuceneSimilarity(),
-				luceneOptions.applyAllDeletes().orElse(true),
-				luceneOptions.writeAllDeletes().orElse(false),
-				luceneOptions.queryRefreshDebounceTime()
-		);
+		if (ENABLE_SNAPSHOTS) {
+			this.snapshotsManager = new SnapshotsManager(indexWriter, (SnapshotDeletionPolicy) deletionPolicy);
+		} else {
+			this.snapshotsManager = null;
+		}
+		SimpleIndexSearcherManager searcherManager;
+		if (CACHE_SEARCHER_MANAGER) {
+			searcherManager = new SimpleIndexSearcherManager(indexWriter,
+					snapshotsManager,
+					luceneHeavyTasksScheduler,
+					getLuceneSimilarity(),
+					luceneOptions.applyAllDeletes().orElse(true),
+					luceneOptions.writeAllDeletes().orElse(false),
+					luceneOptions.queryRefreshDebounceTime()
+			);
+		} else {
+			searcherManager = new SimpleIndexSearcherManager(indexWriter,
+					snapshotsManager,
+					luceneHeavyTasksScheduler,
+					getLuceneSimilarity(),
+					luceneOptions.applyAllDeletes().orElse(true),
+					luceneOptions.writeAllDeletes().orElse(false),
+					luceneOptions.queryRefreshDebounceTime());
+		}
 		this.searcherManager = searcherManager;
 
 		this.startedDocIndexings = meterRegistry.counter("index.write.doc.started.counter", "index.name", clusterName);
@@ -243,12 +268,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		meterRegistry.gauge("index.searcher.refreshes.active.count",
 				List.of(Tag.of("index.name", clusterName)),
 				searcherManager,
-				CachedIndexSearcherManager::getActiveRefreshes
+				SimpleIndexSearcherManager::getActiveRefreshes
 		);
 		meterRegistry.gauge("index.searcher.searchers.active.count",
 				List.of(Tag.of("index.name", clusterName)),
 				searcherManager,
-				CachedIndexSearcherManager::getActiveSearchers
+				SimpleIndexSearcherManager::getActiveSearchers
 		);
 
 		// Start scheduled tasks
@@ -268,6 +293,9 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<LLSnapshot> takeSnapshot() {
+		if (snapshotsManager == null) {
+			return Mono.just(DUMMY_SNAPSHOT);
+		}
 		return snapshotsManager.takeSnapshot().elapsed().map(elapsed -> {
 			snapshotTime.record(elapsed.getT1(), TimeUnit.MILLISECONDS);
 			return elapsed.getT2();
@@ -293,6 +321,12 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
+		if (snapshotsManager == null) {
+			if (snapshot != null && !Objects.equals(snapshot, DUMMY_SNAPSHOT)) {
+				return Mono.error(new IllegalStateException("Can't release snapshot " + snapshot));
+			}
+			return Mono.empty();
+		}
 		return snapshotsManager
 				.releaseSnapshot(snapshot)
 				.elapsed()
@@ -693,6 +727,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 			if (closeRequested.get()) {
 				return 0d;
 			}
+			if (snapshotsManager == null) return 0d;
 			return snapshotsManager.getSnapshotsCount();
 		} finally {
 			shutdownLock.unlock();

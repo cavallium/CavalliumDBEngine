@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
@@ -30,40 +32,31 @@ public class DecimalBucketMultiSearcher {
 				.search(indexSearchers.shards(), bucketParams, queries, normalizationQuery)
 				// Ensure that one result is always returned
 				.single(), indexSearchers -> Mono.fromCallable(() -> {
+			//noinspection BlockingMethodInNonBlockingContext
 			indexSearchers.close();
 			return null;
-		}).subscribeOn(Schedulers.boundedElastic()));
+		}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))).publishOn(Schedulers.parallel());
 	}
 
 	private Mono<Buckets> search(Iterable<IndexSearcher> indexSearchers,
 			BucketParams bucketParams,
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery) {
-		return Mono
-				.fromCallable(() -> {
-					LLUtils.ensureBlocking();
-					return new DecimalBucketMultiCollectorManager(bucketParams.min(),
-							bucketParams.max(),
-							bucketParams.buckets(),
-							bucketParams.bucketFieldName(),
-							bucketParams.valueSource(),
-							queries,
-							normalizationQuery,
-							bucketParams.collectionRate(),
-							bucketParams.sampleSize()
-					);
-				})
-				.flatMap(cmm -> Flux
-						.fromIterable(indexSearchers)
-						.flatMap(shard -> Mono.fromCallable(() -> {
-							LLUtils.ensureBlocking();
-							return cmm.search(shard);
-						}))
-						.collectList()
-						.flatMap(results -> Mono.fromCallable(() -> {
-							LLUtils.ensureBlocking();
-							return cmm.reduce(results);
-						}))
-				);
+		return Mono.defer(() -> {
+			var cmm = new DecimalBucketMultiCollectorManager(bucketParams.min(),
+					bucketParams.max(),
+					bucketParams.buckets(),
+					bucketParams.bucketFieldName(),
+					bucketParams.valueSource(),
+					queries,
+					normalizationQuery,
+					bucketParams.collectionRate(),
+					bucketParams.sampleSize()
+			);
+			return Flux.fromIterable(indexSearchers).flatMap(shard -> Mono.fromCallable(() -> {
+				LLUtils.ensureBlocking();
+				return cmm.search(shard);
+			})).collectList().flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)));
+		});
 	}
 }

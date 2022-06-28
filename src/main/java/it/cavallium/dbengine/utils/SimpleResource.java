@@ -1,19 +1,49 @@
 package it.cavallium.dbengine.utils;
 
+import it.cavallium.dbengine.MetricUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
+import java.lang.ref.Cleaner;
 import java.util.concurrent.atomic.AtomicBoolean;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 public abstract class SimpleResource implements SafeCloseable {
 
-	private final AtomicBoolean closed = new AtomicBoolean();
+	protected static final boolean ENABLE_LEAK_DETECTION
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.leakdetection.enable", "true"));
+	protected static final boolean ADVANCED_LEAK_DETECTION
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.leakdetection.advanced", "false"));
+	private static final Logger LOG = LogManager.getLogger(SimpleResource.class);
+	public static final Cleaner CLEANER = Cleaner.create();
+
+	private final AtomicBoolean closed;
 	private final boolean canClose;
 
 	public SimpleResource() {
-		canClose = true;
+		this(true);
 	}
 
 	protected SimpleResource(boolean canClose) {
 		this.canClose = canClose;
+		var closed = new AtomicBoolean();
+		this.closed = closed;
+
+		if (ENABLE_LEAK_DETECTION && canClose) {
+			var resourceClass = this.getClass();
+			Exception initializationStackTrace;
+			if (ADVANCED_LEAK_DETECTION) {
+				var stackTrace = Thread.currentThread().getStackTrace();
+				initializationStackTrace = new Exception("Initialization point");
+				initializationStackTrace.setStackTrace(stackTrace);
+			} else {
+				initializationStackTrace = null;
+			}
+			CLEANER.register(this, () -> {
+				if (!closed.get()) {
+					LOG.error("Resource leak of type {}", resourceClass, initializationStackTrace);
+				}
+			});
+		}
 	}
 
 	@Override

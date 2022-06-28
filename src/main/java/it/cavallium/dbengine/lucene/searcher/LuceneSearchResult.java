@@ -15,9 +15,9 @@ public final class LuceneSearchResult extends SimpleResource {
 
 	private static final Logger logger = LogManager.getLogger(LuceneSearchResult.class);
 
-	private TotalHitsCount totalHitsCount;
-	private Flux<LLKeyScore> results;
-	private Runnable onClose;
+	private final TotalHitsCount totalHitsCount;
+	private final Flux<LLKeyScore> results;
+	private final Runnable onClose;
 
 	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results, Runnable onClose) {
 		this.totalHitsCount = totalHitsCount;

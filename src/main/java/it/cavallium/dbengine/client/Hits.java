@@ -27,7 +27,7 @@ public final class Hits<T> extends SimpleResource {
 	}
 
 	private Hits(Flux<T> results, TotalHitsCount totalHitsCount, Runnable onClose, boolean canClose) {
-		super(canClose);
+		super(canClose && onClose != null);
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 		this.onClose = onClose;

@@ -268,7 +268,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 	}
 
 	@Override
-	public Buckets reduce(List<Buckets> reducedBucketsList) throws IOException {
+	public Buckets reduce(List<Buckets> reducedBucketsList) {
 		List<DoubleArrayList> seriesReducedValues = new ArrayList<>();
 		double[] reducedTotals = newBuckets();
 		for (var seriesBuckets : reducedBucketsList) {

@@ -14,7 +14,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
@@ -27,7 +26,6 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -59,19 +57,16 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.index.ConcurrentMergeScheduler;
+import org.apache.lucene.index.IndexDeletionPolicy;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
-import org.apache.lucene.index.KeepOnlyLastCommitDeletionPolicy;
 import org.apache.lucene.index.MergeScheduler;
 import org.apache.lucene.index.NoMergePolicy;
 import org.apache.lucene.index.SerialMergeScheduler;
-import org.apache.lucene.index.SimpleMergedSegmentWarmer;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
-import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MMapDirectory;
-import org.apache.lucene.util.InfoStream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
@@ -172,8 +167,10 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);
-		var snapshotter = new SnapshotDeletionPolicy(requireNonNull(indexWriterConfig.getIndexDeletionPolicy()));
-		indexWriterConfig.setIndexDeletionPolicy(snapshotter);
+		IndexDeletionPolicy deletionPolicy;
+		deletionPolicy = requireNonNull(indexWriterConfig.getIndexDeletionPolicy());
+		deletionPolicy = new SnapshotDeletionPolicy(deletionPolicy);
+		indexWriterConfig.setIndexDeletionPolicy(deletionPolicy);
 		indexWriterConfig.setCommitOnClose(true);
 		int writerSchedulerMaxThreadCount;
 		MergeScheduler mergeScheduler;
@@ -216,7 +213,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 		}
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
 		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
-		this.snapshotsManager = new SnapshotsManager(indexWriter, snapshotter);
+		this.snapshotsManager = new SnapshotsManager(indexWriter, (SnapshotDeletionPolicy) deletionPolicy);
 		var searcherManager = new CachedIndexSearcherManager(indexWriter,
 				snapshotsManager,
 				luceneHeavyTasksScheduler,

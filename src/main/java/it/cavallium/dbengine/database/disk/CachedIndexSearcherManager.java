@@ -156,6 +156,7 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 					indexSearcher = searcherManager.acquire();
 					fromSnapshot = false;
 				} else {
+					//noinspection resource
 					indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
 					fromSnapshot = true;
 				}
@@ -256,12 +257,13 @@ public class CachedIndexSearcherManager implements IndexSearcherManager {
 
 	private class SnapshotIndexSearcher extends LLIndexSearcher {
 
-		public SnapshotIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed) {
+		public SnapshotIndexSearcher(IndexSearcher indexSearcher,
+				AtomicBoolean closed) {
 			super(indexSearcher, closed);
 		}
 
 		@Override
-		public void onClose() {
+		public void onClose() throws IOException {
 			dropCachedIndexSearcher();
 		}
 	}

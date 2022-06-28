@@ -46,51 +46,51 @@ public class SnapshotsManager {
 	}
 
 	public Mono<LLSnapshot> takeSnapshot() {
-		return takeLuceneSnapshot().map(snapshot -> {
-			var snapshotSeqNo = lastSnapshotSeqNo.incrementAndGet();
-			this.snapshots.put(snapshotSeqNo, new LuceneIndexSnapshot(snapshot));
-			return new LLSnapshot(snapshotSeqNo);
-		});
+		return Mono
+				.fromCallable(this::takeLuceneSnapshot)
+				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+				.publishOn(Schedulers.parallel());
 	}
 
 	/**
 	 * Use internally. This method commits before taking the snapshot if there are no commits in a new database,
 	 * avoiding the exception.
 	 */
-	private Mono<IndexCommit> takeLuceneSnapshot() {
-		return Mono
-				.fromCallable(snapshotter::snapshot)
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.onErrorResume(ex -> {
-					if (ex instanceof IllegalStateException && "No index commit to snapshot".equals(ex.getMessage())) {
-						return Mono.fromCallable(() -> {
-							activeTasks.register();
-							try {
-								indexWriter.commit();
-								return snapshotter.snapshot();
-							} finally {
-								activeTasks.arriveAndDeregister();
-							}
-						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-					} else {
-						return Mono.error(ex);
-					}
-				})
-				.publishOn(Schedulers.parallel());
+	private LLSnapshot takeLuceneSnapshot() throws IOException {
+		activeTasks.register();
+		try {
+			if (snapshotter.getSnapshots().isEmpty()) {
+				indexWriter.commit();
+			}
+			var snapshotSeqNo = lastSnapshotSeqNo.incrementAndGet();
+			IndexCommit snapshot = snapshotter.snapshot();
+			var prevSnapshot = this.snapshots.put(snapshotSeqNo, new LuceneIndexSnapshot(snapshot));
+
+			// Unexpectedly found a snapshot
+			if (prevSnapshot != null) {
+				try {
+					prevSnapshot.close();
+				} catch (IOException e) {
+					throw new IllegalStateException("Can't close snapshot", e);
+				}
+			}
+
+			return new LLSnapshot(snapshotSeqNo);
+		} finally {
+			activeTasks.arriveAndDeregister();
+		}
 	}
 
 	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 		return Mono.<Void>fromCallable(() -> {
 			activeTasks.register();
-			try {
-				var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
+			try (var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber())) {
 				if (indexSnapshot == null) {
 					throw new IOException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
 				}
 
 				var luceneIndexSnapshot = indexSnapshot.getSnapshot();
 				snapshotter.release(luceneIndexSnapshot);
-				indexSnapshot.close();
 				return null;
 			} finally {
 				activeTasks.arriveAndDeregister();
@@ -102,7 +102,7 @@ public class SnapshotsManager {
 	 * Returns the total number of snapshots currently held.
 	 */
 	public int getSnapshotsCount() {
-		return snapshotter.getSnapshotCount();
+		return Math.max(snapshots.size(), snapshotter.getSnapshotCount());
 	}
 
 	public void close() {

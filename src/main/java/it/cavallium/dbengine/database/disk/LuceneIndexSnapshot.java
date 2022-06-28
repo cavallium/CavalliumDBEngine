@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import java.io.Closeable;
 import java.io.IOException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ForkJoinPool;
@@ -8,14 +9,14 @@ import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.search.IndexSearcher;
 import org.jetbrains.annotations.Nullable;
 
-@SuppressWarnings("unused")
-public class LuceneIndexSnapshot {
+public class LuceneIndexSnapshot implements Closeable {
 	private final IndexCommit snapshot;
 
 	private boolean initialized;
 	private boolean failed;
 	private boolean closed;
 
+	private DirectoryReader indexReader;
 	private IndexSearcher indexSearcher;
 
 	public LuceneIndexSnapshot(IndexCommit snapshot) {
@@ -45,6 +46,7 @@ public class LuceneIndexSnapshot {
 		if (!initialized) {
 			try {
 				var indexReader = DirectoryReader.open(snapshot);
+				this.indexReader = indexReader;
 				indexSearcher = new IndexSearcher(indexReader, searchExecutor);
 
 				initialized = true;
@@ -59,7 +61,7 @@ public class LuceneIndexSnapshot {
 		closed = true;
 
 		if (initialized && !failed) {
-			indexSearcher.getIndexReader().close();
+			indexReader.close();
 			indexSearcher = null;
 		}
 	}

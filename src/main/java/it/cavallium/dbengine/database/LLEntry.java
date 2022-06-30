@@ -14,7 +14,7 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class LLEntry extends SimpleResource implements SafeCloseable {
+public class LLEntry extends SimpleResource implements DiscardingCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LLEntry.class);
 	private Buffer key;

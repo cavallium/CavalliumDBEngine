@@ -10,7 +10,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import reactor.core.publisher.Flux;
 
-public final class LLSearchResultShard extends SimpleResource {
+public final class LLSearchResultShard extends SimpleResource implements DiscardingCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LLSearchResultShard.class);
 

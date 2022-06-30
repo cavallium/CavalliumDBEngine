@@ -16,6 +16,7 @@
  */
 package it.cavallium.dbengine.lucene.collector;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLDoc;
@@ -40,7 +41,7 @@ import org.apache.lucene.search.TotalHits;
  * all methods, in order to avoid a NullPointerException.
  */
 public abstract class FullDocsCollector<PQ extends PriorityQueue<INTERNAL> & Reversable<ReversableResourceIterable<INTERNAL>>, INTERNAL extends LLDoc,
-		EXTERNAL extends LLDoc> extends SimpleResource implements Collector, SafeCloseable {
+		EXTERNAL extends LLDoc> extends SimpleResource implements Collector, DiscardingCloseable {
 
 	/**
 	 * The priority queue which holds the top documents. Note that different implementations of

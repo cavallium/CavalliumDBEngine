@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene;
 
 import io.netty5.buffer.api.Buffer;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.utils.SimpleResource;
@@ -20,7 +21,7 @@ import org.rocksdb.AbstractComparator;
 import org.rocksdb.ComparatorOptions;
 
 public class LLSlotDocCodec extends SimpleResource
-		implements HugePqCodec<LLSlotDoc>, FieldValueHitQueue, SafeCloseable {
+		implements HugePqCodec<LLSlotDoc>, FieldValueHitQueue, DiscardingCloseable {
 
 	private final SortField[] fields;
 

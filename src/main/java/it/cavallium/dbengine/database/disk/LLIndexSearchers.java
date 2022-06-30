@@ -5,6 +5,7 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
 import it.cavallium.dbengine.utils.SimpleResource;
@@ -23,7 +24,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.search.IndexSearcher;
 
-public interface LLIndexSearchers extends SafeCloseable {
+public interface LLIndexSearchers extends DiscardingCloseable {
 
 	static LLIndexSearchers of(List<LLIndexSearcher> indexSearchers) {
 		return new ShardedIndexSearchers(indexSearchers);

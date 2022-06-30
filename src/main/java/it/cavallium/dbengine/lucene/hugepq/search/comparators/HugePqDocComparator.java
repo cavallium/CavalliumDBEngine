@@ -17,6 +17,7 @@
 
 package it.cavallium.dbengine.lucene.hugepq.search.comparators;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.IArray;
@@ -33,7 +34,8 @@ import org.apache.lucene.search.Scorable;
  * Comparator that sorts by asc _doc
  * Based on {@link org.apache.lucene.search.comparators.DocComparator}
  * */
-public class HugePqDocComparator extends org.apache.lucene.search.comparators.DocComparator implements SafeCloseable {
+public class HugePqDocComparator extends org.apache.lucene.search.comparators.DocComparator implements
+		DiscardingCloseable {
   private final IArray<Integer> docIDs;
   private final boolean enableSkipping; // if skipping functionality should be enabled
   private int bottom;

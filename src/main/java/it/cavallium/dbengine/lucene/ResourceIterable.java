@@ -1,12 +1,13 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.io.Closeable;
 import java.util.Iterator;
 import org.jetbrains.annotations.NotNull;
 import reactor.core.publisher.Flux;
 
-public interface ResourceIterable<T> extends SafeCloseable {
+public interface ResourceIterable<T> extends DiscardingCloseable {
 
 	/**
 	 * Iterate this PriorityQueue

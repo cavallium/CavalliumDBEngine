@@ -920,27 +920,31 @@ public class LLUtils {
 		if (DEBUG_ALL_DROPS) {
 			logger.trace("Dropped: {}", () -> next.getClass().getName());
 		}
-		closeResource(next);
+		closeResource(next, false);
 	}
 
 	public static void onDiscard(Object next) {
 		if (DEBUG_ALL_DISCARDS) {
 			logger.trace("Discarded: {}", () -> next.getClass().getName());
 		}
-		closeResource(next);
+		closeResource(next, false);
 	}
 
 	public static void closeResource(Object next) {
+		closeResource(next, true);
+	}
+
+	private static void closeResource(Object next, boolean manual) {
 		if (next instanceof Send<?> send) {
 			send.close();
-		} if (next instanceof SimpleResource simpleResource) {
-			simpleResource.close();
+		} if (next instanceof SafeCloseable closeable) {
+			if (manual || closeable instanceof DiscardingCloseable) {
+				closeable.close();
+			}
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();
 		} else if (next instanceof Iterable<?> iterable) {
 			iterable.forEach(LLUtils::onNextDropped);
-		} else if (next instanceof SafeCloseable safeCloseable) {
-			safeCloseable.close();
 		} else if (next instanceof AbstractImmutableNativeReference rocksObj) {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();

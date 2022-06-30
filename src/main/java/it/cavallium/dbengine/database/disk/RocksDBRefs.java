@@ -1,10 +1,11 @@
 package it.cavallium.dbengine.database.disk;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.util.ArrayList;
 import org.rocksdb.AbstractImmutableNativeReference;
 
-public final class RocksDBRefs implements SafeCloseable {
+public final class RocksDBRefs implements DiscardingCloseable {
 
 	private final ArrayList<AbstractImmutableNativeReference> list = new ArrayList<>();
 	private boolean closed;

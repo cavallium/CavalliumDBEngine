@@ -2,13 +2,14 @@ package it.cavallium.dbengine.database.serialization;
 
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Send;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.io.DataInput;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class BufferDataInputOwned implements SafeCloseable, BufferDataInput {
+public class BufferDataInputOwned implements DiscardingCloseable, BufferDataInput {
 
 	@Nullable
 	private final Buffer buf;

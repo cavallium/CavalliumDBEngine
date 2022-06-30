@@ -18,6 +18,7 @@ import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.Resource;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -894,7 +895,8 @@ public class LLLocalDictionary implements LLDictionary {
 		}), LLUtils::finalizeResource).flux();
 	}
 
-	private record RocksObjTuple<T extends AbstractNativeReference, U extends Resource<?>>(T t1, U t2) implements SafeCloseable {
+	private record RocksObjTuple<T extends AbstractNativeReference, U extends Resource<?>>(T t1, U t2) implements
+			DiscardingCloseable {
 
 		@Override
 		public void close() {

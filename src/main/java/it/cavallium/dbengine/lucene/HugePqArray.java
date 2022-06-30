@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene;
 
 import io.netty5.buffer.api.Buffer;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
@@ -14,7 +15,7 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteOptions;
 
-public class HugePqArray<V> extends SimpleResource implements IArray<V>, SafeCloseable {
+public class HugePqArray<V> extends SimpleResource implements IArray<V>, DiscardingCloseable {
 
 	static {
 		RocksDB.loadLibrary();

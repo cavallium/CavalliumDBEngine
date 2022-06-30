@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.ByteArrayCodec;
@@ -26,7 +27,8 @@ import org.apache.lucene.util.BytesRef;
  * it may be slower.
  * Based on {@link org.apache.lucene.search.FieldComparator.TermOrdValComparator}
  */
-public class TermOrdValComparator extends FieldComparator<BytesRef> implements LeafFieldComparator, SafeCloseable {
+public class TermOrdValComparator extends FieldComparator<BytesRef> implements LeafFieldComparator,
+		DiscardingCloseable {
 	/* Ords for each slot.
 	@lucene.internal */
 	final IArray<Integer> ords;

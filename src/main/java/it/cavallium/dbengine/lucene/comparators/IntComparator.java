@@ -17,6 +17,7 @@
 
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.IArray;
@@ -33,7 +34,7 @@ import org.apache.lucene.search.comparators.NumericComparator;
  * skipping functionality – an iterator that can skip over non-competitive documents.
  * Based on {@link org.apache.lucene.search.comparators.IntComparator}
  */
-public class IntComparator extends NumericComparator<Integer> implements SafeCloseable {
+public class IntComparator extends NumericComparator<Integer> implements DiscardingCloseable {
   private final IArray<Integer> values;
   protected int topValue;
   protected int bottom;

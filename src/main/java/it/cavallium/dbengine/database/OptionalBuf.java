@@ -9,7 +9,7 @@ import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public final class OptionalBuf implements SafeCloseable {
+public final class OptionalBuf implements DiscardingCloseable {
 
 	private static final OptionalBuf EMPTY = new OptionalBuf(null);
 	private final Buffer buffer;

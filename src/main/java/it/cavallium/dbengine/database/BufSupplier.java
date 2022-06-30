@@ -4,7 +4,7 @@ import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Send;
 import java.util.function.Supplier;
 
-public abstract class BufSupplier implements SafeCloseable, Supplier<Buffer> {
+public abstract class BufSupplier implements SafeCloseable, DiscardingCloseable, Supplier<Buffer> {
 
 	public static BufSupplier of(Supplier<Buffer> supplier) {
 		return new SimpleBufSupplier(supplier);

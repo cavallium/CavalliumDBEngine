@@ -5,6 +5,7 @@ import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResult;
@@ -13,6 +14,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
@@ -112,7 +114,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.mapNotNull(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
 				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(SimpleResource.class, SimpleResource::close);
+				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
 	}
 
 	@Override
@@ -126,7 +128,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.mapNotNull(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
 				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(SimpleResource.class, SimpleResource::close);
+				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
 	}
 
 	@Override

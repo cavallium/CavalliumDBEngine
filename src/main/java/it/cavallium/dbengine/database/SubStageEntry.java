@@ -4,7 +4,7 @@ import it.cavallium.dbengine.database.collections.DatabaseStage;
 import java.util.Map.Entry;
 import java.util.Objects;
 
-public final class SubStageEntry<T, U extends DatabaseStage<?>> implements SafeCloseable, Entry<T, U> {
+public final class SubStageEntry<T, U extends DatabaseStage<?>> implements DiscardingCloseable, Entry<T, U> {
 
 	private final T key;
 	private final U value;

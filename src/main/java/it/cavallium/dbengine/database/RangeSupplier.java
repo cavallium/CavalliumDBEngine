@@ -3,7 +3,7 @@ package it.cavallium.dbengine.database;
 import io.netty5.buffer.api.Send;
 import java.util.function.Supplier;
 
-public abstract class RangeSupplier implements SafeCloseable, Supplier<LLRange> {
+public abstract class RangeSupplier implements DiscardingCloseable, Supplier<LLRange> {
 
 	public static RangeSupplier of(Supplier<LLRange> supplier) {
 		return new SimpleSupplier(supplier);

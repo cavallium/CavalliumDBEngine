@@ -5,6 +5,7 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.collections.ValueTransformer;
 import it.cavallium.dbengine.utils.SimpleResource;
@@ -15,7 +16,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
-public final class Hits<T> extends SimpleResource {
+public final class Hits<T> extends SimpleResource implements DiscardingCloseable {
 
 	private static final Hits<?> EMPTY_HITS = new Hits<>(Flux.empty(), TotalHitsCount.of(0, true), null, false);
 	private Flux<T> results;

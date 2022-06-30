@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene.searcher;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLKeyScore;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.utils.SimpleResource;
@@ -11,7 +12,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import reactor.core.publisher.Flux;
 
-public final class LuceneSearchResult extends SimpleResource {
+public final class LuceneSearchResult extends SimpleResource implements DiscardingCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LuceneSearchResult.class);
 

@@ -16,6 +16,7 @@
  */
 package it.cavallium.dbengine.lucene.comparators;
 
+import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.FloatCodec;
@@ -35,7 +36,8 @@ import org.apache.lucene.search.ScoreCachingWrappingScorer;
  * org.apache.lucene.search.IndexSearcher#search(Query, int)} uses when no {@link org.apache.lucene.search.Sort} is specified).
  * Based on {@link org.apache.lucene.search.FieldComparator.RelevanceComparator}
  */
-public final class RelevanceComparator extends FieldComparator<Float> implements LeafFieldComparator, SafeCloseable {
+public final class RelevanceComparator extends FieldComparator<Float> implements LeafFieldComparator,
+		DiscardingCloseable {
 
 	private final IArray<Float> scores;
 	private float bottom;

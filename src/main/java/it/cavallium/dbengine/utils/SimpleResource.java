@@ -6,6 +6,7 @@ import java.lang.ref.Cleaner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 
 public abstract class SimpleResource implements SafeCloseable {
 
@@ -23,15 +24,27 @@ public abstract class SimpleResource implements SafeCloseable {
 		this(true);
 	}
 
+	public SimpleResource(@Nullable Runnable cleanerAction) {
+		this(true, cleanerAction);
+	}
+
 	protected SimpleResource(boolean canClose) {
-		this(canClose, new AtomicBoolean());
+		this(canClose, null);
+	}
+
+	protected SimpleResource(boolean canClose, @Nullable Runnable cleanerAction) {
+		this(canClose, new AtomicBoolean(), cleanerAction);
 	}
 
 	protected SimpleResource(AtomicBoolean closed) {
-		this(true, closed);
+		this(true, closed, null);
 	}
 
-	private SimpleResource(boolean canClose, AtomicBoolean closed) {
+	protected SimpleResource(AtomicBoolean closed, @Nullable Runnable cleanerAction) {
+		this(true, closed, cleanerAction);
+	}
+
+	private SimpleResource(boolean canClose, AtomicBoolean closed, @Nullable Runnable cleanerAction) {
 		this.canClose = canClose;
 		this.closed = closed;
 
@@ -48,6 +61,9 @@ public abstract class SimpleResource implements SafeCloseable {
 			CLEANER.register(this, () -> {
 				if (!closed.get()) {
 					LOG.error("Resource leak of type {}", resourceClass, initializationStackTrace);
+					if (cleanerAction != null) {
+						cleanerAction.run();
+					}
 				}
 			});
 		}

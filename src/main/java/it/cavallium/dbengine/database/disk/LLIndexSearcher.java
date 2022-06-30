@@ -30,6 +30,16 @@ public abstract class LLIndexSearcher extends SimpleResource implements Discardi
 		this.indexSearcher = indexSearcher;
 	}
 
+	public LLIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed, Runnable cleanAction) {
+		super(closed, cleanAction);
+		this.indexSearcher = indexSearcher;
+	}
+
+	public LLIndexSearcher(IndexSearcher indexSearcher, Runnable cleanAction) {
+		super(cleanAction);
+		this.indexSearcher = indexSearcher;
+	}
+
 	public IndexReader getIndexReader() {
 		ensureOpen();
 		return indexSearcher.getIndexReader();

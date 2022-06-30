@@ -5,13 +5,11 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
-import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.ref.Cleaner;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -32,8 +30,6 @@ import org.jetbrains.annotations.Nullable;
 import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
 import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.Empty;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
@@ -116,31 +112,17 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 							indexSearcher = searcherManager.acquire();
 							fromSnapshot = false;
 						} else {
-							//noinspection resource
 							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
 							fromSnapshot = true;
 						}
 						indexSearcher.setSimilarity(similarity);
 						assert indexSearcher.getIndexReader().getRefCount() > 0;
-						var closed = new AtomicBoolean();
 						LLIndexSearcher llIndexSearcher;
 						if (fromSnapshot) {
-							llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
+							llIndexSearcher = new SnapshotIndexSearcher(indexSearcher);
 						} else {
-							llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
+							llIndexSearcher = new MainIndexSearcher(indexSearcher, searcherManager);
 						}
-						SimpleResource.CLEANER.register(llIndexSearcher, () -> {
-							if (closed.compareAndSet(false, true)) {
-								LOG.warn("An index searcher was not closed!");
-								if (!fromSnapshot) {
-									try {
-										searcherManager.release(indexSearcher);
-									} catch (IOException e) {
-										LOG.error("Failed to release the index searcher", e);
-									}
-								}
-							}
-						});
 						return llIndexSearcher;
 					} catch (Throwable ex) {
 						activeSearchers.decrementAndGet();
@@ -230,8 +212,17 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 
 	private class MainIndexSearcher extends LLIndexSearcher {
 
-		public MainIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean released) {
-			super(indexSearcher, released);
+		public MainIndexSearcher(IndexSearcher indexSearcher, SearcherManager searcherManager) {
+			super(indexSearcher, () -> releaseOnCleanup(searcherManager, indexSearcher));
+		}
+
+		private static void releaseOnCleanup(SearcherManager searcherManager, IndexSearcher indexSearcher) {
+			try {
+				LOG.warn("An index searcher was not closed!");
+				searcherManager.release(indexSearcher);
+			} catch (IOException ex) {
+				LOG.error("Failed to release the index searcher during cleanup: {}", indexSearcher, ex);
+			}
 		}
 
 		@Override
@@ -247,9 +238,12 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 
 	private class SnapshotIndexSearcher extends LLIndexSearcher {
 
-		public SnapshotIndexSearcher(IndexSearcher indexSearcher,
-				AtomicBoolean closed) {
+		public SnapshotIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed) {
 			super(indexSearcher, closed);
+		}
+
+		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
+			super(indexSearcher);
 		}
 
 		@Override

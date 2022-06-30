@@ -148,25 +148,12 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 						}
 						indexSearcher.setSimilarity(similarity);
 						assert indexSearcher.getIndexReader().getRefCount() > 0;
-						var closed = new AtomicBoolean();
 						LLIndexSearcher llIndexSearcher;
 						if (fromSnapshot) {
-							llIndexSearcher = new SnapshotIndexSearcher(indexSearcher, closed);
+							llIndexSearcher = new SnapshotIndexSearcher(indexSearcher);
 						} else {
-							llIndexSearcher = new MainIndexSearcher(indexSearcher, closed);
+							llIndexSearcher = new MainIndexSearcher(indexSearcher);
 						}
-						SimpleResource.CLEANER.register(llIndexSearcher, () -> {
-							if (closed.compareAndSet(false, true)) {
-								LOG.warn("An index searcher was not closed!");
-								if (!fromSnapshot) {
-									try {
-										searcherManager.release(indexSearcher);
-									} catch (IOException e) {
-										LOG.error("Failed to release the index searcher", e);
-									}
-								}
-							}
-						});
 						return llIndexSearcher;
 					} catch (Throwable ex) {
 						activeSearchers.decrementAndGet();
@@ -216,8 +203,17 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 
 	private class MainIndexSearcher extends LLIndexSearcher {
 
-		public MainIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean released) {
-			super(indexSearcher, released);
+		public MainIndexSearcher(IndexSearcher indexSearcher) {
+			super(indexSearcher, () -> releaseOnCleanup(searcherManager, indexSearcher));
+		}
+
+		private static void releaseOnCleanup(SearcherManager searcherManager, IndexSearcher indexSearcher) {
+			try {
+				LOG.warn("An index searcher was not closed!");
+				searcherManager.release(indexSearcher);
+			} catch (IOException ex) {
+				LOG.error("Failed to release the index searcher during cleanup: {}", indexSearcher, ex);
+			}
 		}
 
 		@Override
@@ -233,9 +229,8 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 
 	private class SnapshotIndexSearcher extends LLIndexSearcher {
 
-		public SnapshotIndexSearcher(IndexSearcher indexSearcher,
-				AtomicBoolean closed) {
-			super(indexSearcher, closed);
+		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
+			super(indexSearcher);
 		}
 
 		@Override

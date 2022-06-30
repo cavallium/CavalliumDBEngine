@@ -5,7 +5,9 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
 import java.io.Closeable;
 import java.io.IOException;
@@ -21,7 +23,7 @@ import org.apache.lucene.index.IndexReader;
 import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.search.IndexSearcher;
 
-public interface LLIndexSearchers extends Closeable {
+public interface LLIndexSearchers extends SafeCloseable {
 
 	static LLIndexSearchers of(List<LLIndexSearcher> indexSearchers) {
 		return new ShardedIndexSearchers(indexSearchers);
@@ -41,7 +43,7 @@ public interface LLIndexSearchers extends Closeable {
 
 	IndexReader allShards();
 
-	class UnshardedIndexSearchers implements LLIndexSearchers {
+	class UnshardedIndexSearchers extends SimpleResource implements LLIndexSearchers {
 
 		private final LLIndexSearcher indexSearcher;
 
@@ -89,12 +91,12 @@ public interface LLIndexSearchers extends Closeable {
 		}
 
 		@Override
-		public void close() throws IOException {
+		protected void onClose() {
 			indexSearcher.close();
 		}
 	}
 
-	class ShardedIndexSearchers implements LLIndexSearchers {
+	class ShardedIndexSearchers extends SimpleResource implements LLIndexSearchers {
 
 		private final List<LLIndexSearcher> indexSearchers;
 		private final List<IndexSearcher> indexSearchersVals;
@@ -160,7 +162,7 @@ public interface LLIndexSearchers extends Closeable {
 		}
 
 		@Override
-		public void close() throws IOException {
+		protected void onClose() {
 			for (LLIndexSearcher indexSearcher : indexSearchers) {
 				indexSearcher.close();
 			}
@@ -186,8 +188,8 @@ public interface LLIndexSearchers extends Closeable {
 			}
 
 			@Override
-			protected void onClose() throws IOException {
-				parent.onClose();
+			protected void onClose() {
+				parent.close();
 			}
 		}
 	}

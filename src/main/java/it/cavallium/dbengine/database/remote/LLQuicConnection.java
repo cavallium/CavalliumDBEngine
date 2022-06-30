@@ -509,8 +509,8 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					}
 
 					@Override
-					public Mono<Void> close() {
-						return sendRequest(new CloseLuceneIndex(id)).then();
+					public void close() {
+						sendRequest(new CloseLuceneIndex(id)).then().block();
 					}
 
 					@Override

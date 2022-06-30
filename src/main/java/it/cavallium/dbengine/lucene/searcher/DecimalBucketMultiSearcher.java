@@ -53,10 +53,16 @@ public class DecimalBucketMultiSearcher {
 					bucketParams.collectionRate(),
 					bucketParams.sampleSize()
 			);
-			return Flux.fromIterable(indexSearchers).flatMap(shard -> Mono.fromCallable(() -> {
-				LLUtils.ensureBlocking();
-				return cmm.search(shard);
-			})).collectList().flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)));
+			return Flux
+					.fromIterable(indexSearchers)
+					.flatMap(shard -> Mono.fromCallable(() -> {
+						LLUtils.ensureBlocking();
+						return cmm.search(shard);
+					}))
+					.collectList()
+					.flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)))
+					.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.publishOn(Schedulers.parallel());
 		});
 	}
 }

@@ -18,6 +18,7 @@ import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
@@ -81,7 +82,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 										resultsToDrop.forEach(SimpleResource::close);
 										try {
 											indexSearchers.close();
-										} catch (IOException e) {
+										} catch (UncheckedIOException e) {
 											LOG.error("Can't close index searchers", e);
 										}
 									});

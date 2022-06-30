@@ -13,6 +13,7 @@ import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.hugepq.search.HugePqFullScoreDocCollector;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
@@ -124,7 +125,7 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
 				try {
 					indexSearchers.close();
-				} catch (IOException e) {
+				} catch (UncheckedIOException e) {
 					LOG.error("Can't close index searchers", e);
 				}
 				try {

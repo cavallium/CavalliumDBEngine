@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.disk.RocksIterWithReadOpts;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultMode;
 import it.cavallium.dbengine.database.disk.UpdateAtomicResultPrevious;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -26,13 +27,13 @@ import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import reactor.core.publisher.Flux;
 
-public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<ReversableResourceIterable<T>>, ReversableResourceIterable<T> {
+public class HugePqPriorityQueue<T> extends SimpleResource
+		implements PriorityQueue<T>, Reversable<ReversableResourceIterable<T>>, ReversableResourceIterable<T> {
 
 	static {
 		RocksDB.loadLibrary();
 	}
 
-	private final AtomicBoolean closed = new AtomicBoolean();
 	private final LLTempHugePqEnv tempEnv;
 	private final HugePqEnv env;
 	private final int hugePqId;
@@ -351,12 +352,10 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 	}
 
 	@Override
-	public void close() {
-		if (closed.compareAndSet(false, true)) {
-			this.tempEnv.freeDb(hugePqId);
-			if (this.codec instanceof SafeCloseable closeable) {
-				closeable.close();
-			}
+	protected void onClose() {
+		this.tempEnv.freeDb(hugePqId);
+		if (this.codec instanceof SafeCloseable closeable) {
+			closeable.close();
 		}
 	}
 
@@ -369,26 +368,29 @@ public class HugePqPriorityQueue<T> implements PriorityQueue<T>, Reversable<Reve
 
 	@Override
 	public ReversableResourceIterable<T> reverse() {
-		return new ReversableResourceIterable<>() {
-			@Override
-			public void close() {
-				HugePqPriorityQueue.this.close();
-			}
+		return new ReversedResourceIterable();
+	}
 
-			@Override
-			public Flux<T> iterate() {
-				return reverseIterate();
-			}
+	private class ReversedResourceIterable extends SimpleResource implements ReversableResourceIterable<T> {
 
-			@Override
-			public Flux<T> iterate(long skips) {
-				return reverseIterate(skips);
-			}
+		@Override
+		public void onClose() {
+			HugePqPriorityQueue.this.close();
+		}
 
-			@Override
-			public ReversableResourceIterable<T> reverse() {
-				return HugePqPriorityQueue.this;
-			}
-		};
+		@Override
+		public Flux<T> iterate() {
+			return reverseIterate();
+		}
+
+		@Override
+		public Flux<T> iterate(long skips) {
+			return reverseIterate(skips);
+		}
+
+		@Override
+		public ReversableResourceIterable<T> reverse() {
+			return HugePqPriorityQueue.this;
+		}
 	}
 }

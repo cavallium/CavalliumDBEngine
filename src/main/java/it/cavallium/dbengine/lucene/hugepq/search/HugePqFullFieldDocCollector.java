@@ -485,11 +485,11 @@ public abstract class HugePqFullFieldDocCollector extends
 	}
 
 	@Override
-	public void close() {
+	public void onClose() {
 		this.pq.close();
 		if (this.firstComparator instanceof SafeCloseable closeable) {
 			closeable.close();
 		}
-		super.close();
+		super.onClose();
 	}
 }

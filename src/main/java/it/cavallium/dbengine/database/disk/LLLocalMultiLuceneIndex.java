@@ -29,9 +29,11 @@ import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -54,7 +56,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
-public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
+public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneIndex {
 
 	private static final Logger LOG = LogManager.getLogger(LLLuceneIndex.class);
 	private static final boolean BYPASS_GROUPBY_BUG = Boolean.parseBoolean(System.getProperty(
@@ -157,7 +159,7 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 				.doOnDiscard(LLIndexSearcher.class, indexSearcher -> {
 					try {
 						indexSearcher.close();
-					} catch (IOException ex) {
+					} catch (UncheckedIOException ex) {
 						LOG.error("Failed to close an index searcher", ex);
 					}
 				})
@@ -314,10 +316,17 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLocalLuceneIndex::close).iterator();
+	protected void onClose() {
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet
+				.stream()
+				.map(part -> Mono
+						.<Void>fromRunnable(part::close)
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.publishOn(Schedulers.parallel())
+				)
+				.iterator();
 		var indicesCloseMono = Mono.whenDelayError(it);
-		return indicesCloseMono
+		indicesCloseMono
 				.then(Mono.fromCallable(() -> {
 					if (multiSearcher instanceof Closeable closeable) {
 						//noinspection BlockingMethodInNonBlockingContext
@@ -326,7 +335,8 @@ public class LLLocalMultiLuceneIndex implements LLLuceneIndex {
 					return null;
 				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 				.publishOn(Schedulers.parallel())
-				.then();
+				.then()
+				.block();
 	}
 
 	@Override

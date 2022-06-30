@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.database.disk.HugePqEnv;
 import it.cavallium.dbengine.database.disk.StandardRocksDBColumn;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
@@ -13,13 +14,12 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteOptions;
 
-public class HugePqArray<V> implements IArray<V>, SafeCloseable {
+public class HugePqArray<V> extends SimpleResource implements IArray<V>, SafeCloseable {
 
 	static {
 		RocksDB.loadLibrary();
 	}
 
-	private final AtomicBoolean closed = new AtomicBoolean();
 	private final HugePqCodec<V> valueCodec;
 	private final LLTempHugePqEnv tempEnv;
 	private final HugePqEnv env;
@@ -118,11 +118,9 @@ public class HugePqArray<V> implements IArray<V>, SafeCloseable {
 	}
 
 	@Override
-	public void close() {
-		if (closed.compareAndSet(false, true)) {
-			ensureThread();
-			this.tempEnv.freeDb(hugePqId);
-		}
+	public void onClose() {
+		ensureThread();
+		this.tempEnv.freeDb(hugePqId);
 	}
 
 	@Override

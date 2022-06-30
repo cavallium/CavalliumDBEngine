@@ -66,7 +66,7 @@ public interface LuceneIndex<T, U> extends LLSnapshottable {
 
 	boolean isLowMemoryMode();
 
-	Mono<Void> close();
+	void close();
 
 	Mono<Void> flush();
 

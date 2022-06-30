@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.ref.Cleaner;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
@@ -28,6 +29,7 @@ import org.apache.lucene.store.AlreadyClosedException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.publisher.Sinks.Empty;
@@ -35,7 +37,7 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 // todo: deduplicate code between Cached and Simple searcher managers
-public class SimpleIndexSearcherManager implements IndexSearcherManager {
+public class SimpleIndexSearcherManager extends SimpleResource implements IndexSearcherManager {
 
 	private static final Logger LOG = LogManager.getLogger(SimpleIndexSearcherManager.class);
 	private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
@@ -56,10 +58,7 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 
 	private final AtomicLong activeSearchers = new AtomicLong(0);
 	private final AtomicLong activeRefreshes = new AtomicLong(0);
-
-	private final AtomicBoolean closeRequested = new AtomicBoolean();
-	private final Empty<Void> closeRequestedMono = Sinks.empty();
-	private final Mono<Void> closeMono;
+	private final Disposable refreshSubscription;
 
 	public SimpleIndexSearcherManager(IndexWriter indexWriter,
 			@Nullable SnapshotsManager snapshotsManager,
@@ -75,8 +74,7 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 
 		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
 
-		Empty<Void> refresherClosed = Sinks.empty();
-		var refreshSubscription = Mono
+		refreshSubscription = Mono
 				.fromRunnable(() -> {
 					try {
 						maybeRefresh();
@@ -87,47 +85,9 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 				.subscribeOn(luceneHeavyTasksScheduler)
 				.publishOn(Schedulers.parallel())
 				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime))
-				.takeUntilOther(closeRequestedMono.asMono())
-				.doAfterTerminate(refresherClosed::tryEmitEmpty)
 				.transform(LLUtils::handleDiscard)
 				.subscribe();
 
-		this.closeMono = Mono
-				.fromRunnable(() -> {
-					LOG.debug("Closing IndexSearcherManager...");
-					this.closeRequested.set(true);
-					this.closeRequestedMono.tryEmitEmpty();
-					refreshSubscription.dispose();
-				})
-				.then(refresherClosed.asMono())
-				.then(Mono.<Void>fromRunnable(() -> {
-					LOG.debug("Closed IndexSearcherManager");
-					LOG.debug("Closing refreshes...");
-					long initTime = System.nanoTime();
-					while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
-						LockSupport.parkNanos(50000000);
-					}
-					LOG.debug("Closed refreshes...");
-					LOG.debug("Closing active searchers...");
-					initTime = System.nanoTime();
-					while (activeSearchers.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
-						LockSupport.parkNanos(50000000);
-					}
-					LOG.debug("Closed active searchers");
-					LOG.debug("Stopping searcher executor...");
-					SEARCH_EXECUTOR.shutdown();
-					try {
-						//noinspection BlockingMethodInNonBlockingContext
-						if (!SEARCH_EXECUTOR.awaitTermination(15, TimeUnit.SECONDS)) {
-							SEARCH_EXECUTOR.shutdownNow();
-						}
-					} catch (InterruptedException e) {
-						LOG.error("Failed to stop executor", e);
-					}
-					LOG.debug("Stopped searcher executor");
-				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
-				.publishOn(Schedulers.parallel())
-				.cache();
 		this.noSnapshotSearcherMono = retrieveSearcherInternal(null);
 	}
 
@@ -171,7 +131,7 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 
 	private Mono<LLIndexSearcher> retrieveSearcherInternal(@Nullable LLSnapshot snapshot) {
 		return Mono.fromCallable(() -> {
-					if (closeRequested.get()) {
+					if (isClosed()) {
 						return null;
 					}
 					activeSearchers.incrementAndGet();
@@ -218,8 +178,32 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		return closeMono;
+	protected void onClose() {
+		LOG.debug("Closing IndexSearcherManager...");
+		refreshSubscription.dispose();
+		LOG.debug("Closed IndexSearcherManager");
+		LOG.debug("Closing refreshes...");
+		long initTime = System.nanoTime();
+		while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
+			LockSupport.parkNanos(50000000);
+		}
+		LOG.debug("Closed refreshes...");
+		LOG.debug("Closing active searchers...");
+		initTime = System.nanoTime();
+		while (activeSearchers.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
+			LockSupport.parkNanos(50000000);
+		}
+		LOG.debug("Closed active searchers");
+		LOG.debug("Stopping searcher executor...");
+		SEARCH_EXECUTOR.shutdown();
+		try {
+			if (!SEARCH_EXECUTOR.awaitTermination(15, TimeUnit.SECONDS)) {
+				SEARCH_EXECUTOR.shutdownNow();
+			}
+		} catch (InterruptedException e) {
+			LOG.error("Failed to stop executor", e);
+		}
+		LOG.debug("Stopped searcher executor");
 	}
 
 	public long getActiveSearchers() {
@@ -237,10 +221,12 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 		}
 
 		@Override
-		public void onClose() throws IOException {
+		public void onClose() {
 			dropCachedIndexSearcher();
-			if (getClosed().compareAndSet(false, true)) {
+			try {
 				searcherManager.release(indexSearcher);
+			} catch (IOException ex) {
+				throw new UncheckedIOException(ex);
 			}
 		}
 	}
@@ -253,7 +239,7 @@ public class SimpleIndexSearcherManager implements IndexSearcherManager {
 		}
 
 		@Override
-		public void onClose() throws IOException {
+		public void onClose() {
 			dropCachedIndexSearcher();
 		}
 	}

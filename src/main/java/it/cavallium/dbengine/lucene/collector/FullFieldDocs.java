@@ -4,13 +4,14 @@ import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLDoc;
 import it.cavallium.dbengine.lucene.LLFieldDoc;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
 import java.io.IOException;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TotalHits;
 import reactor.core.publisher.Flux;
 
-public class FullFieldDocs<T extends LLDoc> implements FullDocs<T>, SafeCloseable {
+public class FullFieldDocs<T extends LLDoc> extends SimpleResource implements FullDocs<T>, SafeCloseable {
 
 	private final FullDocs<T> fullDocs;
 	private final SortField[] fields;
@@ -40,7 +41,7 @@ public class FullFieldDocs<T extends LLDoc> implements FullDocs<T>, SafeCloseabl
 	}
 
 	@Override
-	public void close() {
+	protected void onClose() {
 		fullDocs.close();
 	}
 }

@@ -24,8 +24,15 @@ public abstract class SimpleResource implements SafeCloseable {
 	}
 
 	protected SimpleResource(boolean canClose) {
+		this(canClose, new AtomicBoolean());
+	}
+
+	protected SimpleResource(AtomicBoolean closed) {
+		this(true, closed);
+	}
+
+	private SimpleResource(boolean canClose, AtomicBoolean closed) {
 		this.canClose = canClose;
-		var closed = new AtomicBoolean();
 		this.closed = closed;
 
 		if (ENABLE_LEAK_DETECTION && canClose) {
@@ -53,8 +60,12 @@ public abstract class SimpleResource implements SafeCloseable {
 		}
 	}
 
-	private boolean isClosed() {
+	protected boolean isClosed() {
 		return canClose && closed.get();
+	}
+
+	protected AtomicBoolean getClosed() {
+		return closed;
 	}
 
 	protected void ensureOpen() {

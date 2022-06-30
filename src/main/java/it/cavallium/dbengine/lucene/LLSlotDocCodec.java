@@ -3,6 +3,7 @@ package it.cavallium.dbengine.lucene;
 import io.netty5.buffer.api.Buffer;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
@@ -18,7 +19,8 @@ import org.apache.lucene.search.SortField;
 import org.rocksdb.AbstractComparator;
 import org.rocksdb.ComparatorOptions;
 
-public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueue, SafeCloseable {
+public class LLSlotDocCodec extends SimpleResource
+		implements HugePqCodec<LLSlotDoc>, FieldValueHitQueue, SafeCloseable {
 
 	private final SortField[] fields;
 
@@ -189,7 +191,7 @@ public class LLSlotDocCodec implements HugePqCodec<LLSlotDoc>, FieldValueHitQueu
 	}
 
 	@Override
-	public void close() {
+	protected void onClose() {
 		for (FieldComparator<?> comparator : this.comparators) {
 			if (comparator instanceof SafeCloseable closeable) {
 				closeable.close();

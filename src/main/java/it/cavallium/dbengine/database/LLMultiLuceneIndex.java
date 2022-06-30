@@ -193,9 +193,9 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::close).iterator();
-		return Mono.whenDelayError(it);
+	public void close() {
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(e -> Mono.<Void>fromRunnable(e::close)).iterator();
+		Mono.whenDelayError(it).block();
 	}
 
 	@Override

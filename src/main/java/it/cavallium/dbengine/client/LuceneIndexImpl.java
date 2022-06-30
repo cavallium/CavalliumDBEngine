@@ -109,9 +109,10 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						mltDocumentFields
 				)
 				.collectList()
-				.flatMap(shards -> mergeResults(queryParams, shards))
+				.mapNotNull(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
-				.single();
+				.defaultIfEmpty(Hits.empty())
+				.doOnDiscard(SimpleResource.class, SimpleResource::close);
 	}
 
 	@Override
@@ -122,11 +123,10 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 						indicizer.getKeyFieldName()
 				)
 				.collectList()
-				.flatMap(shards -> mergeResults(queryParams, shards))
+				.mapNotNull(shards -> mergeResults(queryParams, shards))
 				.map(this::mapResults)
 				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(LLSearchResultShard.class, SimpleResource::close)
-				.doOnDiscard(Hits.class, SimpleResource::close);
+				.doOnDiscard(SimpleResource.class, SimpleResource::close);
 	}
 
 	@Override
@@ -162,8 +162,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		return luceneIndex.close();
+	public void close() {
+		luceneIndex.close();
 	}
 
 	/**
@@ -202,41 +202,40 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		return luceneIndex.releaseSnapshot(snapshot);
 	}
 
-	private static Mono<LLSearchResultShard> mergeResults(ClientQueryParams queryParams,
+	@Nullable
+	private static LLSearchResultShard mergeResults(ClientQueryParams queryParams,
 			List<LLSearchResultShard> shards) {
 		if (shards.size() == 0) {
-			return Mono.empty();
+			return null;
 		} else if (shards.size() == 1) {
-			return Mono.just(shards.get(0));
+			return shards.get(0);
 		}
-		return Mono.fromCallable(() -> {
-			TotalHitsCount count = null;
-			ObjectArrayList<Flux<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
-			ObjectArrayList<SimpleResource> resources = new ObjectArrayList<>(shards.size());
-			for (LLSearchResultShard shard : shards) {
-				if (count == null) {
-					count = shard.totalHitsCount();
-				} else {
-					count = LuceneUtils.sum(count, shard.totalHitsCount());
-				}
-				var maxLimit = queryParams.offset() + queryParams.limit();
-				results.add(shard.results().take(maxLimit, true));
-				resources.add(shard);
-			}
-			Objects.requireNonNull(count);
-			Flux<LLKeyScore> resultsFlux;
-			if (results.size() == 0) {
-				resultsFlux = Flux.empty();
-			} else if (results.size() == 1) {
-				resultsFlux = results.get(0);
+		TotalHitsCount count = null;
+		ObjectArrayList<Flux<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
+		ObjectArrayList<SimpleResource> resources = new ObjectArrayList<>(shards.size());
+		for (LLSearchResultShard shard : shards) {
+			if (count == null) {
+				count = shard.totalHitsCount();
 			} else {
-				resultsFlux = Flux.merge(results);
+				count = LuceneUtils.sum(count, shard.totalHitsCount());
 			}
-			return new LLSearchResultShard(resultsFlux, count, () -> {
-				for (var resource : resources) {
-					resource.close();
-				}
-			});
+			var maxLimit = queryParams.offset() + queryParams.limit();
+			results.add(shard.results().take(maxLimit, true));
+			resources.add(shard);
+		}
+		Objects.requireNonNull(count);
+		Flux<LLKeyScore> resultsFlux;
+		if (results.size() == 0) {
+			resultsFlux = Flux.empty();
+		} else if (results.size() == 1) {
+			resultsFlux = results.get(0);
+		} else {
+			resultsFlux = Flux.merge(results);
+		}
+		return new LLSearchResultShard(resultsFlux, count, () -> {
+			for (var resource : resources) {
+				resource.close();
+			}
 		});
 	}
 }

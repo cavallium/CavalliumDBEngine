@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -143,7 +144,7 @@ public class StandardSearcher implements MultiSearcher {
 			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
 				try {
 					indexSearchers.close();
-				} catch (IOException e) {
+				} catch (UncheckedIOException e) {
 					LOG.error("Can't close index searchers", e);
 				}
 			});

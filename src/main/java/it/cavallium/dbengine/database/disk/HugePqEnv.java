@@ -5,10 +5,12 @@ import static it.cavallium.dbengine.database.disk.LLTempHugePqEnv.getColumnOptio
 import com.google.common.primitives.Ints;
 import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.locks.ReentrantLock;
@@ -20,7 +22,7 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 
-public class HugePqEnv implements Closeable {
+public class HugePqEnv extends SimpleResource {
 
 	private final RocksDB db;
 	private final ArrayList<ColumnFamilyHandle> defaultCfh;
@@ -32,14 +34,14 @@ public class HugePqEnv implements Closeable {
 	}
 
 	@Override
-	public void close() throws IOException {
+	protected void onClose() {
 		for (var cfh : defaultCfh) {
 			db.destroyColumnFamilyHandle(cfh);
 		}
 		try {
 			db.closeE();
 		} catch (RocksDBException e) {
-			throw new IOException(e);
+			throw new IllegalStateException(e);
 		}
 	}
 

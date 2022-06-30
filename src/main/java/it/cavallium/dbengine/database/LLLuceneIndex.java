@@ -15,7 +15,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface LLLuceneIndex extends LLSnapshottable {
+public interface LLLuceneIndex extends LLSnapshottable, SafeCloseable {
 
 	String getLuceneIndexName();
 
@@ -73,8 +73,6 @@ public interface LLLuceneIndex extends LLSnapshottable {
 	}
 
 	boolean isLowMemoryMode();
-
-	Mono<Void> close();
 
 	/**
 	 * Flush writes to disk.

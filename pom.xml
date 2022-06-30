@@ -90,7 +90,7 @@
 			<dependency>
 				<groupId>io.projectreactor</groupId>
 				<artifactId>reactor-bom</artifactId>
-				<version>2020.0.19</version>
+				<version>2020.0.20</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -102,7 +102,7 @@
       <artifactId>reactor-tools</artifactId>
       <classifier>original</classifier>
       <scope>runtime</scope>
-      <version>3.4.18</version>
+      <version>3.4.19</version>
     </dependency>
 		<dependency>
 			<groupId>com.google.guava</groupId>
@@ -157,12 +157,28 @@
 			<artifactId>junit-jupiter-params</artifactId>
 			<version>${junit.jupiter.version}</version>
 			<scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.mockito</groupId>
+          <artifactId>mockito-core</artifactId>
+        </exclusion>
+      </exclusions>
 		</dependency>
 		<dependency>
 			<groupId>org.assertj</groupId>
 			<artifactId>assertj-core</artifactId>
 			<version>3.23.1</version>
 			<scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>org.mockito</groupId>
+          <artifactId>mockito-core</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>net.bytebuddy</groupId>
+          <artifactId>byte-buddy</artifactId>
+        </exclusion>
+      </exclusions>
 		</dependency>
 		<!-- This will get hamcrest-core automatically -->
 		<dependency>
@@ -579,6 +595,25 @@
 					</execution>
 				</executions>
 			</plugin>
+      <plugin>
+        <groupId>net.bytebuddy</groupId>
+        <artifactId>byte-buddy-maven-plugin</artifactId>
+        <version>1.12.13-20220629</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>transform</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <transformations>
+            <transformation>
+              <plugin>reactor.tools.agent.ReactorDebugByteBuddyPlugin</plugin>
+            </transformation>
+          </transformations>
+        </configuration>
+      </plugin>
 		</plugins>
 		<pluginManagement>
 			<plugins>
@@ -613,18 +648,6 @@
 						</lifecycleMappingMetadata>
 					</configuration>
 				</plugin>
-        <plugin>
-          <groupId>net.bytebuddy</groupId>
-          <artifactId>byte-buddy-maven-plugin</artifactId>
-          <version>1.12.10</version>
-          <configuration>
-            <transformations>
-              <transformation>
-                <plugin>reactor.tools.agent.ReactorDebugByteBuddyPlugin</plugin>
-              </transformation>
-            </transformations>
-          </configuration>
-        </plugin>
 			</plugins>
 		</pluginManagement>
 	</build>

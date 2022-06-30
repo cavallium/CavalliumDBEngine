@@ -1,11 +1,12 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
 import java.io.IOException;
 import org.apache.lucene.search.TotalHits;
 import reactor.core.publisher.Flux;
 
-public class LazyFullDocs<T extends LLDoc> implements FullDocs<T> {
+public class LazyFullDocs<T extends LLDoc> extends SimpleResource implements FullDocs<T> {
 
 	private final ResourceIterable<T> pq;
 	private final TotalHits totalHits;
@@ -31,7 +32,7 @@ public class LazyFullDocs<T extends LLDoc> implements FullDocs<T> {
 	}
 
 	@Override
-	public void close() {
+	protected void onClose() {
 		pq.close();
 	}
 }

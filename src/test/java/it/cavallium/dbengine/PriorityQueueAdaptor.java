@@ -1,6 +1,7 @@
 package it.cavallium.dbengine;
 
 import it.cavallium.dbengine.lucene.PriorityQueue;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -8,7 +9,7 @@ import java.util.Objects;
 import org.apache.lucene.search.HitQueue;
 import reactor.core.publisher.Flux;
 
-public class PriorityQueueAdaptor<T> implements PriorityQueue<T> {
+public class PriorityQueueAdaptor<T> extends SimpleResource implements PriorityQueue<T> {
 	
 	private final org.apache.lucene.util.PriorityQueue<T> hitQueue;
 
@@ -72,7 +73,7 @@ public class PriorityQueueAdaptor<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public void close() {
+	protected void onClose() {
 		hitQueue.clear();
 		hitQueue.updateTop();
 	}

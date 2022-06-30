@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
@@ -77,7 +78,7 @@ public class CountMultiSearcher implements MultiSearcher {
 								resultsToDrop.forEach(LLUtils::finalizeResourceNow);
 								try {
 									indexSearchers.close();
-								} catch (IOException e) {
+								} catch (UncheckedIOException e) {
 									LOG.error("Can't close index searchers", e);
 								}
 							});
@@ -122,7 +123,7 @@ public class CountMultiSearcher implements MultiSearcher {
 					.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), () -> {
 						try {
 							indexSearcher.close();
-						} catch (IOException e) {
+						} catch (UncheckedIOException e) {
 							LOG.error("Can't close index searchers", e);
 						}
 					}));

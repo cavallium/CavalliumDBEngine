@@ -6,6 +6,7 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.Resource;
 import io.netty5.buffer.api.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.Objects;
 import java.util.StringJoiner;
 import org.apache.logging.log4j.LogManager;
@@ -13,7 +14,7 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class LLEntry implements SafeCloseable {
+public class LLEntry extends SimpleResource implements SafeCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LLEntry.class);
 	private Buffer key;
@@ -91,7 +92,7 @@ public class LLEntry implements SafeCloseable {
 	}
 
 	@Override
-	public void close() {
+	protected void onClose() {
 		try {
 			if (key != null && key.isAccessible()) {
 				key.close();

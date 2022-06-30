@@ -3,7 +3,9 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executor;
@@ -16,7 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
-public class SnapshotsManager {
+public class SnapshotsManager extends SimpleResource {
 
 	private final IndexWriter indexWriter;
 	private final SnapshotDeletionPolicy snapshotter;
@@ -70,7 +72,7 @@ public class SnapshotsManager {
 			if (prevSnapshot != null) {
 				try {
 					prevSnapshot.close();
-				} catch (IOException e) {
+				} catch (UncheckedIOException e) {
 					throw new IllegalStateException("Can't close snapshot", e);
 				}
 			}
@@ -105,7 +107,8 @@ public class SnapshotsManager {
 		return Math.max(snapshots.size(), snapshotter.getSnapshotCount());
 	}
 
-	public void close() {
+	@Override
+	protected void onClose() {
 		if (!activeTasks.isTerminated()) {
 			activeTasks.arriveAndAwaitAdvance();
 		}

@@ -40,7 +40,9 @@ import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -76,7 +78,7 @@ import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-public class LLLocalLuceneIndex implements LLLuceneIndex {
+public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalLuceneIndex.class);
 
@@ -135,7 +137,6 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private final boolean lowMemory;
 
 	private final Phaser activeTasks = new Phaser(1);
-	private final AtomicBoolean closeRequested = new AtomicBoolean();
 
 	public LLLocalLuceneIndex(LLTempHugePqEnv env,
 			MeterRegistry meterRegistry,
@@ -304,7 +305,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 
 	private <V> Mono<V> ensureOpen(Mono<V> mono) {
 		return Mono.<Void>fromCallable(() -> {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				throw new IllegalStateException("Lucene index is closed");
 			} else {
 				return null;
@@ -538,39 +539,24 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		return Mono
-				.<Void>fromCallable(() -> {
-					logger.debug("Waiting IndexWriter tasks...");
-					activeTasks.arriveAndAwaitAdvance();
-					logger.debug("IndexWriter tasks ended");
-					return null;
-				})
-				.subscribeOn(luceneHeavyTasksScheduler)
-				.then(searcherManager.close())
-				.then(Mono.<Void>fromCallable(() -> {
-					shutdownLock.lock();
-					try {
-						logger.debug("Closing IndexWriter...");
-						indexWriter.close();
-						directory.close();
-						logger.debug("IndexWriter closed");
-					} finally {
-						shutdownLock.unlock();
-					}
-					return null;
-				}).subscribeOn(luceneHeavyTasksScheduler))
-
-				// Avoid closing multiple times
-				.transformDeferred(mono -> {
-					if (this.closeRequested.compareAndSet(false, true)) {
-						logger.trace("Set closeRequested to true. Further update/write calls will result in an error");
-						return mono;
-					} else {
-						logger.debug("Tried to close more than once");
-						return Mono.empty();
-					}
-				});
+	protected void onClose() {
+		logger.debug("Waiting IndexWriter tasks...");
+		activeTasks.arriveAndAwaitAdvance();
+		logger.debug("IndexWriter tasks ended");
+		shutdownLock.lock();
+		try {
+			logger.debug("Closing searcher manager...");
+			searcherManager.close();
+			logger.debug("Searcher manager closed");
+			logger.debug("Closing IndexWriter...");
+			indexWriter.close();
+			directory.close();
+			logger.debug("IndexWriter closed");
+		} catch (IOException ex) {
+			throw new UncheckedIOException(ex);
+		} finally {
+			shutdownLock.unlock();
+		}
 	}
 
 	@Override
@@ -580,7 +566,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					if (activeTasks.isTerminated()) return null;
 					shutdownLock.lock();
 					try {
-						if (closeRequested.get()) {
+						if (isClosed()) {
 							return null;
 						}
 						flushTime.recordCallable(() -> {
@@ -603,7 +589,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					if (activeTasks.isTerminated()) return null;
 					shutdownLock.lock();
 					try {
-						if (closeRequested.get()) {
+						if (isClosed()) {
 							return null;
 						}
 						var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
@@ -626,7 +612,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 					if (activeTasks.isTerminated()) return null;
 					shutdownLock.lock();
 					try {
-						if (closeRequested.get()) {
+						if (isClosed()) {
 							return null;
 						}
 						indexWriter.getConfig().setMergePolicy(NoMergePolicy.INSTANCE);
@@ -653,7 +639,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 						if (activeTasks.isTerminated()) return null;
 						shutdownLock.lock();
 						try {
-							if (closeRequested.get()) {
+							if (isClosed()) {
 								return null;
 							}
 							refreshTime.recordCallable(() -> {
@@ -681,7 +667,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public void scheduledCommit() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return;
 			}
 			commitTime.recordCallable(() -> {
@@ -702,7 +688,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	public void scheduledMerge() { // Do not use. Merges are done automatically by merge policies
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return;
 			}
 			mergeTime.recordCallable(() -> {
@@ -724,7 +710,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getSnapshotsCount() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			if (snapshotsManager == null) return 0d;
@@ -737,7 +723,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getIndexWriterFlushingBytes() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			return indexWriter.getFlushingBytes();
@@ -749,7 +735,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getIndexWriterMaxCompletedSequenceNumber() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			return indexWriter.getMaxCompletedSequenceNumber();
@@ -761,7 +747,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getIndexWriterPendingNumDocs() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			return indexWriter.getPendingNumDocs();
@@ -773,7 +759,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getIndexWriterMergingSegmentsSize() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			return indexWriter.getMergingSegments().size();
@@ -785,7 +771,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getDirectoryPendingDeletionsCount() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			return indexWriter.getDirectory().getPendingDeletions().size();
@@ -799,7 +785,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getDocCount() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			var docStats = indexWriter.getDocStats();
@@ -816,7 +802,7 @@ public class LLLocalLuceneIndex implements LLLuceneIndex {
 	private double getMaxDoc() {
 		shutdownLock.lock();
 		try {
-			if (closeRequested.get()) {
+			if (isClosed()) {
 				return 0d;
 			}
 			var docStats = indexWriter.getDocStats();

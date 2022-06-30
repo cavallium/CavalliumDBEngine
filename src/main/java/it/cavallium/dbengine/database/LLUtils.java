@@ -25,6 +25,7 @@ import it.cavallium.dbengine.lucene.RandomSortField;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
@@ -947,13 +948,13 @@ public class LLUtils {
 		} else if (next instanceof LLIndexSearcher searcher) {
 			try {
 				searcher.close();
-			} catch (IOException e) {
+			} catch (UncheckedIOException e) {
 				logger.error("Failed to close searcher {}", searcher, e);
 			}
 		} else if (next instanceof LLIndexSearchers searchers) {
 			try {
 				searchers.close();
-			} catch (IOException e) {
+			} catch (UncheckedIOException e) {
 				logger.error("Failed to close searchers {}", searchers, e);
 			}
 		} else if (next instanceof Optional<?> optional) {

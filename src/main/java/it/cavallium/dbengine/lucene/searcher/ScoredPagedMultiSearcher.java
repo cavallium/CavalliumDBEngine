@@ -13,6 +13,7 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
 import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorMultiManager;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -68,7 +69,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 								() -> {
 									try {
 										indexSearchers.close();
-									} catch (IOException e) {
+									} catch (UncheckedIOException e) {
 										LOG.error("Can't close index searchers", e);
 									}
 								}

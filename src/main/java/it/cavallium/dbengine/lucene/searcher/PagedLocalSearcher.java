@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.TopDocsCollectorMultiManager;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
@@ -69,7 +70,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 							() -> {
 								try {
 									indexSearcher.close();
-								} catch (IOException e) {
+								} catch (UncheckedIOException e) {
 									LOG.error(e);
 								}
 							}

@@ -238,10 +238,6 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 
 	private class SnapshotIndexSearcher extends LLIndexSearcher {
 
-		public SnapshotIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed) {
-			super(indexSearcher, closed);
-		}
-
 		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
 			super(indexSearcher);
 		}

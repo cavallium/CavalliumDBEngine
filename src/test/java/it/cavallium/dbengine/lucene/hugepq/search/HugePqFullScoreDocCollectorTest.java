@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 import it.cavallium.dbengine.client.query.QueryUtils;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.IndexSearcherManager;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
@@ -78,7 +79,13 @@ public class HugePqFullScoreDocCollectorTest {
 						.toList();
 				try (var collector = HugePqFullScoreDocCollector.create(env, 20)) {
 					searcher.search(luceneQuery, collector);
-					var docs = collector.fullDocs().iterate().collectList().blockOptional().orElseThrow();
+					var docs = collector
+							.fullDocs()
+							.iterate()
+							.collectList()
+							.transform(LLUtils::handleDiscard)
+							.blockOptional()
+							.orElseThrow();
 					System.out.println("Expected docs:");
 					for (LLScoreDoc expectedDoc : expectedDocs) {
 						System.out.println(expectedDoc);
@@ -146,23 +153,24 @@ public class HugePqFullScoreDocCollectorTest {
 						.map(scoreDoc -> new LLScoreDoc(scoreDoc.doc, scoreDoc.score, scoreDoc.shardIndex))
 						.toList();
 				var collectorManager = HugePqFullScoreDocCollector.createSharedManager(env, 20, Integer.MAX_VALUE);
-				var collector1 = collectorManager.newCollector();
-				var collector2 = collectorManager.newCollector();
-				shardSearcher1.search(luceneQuery, collector1);
-				shardSearcher2.search(luceneQuery, collector2);
-				try (var results = collectorManager.reduce(List.of(collector1, collector2))) {
-					var docs = results.iterate().collectList().blockOptional().orElseThrow();
-					System.out.println("Expected docs:");
-					for (LLScoreDoc expectedDoc : expectedDocs) {
-						System.out.println(expectedDoc);
+				try (var collector1 = collectorManager.newCollector();
+						var collector2 = collectorManager.newCollector()) {
+					shardSearcher1.search(luceneQuery, collector1);
+					shardSearcher2.search(luceneQuery, collector2);
+					try (var results = collectorManager.reduce(List.of(collector1, collector2))) {
+						var docs = results.iterate().collectList().blockOptional().orElseThrow();
+						System.out.println("Expected docs:");
+						for (LLScoreDoc expectedDoc : expectedDocs) {
+							System.out.println(expectedDoc);
+						}
+						System.out.println("");
+						System.out.println("Obtained docs:");
+						for (LLScoreDoc doc : docs) {
+							System.out.println(doc);
+						}
+						assertEquals(expectedDocs, docs.stream().map(elem -> new LLScoreDoc(elem.doc(), elem.score(), -1)).toList());
+						assertEquals(expectedTotalHits, new TotalHitsCount(results.totalHits().value, results.totalHits().relation == Relation.EQUAL_TO));
 					}
-					System.out.println("");
-					System.out.println("Obtained docs:");
-					for (LLScoreDoc doc : docs) {
-						System.out.println(doc);
-					}
-					assertEquals(expectedDocs, docs.stream().map(elem -> new LLScoreDoc(elem.doc(), elem.score(), -1)).toList());
-					assertEquals(expectedTotalHits, new TotalHitsCount(results.totalHits().value, results.totalHits().relation == Relation.EQUAL_TO));
 				}
 			}
 		}

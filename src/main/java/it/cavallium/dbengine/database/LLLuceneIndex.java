@@ -7,6 +7,7 @@ import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -60,16 +61,20 @@ public interface LLLuceneIndex extends LLSnapshottable, SafeCloseable {
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams);
 
-	default Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query) {
-		QueryParams params = QueryParams.of(query, 0, 0, NoSort.of(), false, Long.MAX_VALUE);
-		return Mono.from(this.search(snapshot, params, null)
-				.map(llSearchResultShard -> {
-					try (llSearchResultShard) {
-						return llSearchResultShard.totalHitsCount();
-					}
-				})
-				.defaultIfEmpty(TotalHitsCount.of(0, true))
+	default Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
+		QueryParams params = QueryParams.of(query,
+				0,
+				0,
+				NoSort.of(),
+				false,
+				timeout == null ? Long.MAX_VALUE : timeout.toMillis()
 		);
+		return Mono
+				.usingWhen(this.search(snapshot, params, null).singleOrEmpty(),
+						llSearchResultShard -> Mono.just(llSearchResultShard.totalHitsCount()),
+						LLUtils::finalizeResource
+				)
+				.defaultIfEmpty(TotalHitsCount.of(0, true));
 	}
 
 	boolean isLowMemoryMode();

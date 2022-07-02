@@ -35,6 +35,7 @@ import reactor.core.publisher.SignalType;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
+	private static final Duration MAX_COUNT_TIME = Duration.ofSeconds(30);
 	private final LLLuceneIndex luceneIndex;
 	private final Indicizer<T,U> indicizer;
 
@@ -149,13 +150,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return Mono.usingWhen(this.search(ClientQueryParams
-				.builder()
-				.snapshot(snapshot)
-				.query(query)
-				.timeout(Duration.ofSeconds(30))
-				.limit(0)
-				.build()), searchResultKeys -> Mono.just(searchResultKeys.totalHitsCount()), LLUtils::finalizeResource);
+		return luceneIndex
+				.count(resolveSnapshot(snapshot), query, MAX_COUNT_TIME)
+				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
 	}
 
 	@Override
@@ -205,8 +202,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Nullable
-	private static LLSearchResultShard mergeResults(ClientQueryParams queryParams,
-			List<LLSearchResultShard> shards) {
+	private static LLSearchResultShard mergeResults(ClientQueryParams queryParams, List<LLSearchResultShard> shards) {
 		if (shards.size() == 0) {
 			return null;
 		} else if (shards.size() == 1) {

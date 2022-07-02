@@ -37,31 +37,20 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return singleOrClose(indexSearchersMono, indexSearchers -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
-
-			return queryParamsMono.flatMap(queryParams2 -> {
-				if (queryParams2.isSorted() && !queryParams2.isSortedByScore()) {
-					throw new IllegalArgumentException(SortedByScoreFullMultiSearcher.this.getClass().getSimpleName()
-							+ " doesn't support sorted queries");
-				}
-
-				return this
-						// Search results
-						.search(indexSearchers.shards(), queryParams2)
-						// Compute the results
-						.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers, keyFieldName, queryParams2))
-						// Ensure that one LuceneSearchResult is always returned
-						.single();
-			});
-		});
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+		}
+		if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
+			throw new IllegalArgumentException(SortedByScoreFullMultiSearcher.this.getClass().getSimpleName()
+					+ " doesn't support sorted queries");
+		}
+		return singleOrClose(indexSearchersMono, indexSearchers -> this
+				// Search results
+				.search(indexSearchers.shards(), queryParams)
+				// Compute the results
+				.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers, keyFieldName, queryParams))
+				// Ensure that one LuceneSearchResult is always returned
+				.single());
 	}
 
 	/**
@@ -71,7 +60,6 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams) {
 		return Mono
 				.fromCallable(() -> {
-					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdLong();
 					return HugePqFullScoreDocCollector.createSharedManager(env, queryParams.limitLong(), totalHitsThreshold);
 				})
@@ -91,7 +79,7 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 								collector.close();
 								throw ex;
 							}
-						}))
+						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 						.collectList()
 						.flatMap(collectors -> Mono.fromCallable(() -> {
 							try {
@@ -104,7 +92,8 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 								throw ex;
 							}
 						}))
-				);
+				)
+				.publishOn(Schedulers.parallel());
 	}
 
 	/**

@@ -15,6 +15,7 @@ import it.cavallium.dbengine.client.Sort;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLScoreMode;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.AdaptiveMultiSearcher;
@@ -136,7 +137,11 @@ public class TestLuceneIndex {
 		index.updateDocument("test-key-13", "2111").block();
 		index.updateDocument("test-key-14", "2999").block();
 		index.updateDocument("test-key-15", "3902").block();
-		Flux.range(1, 1000).concatMap(i -> index.updateDocument("test-key-" + (15 + i), "" + i)).blockLast();
+		Flux
+				.range(1, 1000)
+				.concatMap(i -> index.updateDocument("test-key-" + (15 + i), "" + i))
+				.transform(LLUtils::handleDiscard)
+				.blockLast();
 		tempDb.swappableLuceneSearcher().setSingle(new CountMultiSearcher());
 		tempDb.swappableLuceneSearcher().setMulti(new CountMultiSearcher());
 		assertCount(index, 1000 + 15);

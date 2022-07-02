@@ -17,6 +17,7 @@ import io.micrometer.core.instrument.Timer;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
@@ -37,6 +38,7 @@ import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
@@ -508,13 +510,28 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex 
 	@Override
 	public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
+		return searchInternal(snapshot, queryParams, keyFieldName)
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.flux();
+	}
+
+	public Mono<LuceneSearchResult> searchInternal(@Nullable LLSnapshot snapshot, QueryParams queryParams,
+			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searcher = searcherManager.retrieveSearcher(snapshot);
 
-		return localSearcher
-				.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.flux();
+		return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE);
+	}
+
+	@Override
+	public Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
+		var params = LuceneUtils.getCountQueryParams(query);
+		return Mono
+				.usingWhen(this.searchInternal(snapshot, params, null),
+						result -> Mono.just(result.totalHitsCount()),
+						LLUtils::finalizeResource
+				)
+				.defaultIfEmpty(TotalHitsCount.of(0, true));
 	}
 
 	@Override

@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
@@ -42,64 +43,51 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {
+		if (transformer != NO_REWRITE) {
+			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+		}
+		if (queryParams.isSorted() && queryParams.limitLong() > 0) {
+			throw new UnsupportedOperationException(
+					"Sorted queries are not supported" + " by SimpleUnsortedUnscoredLuceneMultiSearcher");
+		}
+		if (queryParams.needsScores() && queryParams.limitLong() > 0) {
+			throw new UnsupportedOperationException(
+					"Scored queries are not supported" + " by SimpleUnsortedUnscoredLuceneMultiSearcher");
+		}
 
 		return singleOrClose(indexSearchersMono, indexSearchers -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
+			var localQueryParams = getLocalQueryParams(queryParams);
+			return Flux
+					.fromIterable(indexSearchers.llShards())
+					.flatMap(searcher -> localSearcher.collect(Mono.just(searcher), localQueryParams, keyFieldName, transformer))
+					.collectList()
+					.map(results -> {
+						List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
+						List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
+						boolean exactTotalHitsCount = true;
+						long totalHitsCountValue = 0;
+						for (LuceneSearchResult result : results) {
+							resultsToDrop.add(result);
+							resultsFluxes.add(result.results());
+							exactTotalHitsCount &= result.totalHitsCount().exact();
+							totalHitsCountValue += result.totalHitsCount().value();
+						}
 
-			return queryParamsMono.flatMap(queryParams2 -> {
-						var localQueryParams = getLocalQueryParams(queryParams2);
-						return Flux
-								.fromIterable(indexSearchers.llShards())
-								.flatMap(searcher ->
-										localSearcher.collect(Mono.just(searcher), localQueryParams, keyFieldName, transformer))
-								.collectList()
-								.map(results -> {
-									List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
-									List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
-									boolean exactTotalHitsCount = true;
-									long totalHitsCountValue = 0;
-									for (LuceneSearchResult result : results) {
-										resultsToDrop.add(result);
-										resultsFluxes.add(result.results());
-										exactTotalHitsCount &= result.totalHitsCount().exact();
-										totalHitsCountValue += result.totalHitsCount().value();
-									}
+						var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
+						Flux<LLKeyScore> mergedFluxes = Flux
+								.merge(resultsFluxes)
+								.skip(queryParams.offsetLong())
+								.take(queryParams.limitLong(), true);
 
-									var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
-									Flux<LLKeyScore> mergedFluxes = Flux
-											.merge(resultsFluxes)
-											.skip(queryParams2.offsetLong())
-											.take(queryParams2.limitLong(), true);
-
-									return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-										resultsToDrop.forEach(SimpleResource::close);
-										try {
-											indexSearchers.close();
-										} catch (UncheckedIOException e) {
-											LOG.error("Can't close index searchers", e);
-										}
-									});
-								})
-								.doFirst(() -> {
-									LLUtils.ensureBlocking();
-									if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
-										throw new UnsupportedOperationException("Sorted queries are not supported"
-												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
-									}
-									if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
-										throw new UnsupportedOperationException("Scored queries are not supported"
-												+ " by SimpleUnsortedUnscoredLuceneMultiSearcher");
-									}
-								});
-					}
-			);
+						return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
+							resultsToDrop.forEach(SimpleResource::close);
+							try {
+								indexSearchers.close();
+							} catch (UncheckedIOException e) {
+								LOG.error("Can't close index searchers", e);
+							}
+						});
+					});
 		});
 	}
 

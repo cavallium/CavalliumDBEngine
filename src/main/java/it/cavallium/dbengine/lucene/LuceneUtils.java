@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.lucene;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
@@ -9,6 +11,7 @@ import it.cavallium.data.generator.nativedata.Nullableint;
 import it.cavallium.data.generator.nativedata.Nullablelong;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
@@ -18,7 +21,9 @@ import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import it.cavallium.dbengine.database.collections.DatabaseStageEntry;
 import it.cavallium.dbengine.database.collections.DatabaseStageMap;
 import it.cavallium.dbengine.database.collections.ValueGetter;
+import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
 import it.cavallium.dbengine.lucene.analyzer.LegacyWordAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
@@ -28,7 +33,12 @@ import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
 import it.cavallium.dbengine.lucene.directory.RocksdbDirectory;
 import it.cavallium.dbengine.lucene.mlt.BigCompositeReader;
 import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
+import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
+import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
+import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
+import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.lucene.similarity.NGramSimilarity;
 import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.DirectIOFSDirectory;
@@ -104,7 +114,6 @@ import org.novasearch.lucene.search.similarities.BM25Similarity.BM25Model;
 import org.novasearch.lucene.search.similarities.LdpSimilarity;
 import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
-import org.rocksdb.util.SizeUnit;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -742,5 +751,40 @@ public class LuceneUtils {
 
 	public static it.cavallium.dbengine.rpc.current.data.TieredMergePolicy getDefaultMergePolicy() {
 		return DEFAULT_MERGE_POLICY;
+	}
+
+	public static QueryParams getCountQueryParams(it.cavallium.dbengine.client.query.current.data.Query query) {
+		return QueryParams.of(query, 0, 0, NoSort.of(), false, Long.MAX_VALUE);
+	}
+
+	public static Mono<LuceneSearchResult> rewrite(LocalSearcher localSearcher,
+			Mono<LLIndexSearcher> indexSearcherMono,
+			LocalQueryParams queryParams,
+			String keyFieldName,
+			GlobalQueryRewrite transformer) {
+		return Mono.usingWhen(indexSearcherMono, indexSearcher -> {
+			try (UnshardedIndexSearchers indexSearchers = LLIndexSearchers.unsharded(indexSearcher)) {
+				return Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.flatMap(queryParams2 ->
+								localSearcher.collect(indexSearcherMono, queryParams2, keyFieldName, NO_REWRITE));
+			}
+		}, LLUtils::finalizeResource);
+	}
+
+	public static Mono<LuceneSearchResult> rewriteMulti(MultiSearcher multiSearcher,
+			Mono<LLIndexSearchers> indexSearchersMono,
+			LocalQueryParams queryParams,
+			String keyFieldName,
+			GlobalQueryRewrite transformer) {
+		return Mono.usingWhen(indexSearchersMono,
+				indexSearchers -> Mono
+						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.flatMap(queryParams2 ->
+								multiSearcher.collectMulti(indexSearchersMono, queryParams2, keyFieldName, NO_REWRITE)),
+				LLUtils::finalizeResource
+		);
 	}
 }

@@ -263,7 +263,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	 * Value getter doesn't lock data. Please make sure to lock before getting data.
 	 */
 	default ValueGetterBlocking<T, U> getDbValueGetter(@Nullable CompositeSnapshot snapshot) {
-		return k -> getValue(snapshot, k).block();
+		return k -> getValue(snapshot, k).transform(LLUtils::handleDiscard).block();
 	}
 
 	default ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {

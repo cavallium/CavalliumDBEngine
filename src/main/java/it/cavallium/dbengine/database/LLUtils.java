@@ -647,7 +647,7 @@ public class LLUtils {
 		return Mono.fromRunnable(() -> LLUtils.finalizeResourceNow(resource));
 	}
 
-	public static Mono<Void> finalizeResource(SimpleResource resource) {
+	public static Mono<Void> finalizeResource(SafeCloseable resource) {
 		return Mono.fromRunnable(resource::close);
 	}
 
@@ -657,7 +657,7 @@ public class LLUtils {
 		}
 	}
 
-	public static void finalizeResourceNow(SimpleResource resource) {
+	public static void finalizeResourceNow(SafeCloseable resource) {
 		resource.close();
 	}
 

@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static com.google.common.collect.Lists.partition;
 
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -92,7 +93,7 @@ public class RocksDBUtils {
 						}
 					}
 					return null;
-				}).subscribeOn(Schedulers.boundedElastic())).toList()).block();
+				}).subscribeOn(Schedulers.boundedElastic())).toList()).transform(LLUtils::handleDiscard).block();
 			}
 		}
 	}

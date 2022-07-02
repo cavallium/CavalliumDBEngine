@@ -69,7 +69,7 @@ public class BufferDataInputShared implements BufferDataInput {
 	}
 
 	@Override
-	public int readUnsignedByte() {
+	public int readUnsignedByte() {/*		if (StackWalker.getInstance().walk(s -> s.limit(16).anyMatch(frame -> frame.getMethodName().contains("updateAndGetDelta")))) {throw new TempException();}*/
 		if (buf == null) throw new IndexOutOfBoundsException();
 		return buf.readUnsignedByte();
 	}

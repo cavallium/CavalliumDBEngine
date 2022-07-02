@@ -74,7 +74,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
 			Runnable onClose) {
 		super((Drop<DatabaseMapDictionaryHashed<T, U, TH>>) (Drop) DROP);
-		if (dictionary.getUpdateMode().block() != UpdateMode.ALLOW) {
+		if (dictionary.getUpdateMode().transform(LLUtils::handleDiscard).block() != UpdateMode.ALLOW) {
 			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
 		this.alloc = dictionary.getAllocator();

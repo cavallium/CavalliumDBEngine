@@ -22,6 +22,7 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RocksDBLongProperty;
 import it.cavallium.dbengine.database.RocksDBMapProperty;
 import it.cavallium.dbengine.database.RocksDBStringProperty;
@@ -510,7 +511,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 
 					@Override
 					public void close() {
-						sendRequest(new CloseLuceneIndex(id)).then().block();
+						sendRequest(new CloseLuceneIndex(id)).then().transform(LLUtils::handleDiscard).block();
 					}
 
 					@Override

@@ -39,45 +39,31 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return singleOrClose(indexSearchersMono, indexSearchers -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+		}
 
-			return queryParamsMono.flatMap(queryParams2 -> {
-				PaginationInfo paginationInfo = getPaginationInfo(queryParams2);
+		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-				return this
-						// Search first page results
-						.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
-						// Compute the results of the first page
-						.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono,
-								indexSearchers,
-								keyFieldName,
-								queryParams2
-						))
-						// Compute other results
-						.map(firstResult -> this.computeOtherResults(firstResult,
-								indexSearchers.shards(),
-								queryParams2,
-								keyFieldName,
-								() -> {
-									try {
-										indexSearchers.close();
-									} catch (UncheckedIOException e) {
-										LOG.error("Can't close index searchers", e);
-									}
-								}
-						))
-						// Ensure that one LuceneSearchResult is always returned
-						.single();
-			});
-		});
+		return singleOrClose(indexSearchersMono, indexSearchers -> this
+				// Search first page results
+				.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
+				// Compute the results of the first page
+				.transform(firstPageTopDocsMono ->
+						this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers, keyFieldName, queryParams
+				))
+				// Compute other results
+				.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams, keyFieldName,
+						() -> {
+							try {
+								indexSearchers.close();
+							} catch (UncheckedIOException e) {
+								LOG.error("Can't close index searchers", e);
+							}
+						}
+				))
+				// Ensure that one LuceneSearchResult is always returned
+				.single());
 	}
 
 	private Sort getSort(LocalQueryParams queryParams) {

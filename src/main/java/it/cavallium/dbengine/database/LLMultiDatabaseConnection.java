@@ -156,14 +156,14 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 						var connectionIndexStructure = indexStructure
 								.setActiveShards(new IntArrayList(entry.getValue()));
 
-						var connIndex = entry.getKey()
+						Flux<LLLuceneIndex> connIndex = entry.getKey()
 								.getLuceneIndex(clusterName,
 										connectionIndexStructure,
 										indicizerAnalyzers,
 										indicizerSimilarities,
 										luceneOptions,
 										luceneHacks
-								).cache().repeat();
+								).cast(LLLuceneIndex.class).cache().repeat();
 						return Flux
 								.fromIterable(entry.getValue())
 								.zipWith(connIndex);
@@ -171,7 +171,7 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 					.collectList()
 					.map(indices -> {
 						var luceneIndices = new LLLuceneIndex[indexStructure.totalShards()];
-						for (Tuple2<Integer, ? extends LLLuceneIndex> index : indices) {
+						for (var index : indices) {
 							luceneIndices[index.getT1()] = index.getT2();
 						}
 						return new LLMultiLuceneIndex(clusterName,

@@ -6,8 +6,10 @@ import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.QueryParser;
+import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
@@ -25,6 +27,7 @@ import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.lucene.searcher.DecimalBucketMultiSearcher;
 import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
+import it.cavallium.dbengine.lucene.searcher.LuceneSearchResult;
 import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
@@ -34,6 +37,7 @@ import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -288,15 +292,31 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 	public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName) {
+		return searchInternal(snapshot, queryParams, keyFieldName)
+				// Transform the result type
+				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.flux();
+	}
+
+	private Mono<LuceneSearchResult> searchInternal(@Nullable LLSnapshot snapshot,
+			QueryParams queryParams,
+			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searchers = getIndexSearchers(snapshot);
 
 		// Collect all the shards results into a single global result
-		return multiSearcher
-				.collectMulti(searchers, localQueryParams, keyFieldName, GlobalQueryRewrite.NO_REWRITE)
-				// Transform the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
-				.flux();
+		return multiSearcher.collectMulti(searchers, localQueryParams, keyFieldName, GlobalQueryRewrite.NO_REWRITE);
+	}
+
+	@Override
+	public Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
+		var params = LuceneUtils.getCountQueryParams(query);
+		return Mono
+				.usingWhen(this.searchInternal(snapshot, params, null),
+						result -> Mono.just(result.totalHitsCount()),
+						LLUtils::finalizeResource
+				)
+				.defaultIfEmpty(TotalHitsCount.of(0, true));
 	}
 
 	@Override
@@ -336,6 +356,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
 				.publishOn(Schedulers.parallel())
 				.then()
+				.transform(LLUtils::handleDiscard)
 				.block();
 	}
 

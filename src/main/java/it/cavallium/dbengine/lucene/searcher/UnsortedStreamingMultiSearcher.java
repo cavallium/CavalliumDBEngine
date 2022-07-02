@@ -33,42 +33,31 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return singleOrClose(indexSearchersMono, indexSearchers -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+		}
+		if (queryParams.isSorted() && queryParams.limitLong() > 0) {
+			throw new UnsupportedOperationException("Sorted queries are not supported" + " by UnsortedContinuousLuceneMultiSearcher");
+		}
+		var localQueryParams = getLocalQueryParams(queryParams);
+		return singleOrClose(indexSearchersMono, indexSearchers -> Mono.fromCallable(() -> {
+			var shards = indexSearchers.shards();
 
-			return queryParamsMono.map(queryParams2 -> {
-				var localQueryParams = getLocalQueryParams(queryParams2);
-				if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
-					throw new UnsupportedOperationException("Sorted queries are not supported"
-							+ " by UnsortedContinuousLuceneMultiSearcher");
+			Flux<ScoreDoc> scoreDocsFlux = getScoreDocs(localQueryParams, shards);
+
+			Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
+
+			var totalHitsCount = new TotalHitsCount(0, false);
+			Flux<LLKeyScore> mergedFluxes = resultsFlux.skip(queryParams.offsetLong()).take(queryParams.limitLong(), true);
+
+			return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
+				try {
+					indexSearchers.close();
+				} catch (UncheckedIOException e) {
+					LOG.error("Can't close index searchers", e);
 				}
-				var shards = indexSearchers.shards();
-
-				Flux<ScoreDoc> scoreDocsFlux = getScoreDocs(localQueryParams, shards);
-
-				Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
-
-				var totalHitsCount = new TotalHitsCount(0, false);
-				Flux<LLKeyScore> mergedFluxes = resultsFlux
-						.skip(queryParams2.offsetLong())
-						.take(queryParams2.limitLong(), true);
-
-				return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-					try {
-						indexSearchers.close();
-					} catch (UncheckedIOException e) {
-						LOG.error("Can't close index searchers", e);
-					}
-				});
 			});
-		});
+		}));
 	}
 
 	private Flux<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {

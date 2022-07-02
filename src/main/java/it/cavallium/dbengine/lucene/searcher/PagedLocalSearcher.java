@@ -39,45 +39,37 @@ public class PagedLocalSearcher implements LocalSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewrite(this, indexSearcherMono, queryParams, keyFieldName, transformer);
+		}
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
-		return singleOrClose(indexSearcherMono, indexSearcher -> {
-			var indexSearchers = LLIndexSearchers.unsharded(indexSearcher);
+		var indexSearchersMono = indexSearcherMono.map(LLIndexSearchers::unsharded);
 
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
-
-			return queryParamsMono.flatMap(queryParams2 -> this
-					// Search first page results
-					.searchFirstPage(indexSearchers.shards(), queryParams2, paginationInfo)
-					// Compute the results of the first page
-					.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono,
-							indexSearchers.shards(),
-							keyFieldName,
-							queryParams2
-					))
-					// Compute other results
-					.transform(firstResult -> this.computeOtherResults(firstResult,
-							indexSearchers.shards(),
-							queryParams2,
-							keyFieldName,
-							() -> {
-								try {
-									indexSearcher.close();
-								} catch (UncheckedIOException e) {
-									LOG.error(e);
-								}
+		return singleOrClose(indexSearchersMono, indexSearchers -> this
+				// Search first page results
+				.searchFirstPage(indexSearchers.shards(), queryParams, paginationInfo)
+				// Compute the results of the first page
+				.transform(firstPageTopDocsMono -> this.computeFirstPageResults(firstPageTopDocsMono,
+						indexSearchers.shards(),
+						keyFieldName,
+						queryParams
+				))
+				// Compute other results
+				.transform(firstResult -> this.computeOtherResults(firstResult,
+						indexSearchers.shards(),
+						queryParams,
+						keyFieldName,
+						() -> {
+							try {
+								indexSearchers.close();
+							} catch (UncheckedIOException e) {
+								LOG.error(e);
 							}
-					))
-					// Ensure that one LuceneSearchResult is always returned
-					.single());
-		});
+						}
+				))
+				// Ensure that one LuceneSearchResult is always returned
+				.single());
 	}
 
 	@Override

@@ -80,7 +80,7 @@ public class CodecsExample {
 								.then(),
 						SpeedExample.numRepeats,
 						tuple -> tuple.getT1().close()
-				)).subscribeOn(Schedulers.parallel()).blockOptional();
+				)).transform(LLUtils::handleDiscard).subscribeOn(Schedulers.parallel()).blockOptional();
 	}
 
 	private static void testConversion() {
@@ -88,6 +88,7 @@ public class CodecsExample {
 				.then()
 				.then(readNew())
 				.subscribeOn(Schedulers.parallel())
+				.transform(LLUtils::handleDiscard)
 				.blockOptional();
 	}
 

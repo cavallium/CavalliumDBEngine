@@ -37,24 +37,16 @@ public class StandardSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return singleOrClose(indexSearchersMono, indexSearchers -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
-
-			return queryParamsMono.flatMap(queryParams2 -> this
-					// Search results
-					.search(indexSearchers.shards(), queryParams2)
-					// Compute the results
-					.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers, keyFieldName, queryParams2))
-					// Ensure that one LuceneSearchResult is always returned
-					.single());
-		});
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+		}
+		return singleOrClose(indexSearchersMono, indexSearchers -> this
+				// Search results
+				.search(indexSearchers.shards(), queryParams)
+				// Compute the results
+				.transform(fullDocsMono -> this.computeResults(fullDocsMono, indexSearchers, keyFieldName, queryParams))
+				// Ensure that one LuceneSearchResult is always returned
+				.single());
 	}
 
 	/**

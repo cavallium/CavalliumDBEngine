@@ -56,6 +56,7 @@ public class SpeedExample {
 				.then(test3LevelPut())
 				.then(test4LevelPut())
 				.subscribeOn(Schedulers.parallel())
+				.transform(LLUtils::handleDiscard)
 				.blockOptional();
 	}
 

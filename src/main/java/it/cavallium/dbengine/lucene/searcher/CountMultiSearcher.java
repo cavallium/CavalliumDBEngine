@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -9,6 +10,8 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.lucene.search.IndexSearcher;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -30,61 +34,36 @@ public class CountMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return singleOrClose(indexSearchersMono, indexSearchers -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+		}
+		if (queryParams.isSorted() && queryParams.limitLong() > 0) {
+			throw new UnsupportedOperationException(
+					"Sorted queries are not supported by SimpleUnsortedUnscoredLuceneMultiSearcher");
+		}
+		if (queryParams.needsScores() && queryParams.limitLong() > 0) {
+			throw new UnsupportedOperationException(
+					"Scored queries are not supported by SimpleUnsortedUnscoredLuceneMultiSearcher");
+		}
 
-			return queryParamsMono.flatMap(queryParams2 -> {
-				var localQueryParams = getLocalQueryParams(queryParams2);
-				return Mono
-						.fromRunnable(() -> {
-							if (queryParams2.isSorted() && queryParams2.limitLong() > 0) {
-								throw new UnsupportedOperationException(
-										"Sorted queries are not supported by SimpleUnsortedUnscoredLuceneMultiSearcher");
-							}
-							if (queryParams2.needsScores() && queryParams2.limitLong() > 0) {
-								throw new UnsupportedOperationException(
-										"Scored queries are not supported by SimpleUnsortedUnscoredLuceneMultiSearcher");
-							}
-						})
-						.thenMany(Flux.fromIterable(indexSearchers.llShards()))
-						.flatMap(searcher -> this.collect(Mono.just(searcher), localQueryParams, keyFieldName, transformer))
-						.collectList()
-						.map(results -> {
-							List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
-							List<Flux<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
-							boolean exactTotalHitsCount = true;
-							long totalHitsCountValue = 0;
-							for (LuceneSearchResult result : results) {
-								resultsToDrop.add(result);
-								resultsFluxes.add(result.results());
-								exactTotalHitsCount &= result.totalHitsCount().exact();
-								totalHitsCountValue += result.totalHitsCount().value();
-							}
+		return Mono.usingWhen(indexSearchersMono, searchers -> Flux
+				.fromIterable(searchers.llShards())
+				.flatMap(searcher -> this.collect(Mono.just(searcher), queryParams, keyFieldName, transformer))
+				.collectList()
+				.map(results -> {
+					boolean exactTotalHitsCount = true;
+					long totalHitsCountValue = 0;
+					for (LuceneSearchResult result : results) {
+						exactTotalHitsCount &= result.totalHitsCount().exact();
+						totalHitsCountValue += result.totalHitsCount().value();
+						result.close();
+					}
 
-							var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
-							Flux<LLKeyScore> mergedFluxes = Flux
-									.merge(resultsFluxes)
-									.skip(queryParams2.offsetLong())
-									.take(queryParams2.limitLong(), true);
+					var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
 
-							return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-								resultsToDrop.forEach(LLUtils::finalizeResourceNow);
-								try {
-									indexSearchers.close();
-								} catch (UncheckedIOException e) {
-									LOG.error("Can't close index searchers", e);
-								}
-							});
-						});
-			});
-		});
+					return new LuceneSearchResult(totalHitsCount, Flux.empty(), null);
+				})
+				.doOnDiscard(LuceneSearchResult.class, SimpleResource::close), LLUtils::finalizeResource);
 	}
 
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
@@ -103,31 +82,17 @@ public class CountMultiSearcher implements MultiSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return singleOrClose(indexSearcherMono, indexSearcher -> {
-			Mono<LocalQueryParams> queryParamsMono;
-			if (transformer == GlobalQueryRewrite.NO_REWRITE) {
-				queryParamsMono = Mono.just(queryParams);
-			} else {
-				queryParamsMono = Mono
-						.fromCallable(() -> transformer.rewrite(LLIndexSearchers.unsharded(indexSearcher), queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()));
-			}
+		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
+			return LuceneUtils.rewrite(this, indexSearcherMono, queryParams, keyFieldName, transformer);
+		}
 
-			return queryParamsMono
-					.flatMap(queryParams2 -> Mono.fromCallable(() -> {
-						LLUtils.ensureBlocking();
-						return (long) indexSearcher.getIndexSearcher().count(queryParams2.query());
-					}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
-					.publishOn(Schedulers.parallel())
-					.transform(TimeoutUtil.timeoutMono(queryParams.timeout()))
-					.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), () -> {
-						try {
-							indexSearcher.close();
-						} catch (UncheckedIOException e) {
-							LOG.error("Can't close index searchers", e);
-						}
-					}));
-		});
+		return Mono.usingWhen(indexSearcherMono, indexSearcher -> Mono.fromCallable(() -> {
+					LLUtils.ensureBlocking();
+					return (long) indexSearcher.getIndexSearcher().count(queryParams.query());
+				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())), LLUtils::finalizeResource)
+				.publishOn(Schedulers.parallel())
+				.transform(TimeoutUtil.timeoutMono(queryParams.timeout()))
+				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null));
 	}
 
 	@Override

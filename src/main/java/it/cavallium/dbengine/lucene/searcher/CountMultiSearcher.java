@@ -66,17 +66,6 @@ public class CountMultiSearcher implements MultiSearcher {
 				.doOnDiscard(LuceneSearchResult.class, SimpleResource::close), LLUtils::finalizeResource);
 	}
 
-	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
-		return new LocalQueryParams(queryParams.query(),
-				0L,
-				queryParams.offsetLong() + queryParams.limitLong(),
-				queryParams.pageLimits(),
-				queryParams.sort(),
-				queryParams.computePreciseHitsCount(),
-				queryParams.timeout()
-		);
-	}
-
 	@Override
 	public Mono<LuceneSearchResult> collect(Mono<LLIndexSearcher> indexSearcherMono,
 			LocalQueryParams queryParams,

@@ -757,6 +757,9 @@ public class LuceneUtils {
 		return QueryParams.of(query, 0, 0, NoSort.of(), false, Long.MAX_VALUE);
 	}
 
+	/**
+	 * Rewrite a lucene query of a local searcher, then call the local searcher again with the rewritten query
+	 */
 	public static Mono<LuceneSearchResult> rewrite(LocalSearcher localSearcher,
 			Mono<LLIndexSearcher> indexSearcherMono,
 			LocalQueryParams queryParams,
@@ -773,6 +776,9 @@ public class LuceneUtils {
 		}, LLUtils::finalizeResource);
 	}
 
+	/**
+	 * Rewrite a lucene query of a multi searcher, then call the multi searcher again with the rewritten query
+	 */
 	public static Mono<LuceneSearchResult> rewriteMulti(MultiSearcher multiSearcher,
 			Mono<LLIndexSearchers> indexSearchersMono,
 			LocalQueryParams queryParams,

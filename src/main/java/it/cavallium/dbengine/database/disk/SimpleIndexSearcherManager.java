@@ -142,7 +142,6 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 							indexSearcher = searcherManager.acquire();
 							fromSnapshot = false;
 						} else {
-							//noinspection resource
 							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
 							fromSnapshot = true;
 						}

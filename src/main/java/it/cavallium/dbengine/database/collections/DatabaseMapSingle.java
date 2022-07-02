@@ -167,7 +167,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 					} else {
 						return serializeValue(result);
 					}
-				}).transform(mono -> LLUtils.mapLLDelta(mono, serializer::deserialize));
+				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> serializer.deserialize(serialized)));
 	}
 
 	@Override
@@ -181,19 +181,19 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	@Override
 	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::singleUnsafe), false)
+				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(single -> LLRange.singleUnsafe(single)), false)
 				.map(empty -> empty ? 0L : 1L);
 	}
 
 	@Override
 	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
 		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(LLRange::singleUnsafe), true);
+				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(single -> LLRange.singleUnsafe(single)), true);
 	}
 
 	@Override
 	public Flux<BadBlock> badBlocks() {
-		return dictionary.badBlocks(keyMono.map(LLRange::singleUnsafe));
+		return dictionary.badBlocks(keyMono.map(single -> LLRange.singleUnsafe(single)));
 	}
 
 	@Override

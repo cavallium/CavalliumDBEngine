@@ -113,7 +113,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				)
 				.collectList()
 				.mapNotNull(shards -> mergeResults(queryParams, shards))
-				.map(this::mapResults)
+				.map(llSearchResult -> mapResults(llSearchResult))
 				.defaultIfEmpty(Hits.empty())
 				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
 	}
@@ -127,7 +127,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				)
 				.collectList()
 				.mapNotNull(shards -> mergeResults(queryParams, shards))
-				.map(this::mapResults)
+				.map(llSearchResult -> mapResults(llSearchResult))
 				.defaultIfEmpty(Hits.empty())
 				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
 	}

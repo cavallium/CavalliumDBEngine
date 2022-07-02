@@ -32,7 +32,7 @@ public interface MultiSearcher extends LocalSearcher {
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		Mono<LLIndexSearchers> searchers = indexSearcherMono.map(LLIndexSearchers::unsharded);
+		Mono<LLIndexSearchers> searchers = indexSearcherMono.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher));
 		return this.collectMulti(searchers, queryParams, keyFieldName, transformer);
 	}
 

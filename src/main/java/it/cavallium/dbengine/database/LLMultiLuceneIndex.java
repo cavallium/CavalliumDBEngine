@@ -118,7 +118,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public Mono<Void> deleteAll() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::deleteAll).iterator();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(llLuceneIndex -> llLuceneIndex.deleteAll()).iterator();
 		return Mono.whenDelayError(it);
 	}
 
@@ -223,7 +223,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 				// Generate next snapshot index
 				.fromCallable(nextSnapshotNumber::getAndIncrement)
 				.flatMap(snapshotIndex -> luceneIndicesFlux
-						.flatMapSequential(LLLuceneIndex::takeSnapshot)
+						.flatMapSequential(llLuceneIndex -> llLuceneIndex.takeSnapshot())
 						.collectList()
 						.doOnNext(instancesSnapshotsArray -> registeredSnapshots.put(snapshotIndex, instancesSnapshotsArray))
 						.thenReturn(new LLSnapshot(snapshotIndex))

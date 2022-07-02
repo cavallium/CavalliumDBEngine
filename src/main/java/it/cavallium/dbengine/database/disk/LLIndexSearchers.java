@@ -1,27 +1,11 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Resource;
-import io.netty5.buffer.api.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.DiscardingCloseable;
-import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
 import it.cavallium.dbengine.utils.SimpleResource;
-import it.unimi.dsi.fastutil.objects.Object2IntOpenHashMap;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.MultiReader;
 import org.apache.lucene.search.IndexSearcher;
 
 public interface LLIndexSearchers extends DiscardingCloseable {
@@ -41,8 +25,6 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 	IndexSearcher shard(int shardIndex);
 
 	LLIndexSearcher llShard(int shardIndex);
-
-	IndexReader allShards();
 
 	class UnshardedIndexSearchers extends SimpleResource implements LLIndexSearchers {
 
@@ -78,11 +60,6 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 			return indexSearcher;
 		}
 
-		@Override
-		public IndexReader allShards() {
-			return indexSearcher.getIndexReader();
-		}
-
 		public IndexSearcher shard() {
 			return this.shard(-1);
 		}
@@ -103,18 +80,12 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 		private final List<IndexSearcher> indexSearchersVals;
 
 		public ShardedIndexSearchers(List<LLIndexSearcher> indexSearchers) {
-			var shardedIndexSearchers = new ArrayList<LLIndexSearcher>(indexSearchers.size());
 			List<IndexSearcher> shardedIndexSearchersVals = new ArrayList<>(indexSearchers.size());
 			for (LLIndexSearcher indexSearcher : indexSearchers) {
 				shardedIndexSearchersVals.add(indexSearcher.getIndexSearcher());
 			}
 			shardedIndexSearchersVals = ShardIndexSearcher.create(shardedIndexSearchersVals);
-			int i = 0;
-			for (IndexSearcher shardedIndexSearcher : shardedIndexSearchersVals) {
-				shardedIndexSearchers.add(new WrappedLLIndexSearcher(shardedIndexSearcher, indexSearchers.get(i)));
-				i++;
-			}
-			this.indexSearchers = shardedIndexSearchers;
+			this.indexSearchers = indexSearchers;
 			this.indexSearchersVals = shardedIndexSearchersVals;
 		}
 
@@ -145,52 +116,9 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 		}
 
 		@Override
-		public IndexReader allShards() {
-			var irs = new IndexReader[indexSearchersVals.size()];
-			for (int i = 0, s = indexSearchersVals.size(); i < s; i++) {
-				irs[i] = indexSearchersVals.get(i).getIndexReader();
-			}
-			Object2IntOpenHashMap<IndexReader> indexes = new Object2IntOpenHashMap<>();
-			for (int i = 0; i < irs.length; i++) {
-				indexes.put(irs[i], i);
-			}
-			try {
-				return new MultiReader(irs, Comparator.comparingInt(indexes::getInt), false);
-			} catch (IOException ex) {
-				// This shouldn't happen
-				throw new UncheckedIOException(ex);
-			}
-		}
-
-		@Override
 		protected void onClose() {
 			for (LLIndexSearcher indexSearcher : indexSearchers) {
 				indexSearcher.close();
-			}
-		}
-
-		private static class WrappedLLIndexSearcher extends LLIndexSearcher {
-
-			private final LLIndexSearcher parent;
-
-			public WrappedLLIndexSearcher(IndexSearcher indexSearcher, LLIndexSearcher parent) {
-				super(indexSearcher, parent.getClosed());
-				this.parent = parent;
-			}
-
-			@Override
-			public IndexSearcher getIndexSearcher() {
-				return indexSearcher;
-			}
-
-			@Override
-			public IndexReader getIndexReader() {
-				return indexSearcher.getIndexReader();
-			}
-
-			@Override
-			protected void onClose() {
-				parent.close();
 			}
 		}
 	}

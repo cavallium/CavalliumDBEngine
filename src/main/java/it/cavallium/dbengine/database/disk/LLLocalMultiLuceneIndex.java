@@ -167,7 +167,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 						LOG.error("Failed to close an index searcher", ex);
 					}
 				})
-				.map(LLIndexSearchers::of);
+				.map(indexSearchers -> LLIndexSearchers.of(indexSearchers));
 	}
 
 	@Override
@@ -255,7 +255,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	public Mono<Void> deleteAll() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::deleteAll).iterator();
+		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(llLocalLuceneIndex -> llLocalLuceneIndex.deleteAll()).iterator();
 		return Mono.whenDelayError(it);
 	}
 
@@ -390,7 +390,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 				// Generate next snapshot index
 				.fromCallable(nextSnapshotNumber::getAndIncrement)
 				.flatMap(snapshotIndex -> luceneIndicesFlux
-						.flatMapSequential(LLLocalLuceneIndex::takeSnapshot)
+						.flatMapSequential(llLocalLuceneIndex -> llLocalLuceneIndex.takeSnapshot())
 						.collectList()
 						.doOnNext(instancesSnapshotsArray -> registeredSnapshots.put(snapshotIndex, instancesSnapshotsArray))
 						.thenReturn(new LLSnapshot(snapshotIndex))

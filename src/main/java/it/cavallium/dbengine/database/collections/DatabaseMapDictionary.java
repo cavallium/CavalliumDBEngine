@@ -233,7 +233,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.get(null)
 				.concatWith(dictionary.setRange(rangeMono, Flux
 						.fromIterable(Collections.unmodifiableMap(value).entrySet())
-						.map(this::serializeEntry), true).then(Mono.empty()))
+						.map(entry -> serializeEntry(entry)), true).then(Mono.empty()))
 				.singleOrEmpty();
 	}
 
@@ -307,7 +307,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix));
 		return dictionary
 				.updateAndGetDelta(keyMono, getSerializedUpdater(updater))
-				.transform(mono -> LLUtils.mapLLDelta(mono, valueSerializer::deserialize));
+				.transform(mono -> LLUtils.mapLLDelta(mono, serialized -> valueSerializer.deserialize(serialized)));
 	}
 
 	public BinarySerializationFunction getSerializedUpdater(SerializationFunction<@Nullable U, @Nullable U> updater) {
@@ -395,12 +395,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = Mono.fromCallable(() -> serializeKeySuffixToKey(keySuffix));
 		return dictionary
 				.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE)
-				.map(LLUtils::responseToBoolean);
+				.map(response -> LLUtils.responseToBoolean(response));
 	}
 
 	@Override
 	public Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
-		var mappedKeys = keys.map(this::serializeKeySuffixToKey);
+		var mappedKeys = keys.map(keySuffix -> serializeKeySuffixToKey(keySuffix));
 		return dictionary
 				.getMulti(resolveSnapshot(snapshot), mappedKeys)
 				.map(valueBufOpt -> {
@@ -431,7 +431,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
-		var serializedEntries = entries.map(this::serializeEntry);
+		var serializedEntries = entries.map(entry -> serializeEntry(entry));
 		return dictionary.putMulti(serializedEntries);
 	}
 
@@ -439,7 +439,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Flux<Boolean> updateMulti(Flux<T> keys,
 			KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
 		var sharedKeys = keys.publish().refCount(2);
-		var serializedKeys = sharedKeys.map(this::serializeKeySuffixToKey);
+		var serializedKeys = sharedKeys.map(keySuffix -> serializeKeySuffixToKey(keySuffix));
 		var serializedUpdater = getSerializedUpdater(updater);
 		return dictionary.updateMulti(sharedKeys, serializedKeys, serializedUpdater);
 	}
@@ -574,18 +574,18 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
 		return Flux.usingWhen(Mono.just(true),
 				b -> this.getAllValues(null, false),
-				b -> dictionary.setRange(rangeMono, entries.map(this::serializeEntry), false)
+				b -> dictionary.setRange(rangeMono, entries.map(entry -> serializeEntry(entry)), false)
 		);
 	}
 
 	@Override
 	public Mono<Void> clear() {
-		return Mono.using(rangeSupplier::get, range -> {
+		return Mono.using(() -> rangeSupplier.get(), range -> {
 			if (range.isAll()) {
 				return dictionary.clear();
 			} else if (range.isSingle()) {
 				return dictionary
-						.remove(Mono.fromCallable(range::getSingleUnsafe), LLDictionaryResultType.VOID)
+						.remove(Mono.fromCallable(() -> range.getSingleUnsafe()), LLDictionaryResultType.VOID)
 						.doOnNext(LLUtils::finalizeResourceNow)
 						.then();
 			} else {

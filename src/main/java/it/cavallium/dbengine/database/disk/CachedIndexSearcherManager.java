@@ -72,19 +72,13 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 
 		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
 
-		this.refreshSubscription = Mono
-				.fromRunnable(() -> {
-					try {
-						maybeRefresh();
-					} catch (Exception ex) {
-						LOG.error("Failed to refresh the searcher manager", ex);
-					}
-				})
-				.subscribeOn(uninterruptibleScheduler(luceneHeavyTasksScheduler))
-				.publishOn(Schedulers.parallel())
-				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime))
-				.transform(LLUtils::handleDiscard)
-				.subscribe();
+		refreshSubscription = luceneHeavyTasksScheduler.schedulePeriodically(() -> {
+			try {
+				maybeRefreshBlocking();
+			} catch (Exception ex) {
+				LOG.error("Failed to refresh the searcher manager", ex);
+			}
+		}, queryRefreshDebounceTime.toMillis(), queryRefreshDebounceTime.toMillis(), TimeUnit.MILLISECONDS);
 
 		this.cachedSnapshotSearchers = CacheBuilder.newBuilder()
 				.expireAfterWrite(queryRefreshDebounceTime)
@@ -210,7 +204,7 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 		return activeRefreshes.get();
 	}
 
-	private class MainIndexSearcher extends LLIndexSearcher {
+	private class MainIndexSearcher extends LLIndexSearcherImpl {
 
 		public MainIndexSearcher(IndexSearcher indexSearcher, SearcherManager searcherManager) {
 			super(indexSearcher, () -> releaseOnCleanup(searcherManager, indexSearcher));
@@ -236,7 +230,7 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 		}
 	}
 
-	private class SnapshotIndexSearcher extends LLIndexSearcher {
+	private class SnapshotIndexSearcher extends LLIndexSearcherImpl {
 
 		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
 			super(indexSearcher);

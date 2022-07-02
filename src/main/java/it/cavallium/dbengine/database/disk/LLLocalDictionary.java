@@ -721,7 +721,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.flatMapMany(range -> {
 			try (range) {
 				if (range.isSingle()) {
-					var rangeSingleMono = rangeMono.map(LLRange::getSingleUnsafe);
+					var rangeSingleMono = rangeMono.map(llRange -> llRange.getSingleUnsafe());
 					return getRangeSingle(snapshot, rangeSingleMono);
 				} else {
 					return getRangeMulti(snapshot, rangeMono, reverse, smallRange);
@@ -738,7 +738,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.flatMapMany(range -> {
 			try (range) {
 				if (range.isSingle()) {
-					var rangeSingleMono = rangeMono.map(LLRange::getSingleUnsafe);
+					var rangeSingleMono = rangeMono.map(llRange -> llRange.getSingleUnsafe());
 				
 					return getRangeSingle(snapshot, rangeSingleMono).map(List::of);
 				} else {
@@ -793,7 +793,7 @@ public class LLLocalDictionary implements LLDictionary {
 		return rangeMono.flatMapMany(range -> {
 			try {
 				if (range.isSingle()) {
-					return this.getRangeKeysSingle(snapshot, rangeMono.map(LLRange::getSingleUnsafe));
+					return this.getRangeKeysSingle(snapshot, rangeMono.map(llRange -> llRange.getSingleUnsafe()));
 				} else {
 					return this.getRangeKeysMulti(snapshot, rangeMono, reverse, smallRange);
 				}
@@ -1064,7 +1064,7 @@ public class LLLocalDictionary implements LLDictionary {
 					rocksIterator.seekToFirst();
 				}
 				while (rocksIterator.isValid()) {
-					writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, rocksIterator::key).send());
+					writeBatch.delete(cfh, LLUtils.readDirectNioBuffer(alloc, buffer -> rocksIterator.key(buffer)).send());
 					rocksIterator.next();
 				}
 			}
@@ -1217,8 +1217,8 @@ public class LLLocalDictionary implements LLDictionary {
 							rocksIterator.seekToFirst();
 						}
 						if (rocksIterator.isValid()) {
-							try (var key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key)) {
-								try (var value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value)) {
+							try (var key = LLUtils.readDirectNioBuffer(alloc, buffer -> rocksIterator.key(buffer))) {
+								try (var value = LLUtils.readDirectNioBuffer(alloc, buffer -> rocksIterator.value(buffer))) {
 									return LLEntry.of(key.touch("get-one key"), value.touch("get-one value"));
 								}
 							}
@@ -1246,7 +1246,7 @@ public class LLLocalDictionary implements LLDictionary {
 							rocksIterator.seekToFirst();
 						}
 						if (rocksIterator.isValid()) {
-							return LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
+							return LLUtils.readDirectNioBuffer(alloc, buffer -> rocksIterator.key(buffer));
 						} else {
 							return null;
 						}
@@ -1345,7 +1345,7 @@ public class LLLocalDictionary implements LLDictionary {
 								}
 							}
 						})
-						.map(commonPool::submit)
+						.map(task -> commonPool.submit(task))
 						.toList();
 				long count = 0;
 				for (ForkJoinTask<Long> future : futures) {
@@ -1383,8 +1383,8 @@ public class LLLocalDictionary implements LLDictionary {
 					if (!rocksIterator.isValid()) {
 						return null;
 					}
-					Buffer key = LLUtils.readDirectNioBuffer(alloc, rocksIterator::key);
-					Buffer value = LLUtils.readDirectNioBuffer(alloc, rocksIterator::value);
+					Buffer key = LLUtils.readDirectNioBuffer(alloc, buffer -> rocksIterator.key(buffer));
+					Buffer value = LLUtils.readDirectNioBuffer(alloc, buffer -> rocksIterator.value(buffer));
 					db.delete(writeOpts, key);
 					return LLEntry.of(key, value);
 				}

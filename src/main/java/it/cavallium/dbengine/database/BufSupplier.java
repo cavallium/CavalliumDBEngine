@@ -19,7 +19,7 @@ public abstract class BufSupplier implements SafeCloseable, DiscardingCloseable,
 	}
 
 	public static BufSupplier ofShared(Buffer supplier) {
-		return new SimpleBufSupplier(supplier::copy);
+		return new SimpleBufSupplier(() -> supplier.copy());
 	}
 
 	private static final class SimpleBufSupplier extends BufSupplier {

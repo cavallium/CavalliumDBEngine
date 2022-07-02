@@ -546,7 +546,7 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex 
 		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
 		Mono<LLIndexSearchers> searchers = searcherManager
 				.retrieveSearcher(snapshot)
-				.map(LLIndexSearchers::unsharded);
+				.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher));
 
 		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
 	}

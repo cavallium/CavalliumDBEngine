@@ -18,37 +18,20 @@ public abstract class LLIndexSearcher extends SimpleResource implements Discardi
 
 	protected static final Logger LOG = LogManager.getLogger(LLIndexSearcher.class);
 
-	protected final IndexSearcher indexSearcher;
-
-	public LLIndexSearcher(IndexSearcher indexSearcher) {
+	public LLIndexSearcher() {
 		super();
-		this.indexSearcher = indexSearcher;
 	}
 
-	public LLIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed) {
-		super(closed);
-		this.indexSearcher = indexSearcher;
-	}
-
-	public LLIndexSearcher(IndexSearcher indexSearcher, AtomicBoolean closed, Runnable cleanAction) {
-		super(closed, cleanAction);
-		this.indexSearcher = indexSearcher;
-	}
-
-	public LLIndexSearcher(IndexSearcher indexSearcher, Runnable cleanAction) {
+	public LLIndexSearcher(Runnable cleanAction) {
 		super(cleanAction);
-		this.indexSearcher = indexSearcher;
-	}
-
-	public IndexReader getIndexReader() {
-		ensureOpen();
-		return indexSearcher.getIndexReader();
 	}
 
 	public IndexSearcher getIndexSearcher() {
 		ensureOpen();
-		return indexSearcher;
+		return getIndexSearcherInternal();
 	}
+
+	protected abstract IndexSearcher getIndexSearcherInternal();
 
 	public AtomicBoolean getClosed() {
 		return super.getClosed();

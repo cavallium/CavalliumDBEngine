@@ -67,7 +67,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<Boolean> updateValue(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return updateValueAndGetDelta(key, updater).map(LLUtils::isDeltaChanged).single();
+		return updateValueAndGetDelta(key, updater).map(delta -> LLUtils.isDeltaChanged(delta)).single();
 	}
 
 	default Mono<Delta<U>> updateValueAndGetDelta(T key,
@@ -99,7 +99,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 	}
 
 	default Mono<U> removeAndGetPrevious(T key) {
-		return Mono.usingWhen(at(null, key), DatabaseStage::clearAndGetPrevious, LLUtils::finalizeResource);
+		return Mono.usingWhen(at(null, key), us -> us.clearAndGetPrevious(), LLUtils::finalizeResource);
 	}
 
 	default Mono<Boolean> removeAndGetStatus(T key) {

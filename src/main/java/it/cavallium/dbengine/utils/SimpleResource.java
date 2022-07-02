@@ -32,20 +32,9 @@ public abstract class SimpleResource implements SafeCloseable {
 		this(canClose, null);
 	}
 
-	protected SimpleResource(boolean canClose, @Nullable Runnable cleanerAction) {
-		this(canClose, new AtomicBoolean(), cleanerAction);
-	}
-
-	protected SimpleResource(AtomicBoolean closed) {
-		this(true, closed, null);
-	}
-
-	protected SimpleResource(AtomicBoolean closed, @Nullable Runnable cleanerAction) {
-		this(true, closed, cleanerAction);
-	}
-
-	private SimpleResource(boolean canClose, AtomicBoolean closed, @Nullable Runnable cleanerAction) {
+	private SimpleResource(boolean canClose, @Nullable Runnable cleanerAction) {
 		this.canClose = canClose;
+		var closed = new AtomicBoolean();
 		this.closed = closed;
 
 		if (ENABLE_LEAK_DETECTION && canClose) {

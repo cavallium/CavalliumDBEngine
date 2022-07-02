@@ -153,7 +153,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 
 	@Override
 	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot) {
-		return subDictionary.get(snapshot).map(this::deserializeMap);
+		return subDictionary.get(snapshot).map(map -> deserializeMap(map));
 	}
 
 	@Override
@@ -164,12 +164,15 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 
 	@Override
 	public Mono<Void> set(Object2ObjectSortedMap<T, U> map) {
-		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::set);
+		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(value -> subDictionary.set(value));
 	}
 
 	@Override
 	public Mono<Boolean> setAndGetChanged(Object2ObjectSortedMap<T, U> map) {
-		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(subDictionary::setAndGetChanged).single();
+		return Mono
+				.fromSupplier(() -> this.serializeMap(map))
+				.flatMap(value -> subDictionary.setAndGetChanged(value))
+				.single();
 	}
 
 	@Override
@@ -249,15 +252,15 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends
 	public Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		return Mono
 				.fromSupplier(() -> this.serializeMap(value))
-				.flatMap(subDictionary::setAndGetPrevious)
-				.map(this::deserializeMap);
+				.flatMap(value1 -> subDictionary.setAndGetPrevious(value1))
+				.map(map -> deserializeMap(map));
 	}
 
 	@Override
 	public Mono<Object2ObjectSortedMap<T, U>> clearAndGetPrevious() {
 		return subDictionary
 				.clearAndGetPrevious()
-				.map(this::deserializeMap);
+				.map(map -> deserializeMap(map));
 	}
 
 	@Override

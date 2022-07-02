@@ -152,7 +152,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 				})
 				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
 				.publishOn(Schedulers.parallel())
-				.map(PageData::topDocs)
+				.map(pageData -> pageData.topDocs())
 				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
 				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
 						keyFieldName, true));

@@ -83,12 +83,12 @@ public class DatabaseSingleBucket<K, V, TH>
 
 	@Override
 	public Mono<V> get(@Nullable CompositeSnapshot snapshot) {
-		return bucketStage.get(snapshot).flatMap(this::extractValueTransformation);
+		return bucketStage.get(snapshot).flatMap(entries -> extractValueTransformation(entries));
 	}
 
 	@Override
 	public Mono<V> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<V> defaultValue) {
-		return bucketStage.get(snapshot).flatMap(this::extractValueTransformation).switchIfEmpty(defaultValue);
+		return bucketStage.get(snapshot).flatMap(entries -> extractValueTransformation(entries)).switchIfEmpty(defaultValue);
 	}
 
 	@Override
@@ -103,7 +103,7 @@ public class DatabaseSingleBucket<K, V, TH>
 
 	@Override
 	public Mono<Boolean> setAndGetChanged(V value) {
-		return this.updateAndGetDelta(prev -> value).map(LLUtils::isDeltaChanged);
+		return this.updateAndGetDelta(prev -> value).map(delta -> LLUtils.isDeltaChanged(delta));
 	}
 
 	@Override
@@ -119,7 +119,7 @@ public class DatabaseSingleBucket<K, V, TH>
 						return this.insertValueOrCreate(oldBucket, newValue);
 					}
 				}, updateReturnMode)
-				.flatMap(this::extractValueTransformation);
+				.flatMap(entries -> extractValueTransformation(entries));
 	}
 
 	@Override
@@ -132,7 +132,7 @@ public class DatabaseSingleBucket<K, V, TH>
 			} else {
 				return this.insertValueOrCreate(oldBucket, result);
 			}
-		}).transform(mono -> LLUtils.mapDelta(mono, this::extractValue));
+		}).transform(mono -> LLUtils.mapDelta(mono, entries -> extractValue(entries)));
 	}
 
 	@Override
@@ -147,7 +147,7 @@ public class DatabaseSingleBucket<K, V, TH>
 
 	@Override
 	public Mono<Boolean> clearAndGetStatus() {
-		return this.updateAndGetDelta(prev -> null).map(LLUtils::isDeltaChanged);
+		return this.updateAndGetDelta(prev -> null).map(delta -> LLUtils.isDeltaChanged(delta));
 	}
 
 	@Override

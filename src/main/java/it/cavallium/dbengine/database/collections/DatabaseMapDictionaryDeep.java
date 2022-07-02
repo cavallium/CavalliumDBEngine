@@ -364,7 +364,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 		return dictionary
 				.getRangeKeyPrefixes(resolveSnapshot(snapshot), rangeMono, keyPrefixLength + keySuffixLength, smallRange)
 				.flatMapSequential(groupKeyWithoutExt -> this.subStageGetter
-						.subStage(dictionary, snapshot, Mono.fromCallable(groupKeyWithoutExt::copy))
+						.subStage(dictionary, snapshot, Mono.fromCallable(() -> groupKeyWithoutExt.copy()))
 						.map(us -> {
 							T deserializedSuffix;
 							try (var splittedGroupSuffix = splitGroupSuffix(groupKeyWithoutExt)) {
@@ -415,18 +415,18 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	@Override
 	public Mono<Void> clear() {
-		return Mono.using(rangeSupplier::get, range -> {
+		return Mono.using(() -> rangeSupplier.get(), range -> {
 			if (range.isAll()) {
 				return dictionary.clear();
 			} else if (range.isSingle()) {
 				return dictionary
-						.remove(Mono.fromCallable(range::getSingleUnsafe), LLDictionaryResultType.VOID)
-						.doOnNext(LLUtils::finalizeResourceNow)
+						.remove(Mono.fromCallable(() -> range.getSingleUnsafe()), LLDictionaryResultType.VOID)
+						.doOnNext(resource -> LLUtils.finalizeResourceNow(resource))
 						.then();
 			} else {
 				return dictionary.setRange(rangeMono, Flux.empty(), false);
 			}
-		}, LLUtils::finalizeResourceNow);
+		}, resource -> LLUtils.finalizeResourceNow(resource));
 	}
 
 	protected T deserializeSuffix(@NotNull Buffer keySuffix) throws SerializationException {
@@ -515,7 +515,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			throw new IllegalArgumentException();
 		}
 
-		var savedProgressKey1Opt = savedProgressKey1.map(Optional::of).defaultIfEmpty(Optional.empty());
+		var savedProgressKey1Opt = savedProgressKey1.map(value1 -> Optional.of(value1)).defaultIfEmpty(Optional.empty());
 
 		return deepMap
 				.dictionary

@@ -74,19 +74,13 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 
 		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
 
-		refreshSubscription = Mono
-				.fromRunnable(() -> {
-					try {
-						maybeRefresh();
-					} catch (Exception ex) {
-						LOG.error("Failed to refresh the searcher manager", ex);
-					}
-				})
-				.subscribeOn(luceneHeavyTasksScheduler)
-				.publishOn(Schedulers.parallel())
-				.repeatWhen(s -> s.delayElements(queryRefreshDebounceTime))
-				.transform(LLUtils::handleDiscard)
-				.subscribe();
+		refreshSubscription = luceneHeavyTasksScheduler.schedulePeriodically(() -> {
+			try {
+				maybeRefreshBlocking();
+			} catch (Exception ex) {
+				LOG.error("Failed to refresh the searcher manager", ex);
+			}
+		}, queryRefreshDebounceTime.toMillis(), queryRefreshDebounceTime.toMillis(), TimeUnit.MILLISECONDS);
 
 		this.noSnapshotSearcherMono = retrieveSearcherInternal(null);
 	}
@@ -134,26 +128,18 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 					if (isClosed()) {
 						return null;
 					}
-					activeSearchers.incrementAndGet();
 					try {
-						IndexSearcher indexSearcher;
-						boolean fromSnapshot;
 						if (snapshotsManager == null || snapshot == null) {
-							indexSearcher = searcherManager.acquire();
-							fromSnapshot = false;
+							return new OnDemandIndexSearcher(searcherManager, similarity);
 						} else {
-							indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
-							fromSnapshot = true;
+							activeSearchers.incrementAndGet();
+							IndexSearcher indexSearcher = snapshotsManager
+									.resolveSnapshot(snapshot)
+									.getIndexSearcher(SEARCH_EXECUTOR);
+							indexSearcher.setSimilarity(similarity);
+							assert indexSearcher.getIndexReader().getRefCount() > 0;
+							return new SnapshotIndexSearcher(indexSearcher);
 						}
-						indexSearcher.setSimilarity(similarity);
-						assert indexSearcher.getIndexReader().getRefCount() > 0;
-						LLIndexSearcher llIndexSearcher;
-						if (fromSnapshot) {
-							llIndexSearcher = new SnapshotIndexSearcher(indexSearcher);
-						} else {
-							llIndexSearcher = new MainIndexSearcher(indexSearcher);
-						}
-						return llIndexSearcher;
 					} catch (Throwable ex) {
 						activeSearchers.decrementAndGet();
 						throw ex;
@@ -200,7 +186,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		return activeRefreshes.get();
 	}
 
-	private class MainIndexSearcher extends LLIndexSearcher {
+	private class MainIndexSearcher extends LLIndexSearcherImpl {
 
 		public MainIndexSearcher(IndexSearcher indexSearcher) {
 			super(indexSearcher, () -> releaseOnCleanup(searcherManager, indexSearcher));
@@ -226,7 +212,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		}
 	}
 
-	private class SnapshotIndexSearcher extends LLIndexSearcher {
+	private class SnapshotIndexSearcher extends LLIndexSearcherImpl {
 
 		public SnapshotIndexSearcher(IndexSearcher indexSearcher) {
 			super(indexSearcher);
@@ -235,6 +221,53 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		@Override
 		public void onClose() {
 			dropCachedIndexSearcher();
+		}
+	}
+
+	private class OnDemandIndexSearcher extends LLIndexSearcher {
+
+		private final SearcherManager searcherManager;
+		private final Similarity similarity;
+
+		private IndexSearcher indexSearcher = null;
+
+		public OnDemandIndexSearcher(SearcherManager searcherManager,
+				Similarity similarity) {
+			super();
+			this.searcherManager = searcherManager;
+			this.similarity = similarity;
+		}
+
+		@Override
+		protected IndexSearcher getIndexSearcherInternal() {
+			if (indexSearcher != null) {
+				return indexSearcher;
+			}
+			synchronized (this) {
+				try {
+					var indexSearcher = searcherManager.acquire();
+					indexSearcher.setSimilarity(similarity);
+					activeSearchers.incrementAndGet();
+					this.indexSearcher = indexSearcher;
+					return indexSearcher;
+				} catch (IOException e) {
+					throw new IllegalStateException("Failed to acquire the index searcher", e);
+				}
+			}
+		}
+
+		@Override
+		protected void onClose() {
+			try {
+				synchronized (this) {
+					if (indexSearcher != null) {
+						dropCachedIndexSearcher();
+						searcherManager.release(indexSearcher);
+					}
+				}
+			} catch (IOException ex) {
+				throw new UncheckedIOException(ex);
+			}
 		}
 	}
 }

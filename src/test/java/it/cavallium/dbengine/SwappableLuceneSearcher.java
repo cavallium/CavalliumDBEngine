@@ -31,7 +31,10 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		var single = requireNonNullElseGet(this.single.get(), this.multi::get);
+		var single = this.single.get();
+		if (single == null) {
+			single = this.multi.get();
+		}
 		requireNonNull(single, "LuceneLocalSearcher not set");
 		return single.collect(indexSearcherMono, queryParams, keyFieldName, transformer);
 	}

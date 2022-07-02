@@ -49,7 +49,7 @@ public class SnapshotsManager extends SimpleResource {
 
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
-				.fromCallable(this::takeLuceneSnapshot)
+				.fromCallable(() -> takeLuceneSnapshot())
 				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
 				.publishOn(Schedulers.parallel());
 	}

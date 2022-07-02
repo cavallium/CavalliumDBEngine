@@ -168,7 +168,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 							return serializeValue(result);
 						}
 					}
-				}).transform(mono -> LLUtils.mapLLDelta(mono, serializer::deserialize));
+				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> serializer.deserialize(serialized)));
 	}
 
 	@Override

@@ -79,34 +79,34 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 
 	@Override
 	public Mono<A> get(@Nullable CompositeSnapshot snapshot) {
-		return serializedSingle.get(snapshot).handle(this::deserializeSink);
+		return serializedSingle.get(snapshot).handle((value, sink) -> deserializeSink(value, sink));
 	}
 
 	@Override
 	public Mono<A> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<A> defaultValue) {
-		return serializedSingle.get(snapshot).handle(this::deserializeSink).switchIfEmpty(defaultValue);
+		return serializedSingle.get(snapshot).handle((B value, SynchronousSink<A> sink) -> deserializeSink(value, sink)).switchIfEmpty(defaultValue);
 	}
 
 	@Override
 	public Mono<Void> set(A value) {
 		return Mono
 				.fromCallable(() -> map(value))
-				.flatMap(serializedSingle::set);
+				.flatMap(value1 -> serializedSingle.set(value1));
 	}
 
 	@Override
 	public Mono<A> setAndGetPrevious(A value) {
 		return Mono
 				.fromCallable(() -> map(value))
-				.flatMap(serializedSingle::setAndGetPrevious)
-				.handle(this::deserializeSink);
+				.flatMap(value2 -> serializedSingle.setAndGetPrevious(value2))
+				.handle((value1, sink) -> deserializeSink(value1, sink));
 	}
 
 	@Override
 	public Mono<Boolean> setAndGetChanged(A value) {
 		return Mono
 				.fromCallable(() -> map(value))
-				.flatMap(serializedSingle::setAndGetChanged)
+				.flatMap(value1 -> serializedSingle.setAndGetChanged(value1))
 				.single();
 	}
 
@@ -120,7 +120,7 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 			} else {
 				return this.map(result);
 			}
-		}, updateReturnMode).handle(this::deserializeSink);
+		}, updateReturnMode).handle((value, sink) -> deserializeSink(value, sink));
 	}
 
 	@Override
@@ -132,7 +132,7 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 			} else {
 				return this.map(result);
 			}
-		}).transform(mono -> LLUtils.mapDelta(mono, this::unMap));
+		}).transform(mono -> LLUtils.mapDelta(mono, bytes -> unMap(bytes)));
 	}
 
 	@Override
@@ -142,7 +142,7 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 
 	@Override
 	public Mono<A> clearAndGetPrevious() {
-		return serializedSingle.clearAndGetPrevious().handle(this::deserializeSink);
+		return serializedSingle.clearAndGetPrevious().handle((value, sink) -> deserializeSink(value, sink));
 	}
 
 	@Override

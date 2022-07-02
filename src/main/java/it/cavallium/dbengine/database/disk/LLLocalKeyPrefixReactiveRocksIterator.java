@@ -97,7 +97,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 					while (rocksIterator.isValid()) {
 						Buffer key;
 						if (allowNettyDirect) {
-							key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key);
+							key = LLUtils.readDirectNioBuffer(db.getAllocator(), buffer -> rocksIterator.key(buffer));
 						} else {
 							key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
 						}

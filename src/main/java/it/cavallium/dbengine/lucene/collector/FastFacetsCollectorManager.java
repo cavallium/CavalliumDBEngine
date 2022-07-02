@@ -34,7 +34,7 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 	public FacetsCollector reduce(Collection<FacetsCollector> collectors) throws IOException {
 		return FacetsCollector.wrap(facetsCollectorManager.reduce(collectors
 				.stream()
-				.map(FacetsCollector::getLuceneFacetsCollector)
+				.map(facetsCollector -> facetsCollector.getLuceneFacetsCollector())
 				.toList()));
 	}
 

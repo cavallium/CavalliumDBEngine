@@ -976,8 +976,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 					.setIncreaseParallelism(1)
 					.setDbWriteBufferSize(8 * SizeUnit.MB)
 					.setWalTtlSeconds(60)
-					.setWalSizeLimitMB(0)
-					.setMaxTotalWalSize(0) // automatic
+					.setMaxTotalWalSize(10 * SizeUnit.GB)
 			;
 			blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse(8L * SizeUnit.MB));
 			refs.track(blockCache);
@@ -1013,7 +1012,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 
 					.setWalTtlSeconds(60) // Auto
 					.setWalSizeLimitMB(0) // Auto
-					.setMaxTotalWalSize(0) // Auto
+					.setMaxTotalWalSize(10 * SizeUnit.GB)
 			;
 			blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
 			refs.track(blockCache);

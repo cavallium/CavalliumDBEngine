@@ -26,14 +26,14 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 		@Override
 		public void drop(LLLocalKeyPrefixReactiveRocksIterator obj) {
 			try {
-				if (obj.rangeShared != null) {
+				if (obj.rangeShared != null && obj.rangeShared.isAccessible()) {
 					obj.rangeShared.close();
 				}
 			} catch (Throwable ex) {
 				logger.error("Failed to close range", ex);
 			}
 			try {
-				if (obj.readOptions != null) {
+				if (obj.readOptions != null && obj.readOptions.isAccessible()) {
 					obj.readOptions.close();
 				}
 			} catch (Throwable ex) {
@@ -102,15 +102,22 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 							key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
 						}
 						try (key) {
-							if (firstGroupKey == null) {
-								firstGroupKey = key.copy();
-							} else if (!LLUtils.equals(firstGroupKey,
-									firstGroupKey.readerOffset(),
-									key,
-									key.readerOffset(),
-									prefixLength
-							)) {
-								break;
+							var keyLen = key.readableBytes();
+							if (keyLen >= prefixLength) {
+								if (firstGroupKey == null) {
+									firstGroupKey = key.copy();
+									assert firstGroupKey == null || firstGroupKey.readableBytes() >= prefixLength;
+								} else if (!LLUtils.equals(firstGroupKey,
+										firstGroupKey.readerOffset(),
+										key,
+										key.readerOffset(),
+										prefixLength
+								)) {
+									break;
+								}
+							} else {
+								logger.error("Skipped a key with length {}, the expected minimum prefix key length is {}!"
+										+ " This key will be dropped", key.readableBytes(), prefixLength);
 							}
 							rocksIterator.next();
 						}

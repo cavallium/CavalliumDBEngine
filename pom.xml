@@ -595,25 +595,6 @@
 					</execution>
 				</executions>
 			</plugin>
-      <plugin>
-        <groupId>net.bytebuddy</groupId>
-        <artifactId>byte-buddy-maven-plugin</artifactId>
-        <version>1.12.13-20220629</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>transform</goal>
-            </goals>
-          </execution>
-        </executions>
-        <configuration>
-          <transformations>
-            <transformation>
-              <plugin>reactor.tools.agent.ReactorDebugByteBuddyPlugin</plugin>
-            </transformation>
-          </transformations>
-        </configuration>
-      </plugin>
 		</plugins>
 		<pluginManagement>
 			<plugins>
@@ -651,4 +632,39 @@
 			</plugins>
 		</pluginManagement>
 	</build>
+  <profiles>
+    <profile>
+      <id>reactor-agent</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+        <property>
+          <name>reactor.agent.enable</name>
+          <value>true</value>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>net.bytebuddy</groupId>
+            <artifactId>byte-buddy-maven-plugin</artifactId>
+            <version>1.12.13-20220629</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>transform</goal>
+                </goals>
+              </execution>
+            </executions>
+            <configuration>
+              <transformations>
+                <transformation>
+                  <plugin>reactor.tools.agent.ReactorDebugByteBuddyPlugin</plugin>
+                </transformation>
+              </transformations>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

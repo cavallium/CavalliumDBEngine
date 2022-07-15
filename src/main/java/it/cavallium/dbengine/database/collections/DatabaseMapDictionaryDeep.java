@@ -5,7 +5,7 @@ import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.DefaultBufferAllocators;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Resource;
+import io.netty5.util.Resource;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
@@ -168,7 +168,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				prefixKey.writerOffset(),
 				suffixLengthAndExtLength
 		);
-		prefixKey.skipWritable(suffixLengthAndExtLength);
+		prefixKey.skipWritableBytes(suffixLengthAndExtLength);
 	}
 
 	/**
@@ -542,7 +542,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 						var valueBuf = entry.getValueUnsafe();
 						try {
 							assert keyBuf != null;
-							keyBuf.skipReadable(deepMap.keyPrefixLength);
+							keyBuf.skipReadableBytes(deepMap.keyPrefixLength);
 							try (var key1Buf = keyBuf.split(deepMap.keySuffixLength)) {
 								key1 = keySuffix1Serializer.deserialize(key1Buf);
 							}

@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database;
 
 import com.google.common.collect.Multimap;
-import io.netty5.buffer.api.Resource;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.current.data.Query;

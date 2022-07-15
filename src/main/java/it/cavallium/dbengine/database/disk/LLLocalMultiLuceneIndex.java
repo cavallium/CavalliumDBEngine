@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;

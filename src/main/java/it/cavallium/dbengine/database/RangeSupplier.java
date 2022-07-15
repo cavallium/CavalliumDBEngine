@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import java.util.function.Supplier;
 
 public abstract class RangeSupplier implements DiscardingCloseable, Supplier<LLRange> {

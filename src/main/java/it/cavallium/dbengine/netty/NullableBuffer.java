@@ -3,7 +3,7 @@ package it.cavallium.dbengine.netty;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

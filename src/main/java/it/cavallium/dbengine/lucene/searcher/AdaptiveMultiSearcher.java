@@ -5,7 +5,7 @@ import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher.FORCE_HUGE_PQ;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;

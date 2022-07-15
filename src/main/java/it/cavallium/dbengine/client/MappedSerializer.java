@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.client;
 
 import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.NotNull;

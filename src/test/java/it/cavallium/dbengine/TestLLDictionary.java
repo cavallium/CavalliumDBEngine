@@ -8,8 +8,8 @@ import static it.cavallium.dbengine.SyncUtils.runVoid;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Resource;
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Resource;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.DbTestUtils.TempDb;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.LLDictionary;

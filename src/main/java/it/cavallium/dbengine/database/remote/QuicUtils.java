@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.remote;
 
 import io.netty.handler.codec.ByteToMessageCodec;
 import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.rpc.current.data.RPCCrash;

@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import java.util.function.Supplier;

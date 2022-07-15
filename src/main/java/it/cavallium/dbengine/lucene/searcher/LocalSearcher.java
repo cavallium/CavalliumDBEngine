@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Mono;

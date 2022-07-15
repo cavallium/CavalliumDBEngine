@@ -112,6 +112,11 @@ public class TestAllocatorImpl implements BufferAllocator, AllocatorControl {
 		}
 
 		@Override
+		public void clearMemory(Object o) {
+			instance.clearMemory(o);
+		}
+
+		@Override
 		public String implementationName() {
 			return instance.implementationName();
 		}

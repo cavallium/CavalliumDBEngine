@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import io.netty5.buffer.api.Resource;
+import io.netty5.util.Resource;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;

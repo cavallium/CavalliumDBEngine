@@ -15,7 +15,7 @@ import io.micrometer.core.instrument.Timer;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.buffer.api.ReadableComponent;
-import io.netty5.buffer.api.Resource;
+import io.netty5.util.Resource;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.DiscardingCloseable;

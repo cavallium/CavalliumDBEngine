@@ -2,7 +2,6 @@ package it.cavallium.dbengine.client;
 
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.DiscardingCloseable;

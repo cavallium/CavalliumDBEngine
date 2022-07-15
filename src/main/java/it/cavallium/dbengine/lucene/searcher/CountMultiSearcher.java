@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterrupti
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;

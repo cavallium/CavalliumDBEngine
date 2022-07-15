@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty5.buffer.api.Send;
+import io.netty5.util.Send;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.io.IOException;

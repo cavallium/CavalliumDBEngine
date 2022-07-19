@@ -22,6 +22,7 @@ import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.List;
 import java.util.Map.Entry;
@@ -38,48 +39,10 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 // todo: implement optimized methods (which?)
-public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends
-		ResourceSupport<DatabaseStage<Object2ObjectSortedMap<T, U>>, DatabaseMapDictionaryDeep<T, U, US>> implements
+public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extends SimpleResource implements
 		DatabaseStageMap<T, U, US> {
 
 	private static final Logger LOG = LogManager.getLogger(DatabaseMapDictionaryDeep.class);
-
-	private static final Drop<DatabaseMapDictionaryDeep<?, ?, ?>> DROP = new Drop<>() {
-		@Override
-		public void drop(DatabaseMapDictionaryDeep<?, ?, ?> obj) {
-			try {
-				if (obj.rangeSupplier != null) {
-					obj.rangeSupplier.close();
-				}
-			} catch (Throwable ex) {
-				LOG.error("Failed to close range", ex);
-			}
-			try {
-				if (obj.keyPrefixSupplier != null) {
-					obj.keyPrefixSupplier.close();
-				}
-			} catch (Throwable ex) {
-				LOG.error("Failed to close keyPrefix", ex);
-			}
-			try {
-				if (obj.onClose != null) {
-					obj.onClose.run();
-				}
-			} catch (Throwable ex) {
-				LOG.error("Failed to close onClose", ex);
-			}
-		}
-
-		@Override
-		public Drop<DatabaseMapDictionaryDeep<?, ?, ?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(DatabaseMapDictionaryDeep<?, ?, ?> obj) {
-
-		}
-	};
 
 	protected final LLDictionary dictionary;
 	protected final BufferAllocator alloc;
@@ -93,7 +56,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 	protected RangeSupplier rangeSupplier;
 	protected BufSupplier keyPrefixSupplier;
-	protected Runnable onClose;
 
 	private static void incrementPrefix(Buffer prefix, int prefixLength) {
 		assert prefix.readableBytes() >= prefixLength;
@@ -176,31 +138,25 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	 */
 	@Deprecated
 	public static <T, U> DatabaseMapDictionaryDeep<T, U, DatabaseStageEntry<U>> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySerializer, SubStageGetterSingle<U> subStageGetter,
-			Runnable onClose) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, null, keySerializer,
-				subStageGetter, 0, onClose);
+			SerializerFixedBinaryLength<T> keySerializer, SubStageGetterSingle<U> subStageGetter) {
+		return new DatabaseMapDictionaryDeep<>(dictionary, null, keySerializer, subStageGetter, 0);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepTail(
 			LLDictionary dictionary, SerializerFixedBinaryLength<T> keySerializer, int keyExtLength,
-			SubStageGetter<U, US> subStageGetter, Runnable onClose) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, null, keySerializer,
-				subStageGetter, keyExtLength, onClose);
+			SubStageGetter<U, US> subStageGetter) {
+		return new DatabaseMapDictionaryDeep<>(dictionary, null, keySerializer, subStageGetter, keyExtLength);
 	}
 
 	public static <T, U, US extends DatabaseStage<U>> DatabaseMapDictionaryDeep<T, U, US> deepIntermediate(
 			LLDictionary dictionary, BufSupplier prefixKey, SerializerFixedBinaryLength<T> keySuffixSerializer,
-			SubStageGetter<U, US> subStageGetter, int keyExtLength, Runnable onClose) {
-		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter,
-				keyExtLength, onClose);
+			SubStageGetter<U, US> subStageGetter, int keyExtLength) {
+		return new DatabaseMapDictionaryDeep<>(dictionary, prefixKey, keySuffixSerializer, subStageGetter, keyExtLength);
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	protected DatabaseMapDictionaryDeep(LLDictionary dictionary, @Nullable BufSupplier prefixKeySupplier,
-			SerializerFixedBinaryLength<T> keySuffixSerializer, SubStageGetter<U, US> subStageGetter, int keyExtLength,
-			Runnable onClose) {
-		super((Drop<DatabaseMapDictionaryDeep<T, U, US>>) (Drop) DROP);
+			SerializerFixedBinaryLength<T> keySuffixSerializer, SubStageGetter<U, US> subStageGetter, int keyExtLength) {
 		try (var prefixKey = prefixKeySupplier != null ? prefixKeySupplier.get() : null) {
 			this.dictionary = dictionary;
 			this.alloc = dictionary.getAllocator();
@@ -249,7 +205,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				}
 
 				this.keyPrefixSupplier = prefixKeySupplier;
-				this.onClose = onClose;
 			}
 		} catch (Throwable t) {
 			if (prefixKeySupplier != null) {
@@ -271,7 +226,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 			RangeSupplier rangeSupplier,
 			BufSupplier keyPrefixSupplier,
 			Runnable onClose) {
-		super((Drop<DatabaseMapDictionaryDeep<T,U,US>>) (Drop) DROP);
 		this.dictionary = dictionary;
 		this.alloc = alloc;
 		this.subStageGetter = subStageGetter;
@@ -283,7 +237,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 
 		this.rangeSupplier = rangeSupplier;
 		this.keyPrefixSupplier = keyPrefixSupplier;
-		this.onClose = onClose;
 	}
 
 	@SuppressWarnings("unused")
@@ -444,41 +397,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				: "Invalid key suffix length: " + (afterWriterOffset - beforeWriterOffset) + ". Expected: " + keySuffixLength;
 	}
 
-	@Override
-	protected RuntimeException createResourceClosedException() {
-		throw new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<DatabaseMapDictionaryDeep<T, U, US>> prepareSend() {
-		var keyPrefixSupplier = this.keyPrefixSupplier;
-		var rangeSupplier = this.rangeSupplier;
-		var onClose = this.onClose;
-		return drop -> {
-			var instance = new DatabaseMapDictionaryDeep<>(dictionary,
-					alloc,
-					subStageGetter,
-					keySuffixSerializer,
-					keyPrefixLength,
-					keySuffixLength,
-					keyExtLength,
-					rangeMono,
-					rangeSupplier,
-					keyPrefixSupplier,
-					onClose
-			);
-			drop.attach(instance);
-			return instance;
-		};
-	}
-
-	@Override
-	protected void makeInaccessible() {
-		this.keyPrefixSupplier = null;
-		this.rangeSupplier = null;
-		this.onClose = null;
-	}
-
 	public static <K1, K2, V, R> Flux<R> getAllLeaves2(DatabaseMapDictionaryDeep<K1, Object2ObjectSortedMap<K2, V>, ? extends DatabaseStageMap<K2, V, DatabaseStageEntry<V>>> deepMap,
 			CompositeSnapshot snapshot,
 			TriFunction<K1, K2, V, R> merger,
@@ -521,7 +439,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				.dictionary
 				.getRange(deepMap.resolveSnapshot(snapshot), Mono.zip(savedProgressKey1Opt, deepMap.rangeMono).handle((tuple, sink) -> {
 					var firstKey = tuple.getT1();
-					try (var fullRange = tuple.getT2()) {
+					var fullRange = tuple.getT2();
+					try {
 						if (firstKey.isPresent()) {
 							try (var key1Buf = deepMap.alloc.allocate(keySuffix1Serializer.getSerializedBinaryLength())) {
 								keySuffix1Serializer.serialize(firstKey.get(), key1Buf);
@@ -532,6 +451,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 						} else {
 							sink.next(fullRange);
 						}
+					} catch (Throwable ex) {
+						try {
+							fullRange.close();
+						} catch (Throwable ex2) {
+							LOG.error(ex2);
+						}
+						throw ex;
 					}
 				}), false, false)
 				.concatMapIterable(entry -> {
@@ -584,5 +510,23 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 						throw new CompletionException(ex);
 					}
 				});
+	}
+
+	@Override
+	protected void onClose() {
+		try {
+			if (rangeSupplier != null) {
+				rangeSupplier.close();
+			}
+		} catch (Throwable ex) {
+			LOG.error("Failed to close range", ex);
+		}
+		try {
+			if (keyPrefixSupplier != null) {
+				keyPrefixSupplier.close();
+			}
+		} catch (Throwable ex) {
+			LOG.error("Failed to close keyPrefix", ex);
+		}
 	}
 }

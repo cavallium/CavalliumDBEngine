@@ -43,8 +43,7 @@ public class SubStageGetterHashMap<T, U, TH> implements
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,
-				keyHashSerializer,
-				null
+				keyHashSerializer
 		));
 	}
 

@@ -16,7 +16,7 @@ public final class SubStageEntry<T, U extends DatabaseStage<?>> implements Disca
 
 	@Override
 	public void close() {
-		if (value != null && value.isAccessible()) {
+		if (value != null) {
 			value.close();
 		}
 	}

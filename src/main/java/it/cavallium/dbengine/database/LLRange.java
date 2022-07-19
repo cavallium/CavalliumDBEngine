@@ -5,6 +5,7 @@ import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
 import io.netty5.util.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.StringJoiner;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -13,46 +14,7 @@ import org.jetbrains.annotations.Nullable;
 /**
  * Range of data, from min (inclusive), to max (exclusive)
  */
-public class LLRange extends ResourceSupport<LLRange, LLRange> {
-
-	private static final Logger logger = LogManager.getLogger(LLRange.class);
-
-	private static final Drop<LLRange> DROP = new Drop<>() {
-		@Override
-		public void drop(LLRange obj) {
-			try {
-				if (obj.min != null) {
-					obj.min.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close min", ex);
-			}
-			try {
-				if (obj.max != null) {
-					obj.max.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close max", ex);
-			}
-			try {
-				if (obj.single != null) {
-					obj.single.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close single", ex);
-			}
-		}
-
-		@Override
-		public Drop<LLRange> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(LLRange obj) {
-
-		}
-	};
+public class LLRange extends SimpleResource {
 
 	private static final LLRange RANGE_ALL = new LLRange((Buffer) null, (Buffer) null, (Buffer) null);
 	@Nullable
@@ -63,8 +25,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	private Buffer single;
 
 	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single) {
-		super(DROP);
-		assert isAllAccessible();
+		super();
 		assert single == null || (min == null && max == null);
 		this.min = min != null ? min.receive().makeReadOnly() : null;
 		this.max = max != null ? max.receive().makeReadOnly() : null;
@@ -72,21 +33,11 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	private LLRange(Buffer min, Buffer max, Buffer single) {
-		super(DROP);
-		assert isAllAccessible();
+		super();
 		assert single == null || (min == null && max == null);
 		this.min = min != null ? min.makeReadOnly() : null;
 		this.max = max != null ? max.makeReadOnly() : null;
 		this.single = single != null ? single.makeReadOnly() : null;
-	}
-
-	private boolean isAllAccessible() {
-		assert min == null || min.isAccessible() : "Range min not owned";
-		assert max == null || max.isAccessible() : "Range max not owned";
-		assert single == null || single.isAccessible() : "Range single not owned";
-		assert this.isAccessible() : "Range not accessible";
-		assert this.isOwned() : "Range not owned";
-		return true;
 	}
 
 	public static LLRange all() {
@@ -118,22 +69,22 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public boolean isAll() {
-		ensureOwned();
+		ensureOpen();
 		return min == null && max == null && single == null;
 	}
 
 	public boolean isSingle() {
-		ensureOwned();
+		ensureOpen();
 		return single != null;
 	}
 
 	public boolean hasMin() {
-		ensureOwned();
+		ensureOpen();
 		return min != null || single != null;
 	}
 
 	public Send<Buffer> getMin() {
-		ensureOwned();
+		ensureOpen();
 		if (min != null) {
 			// todo: use a read-only copy
 			return min.copy().send();
@@ -146,7 +97,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public Buffer getMinUnsafe() {
-		ensureOwned();
+		ensureOpen();
 		if (min != null) {
 			return min;
 		} else if (single != null) {
@@ -157,7 +108,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public Buffer getMinCopy() {
-		ensureOwned();
+		ensureOpen();
 		if (min != null) {
 			return min.copy();
 		} else if (single != null) {
@@ -168,12 +119,12 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public boolean hasMax() {
-		ensureOwned();
+		ensureOpen();
 		return max != null || single != null;
 	}
 
 	public Send<Buffer> getMax() {
-		ensureOwned();
+		ensureOpen();
 		if (max != null) {
 			// todo: use a read-only copy
 			return max.copy().send();
@@ -186,7 +137,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public Buffer getMaxUnsafe() {
-		ensureOwned();
+		ensureOpen();
 		if (max != null) {
 			return max;
 		} else if (single != null) {
@@ -197,7 +148,7 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public Buffer getMaxCopy() {
-		ensureOwned();
+		ensureOpen();
 		if (max != null) {
 			return max.copy();
 		} else if (single != null) {
@@ -208,26 +159,36 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public Send<Buffer> getSingle() {
-		ensureOwned();
+		ensureOpen();
 		assert isSingle();
 		// todo: use a read-only copy
 		return single != null ? single.copy().send() : null;
 	}
 
 	public Buffer getSingleUnsafe() {
-		ensureOwned();
+		ensureOpen();
 		assert isSingle();
 		return single;
 	}
 
-	private void ensureOwned() {
-		assert isAllAccessible();
-		if (!isOwned()) {
-			if (!isAccessible()) {
-				throw this.createResourceClosedException();
-			} else {
-				throw new IllegalStateException("Resource not owned");
-			}
+	@Override
+	protected void ensureOpen() {
+		super.ensureOpen();
+		assert min == null || min.isAccessible() : "Range min not owned";
+		assert max == null || max.isAccessible() : "Range max not owned";
+		assert single == null || single.isAccessible() : "Range single not owned";
+	}
+
+	@Override
+	protected void onClose() {
+		if (min != null && min.isAccessible()) {
+			min.close();
+		}
+		if (max != null && max.isAccessible()) {
+			max.close();
+		}
+		if (single != null && single.isAccessible()) {
+			single.close();
 		}
 	}
 
@@ -259,37 +220,11 @@ public class LLRange extends ResourceSupport<LLRange, LLRange> {
 	}
 
 	public LLRange copy() {
-		ensureOwned();
+		ensureOpen();
 		// todo: use a read-only copy
 		return new LLRange(min != null ? min.copy().send() : null,
 				max != null ? max.copy().send() : null,
 				single != null ? single.copy().send(): null
 		);
-	}
-
-	@Override
-	protected RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<LLRange> prepareSend() {
-		Send<Buffer> minSend;
-		Send<Buffer> maxSend;
-		Send<Buffer> singleSend;
-		minSend = this.min != null ? this.min.send() : null;
-		maxSend = this.max != null ? this.max.send() : null;
-		singleSend = this.single != null ? this.single.send() : null;
-		return drop -> {
-			var instance = new LLRange(minSend, maxSend, singleSend);
-			drop.attach(instance);
-			return instance;
-		};
-	}
-
-	protected void makeInaccessible() {
-		this.min = null;
-		this.max = null;
-		this.single = null;
 	}
 }

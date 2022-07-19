@@ -21,27 +21,23 @@ public class DatabaseSetDictionary<T> extends DatabaseMapDictionary<T, Nothing> 
 
 	protected DatabaseSetDictionary(LLDictionary dictionary,
 			BufSupplier prefixKeySupplier,
-			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Runnable onClose) {
+			SerializerFixedBinaryLength<T> keySuffixSerializer) {
 		super(dictionary,
 				prefixKeySupplier,
 				keySuffixSerializer,
-				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
-				onClose
+				DatabaseEmpty.nothingSerializer(dictionary.getAllocator())
 		);
 	}
 
 	public static <T> DatabaseSetDictionary<T> simple(LLDictionary dictionary,
-			SerializerFixedBinaryLength<T> keySerializer,
-			Runnable onClose) {
-		return new DatabaseSetDictionary<>(dictionary, null, keySerializer, onClose);
+			SerializerFixedBinaryLength<T> keySerializer) {
+		return new DatabaseSetDictionary<>(dictionary, null, keySerializer);
 	}
 
 	public static <T> DatabaseSetDictionary<T> tail(LLDictionary dictionary,
 			BufSupplier prefixKeySupplier,
-			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Runnable onClose) {
-		return new DatabaseSetDictionary<>(dictionary, prefixKeySupplier, keySuffixSerializer, onClose);
+			SerializerFixedBinaryLength<T> keySuffixSerializer) {
+		return new DatabaseSetDictionary<>(dictionary, prefixKeySupplier, keySuffixSerializer);
 	}
 
 	public Mono<Set<T>> getKeySet(@Nullable CompositeSnapshot snapshot) {

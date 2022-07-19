@@ -36,8 +36,8 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, BufSupplier key, Runnable onClose) {
-		return new DatabaseMapSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()), onClose);
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, BufSupplier key) {
+		return new DatabaseMapSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()));
 	}
 
 	public static final class Nothing {

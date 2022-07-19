@@ -9,10 +9,6 @@ public abstract class RangeSupplier implements DiscardingCloseable, Supplier<LLR
 		return new SimpleSupplier(supplier);
 	}
 
-	public static RangeSupplier of(Send<LLRange> supplier) {
-		return new CopySupplier(supplier.receive());
-	}
-
 	public static RangeSupplier ofOwned(LLRange supplier) {
 		return new CopySupplier(supplier);
 	}

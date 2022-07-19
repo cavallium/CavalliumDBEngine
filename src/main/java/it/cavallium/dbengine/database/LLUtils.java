@@ -310,7 +310,7 @@ public class LLUtils {
 
 	public static String toStringSafe(@Nullable LLRange range) {
 		try {
-			if (range == null || range.isAccessible()) {
+			if (range == null || !range.isClosed()) {
 				return toString(range);
 			} else {
 				return "(released)";
@@ -948,18 +948,6 @@ public class LLUtils {
 		} else if (next instanceof AbstractImmutableNativeReference rocksObj) {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();
-			}
-		} else if (next instanceof LLIndexSearcher searcher) {
-			try {
-				searcher.close();
-			} catch (UncheckedIOException e) {
-				logger.error("Failed to close searcher {}", searcher, e);
-			}
-		} else if (next instanceof LLIndexSearchers searchers) {
-			try {
-				searchers.close();
-			} catch (UncheckedIOException e) {
-				logger.error("Failed to close searchers {}", searchers, e);
 			}
 		} else if (next instanceof Optional<?> optional) {
 			optional.ifPresent(LLUtils::onNextDropped);

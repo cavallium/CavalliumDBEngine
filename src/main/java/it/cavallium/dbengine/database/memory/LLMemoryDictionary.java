@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -128,8 +129,8 @@ public class LLMemoryDictionary implements LLDictionary {
 		}
 	}
 
-	private BLRange r(Send<LLRange> send) {
-		try(var range = send.receive()) {
+	private BLRange r(Supplier<LLRange> send) {
+		try(var range = send.get()) {
 			if (range.isAll()) {
 				return new BLRange(null, null, null);
 			} else if (range.isSingle()) {
@@ -490,7 +491,7 @@ public class LLMemoryDictionary implements LLDictionary {
 				clearMono = Mono.fromRunnable(() -> mapSlice(null, range).clear());
 			}
 
-			var r = r(range.copy().send());
+			var r = r(range::copy);
 
 			return clearMono
 					.thenMany(entries)

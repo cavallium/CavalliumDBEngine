@@ -48,8 +48,7 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 				BufSupplier.ofOwned(prefixKey),
 				keySerializer,
 				subStageGetter,
-				keyExtLength,
-				null
+				keyExtLength
 		));
 	}
 

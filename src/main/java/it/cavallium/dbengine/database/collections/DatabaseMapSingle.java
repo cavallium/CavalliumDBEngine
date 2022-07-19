@@ -17,6 +17,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -24,49 +25,22 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, DatabaseMapSingle<U>> implements
-		DatabaseStageEntry<U> {
+public class DatabaseMapSingle<U> extends SimpleResource implements DatabaseStageEntry<U> {
 
 	private static final Logger LOG = LogManager.getLogger(DatabaseMapSingle.class);
 
 	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
-	private static final Drop<DatabaseMapSingle<?>> DROP = new Drop<>() {
-		@Override
-		public void drop(DatabaseMapSingle<?> obj) {
-			if (obj.keySupplier != null) {
-				obj.keySupplier.close();
-			}
-			if (obj.onClose != null) {
-				obj.onClose.run();
-			}
-		}
-
-		@Override
-		public Drop<DatabaseMapSingle<?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(DatabaseMapSingle<?> obj) {
-
-		}
-	};
 
 	private final LLDictionary dictionary;
 	private final Mono<Buffer> keyMono;
 	private final Serializer<U> serializer;
-	private BufSupplier keySupplier;
-	private Runnable onClose;
+	private final BufSupplier keySupplier;
 
-	@SuppressWarnings({"unchecked", "rawtypes"})
-	public DatabaseMapSingle(LLDictionary dictionary, BufSupplier keySupplier, Serializer<U> serializer,
-			Runnable onClose) {
-		super((Drop<DatabaseMapSingle<U>>) (Drop) DROP);
+	public DatabaseMapSingle(LLDictionary dictionary, BufSupplier keySupplier, Serializer<U> serializer) {
 		this.dictionary = dictionary;
 		this.keySupplier = keySupplier;
 		this.keyMono = Mono.fromSupplier(() -> keySupplier.get());
 		this.serializer = serializer;
-		this.onClose = onClose;
 	}
 
 	private LLSnapshot resolveSnapshot(@Nullable CompositeSnapshot snapshot) {
@@ -197,24 +171,7 @@ public class DatabaseMapSingle<U> extends ResourceSupport<DatabaseStage<U>, Data
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		throw new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<DatabaseMapSingle<U>> prepareSend() {
-		var keySupplier = this.keySupplier;
-		var onClose = this.onClose;
-		return drop -> {
-			var instance = new DatabaseMapSingle<>(dictionary, keySupplier, serializer, onClose);
-			drop.attach(instance);
-			return instance;
-		};
-	}
-
-	@Override
-	protected void makeInaccessible() {
-		this.keySupplier = null;
-		this.onClose = null;
+	protected void onClose() {
+		keySupplier.close();
 	}
 }

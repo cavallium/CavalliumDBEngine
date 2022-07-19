@@ -143,8 +143,7 @@ public class DbTestUtils {
 		if (mapType == MapType.MAP) {
 			return DatabaseMapDictionary.simple(dictionary,
 					SerializerFixedBinaryLength.utf8(keyBytes),
-					Serializer.UTF8_SERIALIZER,
-					null
+					Serializer.UTF8_SERIALIZER
 			);
 		} else {
 			return DatabaseMapDictionaryHashed.simple(dictionary,
@@ -167,8 +166,7 @@ public class DbTestUtils {
 						public void serialize(@NotNull Short deserialized, Buffer output) {
 							output.writeShort(deserialized);
 						}
-					},
-					null
+					}
 			);
 		}
 	}
@@ -183,8 +181,7 @@ public class DbTestUtils {
 				key2Bytes,
 				new SubStageGetterMap<>(SerializerFixedBinaryLength.utf8(key2Bytes),
 						Serializer.UTF8_SERIALIZER
-				),
-				null
+				)
 		);
 	}
 
@@ -199,8 +196,7 @@ public class DbTestUtils {
 						Serializer.UTF8_SERIALIZER,
 						String::hashCode,
 						SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator())
-				),
-				null
+				)
 		);
 	}
 
@@ -210,8 +206,7 @@ public class DbTestUtils {
 				Serializer.UTF8_SERIALIZER,
 				Serializer.UTF8_SERIALIZER,
 				String::hashCode,
-				SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator()),
-				null
+				SerializerFixedBinaryLength.intSerializer(dictionary.getAllocator())
 		);
 	}
 }

@@ -23,8 +23,7 @@ public class SubStageGetterSingle<T> implements SubStageGetter<T, DatabaseStageE
 			Mono<Buffer> keyPrefixMono) {
 		return keyPrefixMono.map(keyPrefix -> new DatabaseMapSingle<>(dictionary,
 				BufSupplier.ofOwned(keyPrefix),
-				serializer,
-				null
+				serializer
 		));
 	}
 

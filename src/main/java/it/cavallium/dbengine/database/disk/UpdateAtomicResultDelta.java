@@ -7,7 +7,7 @@ public record UpdateAtomicResultDelta(LLDelta delta) implements UpdateAtomicResu
 
 	@Override
 	public void close() {
-		if (delta != null && delta.isAccessible()) {
+		if (delta != null && !delta.isClosed()) {
 			delta.close();
 		}
 	}

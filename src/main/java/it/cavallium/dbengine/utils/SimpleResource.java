@@ -65,7 +65,7 @@ public abstract class SimpleResource implements SafeCloseable {
 		}
 	}
 
-	protected boolean isClosed() {
+	public boolean isClosed() {
 		return canClose && closed.get();
 	}
 
@@ -74,7 +74,7 @@ public abstract class SimpleResource implements SafeCloseable {
 	}
 
 	protected void ensureOpen() {
-		if (canClose && closed.get()) {
+		if (isClosed()) {
 			throw new IllegalStateException("Resource is closed");
 		}
 	}

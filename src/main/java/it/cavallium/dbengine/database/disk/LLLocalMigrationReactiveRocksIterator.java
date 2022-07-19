@@ -7,63 +7,37 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.util.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
+import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
-public final class LLLocalMigrationReactiveRocksIterator extends
-		ResourceSupport<LLLocalMigrationReactiveRocksIterator, LLLocalMigrationReactiveRocksIterator> {
-
-	private static final Logger logger = LogManager.getLogger(LLLocalMigrationReactiveRocksIterator.class);
-	private static final Drop<LLLocalMigrationReactiveRocksIterator> DROP = new Drop<>() {
-		@Override
-		public void drop(LLLocalMigrationReactiveRocksIterator obj) {
-			try {
-				if (obj.rangeShared != null) {
-					obj.rangeShared.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close range", ex);
-			}
-		}
-
-		@Override
-		public Drop<LLLocalMigrationReactiveRocksIterator> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(LLLocalMigrationReactiveRocksIterator obj) {
-
-		}
-	};
+public final class LLLocalMigrationReactiveRocksIterator {
 
 	private final RocksDBColumn db;
-	private LLRange rangeShared;
+	private Mono<LLRange> rangeMono;
 	private Supplier<ReadOptions> readOptions;
 
-	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalMigrationReactiveRocksIterator(RocksDBColumn db,
-			Send<LLRange> range,
+			Mono<LLRange> rangeMono,
 			Supplier<ReadOptions> readOptions) {
-		super((Drop<LLLocalMigrationReactiveRocksIterator>) (Drop) DROP);
-		try (range) {
-			this.db = db;
-			this.rangeShared = range.receive();
-			this.readOptions = readOptions;
-		}
+		this.db = db;
+		this.rangeMono = rangeMono;
+		this.readOptions = readOptions;
 	}
 
 	public record ByteEntry(byte[] key, byte[] value) {}
 
 	public Flux<ByteEntry> flux() {
-		return Flux.generate(() -> {
+		return Flux.usingWhen(rangeMono, range -> Flux.generate(() -> {
 			var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
-			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(false, readOptions, rangeShared, false));
+			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(false, readOptions, range, false));
 		}, (tuple, sink) -> {
 			try {
 				var rocksIterator = tuple.iter();
@@ -79,26 +53,6 @@ public final class LLLocalMigrationReactiveRocksIterator extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIterWithReadOpts::close);
-	}
-
-	@Override
-	protected final RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<LLLocalMigrationReactiveRocksIterator> prepareSend() {
-		var range = this.rangeShared.send();
-		var readOptions = this.readOptions;
-		return drop -> new LLLocalMigrationReactiveRocksIterator(db,
-				range,
-				readOptions
-		);
-	}
-
-	protected void makeInaccessible() {
-		this.rangeShared = null;
-		this.readOptions = null;
+		}, RocksIterWithReadOpts::close), LLUtils::finalizeResource);
 	}
 }

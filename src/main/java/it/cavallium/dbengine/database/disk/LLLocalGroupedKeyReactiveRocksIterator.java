@@ -3,17 +3,19 @@ package it.cavallium.dbengine.database.disk;
 import io.netty5.buffer.api.Buffer;
 import io.netty5.util.Send;
 import it.cavallium.dbengine.database.LLRange;
+import java.util.function.Supplier;
 import org.rocksdb.ReadOptions;
+import reactor.core.publisher.Mono;
 
 public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReactiveRocksIterator<Buffer> {
 
 	public LLLocalGroupedKeyReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
-			LLRange range,
+			Mono<LLRange> rangeMono,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
+			Supplier<ReadOptions> readOptions,
 			boolean smallRange) {
-		super(db, prefixLength, range, allowNettyDirect, readOptions, true, false, smallRange);
+		super(db, prefixLength, rangeMono, allowNettyDirect, readOptions, true, false, smallRange);
 	}
 
 	@Override

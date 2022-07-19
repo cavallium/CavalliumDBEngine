@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -23,62 +24,22 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseSingleBucket<K, V, TH>
-		extends ResourceSupport<DatabaseStage<V>, DatabaseSingleBucket<K, V, TH>>
-		implements DatabaseStageEntry<V> {
+public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements DatabaseStageEntry<V> {
 
 	private static final Logger logger = LogManager.getLogger(DatabaseSingleBucket.class);
 
-	private static final Drop<DatabaseSingleBucket<?, ?, ?>> DROP = new Drop<>() {
-		@Override
-		public void drop(DatabaseSingleBucket<?, ?, ?> obj) {
-			try {
-				if (obj.bucketStage != null) {
-					obj.bucketStage.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close bucketStage", ex);
-			}
-			try {
-				if (obj.onClose != null) {
-					obj.onClose.run();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close onClose", ex);
-			}
-		}
-
-		@Override
-		public Drop<DatabaseSingleBucket<?, ?, ?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(DatabaseSingleBucket<?, ?, ?> obj) {
-
-		}
-	};
-
 	private final K key;
 
-	private DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage;
+	private final DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage;
 
-	private Runnable onClose;
-
-	@SuppressWarnings({"unchecked", "rawtypes"})
-	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key, Runnable onClose) {
-		super((Drop<DatabaseSingleBucket<K,V,TH>>) (Drop) DROP);
+	public DatabaseSingleBucket(DatabaseStageEntry<ObjectArraySet<Entry<K, V>>> bucketStage, K key) {
 		this.key = key;
 		this.bucketStage = bucketStage;
-		this.onClose = onClose;
 	}
 
-	@SuppressWarnings({"unchecked", "rawtypes"})
-	private DatabaseSingleBucket(Send<DatabaseStage<ObjectArraySet<Entry<K, V>>>> bucketStage, K key, Runnable onClose) {
-		super((Drop<DatabaseSingleBucket<K,V,TH>>) (Drop) DROP);
+	private DatabaseSingleBucket(DatabaseStage<ObjectArraySet<Entry<K, V>>> bucketStage, K key) {
 		this.key = key;
-		this.bucketStage = (DatabaseStageEntry<ObjectArraySet<Entry<K, V>>>) bucketStage.receive();
-		this.onClose = onClose;
+		this.bucketStage = (DatabaseStageEntry<ObjectArraySet<Entry<K, V>>>) bucketStage;
 	}
 
 	@Override
@@ -229,24 +190,13 @@ public class DatabaseSingleBucket<K, V, TH>
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		throw new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<DatabaseSingleBucket<K, V, TH>> prepareSend() {
-		var bucketStage = this.bucketStage.send();
-		var onClose = this.onClose;
-		return drop -> {
-			var instance = new DatabaseSingleBucket<K, V, TH>(bucketStage, key, onClose);
-			drop.attach(instance);
-			return instance;
-		};
-	}
-
-	@Override
-	protected void makeInaccessible() {
-		this.bucketStage = null;
-		this.onClose = null;
+	protected void onClose() {
+		try {
+			if (bucketStage != null) {
+				bucketStage.close();
+			}
+		} catch (Throwable ex) {
+			logger.error("Failed to close bucketStage", ex);
+		}
 	}
 }

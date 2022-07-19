@@ -178,6 +178,6 @@ public abstract class TestSingletons {
 	public static Mono<DatabaseSingleton<String>> tempSingleton(LLKeyValueDatabase database, String name) {
 		return database
 				.getSingleton("longs", name)
-				.map(singleton -> new DatabaseSingleton<>(singleton, Serializer.UTF8_SERIALIZER, null));
+				.map(singleton -> new DatabaseSingleton<>(singleton, Serializer.UTF8_SERIALIZER));
 	}
 }

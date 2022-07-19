@@ -26,29 +26,25 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			@Nullable BufSupplier prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keySuffixHashFunction,
-			SerializerFixedBinaryLength<TH> keySuffixHashSerializer,
-			Runnable onClose) {
+			SerializerFixedBinaryLength<TH> keySuffixHashSerializer) {
 		super(dictionary,
 				prefixKeySupplier,
 				keySuffixSerializer,
 				DatabaseEmpty.nothingSerializer(dictionary.getAllocator()),
 				keySuffixHashFunction,
-				keySuffixHashSerializer,
-				onClose
+				keySuffixHashSerializer
 		);
 	}
 
 	public static <T, TH> DatabaseSetDictionaryHashed<T, TH> simple(LLDictionary dictionary,
 			Serializer<T> keySerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH> keyHashSerializer,
-			Runnable onClose) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				null,
 				keySerializer,
 				keyHashFunction,
-				keyHashSerializer,
-				onClose
+				keyHashSerializer
 		);
 	}
 
@@ -56,14 +52,12 @@ public class DatabaseSetDictionaryHashed<T, TH> extends DatabaseMapDictionaryHas
 			@Nullable BufSupplier prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Function<T, TH> keyHashFunction,
-			SerializerFixedBinaryLength<TH> keyHashSerializer,
-			Runnable onClose) {
+			SerializerFixedBinaryLength<TH> keyHashSerializer) {
 		return new DatabaseSetDictionaryHashed<>(dictionary,
 				prefixKeySupplier,
 				keySuffixSerializer,
 				keyHashFunction,
-				keyHashSerializer,
-				onClose
+				keyHashSerializer
 		);
 	}
 

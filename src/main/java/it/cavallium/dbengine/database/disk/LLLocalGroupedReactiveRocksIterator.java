@@ -5,87 +5,53 @@ import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
 import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Owned;
-import io.netty5.util.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
-public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
-		ResourceSupport<LLLocalGroupedReactiveRocksIterator<T>, LLLocalGroupedReactiveRocksIterator<T>> {
+public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalGroupedReactiveRocksIterator.class);
-	private static final Drop<LLLocalGroupedReactiveRocksIterator<?>> DROP = new Drop<>() {
-		@Override
-		public void drop(LLLocalGroupedReactiveRocksIterator<?> obj) {
-			try {
-				if (obj.range != null) {
-					obj.range.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close range", ex);
-			}
-			try {
-				if (obj.readOptions != null) {
-					obj.readOptions.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close readOptions", ex);
-			}
-		}
-
-		@Override
-		public Drop<LLLocalGroupedReactiveRocksIterator<?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(LLLocalGroupedReactiveRocksIterator<?> obj) {
-
-		}
-	};
 
 	private final RocksDBColumn db;
 	private final int prefixLength;
-	private LLRange range;
+	private final Mono<LLRange> rangeMono;
 	private final boolean allowNettyDirect;
-	private ReadOptions readOptions;
+	private final Supplier<ReadOptions> readOptions;
 	private final boolean canFillCache;
 	private final boolean readValues;
 	private final boolean smallRange;
 
-	@SuppressWarnings({"unchecked", "rawtypes"})
 	public LLLocalGroupedReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
-			LLRange range,
+			Mono<LLRange> rangeMono,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
+			Supplier<ReadOptions> readOptions,
 			boolean canFillCache,
 			boolean readValues,
 			boolean smallRange) {
-		super((Drop<LLLocalGroupedReactiveRocksIterator<T>>) (Drop) DROP);
 		this.db = db;
 		this.prefixLength = prefixLength;
-		this.range = range;
+		this.rangeMono = rangeMono;
 		this.allowNettyDirect = allowNettyDirect;
-		this.readOptions = readOptions != null ? readOptions : new ReadOptions();
+		this.readOptions = readOptions != null ? readOptions : ReadOptions::new;
 		this.canFillCache = canFillCache;
 		this.readValues = readValues;
 		this.smallRange = smallRange;
 	}
 
 	public final Flux<List<T>> flux() {
-		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions, true, isBoundedRange(range), smallRange);
+		return Flux.usingWhen(rangeMono, range -> Flux.generate(() -> {
+			var readOptions = generateCustomReadOptions(this.readOptions.get(), true, isBoundedRange(range), smallRange);
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 			}
@@ -155,38 +121,9 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> extends
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIterWithReadOpts::close);
+		}, RocksIterWithReadOpts::close), LLUtils::finalizeResource);
 	}
 
 	public abstract T getEntry(@Nullable Buffer key, @Nullable Buffer value);
 
-	@Override
-	protected final RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<LLLocalGroupedReactiveRocksIterator<T>> prepareSend() {
-		var range = this.range.send();
-		var readOptions = this.readOptions;
-		return drop -> new LLLocalGroupedReactiveRocksIterator<>(db,
-				prefixLength,
-				range.receive(),
-				allowNettyDirect,
-				readOptions,
-				canFillCache,
-				readValues,
-				smallRange
-		) {
-			@Override
-			public T getEntry(@Nullable Buffer key, @Nullable Buffer value) {
-				return LLLocalGroupedReactiveRocksIterator.this.getEntry(key, value);
-			}
-		};
-	}
-
-	protected void makeInaccessible() {
-		this.range = null;
-		this.readOptions = null;
-	}
 }

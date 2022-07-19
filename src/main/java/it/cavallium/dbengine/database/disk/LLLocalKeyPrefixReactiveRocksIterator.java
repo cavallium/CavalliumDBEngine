@@ -11,84 +11,52 @@ import io.netty5.util.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import reactor.util.function.Tuples;
 
-public class LLLocalKeyPrefixReactiveRocksIterator extends
-		ResourceSupport<LLLocalKeyPrefixReactiveRocksIterator, LLLocalKeyPrefixReactiveRocksIterator> {
+public class LLLocalKeyPrefixReactiveRocksIterator {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalKeyPrefixReactiveRocksIterator.class);
-	private static final Drop<LLLocalKeyPrefixReactiveRocksIterator> DROP = new Drop<>() {
-		@Override
-		public void drop(LLLocalKeyPrefixReactiveRocksIterator obj) {
-			try {
-				if (obj.rangeShared != null && obj.rangeShared.isAccessible()) {
-					obj.rangeShared.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close range", ex);
-			}
-			try {
-				if (obj.readOptions != null && obj.readOptions.isAccessible()) {
-					obj.readOptions.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close readOptions", ex);
-			}
-		}
-
-		@Override
-		public Drop<LLLocalKeyPrefixReactiveRocksIterator> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(LLLocalKeyPrefixReactiveRocksIterator obj) {
-
-		}
-	};
 
 	private final RocksDBColumn db;
 	private final int prefixLength;
-	private LLRange rangeShared;
+	private final Mono<LLRange> rangeMono;
 	private final boolean allowNettyDirect;
-	private ReadOptions readOptions;
+	private final Supplier<ReadOptions> readOptions;
 	private final boolean canFillCache;
 	private final boolean smallRange;
 
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
-			LLRange range,
+			Mono<LLRange> rangeMono,
 			boolean allowNettyDirect,
-			ReadOptions readOptions,
+			Supplier<ReadOptions> readOptions,
 			boolean canFillCache,
 			boolean smallRange) {
-		super(DROP);
 		this.db = db;
 		this.prefixLength = prefixLength;
-		this.rangeShared = range;
+		this.rangeMono = rangeMono;
 		this.allowNettyDirect = allowNettyDirect;
-		this.readOptions = readOptions != null ? readOptions : new ReadOptions();
+		this.readOptions = readOptions != null ? readOptions : ReadOptions::new;
 		this.canFillCache = canFillCache;
 		this.smallRange = smallRange;
 	}
 
 
 	public Flux<Buffer> flux() {
-		return Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions,
-					canFillCache,
-					isBoundedRange(rangeShared),
-					smallRange
-			);
+		return Flux.usingWhen(rangeMono, range -> Flux.generate(() -> {
+			var readOptions
+					= generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange);
 			if (logger.isTraceEnabled()) {
-				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(rangeShared));
+				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
 			}
-			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, rangeShared, false));
+			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, range, false));
 		}, (tuple, sink) -> {
 			try {
 				var rocksIterator = tuple.iter();
@@ -131,7 +99,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 						if (logger.isTraceEnabled()) {
 							logger.trace(MARKER_ROCKSDB,
 									"Range {} is reading prefix {}",
-									LLUtils.toStringSafe(rangeShared),
+									LLUtils.toStringSafe(range),
 									LLUtils.toStringSafe(groupKeyPrefix)
 							);
 						}
@@ -139,7 +107,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 						sink.next(groupKeyPrefix);
 					} else {
 						if (logger.isTraceEnabled()) {
-							logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(rangeShared));
+							logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
 						}
 						sink.complete();
 					}
@@ -150,35 +118,12 @@ public class LLLocalKeyPrefixReactiveRocksIterator extends
 				}
 			} catch (RocksDBException ex) {
 				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(rangeShared));
+					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
 				}
 				sink.error(ex);
 			}
 			return tuple;
-		}, RocksIterWithReadOpts::close);
+		}, RocksIterWithReadOpts::close), LLUtils::finalizeResource);
 	}
 
-	@Override
-	protected final RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<LLLocalKeyPrefixReactiveRocksIterator> prepareSend() {
-		var range = this.rangeShared.send();
-		var readOptions = this.readOptions;
-		return drop -> new LLLocalKeyPrefixReactiveRocksIterator(db,
-				prefixLength,
-				range.receive(),
-				allowNettyDirect,
-				readOptions,
-				canFillCache,
-				smallRange
-		);
-	}
-
-	protected void makeInaccessible() {
-		this.rangeShared = null;
-		this.readOptions = null;
-	}
 }

@@ -5,7 +5,6 @@ import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.util.Send;
 import io.netty5.util.internal.StringUtil;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.netty.NullableBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import org.jetbrains.annotations.NotNull;

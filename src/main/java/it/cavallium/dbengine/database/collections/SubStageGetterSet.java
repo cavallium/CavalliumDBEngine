@@ -28,8 +28,7 @@ public class SubStageGetterSet<T> implements
 			Mono<Buffer> prefixKeyMono) {
 		return prefixKeyMono.map(prefixKey -> DatabaseSetDictionary.tail(dictionary,
 				BufSupplier.ofOwned(prefixKey),
-				keySerializer,
-				null
+				keySerializer
 		));
 	}
 

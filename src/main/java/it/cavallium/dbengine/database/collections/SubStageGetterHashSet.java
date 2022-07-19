@@ -40,8 +40,7 @@ public class SubStageGetterHashSet<T, TH> implements
 				BufSupplier.ofOwned(prefixKey),
 				keySerializer,
 				keyHashFunction,
-				keyHashSerializer,
-				null
+				keyHashSerializer
 		));
 	}
 

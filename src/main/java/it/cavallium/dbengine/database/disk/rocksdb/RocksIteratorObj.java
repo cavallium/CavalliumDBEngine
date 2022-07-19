@@ -10,37 +10,13 @@ import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.ReadableComponent;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
 import org.rocksdb.AbstractSlice;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
 
-public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIteratorObj> {
-
-	protected static final Drop<RocksIteratorObj> DROP = new Drop<>() {
-		@Override
-		public void drop(RocksIteratorObj obj) {
-			if (obj.rocksIterator != null) {
-				obj.rocksIterator.close();
-			}
-			if (obj.sliceMin != null) {
-				obj.sliceMin.close();
-			}
-			if (obj.sliceMax != null) {
-				obj.sliceMax.close();
-			}
-		}
-
-		@Override
-		public Drop<RocksIteratorObj> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(RocksIteratorObj obj) {
-
-		}
-	};
+public class RocksIteratorObj extends SimpleResource {
 
 	private RocksIterator rocksIterator;
 	private AbstractSlice<?> sliceMin;
@@ -100,7 +76,6 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 			Timer iterNextTime,
 			Object seekingFrom,
 			Object seekingTo) {
-		super(DROP);
 		this.sliceMin = sliceMin;
 		this.sliceMax = sliceMax;
 		this.min = min;
@@ -118,6 +93,7 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	public void seek(ByteBuffer seekBuf) throws RocksDBException {
+		ensureOpen();
 		startedIterSeek.increment();
 		try {
 			iterSeekTime.record(() -> rocksIterator.seek(seekBuf));
@@ -128,6 +104,7 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	public void seek(byte[] seekArray) throws RocksDBException {
+		ensureOpen();
 		startedIterSeek.increment();
 		try {
 			iterSeekTime.record(() -> rocksIterator.seek(seekArray));
@@ -138,6 +115,7 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	public void seekToFirst() throws RocksDBException {
+		ensureOpen();
 		startedIterSeek.increment();
 		try {
 			iterSeekTime.record(rocksIterator::seekToFirst);
@@ -148,6 +126,7 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	public void seekToLast() throws RocksDBException {
+		ensureOpen();
 		startedIterSeek.increment();
 		try {
 			iterSeekTime.record(rocksIterator::seekToLast);
@@ -161,6 +140,7 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	 * Useful for reverse iterations
 	 */
 	public void seekFrom(Buffer key) {
+		ensureOpen();
 		if (allowNettyDirect && isReadOnlyDirect(key)) {
 			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
@@ -179,6 +159,7 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	 * Useful for forward iterations
 	 */
 	public void seekTo(Buffer key) {
+		ensureOpen();
 		if (allowNettyDirect && isReadOnlyDirect(key)) {
 			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
@@ -198,30 +179,37 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	public boolean isValid() {
+		ensureOpen();
 		return rocksIterator.isValid();
 	}
 
 	public int key(ByteBuffer buffer) {
+		ensureOpen();
 		return rocksIterator.key(buffer);
 	}
 
 	public int value(ByteBuffer buffer) {
+		ensureOpen();
 		return rocksIterator.value(buffer);
 	}
 
 	public byte[] key() {
+		ensureOpen();
 		return rocksIterator.key();
 	}
 
 	public byte[] value() {
+		ensureOpen();
 		return rocksIterator.value();
 	}
 
 	public void next() throws RocksDBException {
+		ensureOpen();
 		next(true);
 	}
 
 	public void next(boolean traceStats) throws RocksDBException {
+		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
 			iterNextTime.record(rocksIterator::next);
@@ -232,10 +220,12 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	public void prev() throws RocksDBException {
+		ensureOpen();
 		prev(true);
 	}
 
 	public void prev(boolean traceStats) throws RocksDBException {
+		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
 			iterNextTime.record(rocksIterator::prev);
@@ -246,48 +236,15 @@ public class RocksIteratorObj extends ResourceSupport<RocksIteratorObj, RocksIte
 	}
 
 	@Override
-	protected void makeInaccessible() {
-		this.rocksIterator = null;
-		this.sliceMin = null;
-		this.sliceMax = null;
-		this.min = null;
-		this.max = null;
-		this.seekingFrom = null;
-		this.seekingTo = null;
-	}
-
-	@Override
-	protected RuntimeException createResourceClosedException() {
-		return new IllegalStateException("Closed");
-	}
-
-	@Override
-	protected Owned<RocksIteratorObj> prepareSend() {
-		var rocksIterator = this.rocksIterator;
-		var sliceMin = this.sliceMin;
-		var sliceMax = this.sliceMax;
-		var minSend = this.min != null ? this.min.send() : null;
-		var maxSend = this.max != null ? this.max.send() : null;
-		var seekingFrom = this.seekingFrom;
-		var seekingTo = this.seekingTo;
-		return drop -> {
-			var instance = new RocksIteratorObj(rocksIterator,
-					sliceMin,
-					sliceMax,
-					minSend != null ? minSend.receive() : null,
-					maxSend != null ? maxSend.receive() : null,
-					allowNettyDirect,
-					startedIterSeek,
-					endedIterSeek,
-					iterSeekTime,
-					startedIterNext,
-					endedIterNext,
-					iterNextTime,
-					seekingFrom,
-					seekingTo
-			);
-			drop.attach(instance);
-			return instance;
-		};
+	protected void onClose() {
+		if (rocksIterator != null) {
+			rocksIterator.close();
+		}
+		if (sliceMin != null) {
+			sliceMin.close();
+		}
+		if (sliceMax != null) {
+			sliceMax.close();
+		}
 	}
 }

@@ -51,26 +51,23 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	protected DatabaseMapDictionary(LLDictionary dictionary,
 			@Nullable BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Serializer<U> valueSerializer,
-			Runnable onClose) {
+			Serializer<U> valueSerializer) {
 		// Do not retain or release or use the prefixKey here
-		super(dictionary, prefixKeySupplier, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0, onClose);
+		super(dictionary, prefixKeySupplier, keySuffixSerializer, new SubStageGetterSingle<>(valueSerializer), 0);
 		this.valueSerializer = valueSerializer;
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> simple(LLDictionary dictionary,
 			SerializerFixedBinaryLength<T> keySerializer,
-			Serializer<U> valueSerializer,
-			Runnable onClose) {
-		return new DatabaseMapDictionary<>(dictionary, null, keySerializer, valueSerializer, onClose);
+			Serializer<U> valueSerializer) {
+		return new DatabaseMapDictionary<>(dictionary, null, keySerializer, valueSerializer);
 	}
 
 	public static <T, U> DatabaseMapDictionary<T, U> tail(LLDictionary dictionary,
 			@Nullable BufSupplier prefixKeySupplier,
 			SerializerFixedBinaryLength<T> keySuffixSerializer,
-			Serializer<U> valueSerializer,
-			Runnable onClose) {
-		return new DatabaseMapDictionary<>(dictionary, prefixKeySupplier, keySuffixSerializer, valueSerializer, onClose);
+			Serializer<U> valueSerializer) {
+		return new DatabaseMapDictionary<>(dictionary, prefixKeySupplier, keySuffixSerializer, valueSerializer);
 	}
 
 	public static <K, V> Flux<Entry<K, V>> getLeavesFrom(DatabaseMapDictionary<K, V> databaseMapDictionary,
@@ -256,7 +253,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		return Mono.fromCallable(() ->
-				new DatabaseMapSingle<>(dictionary, BufSupplier.ofOwned(serializeKeySuffixToKey(keySuffix)), valueSerializer, null));
+				new DatabaseMapSingle<>(dictionary, BufSupplier.ofOwned(serializeKeySuffixToKey(keySuffix)), valueSerializer));
 	}
 
 	@Override
@@ -512,7 +509,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 						var bufSupplier = BufSupplier.ofOwned(toKey(keyBuf.copy()));
 						try {
 							T keySuffix = deserializeSuffix(keyBuf);
-							var subStage = new DatabaseMapSingle<>(dictionary, bufSupplier, valueSerializer, null);
+							var subStage = new DatabaseMapSingle<>(dictionary, bufSupplier, valueSerializer);
 							return new SubStageEntry<>(keySuffix, subStage);
 						} catch (Throwable ex) {
 							bufSupplier.close();

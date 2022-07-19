@@ -14,6 +14,7 @@ import static org.assertj.core.api.Assertions.*;
 import io.netty5.buffer.api.internal.ResourceSupport;
 import it.cavallium.dbengine.DbTestUtils.TestAllocator;
 import it.cavallium.dbengine.database.UpdateMode;
+import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Arrays;
@@ -269,14 +270,14 @@ public abstract class TestDictionaryMapDeep {
 								.flatMap(v_ -> Mono.using(
 										() -> v_,
 										v -> v.set(value),
-										ResourceSupport::close
+										SimpleResource::close
 								))
 								.then(map
 										.at(null, "capra")
 										.flatMap(v_ -> Mono.using(
 												() -> v_,
 												v -> v.set(new Object2ObjectLinkedOpenHashMap<>(Map.of("normal", "123", "ormaln", "456"))),
-												ResourceSupport::close
+												SimpleResource::close
 										))
 								)
 								.thenMany(map
@@ -287,7 +288,7 @@ public abstract class TestDictionaryMapDeep {
 												.doFinally(s -> v.getValue().close())
 										)
 								),
-								ResourceSupport::close
+								SimpleResource::close
 						))
 				));
 		if (shouldFail) {

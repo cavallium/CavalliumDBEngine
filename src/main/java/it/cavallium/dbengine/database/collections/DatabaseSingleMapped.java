@@ -12,6 +12,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.utils.SimpleResource;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -20,53 +21,27 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 
 @SuppressWarnings("unused")
-public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>, DatabaseSingleMapped<A, B>>
-		implements DatabaseStageEntry<A> {
+public class DatabaseSingleMapped<A, B> extends SimpleResource implements DatabaseStageEntry<A> {
 
 	private static final Logger logger = LogManager.getLogger(DatabaseSingleMapped.class);
 
-	private static final Drop<DatabaseSingleMapped<?, ?>> DROP = new Drop<>() {
-		@Override
-		public void drop(DatabaseSingleMapped<?, ?> obj) {
-			try {
-				if (obj.serializedSingle != null) {
-					obj.serializedSingle.close();
-				}
-			} catch (Throwable ex) {
-				logger.error("Failed to close serializedSingle", ex);
-			}
-		}
-
-		@Override
-		public Drop<DatabaseSingleMapped<?, ?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(DatabaseSingleMapped<?, ?> obj) {
-
-		}
-	};
-
 	private final Mapper<A, B> mapper;
 
-	private DatabaseStageEntry<B> serializedSingle;
+	private final DatabaseStageEntry<B> serializedSingle;
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	public DatabaseSingleMapped(DatabaseStageEntry<B> serializedSingle, Mapper<A, B> mapper,
 			Drop<DatabaseSingleMapped<A, B>> drop) {
-		super((Drop<DatabaseSingleMapped<A,B>>) (Drop) DROP);
 		this.serializedSingle = serializedSingle;
 		this.mapper = mapper;
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	private DatabaseSingleMapped(Send<DatabaseStage<B>> serializedSingle, Mapper<A, B> mapper,
+	private DatabaseSingleMapped(DatabaseStage<B> serializedSingle, Mapper<A, B> mapper,
 			Drop<DatabaseSingleMapped<A, B>> drop) {
-		super((Drop<DatabaseSingleMapped<A,B>>) (Drop) DROP);
 		this.mapper = mapper;
 
-		this.serializedSingle = (DatabaseStageEntry<B>) serializedSingle.receive();
+		this.serializedSingle = (DatabaseStageEntry<B>) serializedSingle;
 	}
 
 	private void deserializeSink(B value, SynchronousSink<A> sink) {
@@ -179,19 +154,7 @@ public class DatabaseSingleMapped<A, B> extends ResourceSupport<DatabaseStage<A>
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		throw new IllegalStateException("Closed");
+	protected void onClose() {
+		serializedSingle.close();
 	}
-
-	@Override
-	protected Owned<DatabaseSingleMapped<A, B>> prepareSend() {
-		var serializedSingle = this.serializedSingle.send();
-		return drop -> new DatabaseSingleMapped<>(serializedSingle, mapper, drop);
-	}
-
-	@Override
-	protected void makeInaccessible() {
-		this.serializedSingle = null;
-	}
-
 }

@@ -29,8 +29,7 @@ public class SubStageGetterMap<T, U> implements
 		return prefixKeyMono.map(prefixKey -> DatabaseMapDictionary.tail(dictionary,
 				BufSupplier.ofOwned(prefixKey),
 				keySerializer,
-				valueSerializer,
-				null
+				valueSerializer
 		));
 	}
 

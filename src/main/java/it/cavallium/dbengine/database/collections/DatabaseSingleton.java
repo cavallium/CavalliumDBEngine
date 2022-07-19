@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.utils.SimpleResource;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -21,42 +22,17 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.SynchronousSink;
 
-public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, DatabaseSingleton<U>> implements
-		DatabaseStageEntry<U> {
+public class DatabaseSingleton<U> extends SimpleResource implements DatabaseStageEntry<U> {
 
 	private static final Logger LOG = LogManager.getLogger(DatabaseSingleton.class);
-
-	private static final Drop<DatabaseSingleton<?>> DROP = new Drop<>() {
-		@Override
-		public void drop(DatabaseSingleton<?> obj) {
-			if (obj.onClose != null) {
-				obj.onClose.run();
-			}
-		}
-
-		@Override
-		public Drop<DatabaseSingleton<?>> fork() {
-			return this;
-		}
-
-		@Override
-		public void attach(DatabaseSingleton<?> obj) {
-
-		}
-	};
 
 	private final LLSingleton singleton;
 	private final Serializer<U> serializer;
 
-	private Runnable onClose;
-
 	@SuppressWarnings({"unchecked", "rawtypes"})
-	public DatabaseSingleton(LLSingleton singleton, Serializer<U> serializer,
-			Runnable onClose) {
-		super((Drop<DatabaseSingleton<U>>) (Drop) DROP);
+	public DatabaseSingleton(LLSingleton singleton, Serializer<U> serializer) {
 		this.singleton = singleton;
 		this.serializer = serializer;
-		this.onClose = onClose;
 	}
 
 	private LLSnapshot resolveSnapshot(@Nullable CompositeSnapshot snapshot) {
@@ -201,22 +177,7 @@ public class DatabaseSingleton<U> extends ResourceSupport<DatabaseStage<U>, Data
 	}
 
 	@Override
-	protected RuntimeException createResourceClosedException() {
-		throw new IllegalStateException("Closed");
-	}
+	protected void onClose() {
 
-	@Override
-	protected Owned<DatabaseSingleton<U>> prepareSend() {
-		var onClose = this.onClose;
-		return drop -> {
-			var instance = new DatabaseSingleton<>(singleton, serializer, onClose);
-			drop.attach(instance);
-			return instance;
-		};
-	}
-
-	@Override
-	protected void makeInaccessible() {
-		this.onClose = null;
 	}
 }

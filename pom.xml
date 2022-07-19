@@ -503,7 +503,7 @@
 			<plugin>
 				<groupId>it.cavallium</groupId>
 				<artifactId>data-generator</artifactId>
-				<version>0.9.148</version>
+				<version>0.9.168</version>
 				<executions>
 					<execution>
 						<id>generate-lucene-query-sources</id>

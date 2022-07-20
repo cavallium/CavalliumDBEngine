@@ -18,11 +18,11 @@ public class LLRange extends SimpleResource {
 
 	private static final LLRange RANGE_ALL = new LLRange((Buffer) null, (Buffer) null, (Buffer) null);
 	@Nullable
-	private Buffer min;
+	private final Buffer min;
 	@Nullable
-	private Buffer max;
+	private final Buffer max;
 	@Nullable
-	private Buffer single;
+	private final Buffer single;
 
 	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single) {
 		super();

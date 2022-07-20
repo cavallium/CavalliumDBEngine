@@ -442,11 +442,13 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 					var fullRange = tuple.getT2();
 					try {
 						if (firstKey.isPresent()) {
-							try (var key1Buf = deepMap.alloc.allocate(keySuffix1Serializer.getSerializedBinaryLength())) {
-								keySuffix1Serializer.serialize(firstKey.get(), key1Buf);
-								sink.next(LLRange.of(key1Buf.send(), fullRange.getMax()));
-							} catch (SerializationException e) {
-								sink.error(e);
+							try (fullRange) {
+								try (var key1Buf = deepMap.alloc.allocate(keySuffix1Serializer.getSerializedBinaryLength())) {
+									keySuffix1Serializer.serialize(firstKey.get(), key1Buf);
+									sink.next(LLRange.of(key1Buf.send(), fullRange.getMax()));
+								} catch (SerializationException e) {
+									sink.error(e);
+								}
 							}
 						} else {
 							sink.next(fullRange);
@@ -457,7 +459,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 						} catch (Throwable ex2) {
 							LOG.error(ex2);
 						}
-						throw ex;
+						sink.error(ex);
 					}
 				}), false, false)
 				.concatMapIterable(entry -> {

@@ -89,14 +89,23 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 								rocksIterator.next();
 							}
 							sink.next(getEntry(key, value));
-						} finally {
+						} catch (Throwable ex) {
 							if (value != null && value.isAccessible()) {
-								value.close();
+								try {
+									value.close();
+								} catch (Throwable ex2) {
+									logger.error(ex2);
+								}
 							}
+							throw ex;
 						}
 					} catch (Throwable ex) {
 						if (key.isAccessible()) {
-							key.close();
+							try {
+								key.close();
+							} catch (Throwable ex2) {
+								logger.error(ex2);
+							}
 						}
 						throw ex;
 					}

@@ -50,6 +50,7 @@ import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.rpc.current.data.MemoryMappedFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NIOFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.NRTCachingDirectory;
+import it.cavallium.dbengine.rpc.current.data.RAFFSDirectory;
 import it.cavallium.dbengine.rpc.current.data.RocksDBSharedDirectory;
 import it.cavallium.dbengine.rpc.current.data.RocksDBStandaloneDirectory;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
@@ -84,6 +85,7 @@ import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.MergePolicy;
 import org.apache.lucene.index.TieredMergePolicy;
 import org.apache.lucene.misc.store.DirectIODirectory;
+import org.apache.lucene.misc.store.RAFDirectory;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
 import org.apache.lucene.search.Collector;
@@ -105,6 +107,7 @@ import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.search.similarities.TFIDFSimilarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.MMapDirectory;
 import org.apache.lucene.util.Constants;
 import org.apache.lucene.util.StringHelper;
 import org.jetbrains.annotations.NotNull;
@@ -626,11 +629,13 @@ public class LuceneUtils {
 				return delegateDirectory;
 			}
 		} else if (directoryOptions instanceof MemoryMappedFSDirectory memoryMappedFSDirectory) {
-			return FSDirectory.open(memoryMappedFSDirectory.managedPath().resolve(directoryName + ".lucene.db"));
+			return new MMapDirectory(memoryMappedFSDirectory.managedPath().resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NIOFSDirectory niofsDirectory) {
 			return new org.apache.lucene.store.NIOFSDirectory(niofsDirectory
 					.managedPath()
 					.resolve(directoryName + ".lucene.db"));
+		} else if (directoryOptions instanceof RAFFSDirectory rafFsDirectory) {
+			return new RAFDirectory(rafFsDirectory.managedPath().resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
 			var delegateDirectory = createLuceneDirectory(nrtCachingDirectory.delegate(), directoryName, rocksDBManager);
 			return new org.apache.lucene.store.NRTCachingDirectory(delegateDirectory,
@@ -667,6 +672,8 @@ public class LuceneUtils {
 			return Optional.of(memoryMappedFSDirectory.managedPath());
 		} else if (directoryOptions instanceof NIOFSDirectory niofsDirectory) {
 			return Optional.of(niofsDirectory.managedPath());
+		} else if (directoryOptions instanceof RAFFSDirectory raffsDirectory) {
+			return Optional.of(raffsDirectory.managedPath());
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
 			return getManagedPath(nrtCachingDirectory.delegate());
 		} else if (directoryOptions instanceof RocksDBStandaloneDirectory rocksDBStandaloneDirectory) {
@@ -686,6 +693,8 @@ public class LuceneUtils {
 		} else if (directoryOptions instanceof MemoryMappedFSDirectory) {
 			return false;
 		} else if (directoryOptions instanceof NIOFSDirectory) {
+			return false;
+		} else if (directoryOptions instanceof RAFFSDirectory) {
 			return false;
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
 			return getIsFilesystemCompressed(nrtCachingDirectory.delegate());

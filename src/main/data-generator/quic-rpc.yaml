@@ -80,6 +80,7 @@ versions:
         ByteBuffersDirectory,
         MemoryMappedFSDirectory,
         NIOFSDirectory,
+        RAFFSDirectory,
         DirectIOFSDirectory,
         RocksDBStandaloneDirectory,
         RocksDBSharedDirectory,
@@ -87,11 +88,13 @@ versions:
       ]
       StandardFSDirectoryOptions: [
         MemoryMappedFSDirectory,
-        NIOFSDirectory
+        NIOFSDirectory,
+        RAFFSDirectory
       ]
       PathDirectoryOptions: [
         MemoryMappedFSDirectory,
         NIOFSDirectory,
+        RAFFSDirectory,
         RocksDBStandaloneDirectory,
         StandardFSDirectoryOptions
       ]
@@ -348,6 +351,9 @@ versions:
         data:
           managedPath: Path
       NIOFSDirectory:
+        data:
+          managedPath: Path
+      RAFFSDirectory:
         data:
           managedPath: Path
       DirectIOFSDirectory:

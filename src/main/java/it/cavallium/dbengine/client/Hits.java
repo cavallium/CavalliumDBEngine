@@ -42,7 +42,7 @@ public class Hits<T> extends SimpleResource implements DiscardingCloseable {
 		return result -> {
 			var hitsToTransform = result.results()
 					.map(hit -> new LazyHitEntry<>(Mono.just(hit.key()), valueGetter.get(hit.key()), hit.score()));
-			return new MappedHits<>(hitsToTransform, result.totalHitsCount(), result);
+			return Hits.withResource(hitsToTransform, result.totalHitsCount(), result);
 		};
 	}
 
@@ -66,7 +66,7 @@ public class Hits<T> extends SimpleResource implements DiscardingCloseable {
 					return new LazyHitEntry<>(keyMono, valMono, score);
 				}, keysFlux, valuesFlux, scoresFlux);
 
-				return new MappedHits<>(transformedFlux, result.totalHitsCount(), result);
+				return Hits.withResource(transformedFlux, result.totalHitsCount(), result);
 			} catch (Throwable t) {
 				result.close();
 				throw t;
@@ -99,31 +99,6 @@ public class Hits<T> extends SimpleResource implements DiscardingCloseable {
 
 	@Override
 	protected void onClose() {
-	}
-
-	private static sealed class MappedHits<U> extends Hits<U> {
-
-		private final Hits<?> parent;
-
-		public MappedHits(Flux<U> hits,
-				TotalHitsCount count,
-				Hits<?> parent) {
-			super(hits, count);
-			this.parent = parent;
-		}
-
-		@Override
-		protected void onClose() {
-			parent.close();
-			super.onClose();
-		}
-	}
-
-	private static final class MappedLuceneHits<U> extends MappedHits<U> implements LuceneCloseable {
-
-		public MappedLuceneHits(Flux<U> hits, TotalHitsCount count, Hits<?> parent) {
-			super(hits, count, parent);
-		}
 	}
 
 	public static final class LuceneHits<U> extends Hits<U> implements LuceneCloseable {

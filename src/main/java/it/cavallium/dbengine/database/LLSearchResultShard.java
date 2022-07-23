@@ -3,25 +3,37 @@ package it.cavallium.dbengine.database;
 import io.netty5.buffer.api.Drop;
 import io.netty5.buffer.api.Owned;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.utils.SimpleResource;
+import it.unimi.dsi.fastutil.objects.ObjectArrayList;
+import java.util.List;
 import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import reactor.core.publisher.Flux;
 
-public final class LLSearchResultShard extends SimpleResource implements DiscardingCloseable {
+public class LLSearchResultShard extends SimpleResource implements DiscardingCloseable {
 
-	private static final Logger logger = LogManager.getLogger(LLSearchResultShard.class);
+	private static final Logger LOG = LogManager.getLogger(LLSearchResultShard.class);
 
 	private final Flux<LLKeyScore> results;
 	private final TotalHitsCount totalHitsCount;
-	private final Runnable onClose;
 
-	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount, Runnable onClose) {
+	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount) {
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
-		this.onClose = onClose;
+	}
+
+	public static LLSearchResultShard withResource(Flux<LLKeyScore> results,
+			TotalHitsCount totalHitsCount,
+			SafeCloseable closeableResource) {
+		if (closeableResource instanceof LuceneCloseable luceneCloseable) {
+			return new LuceneLLSearchResultShard(results, totalHitsCount, List.of(luceneCloseable));
+		} else {
+			return new ResourcesLLSearchResultShard(results, totalHitsCount, List.of(closeableResource));
+		}
 	}
 
 	public Flux<LLKeyScore> results() {
@@ -56,13 +68,61 @@ public final class LLSearchResultShard extends SimpleResource implements Discard
 
 	@Override
 	public void onClose() {
-		try {
-			var onClose = this.onClose;
-			if (onClose != null) {
-				onClose.run();
+	}
+
+	public static class ResourcesLLSearchResultShard extends LLSearchResultShard {
+
+		private final List<SafeCloseable> resources;
+
+		public ResourcesLLSearchResultShard(Flux<LLKeyScore> resultsFlux,
+				TotalHitsCount count,
+				List<SafeCloseable> resources) {
+			super(resultsFlux, count);
+			this.resources = resources;
+		}
+
+		@Override
+		public void onClose() {
+			try {
+				for (SafeCloseable resource : resources) {
+					try {
+						resource.close();
+					} catch (Throwable ex) {
+						LOG.error("Failed to close resource", ex);
+					}
+				}
+			} catch (Throwable ex) {
+				LOG.error("Failed to close resources", ex);
 			}
-		} catch (Throwable ex) {
-			logger.error("Failed to close onClose", ex);
+			super.onClose();
+		}
+	}
+
+	public static class LuceneLLSearchResultShard extends LLSearchResultShard implements LuceneCloseable {
+
+		private final List<LuceneCloseable> resources;
+
+		public LuceneLLSearchResultShard(Flux<LLKeyScore> resultsFlux,
+				TotalHitsCount count,
+				List<LuceneCloseable> resources) {
+			super(resultsFlux, count);
+			this.resources = resources;
+		}
+
+		@Override
+		public void onClose() {
+			try {
+				for (LuceneCloseable resource : resources) {
+					try {
+						resource.close();
+					} catch (Throwable ex) {
+						LOG.error("Failed to close resource", ex);
+					}
+				}
+			} catch (Throwable ex) {
+				LOG.error("Failed to close resources", ex);
+			}
+			super.onClose();
 		}
 	}
 }

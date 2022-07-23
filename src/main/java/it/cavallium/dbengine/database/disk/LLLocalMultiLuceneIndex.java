@@ -286,7 +286,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 		return multiSearcher
 				.collectMulti(searchers, localQueryParams, keyFieldName, transformer)
 				// Transform the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
 				.flux();
 	}
 
@@ -296,7 +296,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			@Nullable String keyFieldName) {
 		return searchInternal(snapshot, queryParams, keyFieldName)
 				// Transform the result type
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
 				.flux();
 	}
 

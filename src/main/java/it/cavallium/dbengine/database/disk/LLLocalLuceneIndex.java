@@ -500,7 +500,7 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex,
 
 		return localSearcher
 				.collect(searcher, localQueryParams, keyFieldName, transformer)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
 				.flux();
 	}
 
@@ -508,7 +508,7 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex,
 	public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		return searchInternal(snapshot, queryParams, keyFieldName)
-				.map(result -> new LLSearchResultShard(result.results(), result.totalHitsCount(), result::close))
+				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
 				.flux();
 	}
 

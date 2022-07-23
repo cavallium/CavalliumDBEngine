@@ -23,6 +23,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
@@ -652,7 +653,7 @@ public class LLUtils {
 	public static Mono<Void> finalizeResource(SafeCloseable resource) {
 		Mono<Void> runnable = Mono.fromRunnable(resource::close);
 		if (resource instanceof LuceneCloseable) {
-			return runnable.subscribeOn(luceneScheduler());
+			return runnable.transform(LuceneUtils::scheduleLucene);
 		} else {
 			return runnable;
 		}
@@ -683,8 +684,9 @@ public class LLUtils {
 	 */
 	public static <T extends AutoCloseable, U> Mono<U> singleOrClose(Mono<T> resourceMono,
 			Function<T, Mono<U>> closure) {
-		return Mono.usingWhen(resourceMono,
-				resource -> closure.apply(resource).doOnSuccess(s -> {
+		return Mono.usingWhen(resourceMono, resource -> {
+			if (resource instanceof LuceneCloseable) {
+				return closure.apply(resource).publishOn(luceneScheduler()).doOnSuccess(s -> {
 					if (s == null) {
 						try {
 							resource.close();
@@ -692,17 +694,25 @@ public class LLUtils {
 							throw new RuntimeException(e);
 						}
 					}
-				}),
-				resource -> Mono.empty(),
-				(resource, ex) -> Mono.fromCallable(() -> {
-					resource.close();
-					return null;
-				}),
-				resource -> Mono.fromCallable(() -> {
-					resource.close();
-					return null;
-				})
-		);
+				}).publishOn(Schedulers.parallel());
+			} else {
+				return closure.apply(resource).doOnSuccess(s -> {
+					if (s == null) {
+						try {
+							resource.close();
+						} catch (Exception e) {
+							throw new RuntimeException(e);
+						}
+					}
+				});
+			}
+		}, resource -> Mono.empty(), (resource, ex) -> Mono.fromCallable(() -> {
+			resource.close();
+			return null;
+		}), r -> (r instanceof SafeCloseable s) ? LLUtils.finalizeResource(s) : Mono.fromCallable(() -> {
+			r.close();
+			return null;
+		}));
 	}
 
 	@Deprecated

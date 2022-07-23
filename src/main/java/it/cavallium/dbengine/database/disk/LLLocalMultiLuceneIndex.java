@@ -164,7 +164,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 				.collectList()
 				.doOnDiscard(LLIndexSearcher.class, indexSearcher -> {
 					try {
-						indexSearcher.close();
+						LLUtils.onDiscard(indexSearcher);
 					} catch (UncheckedIOException ex) {
 						LOG.error("Failed to close an index searcher", ex);
 					}

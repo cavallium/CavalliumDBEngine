@@ -130,7 +130,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 				queryParams,
 				keyFieldName,
 				mltDocumentFields
-		)).doOnDiscard(DiscardingCloseable.class, SafeCloseable::close);
+		)).doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
 	}
 
 	private Mono<Buckets> mergeShards(List<Buckets> shards) {
@@ -166,7 +166,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 		return luceneIndicesFlux.flatMap(luceneIndex -> luceneIndex.search(snapshot,
 				queryParams,
 				keyFieldName
-		)).doOnDiscard(DiscardingCloseable.class, SafeCloseable::close);
+		)).doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
 	}
 
 	@Override
@@ -178,7 +178,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 				queries,
 				normalizationQuery,
 				bucketParams
-		)).collectList().flatMap(this::mergeShards).doOnDiscard(DiscardingCloseable.class, SafeCloseable::close);
+		)).collectList().flatMap(this::mergeShards).doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
 	}
 
 	@Override

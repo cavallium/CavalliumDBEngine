@@ -115,7 +115,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			return stagesFlux.doOnNext(e -> e.getValue().close())
 					.doOnDiscard(Entry.class, e -> {
 						if (e.getValue() instanceof DatabaseStageEntry<?> resource) {
-							resource.close();
+							LLUtils.onDiscard(resource);
 						}
 					})
 					.map(Entry::getKey);

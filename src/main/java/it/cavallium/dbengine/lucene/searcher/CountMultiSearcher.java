@@ -64,7 +64,7 @@ public class CountMultiSearcher implements MultiSearcher {
 
 					return new LuceneSearchResult(totalHitsCount, Flux.empty());
 				})
-				.doOnDiscard(LuceneSearchResult.class, luceneSearchResult -> luceneSearchResult.close()),
+				.doOnDiscard(LuceneSearchResult.class, LLUtils::onDiscard),
 				LLUtils::finalizeResource);
 	}
 

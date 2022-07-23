@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.LLSearchResultShard.ResourcesLLSearchResul
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -117,7 +118,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.mapNotNull(shards -> mergeResults(queryParams, shards))
 				.map(llSearchResult -> mapResults(llSearchResult))
 				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
+				.doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
 	}
 
 	@Override
@@ -131,7 +132,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				.mapNotNull(shards -> mergeResults(queryParams, shards))
 				.map(llSearchResult -> mapResults(llSearchResult))
 				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
+				.doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
 	}
 
 	@Override
@@ -158,7 +159,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
 		return luceneIndex
 				.count(resolveSnapshot(snapshot), query, MAX_COUNT_TIME)
-				.doOnDiscard(DiscardingCloseable.class, DiscardingCloseable::close);
+				.doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
 	}
 
 	@Override

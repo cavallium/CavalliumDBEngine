@@ -647,7 +647,12 @@ public class LLUtils {
 	}
 
 	public static Mono<Void> finalizeResource(Resource<?> resource) {
-		return Mono.fromRunnable(() -> LLUtils.finalizeResourceNow(resource));
+		Mono<Void> runnable = Mono.fromRunnable(() -> LLUtils.finalizeResourceNow(resource));
+		if (resource instanceof LuceneCloseable) {
+			return runnable.transform(LuceneUtils::scheduleLucene);
+		} else {
+			return runnable;
+		}
 	}
 
 	public static Mono<Void> finalizeResource(SafeCloseable resource) {
@@ -956,7 +961,11 @@ public class LLUtils {
 			send.close();
 		} if (next instanceof SafeCloseable closeable) {
 			if (manual || closeable instanceof DiscardingCloseable) {
-				closeable.close();
+				if (!manual && !LuceneUtils.isLuceneThread() && closeable instanceof LuceneCloseable luceneCloseable) {
+					luceneScheduler().schedule(() -> luceneCloseable.close());
+				} else {
+					closeable.close();
+				}
 			}
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();

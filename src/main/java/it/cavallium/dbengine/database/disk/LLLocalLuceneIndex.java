@@ -27,6 +27,8 @@ import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUpdateFields;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
+import it.cavallium.dbengine.lucene.LuceneConcurrentMergeScheduler;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -80,7 +82,7 @@ import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex {
+public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex, LuceneCloseable {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalLuceneIndex.class);
 
@@ -93,13 +95,13 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex 
 	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
 			DEFAULT_BOUNDED_ELASTIC_SIZE,
 			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			new ShortNamedThreadFactory("heavy-tasks").setDaemon(true).withGroup(new ThreadGroup("lucene-heavy-tasks")),
+			new LuceneThreadFactory("heavy-tasks").setDaemon(true).withGroup(new ThreadGroup("lucene-heavy-tasks")),
 			Math.toIntExact(Duration.ofHours(1).toSeconds())
 	));
 	private static final Scheduler luceneWriteScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
 			DEFAULT_BOUNDED_ELASTIC_SIZE,
 			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			new ShortNamedThreadFactory("lucene-write").setDaemon(true).withGroup(new ThreadGroup("lucene-write")),
+			new LuceneThreadFactory("lucene-write").setDaemon(true).withGroup(new ThreadGroup("lucene-write")),
 			Math.toIntExact(Duration.ofHours(1).toSeconds())
 	));
 	private static final Scheduler bulkScheduler = luceneWriteScheduler;
@@ -191,13 +193,8 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex 
 			mergeScheduler = new SerialMergeScheduler();
 			writerSchedulerMaxThreadCount = 1;
 		} else {
-			ConcurrentMergeScheduler concurrentMergeScheduler;
-			if (indexWriterConfig.getMergeScheduler() instanceof ConcurrentMergeScheduler defaultScheduler) {
-				concurrentMergeScheduler = defaultScheduler;
-			} else {
-				//noinspection resource
-				concurrentMergeScheduler = new ConcurrentMergeScheduler();
-			}
+			//noinspection resource
+			ConcurrentMergeScheduler concurrentMergeScheduler = new LuceneConcurrentMergeScheduler();
 			// false means SSD, true means HDD
 			boolean spins = false;
 			concurrentMergeScheduler.setDefaultMaxMergesAndThreads(spins);

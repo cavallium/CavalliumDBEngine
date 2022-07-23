@@ -8,6 +8,7 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import java.io.IOException;
@@ -50,13 +51,7 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 			var totalHitsCount = new TotalHitsCount(0, false);
 			Flux<LLKeyScore> mergedFluxes = resultsFlux.skip(queryParams.offsetLong()).take(queryParams.limitLong(), true);
 
-			return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-				try {
-					indexSearchers.close();
-				} catch (UncheckedIOException e) {
-					LOG.error("Can't close index searchers", e);
-				}
-			});
+			return new MyLuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers);
 		}));
 	}
 
@@ -86,5 +81,27 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	@Override
 	public String getName() {
 		return "unsorted streaming multi";
+	}
+
+	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
+
+		private final LLIndexSearchers indexSearchers;
+
+		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
+				Flux<LLKeyScore> hitsFlux,
+				LLIndexSearchers indexSearchers) {
+			super(totalHitsCount, hitsFlux);
+			this.indexSearchers = indexSearchers;
+		}
+
+		@Override
+		protected void onClose() {
+			try {
+				indexSearchers.close();
+			} catch (Throwable e) {
+				LOG.error("Can't close index searchers", e);
+			}
+			super.onClose();
+		}
 	}
 }

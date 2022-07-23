@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -17,6 +18,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -60,7 +62,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Schedulers;
 
-public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneIndex {
+public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneIndex, LuceneCloseable {
 
 	private static final Logger LOG = LogManager.getLogger(LLLuceneIndex.class);
 	private static final boolean BYPASS_GROUPBY_BUG = Boolean.parseBoolean(System.getProperty(
@@ -341,8 +343,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 				.stream()
 				.map(part -> Mono
 						.<Void>fromRunnable(part::close)
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-						.publishOn(Schedulers.parallel())
+						.transform(LuceneUtils::scheduleLucene)
 				)
 				.iterator();
 		var indicesCloseMono = Mono.whenDelayError(it);
@@ -353,8 +354,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 						closeable.close();
 					}
 					return null;
-				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
-				.publishOn(Schedulers.parallel())
+				}).transform(LuceneUtils::scheduleLucene))
 				.then()
 				.transform(LLUtils::handleDiscard)
 				.block();

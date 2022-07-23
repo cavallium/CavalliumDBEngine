@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
@@ -79,14 +80,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 								.skip(queryParams.offsetLong())
 								.take(queryParams.limitLong(), true);
 
-						return new LuceneSearchResult(totalHitsCount, mergedFluxes, () -> {
-							resultsToDrop.forEach(SimpleResource::close);
-							try {
-								indexSearchers.close();
-							} catch (UncheckedIOException e) {
-								LOG.error("Can't close index searchers", e);
-							}
-						});
+						return new MyLuceneSearchResult(totalHitsCount, mergedFluxes, resultsToDrop, indexSearchers);
 					});
 		});
 	}
@@ -105,5 +99,31 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 	@Override
 	public String getName() {
 		return "unsorted unscored simple multi";
+	}
+
+	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
+
+		private final List<LuceneSearchResult> resultsToDrop;
+		private final LLIndexSearchers indexSearchers;
+
+		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
+				Flux<LLKeyScore> mergedFluxes,
+				List<LuceneSearchResult> resultsToDrop,
+				LLIndexSearchers indexSearchers) {
+			super(totalHitsCount, mergedFluxes);
+			this.resultsToDrop = resultsToDrop;
+			this.indexSearchers = indexSearchers;
+		}
+
+		@Override
+		protected void onClose() {
+			resultsToDrop.forEach(SimpleResource::close);
+			try {
+				indexSearchers.close();
+			} catch (UncheckedIOException e) {
+				LOG.error("Can't close index searchers", e);
+			}
+			super.onClose();
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.DiscardingCloseable;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
 import java.io.IOException;
@@ -12,7 +13,7 @@ import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.search.IndexSearcher;
 import org.jetbrains.annotations.Nullable;
 
-public class LuceneIndexSnapshot extends SimpleResource implements DiscardingCloseable {
+public class LuceneIndexSnapshot extends SimpleResource implements DiscardingCloseable, LuceneCloseable {
 	private final IndexCommit snapshot;
 
 	private boolean initialized;

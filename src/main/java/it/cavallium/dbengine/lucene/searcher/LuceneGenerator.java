@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Iterator;
@@ -24,7 +25,7 @@ import reactor.core.scheduler.Schedulers;
 
 public class LuceneGenerator implements Supplier<ScoreDoc> {
 
-	private static final Scheduler SCHED = uninterruptibleScheduler(Schedulers.boundedElastic());
+	private static final Scheduler SCHED = LuceneUtils.luceneScheduler();
 	private final IndexSearcher shard;
 	private final int shardIndex;
 	private final Query query;
@@ -66,7 +67,8 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 							return s;
 						}
 				)
-				.subscribeOn(SCHED);
+				.subscribeOn(SCHED)
+				.publishOn(Schedulers.parallel());
 	}
 
 	@Override

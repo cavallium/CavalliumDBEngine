@@ -1,18 +1,18 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
-import io.netty5.util.Send;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLScoreDoc;
 import it.cavallium.dbengine.lucene.hugepq.search.HugePqFullScoreDocCollector;
-import java.io.IOException;
 import java.io.UncheckedIOException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -79,7 +79,7 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 								collector.close();
 								throw ex;
 							}
-						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+						}).subscribeOn(luceneScheduler()))
 						.collectList()
 						.flatMap(collectors -> Mono.fromCallable(() -> {
 							try {
@@ -91,9 +91,8 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 								}
 								throw ex;
 							}
-						}))
-				)
-				.publishOn(Schedulers.parallel());
+						}).subscribeOn(luceneScheduler()))
+				).publishOn(Schedulers.parallel());
 	}
 
 	/**
@@ -111,23 +110,41 @@ public class SortedByScoreFullMultiSearcher implements MultiSearcher {
 							indexSearchers.shards(), keyFieldName, true)
 					.take(queryParams.limitLong(), true);
 
-			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
-				try {
-					indexSearchers.close();
-				} catch (UncheckedIOException e) {
-					LOG.error("Can't close index searchers", e);
-				}
-				try {
-					data.close();
-				} catch (Exception e) {
-					LOG.error("Failed to discard data", e);
-				}
-			});
+			return new MyLuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers, data);
 		});
 	}
 
 	@Override
 	public String getName() {
 		return "sorted by score full multi";
+	}
+
+	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
+
+		private final LLIndexSearchers indexSearchers;
+		private final FullDocs<LLScoreDoc> data;
+
+		public MyLuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> hitsFlux,
+				LLIndexSearchers indexSearchers,
+				FullDocs<LLScoreDoc> data) {
+			super(totalHitsCount, hitsFlux);
+			this.indexSearchers = indexSearchers;
+			this.data = data;
+		}
+
+		@Override
+		protected void onClose() {
+			try {
+				indexSearchers.close();
+			} catch (Throwable e) {
+				LOG.error("Can't close index searchers", e);
+			}
+			try {
+				data.close();
+			} catch (Throwable e) {
+				LOG.error("Failed to discard data", e);
+			}
+			super.onClose();
+		}
 	}
 }

@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.DiscardingCloseable;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.searcher.ShardIndexSearcher;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.ArrayList;
@@ -26,7 +27,7 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 
 	LLIndexSearcher llShard(int shardIndex);
 
-	class UnshardedIndexSearchers extends SimpleResource implements LLIndexSearchers {
+	class UnshardedIndexSearchers extends SimpleResource implements LLIndexSearchers, LuceneCloseable {
 
 		private final LLIndexSearcher indexSearcher;
 
@@ -74,7 +75,7 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 		}
 	}
 
-	class ShardedIndexSearchers extends SimpleResource implements LLIndexSearchers {
+	class ShardedIndexSearchers extends SimpleResource implements LLIndexSearchers, LuceneCloseable {
 
 		private final List<LLIndexSearcher> indexSearchers;
 		private final List<IndexSearcher> indexSearchersVals;

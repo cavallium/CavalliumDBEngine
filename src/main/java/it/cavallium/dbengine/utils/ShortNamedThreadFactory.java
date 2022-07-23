@@ -31,18 +31,18 @@ import org.jetbrains.annotations.NotNull;
  */
 public class ShortNamedThreadFactory implements ThreadFactory {
 
-	private static int POOL_NUMBERS_COUNT = 50;
-	private static final AtomicInteger[] threadPoolNumber = new AtomicInteger[POOL_NUMBERS_COUNT];
+	protected static int POOL_NUMBERS_COUNT = 50;
+	protected static final AtomicInteger[] threadPoolNumber = new AtomicInteger[POOL_NUMBERS_COUNT];
 	static {
 		for (int i = 0; i < threadPoolNumber.length; i++) {
 			threadPoolNumber[i] = new AtomicInteger(1);
 		}
 	}
-	private ThreadGroup group;
-	private boolean daemon;
-	private final AtomicInteger threadNumber = new AtomicInteger(1);
-	private static final String NAME_PATTERN = "%s-%d";
-	private final String threadNamePrefix;
+	protected ThreadGroup group;
+	protected boolean daemon;
+	protected final AtomicInteger threadNumber = new AtomicInteger(1);
+	protected static final String NAME_PATTERN = "%s-%d";
+	protected final String threadNamePrefix;
 
 	/**
 	 * Creates a new {@link ShortNamedThreadFactory} instance

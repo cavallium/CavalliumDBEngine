@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.lucene;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
+import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE;
+import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE;
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
@@ -24,6 +25,8 @@ import it.cavallium.dbengine.database.collections.ValueGetter;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers.UnshardedIndexSearchers;
+import it.cavallium.dbengine.database.disk.LuceneThreadFactory;
+import it.cavallium.dbengine.lucene.LuceneConcurrentMergeScheduler.LuceneMergeThread;
 import it.cavallium.dbengine.lucene.analyzer.LegacyWordAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.NCharGramEdgeAnalyzer;
@@ -33,7 +36,6 @@ import it.cavallium.dbengine.lucene.analyzer.WordAnalyzer;
 import it.cavallium.dbengine.lucene.directory.RocksdbDirectory;
 import it.cavallium.dbengine.lucene.mlt.BigCompositeReader;
 import it.cavallium.dbengine.lucene.mlt.MultiMoreLikeThis;
-import it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher;
 import it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite;
 import it.cavallium.dbengine.lucene.searcher.LocalQueryParams;
 import it.cavallium.dbengine.lucene.searcher.LocalSearcher;
@@ -119,6 +121,7 @@ import org.novasearch.lucene.search.similarities.LtcSimilarity;
 import org.novasearch.lucene.search.similarities.RobertsonSimilarity;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 import reactor.util.concurrent.Queues;
 
@@ -169,6 +172,13 @@ public class LuceneUtils {
 			Nullablelong.empty(),
 			Nullabledouble.empty()
 	);
+
+	private static final Scheduler LUCENE_COMMON_SCHEDULER = uninterruptibleScheduler(Schedulers.newBoundedElastic(
+			DEFAULT_BOUNDED_ELASTIC_SIZE,
+			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
+			new LuceneThreadFactory("lucene-common").setDaemon(true).withGroup(new ThreadGroup("lucene-common")),
+			Math.toIntExact(Duration.ofHours(1).toSeconds())
+	));
 
 	static {
 		var cas = new CharArraySet(
@@ -400,7 +410,7 @@ public class LuceneUtils {
 			boolean preserveOrder) {
 		if (preserveOrder) {
 			return hitsFlux
-					.publishOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.publishOn(LuceneUtils.luceneScheduler())
 					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName))
 					.publishOn(Schedulers.parallel());
 		} else {
@@ -423,7 +433,7 @@ public class LuceneUtils {
 							//noinspection unchecked
 							return (List<LLKeyScore>) (List<?>) shardHits;
 						}
-					}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
+					}).subscribeOn(luceneScheduler()))
 					.flatMapIterable(a -> a)
 					.publishOn(Schedulers.parallel());
 		}
@@ -608,8 +618,9 @@ public class LuceneUtils {
 			String directoryName,
 			LuceneRocksDBManager rocksDBManager)
 			throws IOException {
+		Directory directory;
 		if (directoryOptions instanceof ByteBuffersDirectory) {
-			return new org.apache.lucene.store.ByteBuffersDirectory();
+			directory = new org.apache.lucene.store.ByteBuffersDirectory();
 		} else if (directoryOptions instanceof DirectIOFSDirectory directIOFSDirectory) {
 			FSDirectory delegateDirectory = (FSDirectory) createLuceneDirectory(directIOFSDirectory.delegate(),
 					directoryName,
@@ -619,32 +630,32 @@ public class LuceneUtils {
 				try {
 					int mergeBufferSize = directIOFSDirectory.mergeBufferSize().orElse(DirectIODirectory.DEFAULT_MERGE_BUFFER_SIZE);
 					long minBytesDirect = directIOFSDirectory.minBytesDirect().orElse(DirectIODirectory.DEFAULT_MIN_BYTES_DIRECT);
-					return new DirectIODirectory(delegateDirectory, mergeBufferSize, minBytesDirect);
+					directory = new DirectIODirectory(delegateDirectory, mergeBufferSize, minBytesDirect);
 				} catch (UnsupportedOperationException ex) {
 					logger.warn("Failed to open FSDirectory with DIRECT flag", ex);
-					return delegateDirectory;
+					directory = delegateDirectory;
 				}
 			} else {
 				logger.warn("Failed to open FSDirectory with DIRECT flag because the operating system is Windows");
-				return delegateDirectory;
+				directory = delegateDirectory;
 			}
 		} else if (directoryOptions instanceof MemoryMappedFSDirectory memoryMappedFSDirectory) {
-			return new MMapDirectory(memoryMappedFSDirectory.managedPath().resolve(directoryName + ".lucene.db"));
+			directory = new MMapDirectory(memoryMappedFSDirectory.managedPath().resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NIOFSDirectory niofsDirectory) {
-			return new org.apache.lucene.store.NIOFSDirectory(niofsDirectory
+			directory = new org.apache.lucene.store.NIOFSDirectory(niofsDirectory
 					.managedPath()
 					.resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof RAFFSDirectory rafFsDirectory) {
-			return new RAFDirectory(rafFsDirectory.managedPath().resolve(directoryName + ".lucene.db"));
+			directory = new RAFDirectory(rafFsDirectory.managedPath().resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
 			var delegateDirectory = createLuceneDirectory(nrtCachingDirectory.delegate(), directoryName, rocksDBManager);
-			return new org.apache.lucene.store.NRTCachingDirectory(delegateDirectory,
+			directory = new org.apache.lucene.store.NRTCachingDirectory(delegateDirectory,
 					toMB(nrtCachingDirectory.maxMergeSizeBytes()),
 					toMB(nrtCachingDirectory.maxCachedBytes())
 			);
 		} else if (directoryOptions instanceof RocksDBSharedDirectory rocksDBSharedDirectory) {
 			var dbInstance = rocksDBManager.getOrCreate(rocksDBSharedDirectory.managedPath());
-			return new RocksdbDirectory(rocksDBManager.getAllocator(),
+			directory = new RocksdbDirectory(rocksDBManager.getAllocator(),
 					dbInstance.db(),
 					dbInstance.handles(),
 					directoryName,
@@ -652,15 +663,16 @@ public class LuceneUtils {
 			);
 		} else if (directoryOptions instanceof RocksDBStandaloneDirectory rocksDBStandaloneDirectory) {
 			var dbInstance = rocksDBManager.getOrCreate(rocksDBStandaloneDirectory.managedPath());
-			return new RocksdbDirectory(rocksDBManager.getAllocator(),
+			directory = new RocksdbDirectory(rocksDBManager.getAllocator(),
 					dbInstance.db(),
 					dbInstance.handles(),
 					directoryName,
 					rocksDBStandaloneDirectory.blockSize()
 			);
-		}else {
+		} else {
 			throw new UnsupportedOperationException("Unsupported directory: " + directoryName + ", " + directoryOptions);
 		}
+		return new CheckOutputDirectory(directory);
 	}
 
 	public static Optional<Path> getManagedPath(LuceneDirectoryOptions directoryOptions) {
@@ -778,7 +790,7 @@ public class LuceneUtils {
 			try (UnshardedIndexSearchers indexSearchers = LLIndexSearchers.unsharded(indexSearcher)) {
 				return Mono
 						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.transform(LuceneUtils::scheduleLucene)
 						.flatMap(queryParams2 ->
 								localSearcher.collect(indexSearcherMono, queryParams2, keyFieldName, NO_REWRITE));
 			}
@@ -796,10 +808,49 @@ public class LuceneUtils {
 		return Mono.usingWhen(indexSearchersMono,
 				indexSearchers -> Mono
 						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+						.transform(LuceneUtils::scheduleLucene)
 						.flatMap(queryParams2 ->
 								multiSearcher.collectMulti(indexSearchersMono, queryParams2, keyFieldName, NO_REWRITE)),
 				LLUtils::finalizeResource
 		);
+	}
+
+	public static void checkLuceneThread() {
+		var thread = Thread.currentThread();
+		if (!isLuceneThread()) {
+			throw printLuceneThreadWarning(thread);
+		}
+	}
+
+	@SuppressWarnings("ThrowableNotThrown")
+	public static void warnLuceneThread() {
+		var thread = Thread.currentThread();
+		if (!isLuceneThread()) {
+			printLuceneThreadWarning(thread);
+		}
+	}
+
+	private static IllegalStateException printLuceneThreadWarning(Thread thread) {
+		var error = new IllegalStateException("Current thread is not a lucene thread: " + thread.getId() + " " + thread
+				+ ". Schedule it using LuceneUtils.luceneScheduler()");
+		logger.warn("Current thread is not a lucene thread: {} {}", thread.getId(), thread, error);
+		return error;
+	}
+
+	public static boolean isLuceneThread() {
+		var thread = Thread.currentThread();
+		return thread instanceof LuceneThread || thread instanceof LuceneMergeThread;
+	}
+
+	public static Scheduler luceneScheduler() {
+		return LUCENE_COMMON_SCHEDULER;
+	}
+
+	public static <T> Mono<T> scheduleLucene(Mono<T> prev) {
+		return prev.subscribeOn(LUCENE_COMMON_SCHEDULER).publishOn(Schedulers.parallel());
+	}
+
+	public static <T> Flux<T> scheduleLucene(Flux<T> prev) {
+		return prev.subscribeOn(LUCENE_COMMON_SCHEDULER).publishOn(Schedulers.parallel());
 	}
 }

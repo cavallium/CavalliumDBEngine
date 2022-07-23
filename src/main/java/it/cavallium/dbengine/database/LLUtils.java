@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database;
 
 import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
@@ -21,6 +22,7 @@ import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.RandomSortField;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.Closeable;
@@ -648,7 +650,12 @@ public class LLUtils {
 	}
 
 	public static Mono<Void> finalizeResource(SafeCloseable resource) {
-		return Mono.fromRunnable(resource::close);
+		Mono<Void> runnable = Mono.fromRunnable(resource::close);
+		if (resource instanceof LuceneCloseable) {
+			return runnable.subscribeOn(luceneScheduler());
+		} else {
+			return runnable;
+		}
 	}
 
 	public static void finalizeResourceNow(Resource<?> resource) {

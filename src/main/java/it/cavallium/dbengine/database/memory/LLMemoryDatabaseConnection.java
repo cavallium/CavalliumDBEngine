@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.memory;
 
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
@@ -8,6 +10,7 @@ import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLLocalLuceneIndex;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LuceneHacks;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
@@ -100,7 +103,7 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 							null
 					);
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.transform(LuceneUtils::scheduleLucene);
 	}
 
 	@Override

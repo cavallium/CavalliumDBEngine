@@ -2,11 +2,15 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
+import static it.cavallium.dbengine.lucene.LuceneUtils.sum;
 import static java.util.Objects.requireNonNull;
 
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -60,61 +64,50 @@ public class StandardSearcher implements MultiSearcher {
 					LLUtils.ensureBlocking();
 					var totalHitsThreshold = queryParams.getTotalHitsThresholdInt();
 					if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
-						return TopFieldCollector.createSharedManager(queryParams.sort(), queryParams.limitInt(), null,
-								totalHitsThreshold);
+						return TopFieldCollector.createSharedManager(queryParams.sort(),
+								queryParams.limitInt(), null, totalHitsThreshold);
 					} else {
 						return TopScoreDocCollector.createSharedManager(queryParams.limitInt(), null, totalHitsThreshold);
 					}
 				})
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.flatMap(sharedManager -> Flux
-						.fromIterable(indexSearchers)
-						.<TopDocsCollector<?>>handle((shard, sink) -> {
-							LLUtils.ensureBlocking();
-							try {
-								var collector = sharedManager.newCollector();
-								assert queryParams.computePreciseHitsCount() == null || (queryParams.computePreciseHitsCount()
-										== collector.scoreMode().isExhaustive());
+				.transform(LuceneUtils::scheduleLucene)
+				.flatMap(sharedManager -> Flux.fromIterable(indexSearchers).flatMapSequential(shard -> Mono.fromCallable(() -> {
+					LLUtils.ensureBlocking();
+					var collector = sharedManager.newCollector();
+					assert queryParams.computePreciseHitsCount() == null || (queryParams.computePreciseHitsCount() == collector
+							.scoreMode().isExhaustive());
 
-								shard.search(queryParams.query(), LuceneUtils.withTimeout(collector, queryParams.timeout()));
-								sink.next(collector);
-							} catch (IOException e) {
-								sink.error(e);
+					shard.search(queryParams.query(), LuceneUtils.withTimeout(collector, queryParams.timeout()));
+					return collector;
+				}).subscribeOn(luceneScheduler())).collectList().flatMap(collectors -> Mono.fromCallable(() -> {
+					LLUtils.ensureBlocking();
+					if (collectors.size() <= 1) {
+						return sharedManager.reduce((List) collectors);
+					} else if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
+						final TopFieldDocs[] topDocs = new TopFieldDocs[collectors.size()];
+						int i = 0;
+						for (var collector : collectors) {
+							var topFieldDocs = ((TopFieldCollector) collector).topDocs();
+							for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
+								scoreDoc.shardIndex = i;
 							}
-						})
-						.collectList()
-						.handle((collectors, sink) -> {
-							LLUtils.ensureBlocking();
-							try {
-								if (collectors.size() <= 1) {
-									sink.next(sharedManager.reduce((List) collectors));
-								} else if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
-									final TopFieldDocs[] topDocs = new TopFieldDocs[collectors.size()];
-									int i = 0;
-									for (var collector : collectors) {
-										var topFieldDocs = ((TopFieldCollector) collector).topDocs();
-										for (ScoreDoc scoreDoc : topFieldDocs.scoreDocs) {
-											scoreDoc.shardIndex = i;
-										}
-										topDocs[i++] = topFieldDocs;
-									}
-									sink.next(TopDocs.merge(requireNonNull(queryParams.sort()), 0, queryParams.limitInt(), topDocs));
-								} else {
-									final TopDocs[] topDocs = new TopDocs[collectors.size()];
-									int i = 0;
-									for (var collector : collectors) {
-										var topScoreDocs = collector.topDocs();
-										for (ScoreDoc scoreDoc : topScoreDocs.scoreDocs) {
-											scoreDoc.shardIndex = i;
-										}
-										topDocs[i++] = topScoreDocs;
-									}
-									sink.next(TopDocs.merge(0, queryParams.limitInt(), topDocs));
-								}
-							} catch (IOException ex) {
-								sink.error(ex);
+							topDocs[i++] = topFieldDocs;
+						}
+						return TopDocs.merge(requireNonNull(queryParams.sort()), 0, queryParams.limitInt(), topDocs);
+					} else {
+						final TopDocs[] topDocs = new TopDocs[collectors.size()];
+						int i = 0;
+						for (var collector : collectors) {
+							var topScoreDocs = collector.topDocs();
+							for (ScoreDoc scoreDoc : topScoreDocs.scoreDocs) {
+								scoreDoc.shardIndex = i;
 							}
-						}));
+							topDocs[i++] = topScoreDocs;
+						}
+						return TopDocs.merge(0, queryParams.limitInt(), topDocs);
+					}
+				}).subscribeOn(luceneScheduler())))
+				.publishOn(Schedulers.parallel());
 	}
 
 	/**
@@ -133,18 +126,34 @@ public class StandardSearcher implements MultiSearcher {
 					.skip(queryParams.offsetLong())
 					.take(queryParams.limitLong(), true);
 
-			return new LuceneSearchResult(totalHitsCount, hitsFlux, () -> {
-				try {
-					indexSearchers.close();
-				} catch (UncheckedIOException e) {
-					LOG.error("Can't close index searchers", e);
-				}
-			});
+			return new MyLuceneSearchResult(totalHitsCount, hitsFlux, indexSearchers);
 		});
 	}
 
 	@Override
 	public String getName() {
 		return "standard";
+	}
+
+	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
+
+		private final LLIndexSearchers indexSearchers;
+
+		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
+				Flux<LLKeyScore> hitsFlux,
+				LLIndexSearchers indexSearchers) {
+			super(totalHitsCount, hitsFlux);
+			this.indexSearchers = indexSearchers;
+		}
+
+		@Override
+		protected void onClose() {
+			try {
+				indexSearchers.close();
+			} catch (Throwable e) {
+				LOG.error("Can't close index searchers", e);
+			}
+			super.onClose();
+		}
 	}
 }

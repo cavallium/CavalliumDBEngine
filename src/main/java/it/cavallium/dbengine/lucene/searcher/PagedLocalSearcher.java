@@ -2,15 +2,18 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.netty5.util.Send;
 import io.netty5.buffer.api.internal.ResourceSupport;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.TopDocsCollectorMultiManager;
 import java.io.IOException;
@@ -60,13 +63,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 						indexSearchers.shards(),
 						queryParams,
 						keyFieldName,
-						() -> {
-							try {
-								indexSearchers.close();
-							} catch (UncheckedIOException e) {
-								LOG.error(e);
-							}
-						}
+						() -> indexSearchers.close()
 				))
 				// Ensure that one LuceneSearchResult is always returned
 				.single());
@@ -103,8 +100,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 				.<PageData>handle((s, sink) -> this.searchPageSync(queryParams, indexSearchers, pagination, resultsOffset, s, sink))
 				//defaultIfEmpty(new PageData(new TopDocs(new TotalHits(0, Relation.EQUAL_TO), new ScoreDoc[0]), currentPageInfo))
 				.single()
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.publishOn(Schedulers.parallel());
+				.transform(LuceneUtils::scheduleLucene);
 	}
 
 	/**
@@ -134,7 +130,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			Runnable onClose) {
-		return firstResultMono.map(firstResult -> {
+		return firstResultMono.<LuceneSearchResult>map(firstResult -> {
 			var totalHitsCount = firstResult.totalHitsCount();
 			var firstPageHitsFlux = firstResult.firstPageHitsFlux();
 			var secondPageInfo = firstResult.nextPageInfo();
@@ -142,7 +138,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 			Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 			Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-			return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose);
+			return new MyLuceneSearchResult(totalHitsCount, combinedFlux, onClose);
 		}).single();
 	}
 
@@ -157,12 +153,11 @@ public class PagedLocalSearcher implements LocalSearcher {
 						(s, sink) -> searchPageSync(queryParams, indexSearchers, true, 0, s, sink),
 						s -> {}
 				)
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.publishOn(Schedulers.parallel())
+				.subscribeOn(luceneScheduler())
 				.map(pageData -> pageData.topDocs())
 				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
-				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
-						keyFieldName, true));
+				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers, keyFieldName, true))
+				.publishOn(Schedulers.parallel());
 	}
 
 	/**
@@ -220,6 +215,26 @@ public class PagedLocalSearcher implements LocalSearcher {
 		} else {
 			sink.complete();
 			return EMPTY_STATUS;
+		}
+	}
+
+	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
+
+		private final Runnable onClose;
+
+		public MyLuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> combinedFlux, Runnable onClose) {
+			super(totalHitsCount, combinedFlux);
+			this.onClose = onClose;
+		}
+
+		@Override
+		protected void onClose() {
+			try {
+				onClose.run();
+			} catch (Throwable ex) {
+				LOG.error("Failed to close the search result", ex);
+			}
+			super.onClose();
 		}
 	}
 }

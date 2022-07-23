@@ -1,8 +1,10 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -50,8 +52,7 @@ public class SnapshotsManager extends SimpleResource {
 	public Mono<LLSnapshot> takeSnapshot() {
 		return Mono
 				.fromCallable(() -> takeLuceneSnapshot())
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.publishOn(Schedulers.parallel());
+				.transform(LuceneUtils::scheduleLucene);
 	}
 
 	/**
@@ -97,7 +98,7 @@ public class SnapshotsManager extends SimpleResource {
 			} finally {
 				activeTasks.arriveAndDeregister();
 			}
-		}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())).publishOn(Schedulers.parallel());
+		}).transform(LuceneUtils::scheduleLucene);
 	}
 
 	/**

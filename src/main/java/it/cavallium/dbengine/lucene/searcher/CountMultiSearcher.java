@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
 import io.netty5.util.Send;
@@ -61,7 +62,7 @@ public class CountMultiSearcher implements MultiSearcher {
 
 					var totalHitsCount = new TotalHitsCount(totalHitsCountValue, exactTotalHitsCount);
 
-					return new LuceneSearchResult(totalHitsCount, Flux.empty(), null);
+					return new LuceneSearchResult(totalHitsCount, Flux.empty());
 				})
 				.doOnDiscard(LuceneSearchResult.class, luceneSearchResult -> luceneSearchResult.close()),
 				LLUtils::finalizeResource);
@@ -79,10 +80,10 @@ public class CountMultiSearcher implements MultiSearcher {
 		return Mono.usingWhen(indexSearcherMono, indexSearcher -> Mono.fromCallable(() -> {
 					LLUtils.ensureBlocking();
 					return (long) indexSearcher.getIndexSearcher().count(queryParams.query());
-				}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())), LLUtils::finalizeResource)
+				}).subscribeOn(luceneScheduler()), LLUtils::finalizeResource)
 				.publishOn(Schedulers.parallel())
 				.transform(TimeoutUtil.timeoutMono(queryParams.timeout()))
-				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty(), null));
+				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty()));
 	}
 
 	@Override

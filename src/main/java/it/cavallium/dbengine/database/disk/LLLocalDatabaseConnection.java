@@ -1,11 +1,14 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
+
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
@@ -130,7 +133,7 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 						);
 					}
 				})
-				.subscribeOn(Schedulers.boundedElastic());
+				.transform(LuceneUtils::scheduleLucene);
 	}
 
 	@Override

@@ -1,10 +1,12 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
 import io.netty5.util.Send;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.collector.DecimalBucketMultiCollectorManager;
 import java.util.List;
@@ -32,10 +34,9 @@ public class DecimalBucketMultiSearcher {
 				.search(indexSearchers.shards(), bucketParams, queries, normalizationQuery)
 				// Ensure that one result is always returned
 				.single(), indexSearchers -> Mono.fromCallable(() -> {
-			//noinspection BlockingMethodInNonBlockingContext
 			indexSearchers.close();
 			return null;
-		}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))).publishOn(Schedulers.parallel());
+		}).transform(LuceneUtils::scheduleLucene));
 	}
 
 	private Mono<Buckets> search(Iterable<IndexSearcher> indexSearchers,
@@ -58,10 +59,9 @@ public class DecimalBucketMultiSearcher {
 					.flatMap(shard -> Mono.fromCallable(() -> {
 						LLUtils.ensureBlocking();
 						return cmm.search(shard);
-					}))
+					}).subscribeOn(luceneScheduler()))
 					.collectList()
-					.flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)))
-					.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
+					.flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)).subscribeOn(luceneScheduler()))
 					.publishOn(Schedulers.parallel());
 		});
 	}

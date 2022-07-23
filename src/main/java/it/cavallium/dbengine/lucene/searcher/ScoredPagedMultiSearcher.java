@@ -2,13 +2,16 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.netty5.util.Send;
+import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
 import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorMultiManager;
@@ -53,14 +56,11 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						this.computeFirstPageResults(firstPageTopDocsMono, indexSearchers, keyFieldName, queryParams
 				))
 				// Compute other results
-				.map(firstResult -> this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams, keyFieldName,
-						() -> {
-							try {
-								indexSearchers.close();
-							} catch (UncheckedIOException e) {
-								LOG.error("Can't close index searchers", e);
-							}
-						}
+				.map(firstResult -> this.computeOtherResults(firstResult,
+						indexSearchers.shards(),
+						queryParams,
+						keyFieldName,
+						() -> indexSearchers.close()
 				))
 				// Ensure that one LuceneSearchResult is always returned
 				.single());
@@ -130,7 +130,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 		Flux<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 		Flux<LLKeyScore> combinedFlux = firstPageHitsFlux.concatWith(nextHitsFlux);
-		return new LuceneSearchResult(totalHitsCount, combinedFlux, onClose);
+		return new MyLuceneSearchResult(totalHitsCount, combinedFlux, onClose);
 	}
 
 	/**
@@ -150,8 +150,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							.doOnNext(s -> currentPageInfoRef.set(s.nextPageInfo()))
 							.repeatWhen(s -> s.takeWhile(n -> n > 0));
 				})
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.publishOn(Schedulers.parallel())
+				.transform(LuceneUtils::scheduleLucene)
 				.map(pageData -> pageData.topDocs())
 				.flatMapIterable(topDocs -> Arrays.asList(topDocs.scoreDocs))
 				.transform(topFieldDocFlux -> LuceneUtils.convertHits(topFieldDocFlux, indexSearchers,
@@ -187,7 +186,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						return null;
 					}
 				})
-				.subscribeOn(Schedulers.boundedElastic())
+				.subscribeOn(luceneScheduler())
 				.flatMap(cmm -> Flux
 						.fromIterable(indexSearchers)
 						.index()
@@ -200,8 +199,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							var cm = cmm.get(shard, index);
 
 							return shard.search(queryParams.query(), cm);
-						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
-						.publishOn(Schedulers.parallel())
+						}).subscribeOn(luceneScheduler()))
 						.collectList()
 						.flatMap(results -> Mono.fromCallable(() -> {
 							LLUtils.ensureBlocking();
@@ -217,13 +215,33 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 							var nextPageIndex = s.pageIndex() + 1;
 							var nextPageInfo = new CurrentPageInfo(pageLastDoc, nextRemainingLimit, nextPageIndex);
 							return new PageData(pageTopDocs, nextPageInfo);
-						}).subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic())))
-				)
-				.publishOn(Schedulers.parallel());
+						}).subscribeOn(luceneScheduler()))
+				).publishOn(Schedulers.parallel());
 	}
 
 	@Override
 	public String getName() {
 		return "scored paged multi";
+	}
+
+
+	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
+
+		private final Runnable onClose;
+
+		public MyLuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> combinedFlux, Runnable onClose) {
+			super(totalHitsCount, combinedFlux);
+			this.onClose = onClose;
+		}
+
+		@Override
+		protected void onClose() {
+			try {
+				onClose.run();
+			} catch (Throwable ex) {
+				LOG.error("Failed to close the search result", ex);
+			}
+			super.onClose();
+		}
 	}
 }

@@ -12,18 +12,16 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import reactor.core.publisher.Flux;
 
-public final class LuceneSearchResult extends SimpleResource implements DiscardingCloseable {
+public class LuceneSearchResult extends SimpleResource implements DiscardingCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LuceneSearchResult.class);
 
 	private final TotalHitsCount totalHitsCount;
 	private final Flux<LLKeyScore> results;
-	private final Runnable onClose;
 
-	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results, Runnable onClose) {
+	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results) {
 		this.totalHitsCount = totalHitsCount;
 		this.results = results;
-		this.onClose = onClose;
 	}
 
 	public TotalHitsCount totalHitsCount() {
@@ -58,12 +56,5 @@ public final class LuceneSearchResult extends SimpleResource implements Discardi
 
 	@Override
 	protected void onClose() {
-		try {
-			if (onClose != null) {
-				onClose.run();
-			}
-		} catch (Throwable ex) {
-			logger.error("Failed to close onClose", ex);
-		}
 	}
 }

@@ -1,12 +1,15 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
+import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.lucene.LuceneCloseable;
+import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -37,12 +40,12 @@ import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 // todo: deduplicate code between Cached and Simple searcher managers
-public class SimpleIndexSearcherManager extends SimpleResource implements IndexSearcherManager {
+public class SimpleIndexSearcherManager extends SimpleResource implements IndexSearcherManager, LuceneCloseable {
 
 	private static final Logger LOG = LogManager.getLogger(SimpleIndexSearcherManager.class);
 	private static final ExecutorService SEARCH_EXECUTOR = Executors.newFixedThreadPool(
 			Runtime.getRuntime().availableProcessors(),
-			new ShortNamedThreadFactory("lucene-search")
+			new LuceneThreadFactory("lucene-search")
 					.setDaemon(true).withGroup(new ThreadGroup("lucene-search"))
 	);
 	private static final SearcherFactory SEARCHER_FACTORY = new ExecutorSearcherFactory(SEARCH_EXECUTOR);
@@ -145,8 +148,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 						throw ex;
 					}
 				})
-				.subscribeOn(uninterruptibleScheduler(Schedulers.boundedElastic()))
-				.publishOn(Schedulers.parallel());
+				.transform(LuceneUtils::scheduleLucene);
 	}
 
 	@Override
@@ -186,7 +188,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		return activeRefreshes.get();
 	}
 
-	private class MainIndexSearcher extends LLIndexSearcherImpl {
+	private class MainIndexSearcher extends LLIndexSearcherImpl implements LuceneCloseable {
 
 		public MainIndexSearcher(IndexSearcher indexSearcher) {
 			super(indexSearcher, () -> releaseOnCleanup(searcherManager, indexSearcher));
@@ -224,7 +226,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		}
 	}
 
-	private class OnDemandIndexSearcher extends LLIndexSearcher {
+	private class OnDemandIndexSearcher extends LLIndexSearcher implements LuceneCloseable {
 
 		private final SearcherManager searcherManager;
 		private final Similarity similarity;

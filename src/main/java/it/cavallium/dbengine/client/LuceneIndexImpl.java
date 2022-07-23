@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.client;
 
+import it.cavallium.dbengine.client.Hits.CloseableHits;
+import it.cavallium.dbengine.client.Hits.LuceneHits;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -17,7 +19,6 @@ import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
-import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.time.Duration;
 import java.util.List;
@@ -244,46 +245,6 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 			return new LuceneLLSearchResultShard(resultsFlux, count, (List<LuceneCloseable>) resources);
 		} else {
 			return new ResourcesLLSearchResultShard(resultsFlux, count, (List<SafeCloseable>) resources);
-		}
-	}
-
-	private static final class LuceneHits<U> extends Hits<U> implements LuceneCloseable {
-
-		private final LuceneCloseable resource;
-
-		public LuceneHits(Flux<U> hits, TotalHitsCount count, LuceneCloseable resource) {
-			super(hits, count);
-			this.resource = resource;
-		}
-
-		@Override
-		protected void onClose() {
-			try {
-				resource.close();
-			} catch (Throwable ex) {
-				LOG.error("Failed to close resource", ex);
-			}
-			super.onClose();
-		}
-	}
-
-	private static final class CloseableHits<U> extends Hits<U> {
-
-		private final SafeCloseable resource;
-
-		public CloseableHits(Flux<U> hits, TotalHitsCount count, SafeCloseable resource) {
-			super(hits, count);
-			this.resource = resource;
-		}
-
-		@Override
-		protected void onClose() {
-			try {
-				resource.close();
-			} catch (Throwable ex) {
-				LOG.error("Failed to close resource", ex);
-			}
-			super.onClose();
 		}
 	}
 

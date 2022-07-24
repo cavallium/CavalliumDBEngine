@@ -614,7 +614,14 @@ public class LuceneUtils {
 		return Math.abs(StringHelper.murmurhash3_x86_32(id.getValueBytesRef(), 7) % totalShards);
 	}
 
-	public static Directory createLuceneDirectory(LuceneDirectoryOptions directoryOptions,
+	public static CheckOutputDirectory createLuceneDirectory(LuceneDirectoryOptions directoryOptions,
+			String directoryName,
+			LuceneRocksDBManager rocksDBManager)
+			throws IOException {
+		return new CheckOutputDirectory(createLuceneDirectoryInternal(directoryOptions, directoryName, rocksDBManager));
+	}
+
+	private static Directory createLuceneDirectoryInternal(LuceneDirectoryOptions directoryOptions,
 			String directoryName,
 			LuceneRocksDBManager rocksDBManager)
 			throws IOException {
@@ -622,7 +629,7 @@ public class LuceneUtils {
 		if (directoryOptions instanceof ByteBuffersDirectory) {
 			directory = new org.apache.lucene.store.ByteBuffersDirectory();
 		} else if (directoryOptions instanceof DirectIOFSDirectory directIOFSDirectory) {
-			FSDirectory delegateDirectory = (FSDirectory) createLuceneDirectory(directIOFSDirectory.delegate(),
+			FSDirectory delegateDirectory = (FSDirectory) createLuceneDirectoryInternal(directIOFSDirectory.delegate(),
 					directoryName,
 					rocksDBManager
 			);
@@ -648,7 +655,7 @@ public class LuceneUtils {
 		} else if (directoryOptions instanceof RAFFSDirectory rafFsDirectory) {
 			directory = new RAFDirectory(rafFsDirectory.managedPath().resolve(directoryName + ".lucene.db"));
 		} else if (directoryOptions instanceof NRTCachingDirectory nrtCachingDirectory) {
-			var delegateDirectory = createLuceneDirectory(nrtCachingDirectory.delegate(), directoryName, rocksDBManager);
+			var delegateDirectory = createLuceneDirectoryInternal(nrtCachingDirectory.delegate(), directoryName, rocksDBManager);
 			directory = new org.apache.lucene.store.NRTCachingDirectory(delegateDirectory,
 					toMB(nrtCachingDirectory.maxMergeSizeBytes()),
 					toMB(nrtCachingDirectory.maxCachedBytes())
@@ -672,7 +679,7 @@ public class LuceneUtils {
 		} else {
 			throw new UnsupportedOperationException("Unsupported directory: " + directoryName + ", " + directoryOptions);
 		}
-		return new CheckOutputDirectory(directory);
+		return directory;
 	}
 
 	public static Optional<Path> getManagedPath(LuceneDirectoryOptions directoryOptions) {

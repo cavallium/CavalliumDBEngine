@@ -568,13 +568,14 @@ public class LLLocalDictionary implements LLDictionary {
 					try (var writeOptions = new WriteOptions()) {
 						assert !Schedulers.isInNonBlockingThread() : "Called putMulti in a nonblocking thread";
 						if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
-							try (var batch = new CappedWriteBatch(db,
-									alloc,
-									CAPPED_WRITE_BATCH_CAP,
-									RESERVED_WRITE_BATCH_SIZE,
-									MAX_WRITE_BATCH_SIZE,
-									writeOptions
-							)) {
+							var batch = new CappedWriteBatch(db,
+								alloc,
+								CAPPED_WRITE_BATCH_CAP,
+								RESERVED_WRITE_BATCH_SIZE,
+								MAX_WRITE_BATCH_SIZE,
+								writeOptions
+						);
+							try {
 								for (LLEntry entry : entriesWindow) {
 									var k = entry.getKeyUnsafe();
 									var v = entry.getValueUnsafe();
@@ -585,6 +586,9 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 								batch.flush();
+							} finally {
+								batch.releaseAllBuffers();
+								batch.close();
 							}
 						} else {
 							for (LLEntry entry : entriesWindow) {
@@ -677,13 +681,14 @@ public class LLLocalDictionary implements LLDictionary {
 						}
 
 						if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
-							try (var batch = new CappedWriteBatch(db,
-									alloc,
-									CAPPED_WRITE_BATCH_CAP,
-									RESERVED_WRITE_BATCH_SIZE,
-									MAX_WRITE_BATCH_SIZE,
-									writeOptions
-							)) {
+							var batch = new CappedWriteBatch(db,
+								alloc,
+								CAPPED_WRITE_BATCH_CAP,
+								RESERVED_WRITE_BATCH_SIZE,
+								MAX_WRITE_BATCH_SIZE,
+								writeOptions
+						);
+							try {
 								int i = 0;
 								for (Tuple2<K, Buffer> entry : entriesWindow) {
 									try (var valueToWrite = updatedValuesToWrite.get(i)) {
@@ -696,6 +701,9 @@ public class LLLocalDictionary implements LLDictionary {
 									i++;
 								}
 								batch.flush();
+							} finally {
+								batch.releaseAllBuffers();
+								batch.close();
 							}
 						} else {
 							int i = 0;
@@ -913,19 +921,23 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 							} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
-								try (var batch = new CappedWriteBatch(db,
-										alloc,
-										CAPPED_WRITE_BATCH_CAP,
-										RESERVED_WRITE_BATCH_SIZE,
-										MAX_WRITE_BATCH_SIZE,
-										writeOptions
-								)) {
+								var batch = new CappedWriteBatch(db,
+									alloc,
+									CAPPED_WRITE_BATCH_CAP,
+									RESERVED_WRITE_BATCH_SIZE,
+									MAX_WRITE_BATCH_SIZE,
+									writeOptions
+							);
+								try {
 									if (range.isSingle()) {
 										batch.delete(cfh, range.getSingle());
 									} else {
 										deleteSmallRangeWriteBatch(batch, range.copy());
 									}
 									batch.flush();
+								} finally {
+									batch.releaseAllBuffers();
+									batch.close();
 								}
 							} else {
 								try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
@@ -953,13 +965,14 @@ public class LLLocalDictionary implements LLDictionary {
 											db.put(writeOptions, entry.getKeyUnsafe(), entry.getValueUnsafe());
 										}
 									} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
-										try (var batch = new CappedWriteBatch(db,
-												alloc,
-												CAPPED_WRITE_BATCH_CAP,
-												RESERVED_WRITE_BATCH_SIZE,
-												MAX_WRITE_BATCH_SIZE,
-												writeOptions
-										)) {
+										var batch = new CappedWriteBatch(db,
+											alloc,
+											CAPPED_WRITE_BATCH_CAP,
+											RESERVED_WRITE_BATCH_SIZE,
+											MAX_WRITE_BATCH_SIZE,
+											writeOptions);
+
+										try {
 											for (LLEntry entry : entriesList) {
 												if (nettyDirect) {
 													batch.put(cfh, entry.getKeyUnsafe().send(), entry.getValueUnsafe().send());
@@ -971,6 +984,9 @@ public class LLLocalDictionary implements LLDictionary {
 												}
 											}
 											batch.flush();
+										} finally {
+											batch.releaseAllBuffers();
+											batch.close();
 										}
 									} else {
 										try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
@@ -1076,13 +1092,14 @@ public class LLLocalDictionary implements LLDictionary {
 						if (LLUtils.MANUAL_READAHEAD) {
 							readOpts.setReadaheadSize(32 * 1024); // 32KiB
 						}
-						try (CappedWriteBatch writeBatch = new CappedWriteBatch(db,
+						CappedWriteBatch writeBatch = new CappedWriteBatch(db,
 								alloc,
 								CAPPED_WRITE_BATCH_CAP,
 								RESERVED_WRITE_BATCH_SIZE,
 								MAX_WRITE_BATCH_SIZE,
 								writeOptions
-						)) {
+						);
+						try {
 
 							byte[] firstDeletedKey = null;
 							byte[] lastDeletedKey = null;
@@ -1126,6 +1143,9 @@ public class LLLocalDictionary implements LLDictionary {
 								db.flush(fo);
 							}
 							db.flushWal(true);
+						} finally {
+							writeBatch.releaseAllBuffers();
+							writeBatch.close();
 						}
 						return null;
 					}

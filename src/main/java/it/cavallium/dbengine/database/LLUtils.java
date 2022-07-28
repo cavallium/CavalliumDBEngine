@@ -22,6 +22,10 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodHandles.Lookup;
+import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.time.Duration;
@@ -64,6 +68,8 @@ import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractImmutableNativeReference;
+import org.rocksdb.AbstractNativeReference;
+import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import reactor.core.Disposable;
@@ -100,11 +106,23 @@ public class LLUtils {
 	public static final boolean DEBUG_ALL_DISCARDS
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.discards.log", "false"));
 
+	private static final Lookup PUBLIC_LOOKUP = MethodHandles.publicLookup();
+
+	private static final MethodHandle IS_ACCESSIBLE_METHOD_HANDLE;
+
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
 			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
 			b[0] = (byte) i1;
 		}
+		var methodType = MethodType.methodType(boolean.class);
+		MethodHandle isAccessibleMethodHandle = null;
+		try {
+			isAccessibleMethodHandle = PUBLIC_LOOKUP.findVirtual(AbstractNativeReference.class, "isAccessible", methodType);
+		} catch (NoSuchMethodException | IllegalAccessException e) {
+			logger.debug("Failed to find isAccessible()", e);
+		}
+		IS_ACCESSIBLE_METHOD_HANDLE = isAccessibleMethodHandle;
 		initHooks();
 	}
 
@@ -742,6 +760,17 @@ public class LLUtils {
 			}
 			scheduleRepeatedInternal(scheduler, action, delay, currentDisposable, disposed);
 		}, delay.toMillis(), TimeUnit.MILLISECONDS));
+	}
+
+	public static boolean isAccessible(AbstractNativeReference abstractNativeReference) {
+		if (IS_ACCESSIBLE_METHOD_HANDLE != null) {
+			try {
+				return (boolean) IS_ACCESSIBLE_METHOD_HANDLE.invoke(abstractNativeReference);
+			} catch (Throwable e) {
+				throw new RuntimeException(e);
+			}
+		}
+		return true;
 	}
 
 	@Deprecated

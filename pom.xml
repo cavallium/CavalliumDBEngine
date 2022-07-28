@@ -112,7 +112,7 @@
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty5-buffer</artifactId>
-      <version>5.0.0.Alpha3</version>
+      <version>5.0.0.Alpha4</version>
       <exclusions>
         <exclusion>
           <groupId>io.netty</groupId>
@@ -219,7 +219,7 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>it.cavallium</groupId>
+			<groupId>org.rocksdb</groupId>
 			<artifactId>rocksdbjni</artifactId>
 			<version>7.4.3</version>
 		</dependency>

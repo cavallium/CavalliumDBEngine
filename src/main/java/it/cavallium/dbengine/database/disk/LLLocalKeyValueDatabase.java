@@ -31,6 +31,7 @@ import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import java.io.File;
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -1601,7 +1602,7 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 								new ArrayList<>(handles.values())
 						);
 						handles.values().forEach(columnFamilyHandleRocksObj -> {
-							if (columnFamilyHandleRocksObj.isAccessible()) {
+							if (LLUtils.isAccessible(columnFamilyHandleRocksObj)) {
 								columnFamilyHandleRocksObj.close();
 							}
 						});

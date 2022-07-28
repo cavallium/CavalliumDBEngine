@@ -10,6 +10,7 @@ import io.netty5.util.Send;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.RocksDBColumn;
+import java.io.Closeable;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
@@ -63,7 +64,7 @@ public class CappedWriteBatch extends WriteBatch {
 		}
 	}
 
-	private synchronized void releaseAllBuffers() {
+	public synchronized void releaseAllBuffers() {
 		if (!buffersToRelease.isEmpty()) {
 			for (Buffer byteBuffer : buffersToRelease) {
 				byteBuffer.close();
@@ -265,9 +266,10 @@ public class CappedWriteBatch extends WriteBatch {
 		}
 	}
 
-	@Override
+	/*
 	protected void disposeInternal(boolean owningHandle) {
 		super.disposeInternal(owningHandle);
 		releaseAllBuffers();
 	}
+	 */
 }

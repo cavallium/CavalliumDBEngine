@@ -17,18 +17,11 @@ import io.netty5.util.Send;
 import io.netty5.buffer.api.WritableComponent;
 import io.netty5.buffer.api.internal.Statics;
 import io.netty5.util.IllegalReferenceCountException;
-import it.cavallium.dbengine.client.Hits;
-import it.cavallium.dbengine.database.disk.LLIndexSearcher;
-import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.RandomSortField;
-import it.cavallium.dbengine.utils.SimpleResource;
-import java.io.Closeable;
-import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.time.Duration;
@@ -61,7 +54,6 @@ import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.Term;
-import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.Sort;
@@ -727,21 +719,28 @@ public class LLUtils {
 
 	public static Disposable scheduleRepeated(Scheduler scheduler, Runnable action, Duration delay) {
 		var currentDisposable = new AtomicReference<Disposable>();
-		scheduleRepeatedInternal(scheduler, action, delay, currentDisposable);
-		return () -> currentDisposable.get().dispose();
+		var disposed = new AtomicBoolean(false);
+		scheduleRepeatedInternal(scheduler, action, delay, currentDisposable, disposed);
+		return () -> {
+			disposed.set(true);
+			currentDisposable.get().dispose();
+		};
 	}
 
 	private static void scheduleRepeatedInternal(Scheduler scheduler,
 			Runnable action,
 			Duration delay,
-			AtomicReference<Disposable> currentDisposable) {
+			AtomicReference<Disposable> currentDisposable,
+			AtomicBoolean disposed) {
+		if (disposed.get()) return;
 		currentDisposable.set(scheduler.schedule(() -> {
+			if (disposed.get()) return;
 			try {
 				action.run();
 			} catch (Throwable ex) {
 				logger.error(ex);
 			}
-			scheduleRepeatedInternal(scheduler, action, delay, currentDisposable);
+			scheduleRepeatedInternal(scheduler, action, delay, currentDisposable, disposed);
 		}, delay.toMillis(), TimeUnit.MILLISECONDS));
 	}
 

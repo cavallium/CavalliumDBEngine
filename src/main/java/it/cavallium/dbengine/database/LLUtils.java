@@ -41,6 +41,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
 import org.apache.logging.log4j.LogManager;
@@ -725,14 +726,23 @@ public class LLUtils {
 	}
 
 	public static Disposable scheduleRepeated(Scheduler scheduler, Runnable action, Duration delay) {
-		return scheduler.schedule(() -> {
+		var currentDisposable = new AtomicReference<Disposable>();
+		scheduleRepeatedInternal(scheduler, action, delay, currentDisposable);
+		return () -> currentDisposable.get().dispose();
+	}
+
+	private static void scheduleRepeatedInternal(Scheduler scheduler,
+			Runnable action,
+			Duration delay,
+			AtomicReference<Disposable> currentDisposable) {
+		currentDisposable.set(scheduler.schedule(() -> {
 			try {
 				action.run();
 			} catch (Throwable ex) {
 				logger.error(ex);
 			}
-			scheduleRepeated(scheduler, action, delay);
-		}, delay.toMillis(), TimeUnit.MILLISECONDS);
+			scheduleRepeatedInternal(scheduler, action, delay, currentDisposable);
+		}, delay.toMillis(), TimeUnit.MILLISECONDS));
 	}
 
 	@Deprecated

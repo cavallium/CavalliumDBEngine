@@ -31,6 +31,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -38,6 +39,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 import java.util.function.ToIntFunction;
@@ -71,9 +73,11 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
 @SuppressWarnings("unused")
@@ -718,6 +722,17 @@ public class LLUtils {
 			r.close();
 			return null;
 		}));
+	}
+
+	public static Disposable scheduleRepeated(Scheduler scheduler, Runnable action, Duration delay) {
+		return scheduler.schedule(() -> {
+			try {
+				action.run();
+			} catch (Throwable ex) {
+				logger.error(ex);
+			}
+			scheduleRepeated(scheduler, action, delay);
+		}, delay.toMillis(), TimeUnit.MILLISECONDS);
 	}
 
 	@Deprecated

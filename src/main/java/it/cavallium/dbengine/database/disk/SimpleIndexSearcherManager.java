@@ -77,13 +77,13 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 
 		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
 
-		refreshSubscription = luceneHeavyTasksScheduler.schedulePeriodically(() -> {
+		refreshSubscription = LLUtils.scheduleRepeated(luceneHeavyTasksScheduler, () -> {
 			try {
-				maybeRefreshBlocking();
+				maybeRefresh();
 			} catch (Exception ex) {
 				LOG.error("Failed to refresh the searcher manager", ex);
 			}
-		}, queryRefreshDebounceTime.toMillis(), queryRefreshDebounceTime.toMillis(), TimeUnit.MILLISECONDS);
+		}, queryRefreshDebounceTime);
 
 		this.noSnapshotSearcherMono = retrieveSearcherInternal(null);
 	}

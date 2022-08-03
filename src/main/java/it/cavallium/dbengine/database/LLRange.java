@@ -16,7 +16,7 @@ import org.jetbrains.annotations.Nullable;
  */
 public class LLRange extends SimpleResource {
 
-	private static final LLRange RANGE_ALL = new LLRange((Buffer) null, (Buffer) null, (Buffer) null);
+	private static final LLRange RANGE_ALL = new LLRange( null, null, (Buffer) null, false);
 	@Nullable
 	private final Buffer min;
 	@Nullable
@@ -24,16 +24,16 @@ public class LLRange extends SimpleResource {
 	@Nullable
 	private final Buffer single;
 
-	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single) {
-		super();
+	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single, boolean closeable) {
+		super(closeable);
 		assert single == null || (min == null && max == null);
 		this.min = min != null ? min.receive().makeReadOnly() : null;
 		this.max = max != null ? max.receive().makeReadOnly() : null;
 		this.single = single != null ? single.receive().makeReadOnly() : null;
 	}
 
-	private LLRange(Buffer min, Buffer max, Buffer single) {
-		super();
+	private LLRange(Buffer min, Buffer max, Buffer single, boolean closeable) {
+		super(closeable);
 		assert single == null || (min == null && max == null);
 		this.min = min != null ? min.makeReadOnly() : null;
 		this.max = max != null ? max.makeReadOnly() : null;
@@ -41,31 +41,31 @@ public class LLRange extends SimpleResource {
 	}
 
 	public static LLRange all() {
-		return RANGE_ALL.copy();
+		return RANGE_ALL;
 	}
 
 	public static LLRange from(Send<Buffer> min) {
-		return new LLRange(min, null, null);
+		return new LLRange(min, null, null, true);
 	}
 
 	public static LLRange to(Send<Buffer> max) {
-		return new LLRange(null, max, null);
+		return new LLRange(null, max, null, true);
 	}
 
 	public static LLRange single(Send<Buffer> single) {
-		return new LLRange(null, null, single);
+		return new LLRange(null, null, single, true);
 	}
 
 	public static LLRange singleUnsafe(Buffer single) {
-		return new LLRange(null, null, single);
+		return new LLRange(null, null, single, true);
 	}
 
 	public static LLRange of(Send<Buffer> min, Send<Buffer> max) {
-		return new LLRange(min, max, null);
+		return new LLRange(min, max, null, true);
 	}
 
 	public static LLRange ofUnsafe(Buffer min, Buffer max) {
-		return new LLRange(min, max, null);
+		return new LLRange(min, max, null, true);
 	}
 
 	public boolean isAll() {
@@ -224,7 +224,8 @@ public class LLRange extends SimpleResource {
 		// todo: use a read-only copy
 		return new LLRange(min != null ? min.copy().send() : null,
 				max != null ? max.copy().send() : null,
-				single != null ? single.copy().send(): null
+				single != null ? single.copy().send() : null,
+				true
 		);
 	}
 }

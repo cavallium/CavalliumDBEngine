@@ -26,6 +26,7 @@ import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
 import reactor.core.publisher.Flux;
+import reactor.core.scheduler.Schedulers;
 
 public class HugePqPriorityQueue<T> extends SimpleResource
 		implements PriorityQueue<T>, Reversable<ReversableResourceIterable<T>>, ReversableResourceIterable<T> {
@@ -339,7 +340,7 @@ public class HugePqPriorityQueue<T> extends SimpleResource
 			if (rocksIterWithReadOpts != null) {
 				rocksIterWithReadOpts.close();
 			}
-		}).concatMapIterable(item -> item);
+		}).subscribeOn(Schedulers.boundedElastic()).concatMapIterable(item -> item);
 	}
 
 	@Override

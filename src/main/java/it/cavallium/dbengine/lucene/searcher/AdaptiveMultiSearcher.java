@@ -67,7 +67,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 			return count.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 		} else if (!FORCE_HUGE_PQ && realLimit <= maxInMemoryResultEntries) {
 			return standardSearcher.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
-		} else if (FORCE_HUGE_PQ || queryParams.isSorted()) {
+		} else if (queryParams.isSorted()) {
 			if (!FORCE_HUGE_PQ && realLimit <= maxAllowedInMemoryLimit) {
 				return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 			} else {

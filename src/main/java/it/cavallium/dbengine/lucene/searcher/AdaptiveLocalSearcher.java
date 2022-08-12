@@ -74,7 +74,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 			return countSearcher.collect(indexSearcherMono, queryParams, keyFieldName, transformer);
 		} else if (!FORCE_HUGE_PQ && realLimit <= maxInMemoryResultEntries) {
 			return standardSearcher.collect(indexSearcherMono, queryParams, keyFieldName, transformer);
-		} else if (FORCE_HUGE_PQ || queryParams.isSorted()) {
+		} else if (queryParams.isSorted()) {
 			if (!FORCE_HUGE_PQ && realLimit <= maxAllowedInMemoryLimit) {
 				return scoredPaged.collect(indexSearcherMono, queryParams, keyFieldName, transformer);
 			} else {

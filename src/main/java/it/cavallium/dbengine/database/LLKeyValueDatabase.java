@@ -4,6 +4,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.buffer.api.BufferAllocator;
+import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
@@ -14,7 +15,8 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure, DatabaseProperties {
+public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure, DatabaseProperties,
+		IBackuppable {
 
 	Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte @Nullable[] defaultValue);
 

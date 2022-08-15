@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database;
 
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
+import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.client.query.current.data.Query;
@@ -241,5 +243,25 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 					return luceneIndicesSet.get(index).releaseSnapshot(instanceSnapshot);
 				})
 				.then();
+	}
+
+	@Override
+	public Mono<Void> pauseForBackup() {
+		return Mono.whenDelayError(Iterables.transform(this.luceneIndicesSet, IBackuppable::pauseForBackup));
+	}
+
+	@Override
+	public Mono<Void> resumeAfterBackup() {
+		return Mono.whenDelayError(Iterables.transform(this.luceneIndicesSet, IBackuppable::resumeAfterBackup));
+	}
+
+	@Override
+	public boolean isPaused() {
+		for (LLLuceneIndex llLuceneIndex : this.luceneIndicesSet) {
+			if (llLuceneIndex.isPaused()) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

@@ -231,6 +231,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 				.cast(GeneratedEntityId.class)
 				.map(GeneratedEntityId::id)
 				.map(id -> new LLKeyValueDatabase() {
+
 					@Override
 					public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName,
 							byte[] name,
@@ -423,6 +424,21 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 						return null;
 					}
+
+					@Override
+					public Mono<Void> pauseForBackup() {
+						return Mono.empty();
+					}
+
+					@Override
+					public Mono<Void> resumeAfterBackup() {
+						return Mono.empty();
+					}
+
+					@Override
+					public boolean isPaused() {
+						return false;
+					}
 				});
 	}
 
@@ -446,6 +462,7 @@ public class LLQuicConnection implements LLDatabaseConnection {
 				.cast(GeneratedEntityId.class)
 				.map(GeneratedEntityId::id)
 				.map(id -> new LLLuceneIndex() {
+
 					@Override
 					public String getLuceneIndexName() {
 						return clusterName;
@@ -542,6 +559,21 @@ public class LLQuicConnection implements LLDatabaseConnection {
 					@Override
 					public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
 						return null;
+					}
+
+					@Override
+					public Mono<Void> pauseForBackup() {
+						return null;
+					}
+
+					@Override
+					public Mono<Void> resumeAfterBackup() {
+						return null;
+					}
+
+					@Override
+					public boolean isPaused() {
+						return false;
 					}
 				});
 	}

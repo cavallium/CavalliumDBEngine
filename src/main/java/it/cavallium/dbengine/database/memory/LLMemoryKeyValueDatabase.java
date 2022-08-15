@@ -213,4 +213,19 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 				.fromCallable(() -> snapshots.remove(snapshot.getSequenceNumber()))
 				.then();
 	}
+
+	@Override
+	public Mono<Void> pauseForBackup() {
+		return Mono.empty();
+	}
+
+	@Override
+	public Mono<Void> resumeAfterBackup() {
+		return Mono.empty();
+	}
+
+	@Override
+	public boolean isPaused() {
+		return false;
+	}
 }

@@ -3,9 +3,11 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
+import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty5.util.Send;
+import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
@@ -414,5 +416,25 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 	@Override
 	public boolean isLowMemoryMode() {
 		return lowMemory;
+	}
+
+	@Override
+	public Mono<Void> pauseForBackup() {
+		return Mono.whenDelayError(Iterables.transform(this.luceneIndicesSet, IBackuppable::pauseForBackup));
+	}
+
+	@Override
+	public Mono<Void> resumeAfterBackup() {
+		return Mono.whenDelayError(Iterables.transform(this.luceneIndicesSet, IBackuppable::resumeAfterBackup));
+	}
+
+	@Override
+	public boolean isPaused() {
+		for (LLLuceneIndex llLuceneIndex : this.luceneIndicesSet) {
+			if (llLuceneIndex.isPaused()) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.Timer;
 import io.netty5.buffer.api.BufferAllocator;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.data.generator.nativedata.NullableString;
+import it.cavallium.dbengine.client.Backuppable;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.ColumnProperty;
 import it.cavallium.dbengine.database.ColumnUtils;
@@ -98,7 +99,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
+public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDatabase {
 
 	private static final boolean DELETE_LOG_FILES = false;
 	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = true;
@@ -685,6 +686,16 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				closeLock.unlockRead(closeReadLock);
 			}
 		}).subscribeOn(dbWScheduler);
+	}
+
+	@Override
+	protected Mono<Void> onPauseForBackup() {
+		return pauseWrites();
+	}
+
+	@Override
+	protected Mono<Void> onResumeAfterBackup() {
+		return resumeWrites();
 	}
 
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
@@ -1615,6 +1626,22 @@ public class LLLocalKeyValueDatabase implements LLKeyValueDatabase {
 				})
 				.onErrorMap(cause -> new IOException("Failed to close", cause))
 				.subscribeOn(dbWScheduler);
+	}
+
+	private Mono<Void> pauseWrites() {
+		return Mono.<Void>fromCallable(() -> {
+			db.pauseBackgroundWork();
+			db.disableFileDeletions();
+			return null;
+		}).subscribeOn(dbWScheduler);
+	}
+
+	private Mono<Void> resumeWrites() {
+		return Mono.<Void>fromCallable(() -> {
+			db.continueBackgroundWork();
+			db.enableFileDeletions(false);
+			return null;
+		}).subscribeOn(dbWScheduler);
 	}
 
 	/**

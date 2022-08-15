@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database;
 
 import com.google.common.collect.Multimap;
+import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
@@ -16,7 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-public interface LLLuceneIndex extends LLSnapshottable, SafeCloseable {
+public interface LLLuceneIndex extends LLSnapshottable, IBackuppable, SafeCloseable {
 
 	String getLuceneIndexName();
 

@@ -14,6 +14,8 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
+import it.cavallium.dbengine.client.Backuppable;
+import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
@@ -82,7 +84,7 @@ import reactor.core.publisher.SignalType;
 import reactor.core.scheduler.Scheduler;
 import reactor.core.scheduler.Schedulers;
 
-public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex, LuceneCloseable {
+public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, LLLuceneIndex, LuceneCloseable {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalLuceneIndex.class);
 
@@ -138,6 +140,7 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex,
 	private final Similarity luceneSimilarity;
 	private final LuceneRocksDBManager rocksDBManager;
 	private final Directory directory;
+	private final LuceneBackuppable backuppable;
 	private final boolean lowMemory;
 
 	private final Phaser activeTasks = new Phaser(1);
@@ -280,6 +283,8 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex,
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
 		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledCommit, commitMillis, commitMillis,
 				TimeUnit.MILLISECONDS);
+
+		this.backuppable = new LuceneBackuppable();
 	}
 
 	private Similarity getLuceneSimilarity() {
@@ -847,5 +852,43 @@ public class LLLocalLuceneIndex extends SimpleResource implements LLLuceneIndex,
 	@Override
 	public int hashCode() {
 		return shardName.hashCode();
+	}
+
+	@Override
+	public Mono<Void> pauseForBackup() {
+		return backuppable.pauseForBackup();
+	}
+
+	@Override
+	public Mono<Void> resumeAfterBackup() {
+		return backuppable.resumeAfterBackup();
+	}
+
+	@Override
+	public boolean isPaused() {
+		return backuppable.isPaused();
+	}
+
+	private class LuceneBackuppable extends Backuppable {
+
+		private LLSnapshot snapshot;
+
+		@Override
+		protected Mono<Void> onPauseForBackup() {
+			return LLLocalLuceneIndex.this.takeSnapshot().doOnSuccess(snapshot -> {
+				if (snapshot == null) {
+					logger.error("Can't pause index \"{}\" because snapshots are not enabled!", shardName);
+				}
+				this.snapshot = snapshot;
+			}).then();
+		}
+
+		@Override
+		protected Mono<Void> onResumeAfterBackup() {
+			if (snapshot == null) {
+				return Mono.empty();
+			}
+			return LLLocalLuceneIndex.this.releaseSnapshot(snapshot);
+		}
 	}
 }

@@ -30,6 +30,7 @@ import it.cavallium.dbengine.rpc.current.data.DatabaseLevel;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
+import it.cavallium.dbengine.rpc.current.data.NoFilter;
 import java.io.File;
 import java.io.IOException;
 import java.lang.invoke.MethodHandles;
@@ -335,6 +336,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						final BloomFilter bloomFilter = new BloomFilter(bloomFilterOptions.bitsPerKey());
 						refs.track(bloomFilter);
 						tableOptions.setFilterPolicy(bloomFilter);
+					} else if (filterOptions instanceof NoFilter) {
+						tableOptions.setFilterPolicy(null);
 					}
 				}
 				boolean cacheIndexAndFilterBlocks = columnOptions.cacheIndexAndFilterBlocks()

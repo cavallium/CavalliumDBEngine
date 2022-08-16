@@ -99,6 +99,7 @@ versions:
         StandardFSDirectoryOptions
       ]
       Filter: [
+        NoFilter,
         BloomFilter
       ]
       ColumnOptions: [
@@ -295,6 +296,8 @@ versions:
           minBlobSize: -long
           blobFileSize: -long
           blobCompressionType: -Compression
+      NoFilter:
+        data: {}
       BloomFilter:
         data:
           bitsPerKey: int

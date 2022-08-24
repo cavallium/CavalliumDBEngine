@@ -793,15 +793,12 @@ public class LuceneUtils {
 			LocalQueryParams queryParams,
 			String keyFieldName,
 			GlobalQueryRewrite transformer) {
-		return Mono.usingWhen(indexSearcherMono, indexSearcher -> {
-			try (UnshardedIndexSearchers indexSearchers = LLIndexSearchers.unsharded(indexSearcher)) {
-				return Mono
-						.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
-						.transform(LuceneUtils::scheduleLucene)
-						.flatMap(queryParams2 ->
-								localSearcher.collect(indexSearcherMono, queryParams2, keyFieldName, NO_REWRITE));
-			}
-		}, LLUtils::finalizeResource);
+		return Mono.usingWhen(indexSearcherMono.map(LLIndexSearchers::unsharded), indexSearchers -> Mono
+					.fromCallable(() -> transformer.rewrite(indexSearchers, queryParams))
+					.transform(LuceneUtils::scheduleLucene)
+					.flatMap(queryParams2 ->
+							localSearcher.collect(indexSearcherMono, queryParams2, keyFieldName, NO_REWRITE)),
+				LLUtils::finalizeResource);
 	}
 
 	/**

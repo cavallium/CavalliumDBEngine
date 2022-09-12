@@ -48,7 +48,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
 			SerializerFixedBinaryLength<TH> keySuffixHashSerializer) {
-		if (dictionary.getUpdateMode().transform(LLUtils::handleDiscard).block() != UpdateMode.ALLOW) {
+		var updateMode = dictionary.getUpdateMode();
+		if (updateMode != UpdateMode.ALLOW) {
 			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
 		this.alloc = dictionary.getAllocator();
@@ -61,7 +62,6 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 		this.keySuffixHashFunction = keySuffixHashFunction;
 	}
 
-	@SuppressWarnings({"unchecked", "rawtypes"})
 	private DatabaseMapDictionaryHashed(BufferAllocator alloc,
 			Function<T, TH> keySuffixHashFunction,
 			DatabaseStage<Object2ObjectSortedMap<TH, ObjectArraySet<Entry<T, U>>>> subDictionary,
@@ -177,7 +177,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 	}
 
 	@Override
-	public Mono<UpdateMode> getUpdateMode() {
+	public UpdateMode getUpdateMode() {
 		return subDictionary.getUpdateMode();
 	}
 

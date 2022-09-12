@@ -303,7 +303,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 	}
 
 	@Override
-	public Mono<UpdateMode> getUpdateMode() {
+	public UpdateMode getUpdateMode() {
 		return dictionary.getUpdateMode();
 	}
 

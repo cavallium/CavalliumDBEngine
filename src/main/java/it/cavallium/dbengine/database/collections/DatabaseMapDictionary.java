@@ -285,7 +285,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	@Override
-	public Mono<UpdateMode> getUpdateMode() {
+	public UpdateMode getUpdateMode() {
 		return dictionary.getUpdateMode();
 	}
 

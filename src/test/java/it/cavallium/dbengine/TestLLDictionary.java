@@ -201,7 +201,7 @@ public abstract class TestLLDictionary {
 	@MethodSource("provideArguments")
 	public void testGetUpdateMode(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		assertEquals(updateMode, run(dict.getUpdateMode()));
+		assertEquals(updateMode, dict.getUpdateMode());
 	}
 
 	@ParameterizedTest

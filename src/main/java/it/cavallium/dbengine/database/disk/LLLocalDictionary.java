@@ -409,8 +409,8 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<UpdateMode> getUpdateMode() {
-		return Mono.just(updateMode);
+	public UpdateMode getUpdateMode() {
+		return updateMode;
 	}
 
 	@SuppressWarnings("DuplicatedCode")

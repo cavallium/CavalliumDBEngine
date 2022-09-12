@@ -154,7 +154,7 @@ public abstract class TestLLDictionaryLeaks {
 	@MethodSource("provideArguments")
 	public void testGetUpdateMode(UpdateMode updateMode) {
 		var dict = getDict(updateMode);
-		assertEquals(updateMode, run(dict.getUpdateMode()));
+		assertEquals(updateMode, dict.getUpdateMode());
 	}
 
 	@ParameterizedTest

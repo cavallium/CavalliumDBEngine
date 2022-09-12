@@ -51,7 +51,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 		return Mono.usingWhen(at(null, key).single(), stage -> stage.set(value), LLUtils::finalizeResource);
 	}
 
-	Mono<UpdateMode> getUpdateMode();
+	UpdateMode getUpdateMode();
 
 	default Mono<U> updateValue(T key,
 			UpdateReturnMode updateReturnMode,
@@ -192,49 +192,45 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
 
 	@Override
 	default Mono<Delta<Object2ObjectSortedMap<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater) {
-		return this
-				.getUpdateMode()
-				.single()
-				.flatMap(updateMode -> {
-					if (updateMode == UpdateMode.ALLOW_UNSAFE) {
-						return this
-								.getAllValues(null, true)
-								.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
-								.map(map -> (Object2ObjectSortedMap<T, U>) map)
-								.single()
-								.<Tuple2<Optional<Object2ObjectSortedMap<T, U>>, Optional<Object2ObjectSortedMap<T, U>>>>handle((v, sink) -> {
-									if (v.isEmpty()) {
-										v = null;
-									}
-									try {
-										var result = updater.apply(v);
-										if (result != null && result.isEmpty()) {
-											result = null;
-										}
-										sink.next(Tuples.of(Optional.ofNullable(v), Optional.ofNullable(result)));
-									} catch (SerializationException ex) {
-										sink.error(ex);
-									}
-								})
-								.flatMap(result -> Mono
-										.justOrEmpty(result.getT2())
-										.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
-										.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
-								);
-					} else if (updateMode == UpdateMode.ALLOW) {
-						return Mono.fromCallable(() -> {
-							throw new UnsupportedOperationException("Maps can't be updated atomically");
-						});
-					} else if (updateMode == UpdateMode.DISALLOW) {
-						return Mono.fromCallable(() -> {
-							throw new UnsupportedOperationException("Map can't be updated because updates are disabled");
-						});
-					} else {
-						return Mono.fromCallable(() -> {
-							throw new UnsupportedOperationException("Unknown update mode: " + updateMode);
-						});
-					}
-				});
+		var updateMode = this.getUpdateMode();
+		if (updateMode == UpdateMode.ALLOW_UNSAFE) {
+			return this
+					.getAllValues(null, true)
+					.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
+					.map(map -> (Object2ObjectSortedMap<T, U>) map)
+					.single()
+					.<Tuple2<Optional<Object2ObjectSortedMap<T, U>>, Optional<Object2ObjectSortedMap<T, U>>>>handle((v, sink) -> {
+						if (v.isEmpty()) {
+							v = null;
+						}
+						try {
+							var result = updater.apply(v);
+							if (result != null && result.isEmpty()) {
+								result = null;
+							}
+							sink.next(Tuples.of(Optional.ofNullable(v), Optional.ofNullable(result)));
+						} catch (SerializationException ex) {
+							sink.error(ex);
+						}
+					})
+					.flatMap(result -> Mono
+							.justOrEmpty(result.getT2())
+							.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
+							.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
+					);
+		} else if (updateMode == UpdateMode.ALLOW) {
+			return Mono.fromCallable(() -> {
+				throw new UnsupportedOperationException("Maps can't be updated atomically");
+			});
+		} else if (updateMode == UpdateMode.DISALLOW) {
+			return Mono.fromCallable(() -> {
+				throw new UnsupportedOperationException("Map can't be updated because updates are disabled");
+			});
+		} else {
+			return Mono.fromCallable(() -> {
+				throw new UnsupportedOperationException("Unknown update mode: " + updateMode);
+			});
+		}
 	}
 
 	@Override

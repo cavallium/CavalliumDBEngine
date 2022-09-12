@@ -201,8 +201,8 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<UpdateMode> getUpdateMode() {
-		return Mono.just(updateMode);
+	public UpdateMode getUpdateMode() {
+		return updateMode;
 	}
 
 	@Override

@@ -25,7 +25,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	Mono<Buffer> put(Mono<Buffer> key, Mono<Buffer> value, LLDictionaryResultType resultType);
 
-	Mono<UpdateMode> getUpdateMode();
+	UpdateMode getUpdateMode();
 
 	default Mono<Buffer> update(Mono<Buffer> key,
 			BinarySerializationFunction updater,

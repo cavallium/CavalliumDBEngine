@@ -1022,7 +1022,7 @@ public class LLUtils {
 			}
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();
-		} else if (next instanceof Iterable<?> iterable) {
+		} else if (next instanceof Collection<?> iterable) {
 			iterable.forEach(LLUtils::onNextDropped);
 		} else if (next instanceof AbstractImmutableNativeReference rocksObj) {
 			if (rocksObj.isOwningHandle()) {

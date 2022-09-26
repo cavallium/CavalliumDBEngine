@@ -82,6 +82,7 @@ import org.rocksdb.LogFile;
 import org.rocksdb.MutableDBOptions;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
+import org.rocksdb.PrepopulateBlobCache;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
@@ -230,6 +231,11 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				}
 				var blobFiles = columnOptions.blobFiles();
 				columnFamilyOptions.setEnableBlobFiles(blobFiles);
+				try {
+					columnFamilyOptions.setPrepopulateBlobCache(PrepopulateBlobCache.PREPOPULATE_BLOB_FLUSH_ONLY);
+				} catch (Throwable ex) {
+					logger.error("Failed to set prepopulate blob cache", ex);
+				}
 				if (blobFiles) {
 					if (columnOptions.blobFileSize().isPresent()) {
 						columnFamilyOptions.setBlobFileSize(columnOptions.blobFileSize().get());

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static java.lang.Boolean.parseBoolean;
 import static java.util.Objects.requireNonNull;
@@ -9,7 +9,7 @@ import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTAB
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.BufferAllocator;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.dbengine.client.Backuppable;

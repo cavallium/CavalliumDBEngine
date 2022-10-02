@@ -2,12 +2,12 @@ package it.cavallium.dbengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.MemoryManager;
-import io.netty5.buffer.api.internal.LeakDetection;
-import io.netty5.buffer.api.internal.LifecycleTracer;
-import io.netty5.buffer.api.pool.PoolArenaMetric;
-import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.MemoryManager;
+import io.netty5.buffer.internal.LeakDetection;
+import io.netty5.buffer.internal.LifecycleTracer;
+import io.netty5.buffer.pool.PoolArenaMetric;
+import io.netty5.buffer.pool.PooledBufferAllocator;
 import io.netty5.util.ResourceLeakDetector;
 import io.netty5.util.ResourceLeakDetector.Level;
 import io.netty5.util.internal.PlatformDependent;

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import io.netty5.util.Send;
 
 public record UpdateAtomicResultCurrent(Buffer current) implements UpdateAtomicResult {

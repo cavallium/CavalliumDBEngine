@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.lucene.directory;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.BufferRef;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferRef;
 import org.apache.lucene.store.IndexInput;
 
 import java.io.EOFException;

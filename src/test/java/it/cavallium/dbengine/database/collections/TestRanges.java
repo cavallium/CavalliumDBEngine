@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.Arrays;
 import org.junit.jupiter.api.AfterAll;

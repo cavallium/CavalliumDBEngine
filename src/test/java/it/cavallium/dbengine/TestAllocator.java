@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.DbTestUtils.destroyAllocator;
 import static it.cavallium.dbengine.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.DbTestUtils.newAllocator;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;

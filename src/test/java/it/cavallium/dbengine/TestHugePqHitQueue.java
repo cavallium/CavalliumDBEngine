@@ -1,7 +1,7 @@
 package it.cavallium.dbengine;
 
 import com.google.common.collect.Lists;
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LLScoreDoc;

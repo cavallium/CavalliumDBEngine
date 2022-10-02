@@ -4,11 +4,11 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Owned;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.Drop;
+import io.netty5.buffer.Owned;
 import io.netty5.util.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.function.Supplier;

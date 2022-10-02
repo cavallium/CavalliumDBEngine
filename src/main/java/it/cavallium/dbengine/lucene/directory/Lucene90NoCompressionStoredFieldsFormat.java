@@ -26,6 +26,7 @@ import org.apache.lucene.codecs.compressing.Decompressor;
 import org.apache.lucene.codecs.lucene90.compressing.Lucene90CompressingStoredFieldsFormat;
 import org.apache.lucene.index.FieldInfos;
 import org.apache.lucene.index.SegmentInfo;
+import org.apache.lucene.store.ByteBuffersDataInput;
 import org.apache.lucene.store.DataInput;
 import org.apache.lucene.store.DataOutput;
 import org.apache.lucene.store.Directory;
@@ -76,8 +77,8 @@ public class Lucene90NoCompressionStoredFieldsFormat extends StoredFieldsFormat 
 	private static final Compressor DUMMY_COMPRESSOR = new Compressor() {
 
 		@Override
-		public void compress(byte[] bytes, int off, int len, DataOutput out) throws IOException {
-			out.writeBytes(bytes, off, len);
+		public void compress(ByteBuffersDataInput byteBuffersDataInput, DataOutput dataOutput) throws IOException {
+			dataOutput.copyBytes(byteBuffersDataInput, byteBuffersDataInput.size());
 		}
 
 		@Override

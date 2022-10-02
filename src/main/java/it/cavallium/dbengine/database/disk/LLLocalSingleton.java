@@ -2,8 +2,8 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
 import io.netty5.util.Send;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLSingleton;

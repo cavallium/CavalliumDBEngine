@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.Drop;
+import io.netty5.buffer.Owned;
+import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;

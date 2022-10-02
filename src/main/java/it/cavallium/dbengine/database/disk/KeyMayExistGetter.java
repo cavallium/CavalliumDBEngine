@@ -8,11 +8,10 @@ import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithValue;
 import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithoutValue;
 import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kNotExist;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.DefaultBufferAllocators;
-import io.netty5.buffer.api.ReadableComponent;
-import io.netty5.buffer.api.WritableComponent;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferComponent;
+import io.netty5.buffer.DefaultBufferAllocators;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -75,7 +74,7 @@ public abstract class KeyMayExistGetter {
 			} else {
 				mustCloseKey = false;
 			}
-			keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+			keyNioBuffer = ((BufferComponent) key).readableBuffer();
 			assert keyNioBuffer.isDirect();
 			assert keyNioBuffer.limit() == key.readableBytes();
 		}
@@ -86,14 +85,14 @@ public abstract class KeyMayExistGetter {
 			try {
 				assert resultBuffer.readerOffset() == 0;
 				assert resultBuffer.writerOffset() == 0;
-				var resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
+				var resultWritable = ((BufferComponent) resultBuffer).writableBuffer();
 
 				var keyMayExist = keyMayExist(readOptions, keyNioBuffer.rewind(), resultWritable.clear());
 				if (STRICT_MAYEXIST_NO_VALUE && keyMayExist.exists != kExistsWithValue && keyMayExist.valueLength != 0) {
 					// Create a direct result buffer because RocksDB works only with direct buffers
 					try (var realResultBuffer = bufferAllocator.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES)) {
 						var resultWritableF = resultWritable;
-						var realResultWritable = ((WritableComponent) realResultBuffer).writableBuffer();
+						var realResultWritable = ((BufferComponent) realResultBuffer).writableBuffer();
 						var realSize = get(readOptions, keyNioBuffer.rewind(), realResultWritable);
 						var hexFormat = HexFormat.ofDelimiter(" ");
 						LOG.error(
@@ -178,7 +177,7 @@ public abstract class KeyMayExistGetter {
 							return resultBuffer.writerOffset(resultWritable.limit());
 						} else {
 							resultBuffer.ensureWritable(size);
-							resultWritable = ((WritableComponent) resultBuffer).writableBuffer();
+							resultWritable = ((BufferComponent) resultBuffer).writableBuffer();
 							assert resultBuffer.readerOffset() == 0;
 							assert resultBuffer.writerOffset() == 0;
 

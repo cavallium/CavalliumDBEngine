@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;

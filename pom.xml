@@ -13,7 +13,7 @@
 		<revision>0-SNAPSHOT</revision>
 		<dbengine.ci>false</dbengine.ci>
 		<micrometer.version>1.9.3</micrometer.version>
-		<lucene.version>9.3.0</lucene.version>
+		<lucene.version>9.4.0</lucene.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
 	</properties>
 	<repositories>
@@ -120,7 +120,7 @@
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty5-buffer</artifactId>
-      <version>5.0.0.Alpha4</version>
+      <version>5.0.0.Alpha5</version>
       <exclusions>
         <exclusion>
           <groupId>io.netty</groupId>

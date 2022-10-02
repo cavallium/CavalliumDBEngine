@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import java.util.function.Function;
 import org.apache.lucene.util.BytesRef;
 

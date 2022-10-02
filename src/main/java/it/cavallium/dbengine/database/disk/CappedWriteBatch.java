@@ -3,9 +3,9 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.isDirect;
 import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.ReadableComponent;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferComponent;
 import io.netty5.util.Send;
 import io.netty5.util.internal.PlatformDependent;
 import it.cavallium.dbengine.database.LLUtils;
@@ -116,8 +116,8 @@ public class CappedWriteBatch extends WriteBatch {
 		if (USE_FAST_DIRECT_BUFFERS
 				&& (isReadOnlyDirect(key))
 				&& (isReadOnlyDirect(value))) {
-			ByteBuffer keyNioBuffer = ((ReadableComponent) key).readableBuffer();
-			ByteBuffer valueNioBuffer = ((ReadableComponent) value).readableBuffer();
+			ByteBuffer keyNioBuffer = ((BufferComponent) key).readableBuffer();
+			ByteBuffer valueNioBuffer = ((BufferComponent) value).readableBuffer();
 			buffersToRelease.add(value);
 			buffersToRelease.add(key);
 
@@ -162,7 +162,7 @@ public class CappedWriteBatch extends WriteBatch {
 	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
 		var key = keyToReceive.receive();
 		if (USE_FAST_DIRECT_BUFFERS && isReadOnlyDirect(key)) {
-			ByteBuffer keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+			ByteBuffer keyNioBuffer = ((BufferComponent) key).readableBuffer();
 			buffersToRelease.add(key);
 			delete(columnFamilyHandle, keyNioBuffer);
 		} else {

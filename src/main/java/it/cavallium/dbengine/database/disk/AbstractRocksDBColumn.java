@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES;
 import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 import static java.lang.Boolean.parseBoolean;
@@ -13,11 +13,10 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.DefaultBufferAllocators;
-import io.netty5.buffer.api.ReadableComponent;
-import io.netty5.buffer.api.WritableComponent;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferComponent;
+import io.netty5.buffer.DefaultBufferAllocators;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
@@ -256,7 +255,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		requireNonNull(key);
 		AbstractSlice<?> slice;
 		if (allowNettyDirect && USE_DIRECT_BUFFER_BOUNDS && isReadOnlyDirect(key)) {
-			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
+			ByteBuffer keyInternalByteBuffer = ((BufferComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
 			slice = new DirectSlice(keyInternalByteBuffer, key.readableBytes());
 			assert slice.size() == key.readableBytes();
@@ -371,7 +370,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					} else {
 						mustCloseKey = false;
 					}
-					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					keyNioBuffer = ((BufferComponent) key).readableBuffer();
 					assert keyNioBuffer.isDirect();
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
@@ -389,7 +388,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 						} else {
 							mustCloseValue = false;
 						}
-						valueNioBuffer = ((ReadableComponent) value).readableBuffer();
+						valueNioBuffer = ((BufferComponent) value).readableBuffer();
 						assert valueNioBuffer.isDirect();
 						assert valueNioBuffer.limit() == value.readableBytes();
 					}
@@ -434,7 +433,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					} else {
 						mustCloseKey = false;
 					}
-					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					keyNioBuffer = ((BufferComponent) key).readableBuffer();
 					assert keyNioBuffer.isDirect();
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
@@ -508,7 +507,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					} else {
 						mustCloseKey = false;
 					}
-					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					keyNioBuffer = ((BufferComponent) key).readableBuffer();
 					assert keyNioBuffer.isDirect();
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}
@@ -549,7 +548,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 					} else {
 						mustCloseKey = false;
 					}
-					keyNioBuffer = ((ReadableComponent) key).readableBuffer();
+					keyNioBuffer = ((BufferComponent) key).readableBuffer();
 					assert keyNioBuffer.isDirect();
 					assert keyNioBuffer.limit() == key.readableBytes();
 				}

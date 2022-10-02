@@ -2,7 +2,7 @@ package it.cavallium.dbengine;
 
 import static java.util.Map.entry;
 
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.database.disk.KeyMayExistGetter;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.ByteBuffer;

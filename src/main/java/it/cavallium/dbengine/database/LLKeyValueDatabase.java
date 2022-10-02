@@ -3,7 +3,7 @@ package it.cavallium.dbengine.database;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.collections.DatabaseInt;

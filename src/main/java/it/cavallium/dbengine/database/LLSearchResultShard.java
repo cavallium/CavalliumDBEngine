@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.Drop;
+import io.netty5.buffer.Owned;
+import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.LuceneCloseable;

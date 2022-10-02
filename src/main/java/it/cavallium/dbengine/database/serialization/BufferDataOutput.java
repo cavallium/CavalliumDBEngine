@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import java.io.DataOutput;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.NotNull;

@@ -2,9 +2,9 @@ package it.cavallium.dbengine.database.collections;
 
 import static java.util.Objects.requireNonNullElseGet;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import io.netty5.util.Resource;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.Delta;

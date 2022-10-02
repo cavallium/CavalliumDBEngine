@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;

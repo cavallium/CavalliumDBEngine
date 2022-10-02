@@ -3,8 +3,8 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import io.netty5.util.Send;
 import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.SafeCloseable;

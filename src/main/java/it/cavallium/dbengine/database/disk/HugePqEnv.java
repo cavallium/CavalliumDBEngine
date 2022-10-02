@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.database.disk.LLTempHugePqEnv.getColumnOptio
 
 import com.google.common.primitives.Ints;
 import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;

@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import java.util.function.Supplier;

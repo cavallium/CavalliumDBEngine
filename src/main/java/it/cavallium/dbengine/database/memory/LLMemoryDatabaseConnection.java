@@ -3,7 +3,7 @@ package it.cavallium.dbengine.database.memory;
 import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLLuceneIndex;

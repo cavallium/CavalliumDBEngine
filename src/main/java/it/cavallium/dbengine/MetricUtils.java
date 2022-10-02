@@ -1,7 +1,7 @@
 package it.cavallium.dbengine;
 
-import io.netty5.buffer.api.pool.PoolArenaMetric;
-import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.buffer.pool.PoolArenaMetric;
+import io.netty5.buffer.pool.PooledBufferAllocator;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -24,7 +24,7 @@ public class MetricUtils {
 		MethodHandle handle = null;
 		try {
 			// Find the class
-			var pooledBufferClass = Class.forName("io.netty5.buffer.api.pool.PooledBufferAllocatorMetric");
+			var pooledBufferClass = Class.forName("io.netty5.buffer.pool.PooledBufferAllocatorMetric");
 			// Find the handle of the method
 			handle = lookup.findVirtual(pooledBufferClass, "arenaMetrics", MethodType.methodType(List.class));
 		} catch (NoSuchMethodException | IllegalAccessException | ClassNotFoundException ex) {

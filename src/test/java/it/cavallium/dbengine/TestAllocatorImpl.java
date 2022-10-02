@@ -1,17 +1,17 @@
 package it.cavallium.dbengine;
 
-import static io.netty5.buffer.api.internal.Statics.allocatorClosedException;
-import static io.netty5.buffer.api.internal.Statics.standardDrop;
+import static io.netty5.buffer.internal.InternalBufferUtils.allocatorClosedException;
+import static io.netty5.buffer.internal.InternalBufferUtils.assertValidBufferSize;
+import static io.netty5.buffer.internal.InternalBufferUtils.standardDrop;
 
-import io.netty5.buffer.api.AllocationType;
-import io.netty5.buffer.api.AllocatorControl;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.MemoryManager;
-import io.netty5.buffer.api.StandardAllocationTypes;
-import io.netty5.buffer.api.internal.Statics;
-import io.netty5.buffer.api.pool.PooledBufferAllocator;
+import io.netty5.buffer.AllocationType;
+import io.netty5.buffer.AllocatorControl;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.Drop;
+import io.netty5.buffer.MemoryManager;
+import io.netty5.buffer.StandardAllocationTypes;
+import io.netty5.buffer.pool.PooledBufferAllocator;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -45,8 +45,8 @@ public class TestAllocatorImpl implements BufferAllocator, AllocatorControl {
 		if (closed) {
 			throw allocatorClosedException();
 		}
-		Statics.assertValidBufferSize(size);
-		return manager.allocateShared(this, size, Statics.standardDrop(manager), allocationType);
+		assertValidBufferSize(size);
+		return manager.allocateShared(this, size, standardDrop(manager), allocationType);
 	}
 
 	@Override

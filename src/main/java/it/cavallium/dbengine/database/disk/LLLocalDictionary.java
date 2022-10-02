@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.ALLOW_STATIC_OPTIONS;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.fromByteArray;
@@ -12,9 +12,9 @@ import static java.util.Objects.requireNonNull;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.ReadableComponent;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferComponent;
 import io.netty5.util.Resource;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
@@ -308,7 +308,7 @@ public class LLLocalDictionary implements LLDictionary {
 							try (var rocksIterator = db.newIterator(readOpts, range.getMinUnsafe(), range.getMaxUnsafe())) {
 								if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 									if (nettyDirect && isReadOnlyDirect(range.getMinUnsafe())) {
-										var seekBuf = ((ReadableComponent) range.getMinUnsafe()).readableBuffer();
+										var seekBuf = ((BufferComponent) range.getMinUnsafe()).readableBuffer();
 										rocksIterator.seek(seekBuf);
 									} else {
 										var seekArray = LLUtils.toArray(range.getMinUnsafe());

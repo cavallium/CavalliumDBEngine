@@ -2,10 +2,9 @@ package it.cavallium.dbengine.lucene.directory;
 
 import com.google.common.primitives.Longs;
 import com.google.common.util.concurrent.Striped;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.ReadableComponent;
-import io.netty5.buffer.api.WritableComponent;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferComponent;
 import it.cavallium.dbengine.database.LLUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -119,13 +118,13 @@ public class RocksdbFileStore {
 
 	private static ByteBuffer readableNioBuffer(Buffer buffer) {
 		assert buffer.countReadableComponents() == 1 : "Readable components count: " + buffer.countReadableComponents();
-		return ((ReadableComponent) buffer).readableBuffer();
+		return ((BufferComponent) buffer).readableBuffer();
 	}
 
 	private static ByteBuffer writableNioBuffer(Buffer buffer, int newWriterOffset) {
 		assert buffer.countWritableComponents() == 1 : "Writable components count: " + buffer.countWritableComponents();
 		buffer.writerOffset(0).ensureWritable(newWriterOffset);
-		var byteBuf = ((WritableComponent) buffer).writableBuffer();
+		var byteBuf = ((BufferComponent) buffer).writableBuffer();
 		buffer.writerOffset(newWriterOffset);
 		assert buffer.capacity() >= newWriterOffset : "Returned capacity " + buffer.capacity() + " < " + newWriterOffset;
 		return byteBuf;

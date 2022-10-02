@@ -2,7 +2,7 @@ package it.cavallium.dbengine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.netty5.buffer.api.Buffer;
+import io.netty5.buffer.Buffer;
 import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.HugePqCodec;
 import it.cavallium.dbengine.lucene.HugePqPriorityQueue;

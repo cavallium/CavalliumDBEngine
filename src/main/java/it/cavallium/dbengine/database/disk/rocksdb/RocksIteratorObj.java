@@ -4,11 +4,11 @@ import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.Owned;
-import io.netty5.buffer.api.ReadableComponent;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferComponent;
+import io.netty5.buffer.Drop;
+import io.netty5.buffer.Owned;
+import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
@@ -142,7 +142,7 @@ public class RocksIteratorObj extends SimpleResource {
 	public void seekFrom(Buffer key) {
 		ensureOpen();
 		if (allowNettyDirect && isReadOnlyDirect(key)) {
-			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
+			ByteBuffer keyInternalByteBuffer = ((BufferComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
 			rocksIterator.seekForPrev(keyInternalByteBuffer);
 			// This is useful to retain the key buffer in memory and avoid deallocations
@@ -161,7 +161,7 @@ public class RocksIteratorObj extends SimpleResource {
 	public void seekTo(Buffer key) {
 		ensureOpen();
 		if (allowNettyDirect && isReadOnlyDirect(key)) {
-			ByteBuffer keyInternalByteBuffer = ((ReadableComponent) key).readableBuffer();
+			ByteBuffer keyInternalByteBuffer = ((BufferComponent) key).readableBuffer();
 			assert keyInternalByteBuffer.position() == 0;
 			startedIterSeek.increment();
 			iterSeekTime.record(() -> rocksIterator.seek(keyInternalByteBuffer));

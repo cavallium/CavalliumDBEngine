@@ -7,7 +7,7 @@ import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 
 import io.netty5.util.Send;
-import io.netty5.buffer.api.internal.ResourceSupport;
+import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;

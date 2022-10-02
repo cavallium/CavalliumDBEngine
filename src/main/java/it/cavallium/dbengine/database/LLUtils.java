@@ -1,21 +1,20 @@
 package it.cavallium.dbengine.database;
 
-import static io.netty5.buffer.api.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
+import static io.netty5.buffer.internal.InternalBufferUtils.NO_OP_DROP;
 import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty5.buffer.api.AllocatorControl;
-import io.netty5.buffer.api.Buffer;
-import io.netty5.buffer.api.BufferAllocator;
-import io.netty5.buffer.api.CompositeBuffer;
-import io.netty5.buffer.api.Drop;
-import io.netty5.buffer.api.ReadableComponent;
+import io.netty5.buffer.AllocatorControl;
+import io.netty5.buffer.Buffer;
+import io.netty5.buffer.BufferAllocator;
+import io.netty5.buffer.BufferComponent;
+import io.netty5.buffer.CompositeBuffer;
+import io.netty5.buffer.Drop;
 import io.netty5.util.Resource;
 import io.netty5.util.Send;
-import io.netty5.buffer.api.WritableComponent;
-import io.netty5.buffer.api.internal.Statics;
 import io.netty5.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -534,7 +533,7 @@ public class LLUtils {
 		try {
 			assert directBuffer.readerOffset() == 0;
 			assert directBuffer.writerOffset() == 0;
-			var directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
+			var directBufferWriter = ((BufferComponent) directBuffer).writableBuffer();
 			assert directBufferWriter.position() == 0;
 			assert directBufferWriter.capacity() >= directBuffer.capacity();
 			assert directBufferWriter.isDirect();
@@ -552,7 +551,7 @@ public class LLUtils {
 				assert directBuffer.readerOffset() == 0;
 				directBuffer.ensureWritable(trueSize);
 				assert directBuffer.writerOffset() == 0;
-				directBufferWriter = ((WritableComponent) directBuffer).writableBuffer();
+				directBufferWriter = ((BufferComponent) directBuffer).writableBuffer();
 				assert directBufferWriter.position() == 0;
 				assert directBufferWriter.isDirect();
 				reader.applyAsInt(directBufferWriter.position(0));
@@ -783,16 +782,16 @@ public class LLUtils {
 
 	private static Drop<Buffer> drop() {
 		// We cannot reliably drop unsafe memory. We have to rely on the cleaner to do that.
-		return Statics.NO_OP_DROP;
+		return NO_OP_DROP;
 	}
 
 	public static boolean isReadOnlyDirect(Buffer inputBuffer) {
-		return inputBuffer.isDirect() && inputBuffer instanceof ReadableComponent;
+		return inputBuffer instanceof BufferComponent component && component.readableNativeAddress() != 0;
 	}
 
 	public static ByteBuffer getReadOnlyDirect(Buffer inputBuffer) {
 		assert isReadOnlyDirect(inputBuffer);
-		return ((ReadableComponent) inputBuffer).readableBuffer();
+		return ((BufferComponent) inputBuffer).readableBuffer();
 	}
 
 	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {
@@ -967,7 +966,7 @@ public class LLUtils {
 		if (readableComponents == 0) {
 			return true;
 		} else if (readableComponents == 1) {
-			return key.forEachReadable(0, (index, component) -> component.readableBuffer().isDirect()) >= 0;
+			return key.isDirect();
 		} else {
 			return false;
 		}

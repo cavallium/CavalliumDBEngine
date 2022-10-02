@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-import io.netty5.buffer.api.BufferAllocator;
+import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.lucene.directory.RocksDBInstance;
 import it.cavallium.dbengine.lucene.directory.RocksdbFileStore;
 import java.io.IOException;

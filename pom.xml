@@ -98,7 +98,7 @@
 			<dependency>
 				<groupId>io.projectreactor</groupId>
 				<artifactId>reactor-bom</artifactId>
-				<version>2020.0.22</version>
+				<version>2020.0.23</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -110,7 +110,7 @@
       <artifactId>reactor-tools</artifactId>
       <classifier>original</classifier>
       <scope>runtime</scope>
-      <version>3.4.22</version>
+      <version>3.4.23</version>
     </dependency>
 		<dependency>
 			<groupId>com.google.guava</groupId>

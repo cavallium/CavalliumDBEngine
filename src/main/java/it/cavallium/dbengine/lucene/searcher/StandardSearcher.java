@@ -106,8 +106,7 @@ public class StandardSearcher implements MultiSearcher {
 						}
 						return TopDocs.merge(0, queryParams.limitInt(), topDocs);
 					}
-				}).subscribeOn(luceneScheduler())))
-				.publishOn(Schedulers.parallel());
+				}).subscribeOn(luceneScheduler())));
 	}
 
 	/**

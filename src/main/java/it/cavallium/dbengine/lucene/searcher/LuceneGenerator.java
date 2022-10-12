@@ -67,8 +67,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 							return s;
 						}
 				)
-				.subscribeOn(SCHED)
-				.publishOn(Schedulers.parallel());
+				.subscribeOn(SCHED);
 	}
 
 	@Override

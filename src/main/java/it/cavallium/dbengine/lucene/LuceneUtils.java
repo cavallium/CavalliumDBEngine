@@ -411,8 +411,7 @@ public class LuceneUtils {
 		if (preserveOrder) {
 			return hitsFlux
 					.publishOn(LuceneUtils.luceneScheduler())
-					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName))
-					.publishOn(Schedulers.parallel());
+					.mapNotNull(hit -> mapHitBlocking(hit, indexSearchers, keyFieldName));
 		} else {
 			return hitsFlux
 					.buffer(Queues.XS_BUFFER_SIZE, () -> new ArrayList<Object>(Queues.XS_BUFFER_SIZE))
@@ -434,8 +433,7 @@ public class LuceneUtils {
 							return (List<LLKeyScore>) (List<?>) shardHits;
 						}
 					}).subscribeOn(luceneScheduler()))
-					.flatMapIterable(a -> a)
-					.publishOn(Schedulers.parallel());
+					.flatMapIterable(a -> a);
 		}
 	}
 

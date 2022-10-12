@@ -94,8 +94,7 @@ public class SortedScoredFullMultiSearcher implements MultiSearcher {
 								throw ex;
 							}
 						}).subscribeOn(luceneScheduler()))
-				)
-				.publishOn(Schedulers.parallel());
+				);
 	}
 
 	/**

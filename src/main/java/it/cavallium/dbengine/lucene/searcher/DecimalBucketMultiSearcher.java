@@ -61,8 +61,7 @@ public class DecimalBucketMultiSearcher {
 						return cmm.search(shard);
 					}).subscribeOn(luceneScheduler()))
 					.collectList()
-					.flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)).subscribeOn(luceneScheduler()))
-					.publishOn(Schedulers.parallel());
+					.flatMap(results -> Mono.fromSupplier(() -> cmm.reduce(results)).subscribeOn(luceneScheduler()));
 		});
 	}
 }

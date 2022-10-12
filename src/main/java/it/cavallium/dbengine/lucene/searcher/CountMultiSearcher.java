@@ -81,7 +81,6 @@ public class CountMultiSearcher implements MultiSearcher {
 					LLUtils.ensureBlocking();
 					return (long) indexSearcher.getIndexSearcher().count(queryParams.query());
 				}).subscribeOn(luceneScheduler()), LLUtils::finalizeResource)
-				.publishOn(Schedulers.parallel())
 				.transform(TimeoutUtil.timeoutMono(queryParams.timeout()))
 				.map(count -> new LuceneSearchResult(TotalHitsCount.of(count, true), Flux.empty()));
 	}

@@ -444,7 +444,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						threadCap = threadCapProperty;
 					}
 				}
-				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.write.shared", "true"))) {
+				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.write.shared", "false"))) {
 					this.dbWScheduler = Schedulers.boundedElastic();
 				} else {
 					this.dbWScheduler = Schedulers.newBoundedElastic(threadCap,
@@ -461,7 +461,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						threadCap = threadCapProperty;
 					}
 				}
-				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.read.shared", "true"))) {
+				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.read.shared", "false"))) {
 					this.dbRScheduler = Schedulers.boundedElastic();
 				} else {
 					this.dbRScheduler = Schedulers.newBoundedElastic(threadCap,

@@ -72,6 +72,7 @@ import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import reactor.core.Disposable;
+import reactor.core.Fuseable.QueueSubscription;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Hooks;
 import reactor.core.publisher.Mono;
@@ -1022,7 +1023,9 @@ public class LLUtils {
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();
 		} else if (next instanceof Collection<?> iterable) {
-			iterable.forEach(LLUtils::onNextDropped);
+			if (!(next instanceof QueueSubscription)) {
+				iterable.forEach(LLUtils::onNextDropped);
+			}
 		} else if (next instanceof AbstractImmutableNativeReference rocksObj) {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();

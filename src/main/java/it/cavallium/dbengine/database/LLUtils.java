@@ -35,6 +35,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -129,6 +130,8 @@ public class LLUtils {
 	public static void initHooks() {
 		if (hookRegistered.compareAndSet(false, true)) {
 			Hooks.onNextDropped(LLUtils::onNextDropped);
+			//todo: add Hooks.onDiscard when it will be implemented
+			//  Hooks.onDiscard(LLUtils::onDiscard);
 		}
 	}
 
@@ -1022,41 +1025,41 @@ public class LLUtils {
 			}
 		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
 			resource.close();
-		} else if (next instanceof Collection<?> iterable) {
-			if (!(next instanceof QueueSubscription)) {
-				iterable.forEach(LLUtils::onNextDropped);
-			}
+		} else if (next instanceof List<?> iterable) {
+			iterable.forEach(obj -> closeResource(obj, manual));
+		} else if (next instanceof Set<?> iterable) {
+			iterable.forEach(obj -> closeResource(obj, manual));
 		} else if (next instanceof AbstractImmutableNativeReference rocksObj) {
 			if (rocksObj.isOwningHandle()) {
 				rocksObj.close();
 			}
 		} else if (next instanceof Optional<?> optional) {
-			optional.ifPresent(LLUtils::onNextDropped);
+			optional.ifPresent(obj -> closeResource(obj, manual));
 		} else if (next instanceof Map.Entry<?, ?> entry) {
 			var key = entry.getKey();
 			if (key != null) {
-				onNextDropped(key);
+				closeResource(key, manual);
 			}
 			var value = entry.getValue();
 			if (value != null) {
-				onNextDropped(value);
+				closeResource(value, manual);
 			}
 		} else if (next instanceof Delta<?> delta) {
 			var previous = delta.previous();
 			if (previous != null) {
-				onNextDropped(previous);
+				closeResource(previous, manual);
 			}
 			var current = delta.current();
 			if (current != null) {
-				onNextDropped(current);
+				closeResource(current, manual);
 			}
 		} else if (next instanceof Map<?, ?> map) {
 			map.forEach((key, value) -> {
 				if (key != null) {
-					onNextDropped(key);
+					closeResource(key, manual);
 				}
 				if (value != null) {
-					onNextDropped(value);
+					closeResource(value, manual);
 				}
 			});
 		}

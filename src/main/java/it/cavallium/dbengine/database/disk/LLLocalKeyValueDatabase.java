@@ -33,7 +33,6 @@ import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.NoFilter;
 import java.io.File;
 import java.io.IOException;
-import java.lang.invoke.MethodHandles;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,12 +55,12 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
+import org.reactivestreams.Publisher;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
 import org.rocksdb.Cache;
 import org.rocksdb.ChecksumType;
-import org.rocksdb.ClockCache;
 import org.rocksdb.ColumnFamilyDescriptor;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ColumnFamilyOptions;
@@ -77,9 +76,6 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.IngestExternalFileOptions;
-import org.rocksdb.LRUCache;
-import org.rocksdb.LogFile;
-import org.rocksdb.MutableDBOptions;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
 import org.rocksdb.PrepopulateBlobCache;
@@ -705,6 +701,27 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	@Override
 	protected Mono<Void> onResumeAfterBackup() {
 		return resumeWrites();
+	}
+
+	@Override
+	public Mono<Void> ingestSST(Column column, Publisher<Path> files) {
+		var columnHandle = handles.get(column);
+		if (columnHandle == null) {
+			logger.warn("Column {} doesn't exist", column);
+			return Mono.empty();
+		}
+		return Flux.from(files).concatMap(sst -> Mono.fromCallable(() -> {
+			try (var opts = new IngestExternalFileOptions()) {
+				opts.setIngestBehind(true);
+				opts.setSnapshotConsistency(false);
+				opts.setAllowBlockingFlush(true);
+				opts.setMoveFiles(true);
+				db.ingestExternalFile(columnHandle, List.of(sst.toString()), opts);
+			} catch (RocksDBException ex) {
+				return new IOException("Failed to ingest SST file " + sst, ex);
+			}
+			return null;
+		})).then();
 	}
 
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}

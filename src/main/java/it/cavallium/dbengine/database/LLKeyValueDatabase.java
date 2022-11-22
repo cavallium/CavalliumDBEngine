@@ -16,7 +16,7 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure, DatabaseProperties,
-		IBackuppable {
+		IBackuppable, DatabaseOperations {
 
 	Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName, byte[] name, byte @Nullable[] defaultValue);
 

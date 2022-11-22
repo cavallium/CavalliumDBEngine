@@ -17,12 +17,14 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.jetbrains.annotations.Nullable;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -227,5 +229,10 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public boolean isPaused() {
 		return false;
+	}
+
+	@Override
+	public Mono<Void> ingestSST(Column column, Publisher<Path> files) {
+		return Mono.error(new UnsupportedOperationException("Memory db doesn't support SST files"));
 	}
 }

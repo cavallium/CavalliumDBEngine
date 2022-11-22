@@ -63,6 +63,7 @@ import it.cavallium.dbengine.rpc.current.data.nullables.NullableLLSnapshot;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.io.File;
 import java.net.SocketAddress;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +72,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.reactivestreams.Publisher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.netty.incubator.quic.QuicClient;
@@ -231,6 +233,11 @@ public class LLQuicConnection implements LLDatabaseConnection {
 				.cast(GeneratedEntityId.class)
 				.map(GeneratedEntityId::id)
 				.map(id -> new LLKeyValueDatabase() {
+
+					@Override
+					public Mono<Void> ingestSST(Column column, Publisher<Path> files) {
+						return null;
+					}
 
 					@Override
 					public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName,

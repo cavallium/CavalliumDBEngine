@@ -704,7 +704,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	@Override
-	public Mono<Void> ingestSST(Column column, Publisher<Path> files) {
+	public Mono<Void> ingestSST(Column column, Publisher<Path> files, boolean replaceExisting) {
 		var columnHandle = handles.get(column);
 		if (columnHandle == null) {
 			logger.warn("Column {} doesn't exist", column);
@@ -712,7 +712,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		}
 		return Flux.from(files).concatMap(sst -> Mono.fromCallable(() -> {
 			try (var opts = new IngestExternalFileOptions()) {
-				opts.setIngestBehind(true);
+				opts.setIngestBehind(!replaceExisting);
 				opts.setSnapshotConsistency(false);
 				opts.setAllowBlockingFlush(true);
 				opts.setMoveFiles(true);

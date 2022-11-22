@@ -7,5 +7,5 @@ import reactor.core.publisher.Mono;
 
 public interface DatabaseOperations {
 
-	Mono<Void> ingestSST(Column column, Publisher<Path> files);
+	Mono<Void> ingestSST(Column column, Publisher<Path> files, boolean replaceExisting);
 }

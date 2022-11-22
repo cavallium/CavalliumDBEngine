@@ -232,7 +232,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<Void> ingestSST(Column column, Publisher<Path> files) {
+	public Mono<Void> ingestSST(Column column, Publisher<Path> files, boolean replaceExisting) {
 		return Mono.error(new UnsupportedOperationException("Memory db doesn't support SST files"));
 	}
 }

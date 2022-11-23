@@ -718,7 +718,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				opts.setMoveFiles(true);
 				db.ingestExternalFile(columnHandle, List.of(sst.toString()), opts);
 			} catch (RocksDBException ex) {
-				return new IOException("Failed to ingest SST file " + sst, ex);
+				throw new IOException("Failed to ingest SST file " + sst, ex);
 			}
 			return null;
 		})).then();

@@ -909,7 +909,18 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		// end force compact
 	}
 
-	record OptionsWithCache(DBOptions options, @Nullable Cache standardCache, @Nullable Cache compressedCache) {}
+
+	record OptionsWithCache(DBOptions options, @Nullable Cache standardCache, @Nullable Cache compressedCache) {
+
+		/**
+		 * SecondaryCache will replace compressed cache
+		 */
+		@Deprecated(forRemoval = true)
+		@Override
+		public Cache compressedCache() {
+			return compressedCache;
+		}
+	}
 
 	private static OptionsWithCache openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions, RocksDBRefs refs)
 			throws IOException {
@@ -1001,6 +1012,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		}
 
 		Cache blockCache;
+		//todo: compressed cache will be replaced with SecondaryCache in the future
 		Cache compressedCache;
 		final boolean useDirectIO = databaseOptions.useDirectIO();
 		final boolean allowMmapReads = !useDirectIO && databaseOptions.allowMemoryMapping();

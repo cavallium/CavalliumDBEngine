@@ -98,7 +98,7 @@
 			<dependency>
 				<groupId>io.projectreactor</groupId>
 				<artifactId>reactor-bom</artifactId>
-				<version>2020.0.24</version>
+				<version>2022.0.1</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -110,7 +110,7 @@
       <artifactId>reactor-tools</artifactId>
       <classifier>original</classifier>
       <scope>runtime</scope>
-      <version>3.4.24</version>
+      <version>3.5.1</version>
     </dependency>
 		<dependency>
 			<groupId>com.google.guava</groupId>
@@ -237,7 +237,7 @@
 		<dependency>
 			<groupId>org.rocksdb</groupId>
 			<artifactId>rocksdbjni</artifactId>
-			<version>7.7.3</version>
+			<version>7.8.3</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.lucene</groupId>

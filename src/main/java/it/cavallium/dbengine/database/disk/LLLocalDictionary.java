@@ -27,7 +27,6 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.OptionalBuf;
-import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
@@ -35,10 +34,8 @@ import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
@@ -104,6 +101,7 @@ public class LLLocalDictionary implements LLDictionary {
 	 */
 	static final boolean USE_WRITE_BATCH_IN_SET_RANGE_DELETE = false;
 	static final boolean PARALLEL_EXACT_SIZE = true;
+	private static final boolean USE_NUM_ENTRIES_PRECISE_COUNTER = true;
 
 	private static final byte[] FIRST_KEY = new byte[]{};
 	/**
@@ -1253,12 +1251,15 @@ public class LLLocalDictionary implements LLDictionary {
 		try (var rocksdbSnapshot = generateReadOptionsOrNew(snapshot)) {
 			if (USE_CURRENT_FASTSIZE_FOR_OLD_SNAPSHOTS || rocksdbSnapshot.snapshot() == null) {
 				try {
+					if (USE_NUM_ENTRIES_PRECISE_COUNTER) {
+						return exactSizeAll(null);
+					}
 					return db.getLongProperty("rocksdb.estimate-num-keys");
 				} catch (RocksDBException e) {
 					logger.error(MARKER_ROCKSDB, "Failed to get RocksDB estimated keys count property", e);
 					return 0;
 				}
-			} else if (PARALLEL_EXACT_SIZE) {
+			} else if (USE_NUM_ENTRIES_PRECISE_COUNTER || PARALLEL_EXACT_SIZE) {
 				return exactSizeAll(snapshot);
 			} else {
 				rocksdbSnapshot.setFillCache(false);
@@ -1281,6 +1282,13 @@ public class LLLocalDictionary implements LLDictionary {
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		if (Schedulers.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called exactSizeAll in a nonblocking thread");
+		}
+		if (snapshot == null && USE_NUM_ENTRIES_PRECISE_COUNTER) {
+			try {
+				return db.getNumEntries();
+			} catch (RocksDBException ex) {
+				throw new IllegalStateException("Failed to read exact size", ex);
+			}
 		}
 		try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), false, false, false)) {
 			if (LLUtils.MANUAL_READAHEAD) {

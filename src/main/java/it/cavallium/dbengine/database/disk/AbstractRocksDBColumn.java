@@ -26,6 +26,7 @@ import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.StampedLock;
 import org.apache.logging.log4j.LogManager;
@@ -41,11 +42,13 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist;
 import org.rocksdb.KeyMayExist.KeyMayExistEnum;
+import org.rocksdb.Range;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksObject;
 import org.rocksdb.Slice;
+import org.rocksdb.TableProperties;
 import org.rocksdb.Transaction;
 import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
@@ -651,6 +654,16 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
+	}
+
+	@Override
+	public long getNumEntries() throws RocksDBException {
+		Map<String, TableProperties> props = db.getPropertiesOfAllTables(cfh);
+		long entries = 0;
+		for (TableProperties tableProperties : props.values()) {
+			entries += tableProperties.getNumEntries();
+		}
+		return entries;
 	}
 
 	@Override

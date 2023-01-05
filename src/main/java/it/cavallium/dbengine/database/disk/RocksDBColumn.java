@@ -91,6 +91,8 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	long getLongProperty(String property) throws RocksDBException;
 
+	long getNumEntries() throws RocksDBException;
+
 	ColumnFamilyHandle getColumnFamilyHandle();
 
 	BufferAllocator getAllocator();

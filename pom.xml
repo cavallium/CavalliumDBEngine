@@ -667,7 +667,7 @@
           <plugin>
             <groupId>net.bytebuddy</groupId>
             <artifactId>byte-buddy-maven-plugin</artifactId>
-            <version>1.12.13-20220629</version>
+            <version>1.12.21</version>
             <executions>
               <execution>
                 <goals>

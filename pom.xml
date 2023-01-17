@@ -15,6 +15,7 @@
 		<micrometer.version>1.9.5</micrometer.version>
 		<lucene.version>9.4.2</lucene.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
+    <data.generator.version>1.0.198</data.generator.version>
 	</properties>
 	<repositories>
 		<repository>
@@ -423,7 +424,7 @@
 		<dependency>
 			<groupId>it.cavallium</groupId>
 			<artifactId>data-generator-runtime</artifactId>
-			<version>1.0.77</version>
+			<version>${data.generator.version}</version>
 			<exclusions>
 				<exclusion>
 					<groupId>org.jetbrains</groupId>
@@ -522,8 +523,8 @@
 			</plugin>
 			<plugin>
 				<groupId>it.cavallium</groupId>
-				<artifactId>data-generator</artifactId>
-				<version>0.9.168</version>
+				<artifactId>data-generator-plugin</artifactId>
+				<version>${data.generator.version}</version>
 				<executions>
 					<execution>
 						<id>generate-lucene-query-sources</id>

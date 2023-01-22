@@ -9,7 +9,7 @@ import io.netty.handler.codec.ByteToMessageCodec;
 import it.cavallium.dbengine.rpc.current.data.BoxedRPCEvent;
 import it.cavallium.dbengine.rpc.current.data.ClientBoundRequest;
 import it.cavallium.dbengine.rpc.current.data.ClientBoundResponse;
-import it.cavallium.dbengine.rpc.current.data.IBasicType;
+import it.cavallium.dbengine.rpc.current.IBaseType;
 import it.cavallium.dbengine.rpc.current.data.RPCEvent;
 import it.cavallium.dbengine.rpc.current.data.ServerBoundRequest;
 import it.cavallium.dbengine.rpc.current.data.ServerBoundResponse;
@@ -23,12 +23,13 @@ public class RPCCodecs {
 	public static class RPCEventCodec extends ByteToMessageCodec<RPCEvent> {
 
 		public static final ChannelHandler INSTANCE = new RPCEventCodec();
+		public static final BoxedRPCEventSerializer SERIALIZER_INSTANCE = new BoxedRPCEventSerializer();
 
 		@Override
 		protected void encode(ChannelHandlerContext ctx, RPCEvent msg, ByteBuf out) throws Exception {
 			try (var bbos = new ByteBufOutputStream(out)) {
 				try (var dos = new DataOutputStream(bbos)) {
-					BoxedRPCEventSerializer.INSTANCE.serialize(dos, BoxedRPCEvent.of(msg));
+					SERIALIZER_INSTANCE.serialize(dos, BoxedRPCEvent.of(msg));
 				}
 			}
 		}
@@ -37,7 +38,7 @@ public class RPCCodecs {
 		protected void decode(ChannelHandlerContext ctx, ByteBuf msg, List<Object> out) throws Exception {
 			try (var bbis = new ByteBufInputStream(msg)) {
 				try (var dis = new DataInputStream(bbis)) {
-					out.add(BoxedRPCEventSerializer.INSTANCE.deserialize(dis).val());
+					out.add(SERIALIZER_INSTANCE.deserialize(dis).val());
 				}
 			}
 		}

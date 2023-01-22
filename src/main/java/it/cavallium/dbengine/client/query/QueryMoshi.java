@@ -3,8 +3,8 @@ package it.cavallium.dbengine.client.query;
 import com.squareup.moshi.JsonAdapter;
 import it.cavallium.dbengine.client.IntOpenHashSetJsonAdapter;
 import it.cavallium.dbengine.client.query.current.CurrentVersion;
-import it.cavallium.dbengine.client.query.current.data.IBasicType;
-import it.cavallium.dbengine.client.query.current.data.IType;
+import it.cavallium.dbengine.client.query.current.IBaseType;
+import it.cavallium.dbengine.client.query.current.IType;
 import it.unimi.dsi.fastutil.booleans.BooleanList;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import it.unimi.dsi.fastutil.chars.CharList;
@@ -40,17 +40,17 @@ public class QueryMoshi extends MoshiPolymorphic<IType> {
 
 		// Add all super types with their implementations
 		for (var superTypeClass : CurrentVersion.getSuperTypeClasses()) {
-			for (Class<? extends IBasicType> superTypeSubtypesClass : CurrentVersion.getSuperTypeSubtypesClasses(
+			for (Class<? extends IBaseType> superTypeSubtypesClass : CurrentVersion.getSuperTypeSubtypesClasses(
 					superTypeClass)) {
 				concreteClasses.add((Class<IType>) (Class) superTypeSubtypesClass);
 			}
 			abstractClasses.add((Class<IType>) (Class) superTypeClass);
 		}
 
-		// Add IBasicType with all basic types
-		abstractClasses.add((Class<IType>) (Class) IBasicType.class);
-		for (BasicType basicType : BasicType.values()) {
-			concreteClasses.add((Class<IType>) (Class) CurrentVersion.VERSION.getClass(basicType));
+		// Add IBaseType with all basic types
+		abstractClasses.add((Class<IType>) (Class) IBaseType.class);
+		for (BaseType BaseType : BaseType.values()) {
+			concreteClasses.add((Class<IType>) (Class) CurrentVersion.getClass(BaseType));
 		}
 
 		this.abstractClasses = abstractClasses;

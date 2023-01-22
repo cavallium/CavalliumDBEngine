@@ -88,7 +88,7 @@ public class QueryParser {
 		if (query == null) {
 			return null;
 		}
-		switch (query.getBasicType$()) {
+		switch (query.getBaseType$()) {
 			case StandardQuery:
 				var standardQuery = (it.cavallium.dbengine.client.query.current.data.StandardQuery) query;
 
@@ -130,12 +130,12 @@ public class QueryParser {
 				var booleanQuery = (it.cavallium.dbengine.client.query.current.data.BooleanQuery) query;
 				var bq = new Builder();
 				for (BooleanQueryPart part : booleanQuery.parts()) {
-					Occur occur = switch (part.occur().getBasicType$()) {
+					Occur occur = switch (part.occur().getBaseType$()) {
 						case OccurFilter -> Occur.FILTER;
 						case OccurMust -> Occur.MUST;
 						case OccurShould -> Occur.SHOULD;
 						case OccurMustNot -> Occur.MUST_NOT;
-						default -> throw new IllegalStateException("Unexpected value: " + part.occur().getBasicType$());
+						default -> throw new IllegalStateException("Unexpected value: " + part.occur().getBaseType$());
 					};
 					bq.add(toQuery(part.query(), analyzer), occur);
 				}
@@ -320,24 +320,24 @@ public class QueryParser {
 				var wildcardQuery = (WildcardQuery) query;
 				return new org.apache.lucene.search.WildcardQuery(new Term(wildcardQuery.field(), wildcardQuery.pattern()));
 			default:
-				throw new IllegalStateException("Unexpected value: " + query.getBasicType$());
+				throw new IllegalStateException("Unexpected value: " + query.getBaseType$());
 		}
 	}
 
 	private static NumberFormat toNumberFormat(it.cavallium.dbengine.client.query.current.data.NumberFormat numberFormat) {
-		return switch (numberFormat.getBasicType$()) {
+		return switch (numberFormat.getBaseType$()) {
 			case NumberFormatDecimal -> new DecimalFormat();
-			default -> throw new UnsupportedOperationException("Unsupported type: " + numberFormat.getBasicType$());
+			default -> throw new UnsupportedOperationException("Unsupported type: " + numberFormat.getBaseType$());
 		};
 	}
 
 	private static Class<? extends Number> toType(PointType type) {
-		return switch (type.getBasicType$()) {
+		return switch (type.getBaseType$()) {
 			case PointTypeInt -> Integer.class;
 			case PointTypeLong -> Long.class;
 			case PointTypeFloat -> Float.class;
 			case PointTypeDouble -> Double.class;
-			default -> throw new UnsupportedOperationException("Unsupported type: " + type.getBasicType$());
+			default -> throw new UnsupportedOperationException("Unsupported type: " + type.getBaseType$());
 		};
 	}
 
@@ -346,7 +346,7 @@ public class QueryParser {
 	}
 
 	public static Sort toSort(it.cavallium.dbengine.client.query.current.data.Sort sort) {
-		switch (sort.getBasicType$()) {
+		switch (sort.getBaseType$()) {
 			case NoSort:
 				return null;
 			case ScoreSort:
@@ -359,7 +359,7 @@ public class QueryParser {
 			case RandomSort:
 				return new Sort(new RandomSortField());
 			default:
-				throw new IllegalStateException("Unexpected value: " + sort.getBasicType$());
+				throw new IllegalStateException("Unexpected value: " + sort.getBaseType$());
 		}
 	}
 

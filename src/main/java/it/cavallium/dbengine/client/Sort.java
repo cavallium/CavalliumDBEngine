@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.dbengine.client.query.BasicType;
+import it.cavallium.dbengine.client.query.BaseType;
 import it.cavallium.dbengine.client.query.current.data.DocSort;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
@@ -11,7 +11,7 @@ import org.jetbrains.annotations.NotNull;
 public record Sort(@NotNull it.cavallium.dbengine.client.query.current.data.Sort querySort) {
 
 	public boolean isSorted() {
-		return querySort.getBasicType$() != BasicType.NoSort;
+		return querySort.getBaseType$() != BaseType.NoSort;
 	}
 
 	public static Sort random() {

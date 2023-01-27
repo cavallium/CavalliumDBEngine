@@ -18,6 +18,7 @@ import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.utils.InternalMonoUtils;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.io.IOException;
 import java.util.List;
@@ -91,7 +92,7 @@ public class LLMemoryDictionary implements LLDictionary {
 					.defaultIfEmpty(false)
 					.map((Boolean bool) -> LLUtils.booleanToResponseByteBuffer(allocator, bool));
 		} else {
-			return result.then(Mono.empty());
+			return result.as(InternalMonoUtils::ignoreElements);
 		}
 	}
 

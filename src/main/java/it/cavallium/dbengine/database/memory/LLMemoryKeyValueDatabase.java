@@ -15,6 +15,7 @@ import it.cavallium.dbengine.database.RocksDBStringProperty;
 import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.utils.InternalMonoUtils;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -76,7 +77,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 							if (defaultValue != null) {
 								return mono.switchIfEmpty(singleton
 										.set(Mono.fromSupplier(() -> allocator.copyOf(defaultValue)))
-										.then(Mono.empty()));
+										.as(InternalMonoUtils::toAny));
 							} else {
 								return mono;
 							}

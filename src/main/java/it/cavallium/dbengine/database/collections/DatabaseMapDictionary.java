@@ -22,6 +22,7 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.utils.InternalMonoUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
@@ -228,9 +229,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		return this
 				.get(null)
-				.concatWith(dictionary.setRange(rangeMono, Flux
-						.fromIterable(Collections.unmodifiableMap(value).entrySet())
-						.map(entry -> serializeEntry(entry)), true).then(Mono.empty()))
+				.concatWith(dictionary
+						.setRange(rangeMono,
+								Flux.fromIterable(Collections.unmodifiableMap(value).entrySet()).map(entry -> serializeEntry(entry)),
+								true
+						)
+						.as(InternalMonoUtils::toAny))
 				.singleOrEmpty();
 	}
 

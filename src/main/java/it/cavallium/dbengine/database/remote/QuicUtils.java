@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.rpc.current.data.RPCCrash;
 import it.cavallium.dbengine.rpc.current.data.RPCEvent;
 import it.cavallium.dbengine.rpc.current.data.nullables.NullableBytes;
+import it.cavallium.dbengine.utils.InternalMonoUtils;
 import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
@@ -241,7 +242,7 @@ public class QuicUtils {
 							.flatMap(updater)
 							.flatMap(stream::send);
 					return Flux
-							.merge(firstRequest, firstResponse.then(Mono.empty()), secondRequest, secondResponse)
+							.merge(firstRequest, firstResponse.as(InternalMonoUtils::ignoreElements), secondRequest, secondResponse)
 							.doFinally(s -> stream.close());
 				})
 				.map(QuicUtils::mapErrors)

@@ -22,6 +22,7 @@ import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.utils.InternalMonoUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.List;
@@ -362,7 +363,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> extend
 				.concatWith(this
 						.clear()
 						.then(this.putMulti(entries))
-						.then(Mono.empty())
+						.as(InternalMonoUtils::toAny)
 				);
 	}
 

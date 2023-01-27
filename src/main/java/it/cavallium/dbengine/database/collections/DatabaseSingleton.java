@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.utils.InternalMonoUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -92,7 +93,9 @@ public class DatabaseSingleton<U> extends SimpleResource implements DatabaseStag
 	@Override
 	public Mono<U> setAndGetPrevious(U value) {
 		var resultMono = Flux
-				.concat(singleton.get(null), singleton.set(Mono.fromCallable(() -> serializeValue(value))).then(Mono.empty()))
+				.concat(singleton.get(null),
+						singleton.set(Mono.fromCallable(() -> serializeValue(value))).as(InternalMonoUtils::toAny)
+				)
 				.last();
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
@@ -154,7 +157,7 @@ public class DatabaseSingleton<U> extends SimpleResource implements DatabaseStag
 
 	@Override
 	public Mono<U> clearAndGetPrevious() {
-		var resultMono = Flux.concat(singleton.get(null), singleton.set(Mono.empty()).then(Mono.empty())).last();
+		var resultMono = Flux.concat(singleton.get(null), singleton.set(Mono.empty()).as(InternalMonoUtils::toAny)).last();
 		return Mono.usingWhen(resultMono,
 				result -> Mono.fromSupplier(() -> this.deserializeValue(result)),
 				LLUtils::finalizeResource

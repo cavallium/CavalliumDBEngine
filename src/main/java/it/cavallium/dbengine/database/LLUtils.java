@@ -120,7 +120,9 @@ public class LLUtils {
 		MethodHandle isAccessibleMethodHandle = null;
 		try {
 			isAccessibleMethodHandle = PUBLIC_LOOKUP.findVirtual(AbstractNativeReference.class, "isAccessible", methodType);
-		} catch (NoSuchMethodException | IllegalAccessException e) {
+		} catch (NoSuchMethodException e) {
+			logger.debug("Failed to find isAccessible(): no such method");
+		} catch (IllegalAccessException e) {
 			logger.debug("Failed to find isAccessible()", e);
 		}
 		IS_ACCESSIBLE_METHOD_HANDLE = isAccessibleMethodHandle;

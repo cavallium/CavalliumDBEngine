@@ -132,7 +132,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 
 		@Nullable
 		@Override
-		public T fromJson(@NotNull JsonReader jsonReader) throws IOException {
+		public T fromJson(@NotNull JsonReader jsonReader) {
 			String type = null;
 
 			jsonReader.beginObject();
@@ -165,7 +165,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 		}
 
 		@Override
-		public void toJson(@NotNull JsonWriter jsonWriter, @Nullable T t) throws IOException {
+		public void toJson(@NotNull JsonWriter jsonWriter, @Nullable T t) {
 			if (t == null) {
 				jsonWriter.nullValue();
 			} else {
@@ -259,7 +259,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 
 		@Nullable
 		@Override
-		public T fromJson(@NotNull JsonReader jsonReader) throws IOException {
+		public T fromJson(@NotNull JsonReader jsonReader) {
 			try {
 				Object instance;
 				Object[] fields;
@@ -304,7 +304,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 		}
 
 		@Override
-		public void toJson(@NotNull JsonWriter jsonWriter, @Nullable T t) throws IOException {
+		public void toJson(@NotNull JsonWriter jsonWriter, @Nullable T t) {
 			if (t == null) {
 				jsonWriter.nullValue();
 			} else {
@@ -339,7 +339,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 
 		@Nullable
 		@Override
-		public List<T> fromJson(@NotNull JsonReader jsonReader) throws IOException {
+		public List<T> fromJson(@NotNull JsonReader jsonReader) {
 			jsonReader.beginArray();
 			var result = new ArrayList<T>();
 			while (jsonReader.hasNext()) {
@@ -350,7 +350,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 		}
 
 		@Override
-		public void toJson(@NotNull JsonWriter jsonWriter, @Nullable List<T> ts) throws IOException {
+		public void toJson(@NotNull JsonWriter jsonWriter, @Nullable List<T> ts) {
 			if (ts == null) {
 				jsonWriter.nullValue();
 			} else {

@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static java.lang.Boolean.parseBoolean;
 import static java.util.Objects.requireNonNull;
@@ -9,8 +8,7 @@ import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTAB
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.util.internal.PlatformDependent;
+import io.netty.util.internal.PlatformDependent;
 import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.dbengine.client.Backuppable;
 import it.cavallium.dbengine.client.MemoryStats;
@@ -33,6 +31,7 @@ import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.NoFilter;
 import java.io.File;
 import java.io.IOException;
+import it.cavallium.dbengine.utils.DBException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,6 +43,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
@@ -55,7 +55,6 @@ import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import org.reactivestreams.Publisher;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.BlockBasedTableConfig;
 import org.rocksdb.BloomFilter;
@@ -91,11 +90,6 @@ import org.rocksdb.TxnDBWritePolicy;
 import org.rocksdb.WALRecoveryMode;
 import org.rocksdb.WriteBufferManager;
 import org.rocksdb.util.SizeUnit;
-import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDatabase {
 
@@ -108,15 +102,11 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 	static {
 		RocksDB.loadLibrary();
-		LLUtils.initHooks();
 	}
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalKeyValueDatabase.class);
 
-	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
-	private final Scheduler dbWScheduler;
-	private final Scheduler dbRScheduler;
 
 	private final Timer snapshotTime;
 
@@ -142,17 +132,14 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	private volatile boolean closed = false;
 
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
-	public LLLocalKeyValueDatabase(BufferAllocator allocator,
-			MeterRegistry meterRegistry,
+	public LLLocalKeyValueDatabase(MeterRegistry meterRegistry,
 			String name,
 			boolean inMemory,
 			@Nullable Path path,
 			List<Column> columns,
 			List<ColumnFamilyHandle> handles,
-			DatabaseOptions databaseOptions) throws IOException {
+			DatabaseOptions databaseOptions) {
 		this.name = name;
-		this.allocator = allocator;
-		boolean nettyDirect = databaseOptions.allowNettyDirect() && allocator.getAllocationType() == OFF_HEAP;
 		this.meterRegistry = meterRegistry;
 
 		this.snapshotTime = Timer
@@ -162,12 +149,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				.tags("db.name", name)
 				.register(meterRegistry);
 
-		if (nettyDirect) {
-			if (!PlatformDependent.hasUnsafe()) {
-				throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
-						PlatformDependent.getUnsafeUnavailabilityCause()
-				);
-			}
+		if (!PlatformDependent.hasUnsafe()) {
+			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
+					PlatformDependent.getUnsafeUnavailabilityCause()
+			);
 		}
 
 		this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
@@ -419,54 +404,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			requireNonNull(path);
 			Path databasesDirPath = path.toAbsolutePath().getParent();
 			String dbPathString = databasesDirPath.toString() + File.separatorChar + path.getFileName();
-			Path dbPath = Paths.get(dbPathString);
-			this.dbPath = dbPath;
+			this.dbPath = Paths.get(dbPathString);
 
 			// Set options
 			this.databaseOptions = databaseOptions;
-
-			int threadCap;
-			if (databaseOptions.lowMemory()) {
-				threadCap = Math.max(1, Runtime.getRuntime().availableProcessors());
-
-				this.dbWScheduler = Schedulers.boundedElastic();
-				this.dbRScheduler = Schedulers.boundedElastic();
-			} else {
-				// 8 or more
-				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
-				{
-					var threadCapProperty = Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.write.threads", "0"));
-					if (threadCapProperty > 1) {
-						threadCap = threadCapProperty;
-					}
-				}
-				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.write.shared", "false"))) {
-					this.dbWScheduler = Schedulers.boundedElastic();
-				} else {
-					this.dbWScheduler = Schedulers.newBoundedElastic(threadCap,
-							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-							new ShortNamedThreadFactory("db-write-" + name).setDaemon(true).withGroup(new ThreadGroup("database-write")),
-							60
-					);
-				}
-				// 8 or more
-				threadCap = Math.max(8, Runtime.getRuntime().availableProcessors());
-				{
-					var threadCapProperty = Integer.parseInt(System.getProperty("it.cavallium.dbengine.scheduler.read.threads", "0"));
-					if (threadCapProperty > 1) {
-						threadCap = threadCapProperty;
-					}
-				}
-				if (parseBoolean(System.getProperty("it.cavallium.dbengine.scheduler.read.shared", "false"))) {
-					this.dbRScheduler = Schedulers.boundedElastic();
-				} else {
-					this.dbRScheduler = Schedulers.newBoundedElastic(threadCap,
-							Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-							new ShortNamedThreadFactory("db-read-" + name).setDaemon(true).withGroup(new ThreadGroup("database-read")),
-							60
-					);
-				}
-			}
 
 			var statsLevel = System.getProperty("it.cavallium.dbengine.stats.level");
 			if (statsLevel != null) {
@@ -531,7 +472,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			// compactDb(db, handles);
 			flushDb(db, handles);
 		} catch (RocksDBException ex) {
-			throw new IOException(ex);
+			throw new DBException(ex);
 		}
 
 		try {
@@ -677,40 +618,39 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	@Override
-	public Mono<Void> preClose() {
-		return Mono.<Void>fromCallable(() -> {
-			var closeReadLock = closeLock.readLock();
-			try {
-				ensureOpen();
-				try (var fo = new FlushOptions().setWaitForFlush(true)) {
-					flush(fo);
-				}
-				db.cancelAllBackgroundWork(true);
-				return null;
-			} finally {
-				closeLock.unlockRead(closeReadLock);
+	public void preClose() {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			try (var fo = new FlushOptions().setWaitForFlush(true)) {
+				flush(fo);
+			} catch (RocksDBException ex) {
+				throw new DBException(ex);
 			}
-		}).subscribeOn(dbWScheduler);
+			db.cancelAllBackgroundWork(true);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	@Override
-	protected Mono<Void> onPauseForBackup() {
-		return pauseWrites();
+	protected void onPauseForBackup() {
+		pauseWrites();
 	}
 
 	@Override
-	protected Mono<Void> onResumeAfterBackup() {
-		return resumeWrites();
+	protected void onResumeAfterBackup() {
+		resumeWrites();
 	}
 
 	@Override
-	public Mono<Void> ingestSST(Column column, Publisher<Path> files, boolean replaceExisting) {
+	public void ingestSST(Column column, Stream<Path> files, boolean replaceExisting) {
 		var columnHandle = handles.get(column);
 		if (columnHandle == null) {
 			logger.warn("Column {} doesn't exist", column);
-			return Mono.empty();
+			return;
 		}
-		return Flux.from(files).concatMap(sst -> Mono.fromCallable(() -> {
+		files.forEachOrdered(sst -> {
 			try (var opts = new IngestExternalFileOptions()) {
 				opts.setIngestBehind(!replaceExisting);
 				opts.setSnapshotConsistency(false);
@@ -718,10 +658,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				opts.setMoveFiles(true);
 				db.ingestExternalFile(columnHandle, List.of(sst.toString()), opts);
 			} catch (RocksDBException ex) {
-				throw new IOException("Failed to ingest SST file " + sst, ex);
+				throw new DBException(new DBException("Failed to ingest SST file " + sst, ex));
 			}
-			return null;
-		})).then();
+		});
 	}
 
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
@@ -860,7 +799,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	private void flushDb(RocksDB db, List<ColumnFamilyHandle> handles) throws RocksDBException {
-		if (Schedulers.isInNonBlockingThread()) {
+		if (LLUtils.isInNonBlockingThread()) {
 			logger.error("Called flushDb in a nonblocking thread");
 		}
 		// force flush the database
@@ -877,7 +816,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 	@SuppressWarnings("unused")
 	private void compactDb(TransactionDB db, List<ColumnFamilyHandle> handles) {
-		if (Schedulers.isInNonBlockingThread()) {
+		if (LLUtils.isInNonBlockingThread()) {
 			logger.error("Called compactDb in a nonblocking thread");
 		}
 		// force compact the database
@@ -1185,53 +1124,47 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	@Override
-	public Mono<LLLocalSingleton> getSingleton(byte[] singletonListColumnName,
+	public LLLocalSingleton getSingleton(byte[] singletonListColumnName,
 			byte[] name,
 			byte @Nullable[] defaultValue) {
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						var cfh = getCfh(singletonListColumnName);
-						ensureOwned(cfh);
-						return new LLLocalSingleton(
-								getRocksDBColumn(db, cfh),
-								this::getSnapshotLambda,
-								LLLocalKeyValueDatabase.this.name,
-								name,
-								ColumnUtils.toString(singletonListColumnName),
-								dbWScheduler, dbRScheduler, defaultValue
-						);
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.onErrorMap(cause -> new IOException("Failed to read " + Arrays.toString(name), cause))
-				.subscribeOn(dbRScheduler);
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			var cfh = getCfh(singletonListColumnName);
+			ensureOwned(cfh);
+			return new LLLocalSingleton(getRocksDBColumn(db, cfh),
+					this::getSnapshotLambda,
+					LLLocalKeyValueDatabase.this.name,
+					name,
+					ColumnUtils.toString(singletonListColumnName),
+					defaultValue
+			);
+		} catch (RocksDBException ex) {
+			throw new DBException("Failed to read " + Arrays.toString(name), ex);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	@Override
-	public Mono<LLLocalDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
-		return Mono.fromCallable(() -> {
-			var closeReadLock = closeLock.readLock();
-			try {
-				ensureOpen();
-				var cfh = getCfh(columnName);
-				ensureOwned(cfh);
-				return new LLLocalDictionary(allocator,
-						getRocksDBColumn(db, cfh),
-						name,
-						ColumnUtils.toString(columnName),
-						dbWScheduler,
-						dbRScheduler, snapshot -> getSnapshotLambda(snapshot),
-						updateMode,
-						databaseOptions
-				);
-			} finally {
-				closeLock.unlockRead(closeReadLock);
-			}
-		}).subscribeOn(dbRScheduler);
+	public LLLocalDictionary getDictionary(byte[] columnName, UpdateMode updateMode) {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			var cfh = getCfh(columnName);
+			ensureOwned(cfh);
+			return new LLLocalDictionary(getRocksDBColumn(db, cfh),
+					name,
+					ColumnUtils.toString(columnName),
+					this::getSnapshotLambda,
+					updateMode,
+					databaseOptions
+			);
+		} catch (RocksDBException e) {
+			throw new DBException(e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	public RocksDBColumn getRocksDBColumn(byte[] columnName) {
@@ -1252,12 +1185,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	private RocksDBColumn getRocksDBColumn(RocksDB db, ColumnFamilyHandle cfh) {
-		var nettyDirect = databaseOptions.allowNettyDirect();
 		var closeLock = getCloseLock();
 		if (db instanceof OptimisticTransactionDB optimisticTransactionDB) {
 			return new OptimisticRocksDBColumn(optimisticTransactionDB,
-					nettyDirect,
-					allocator,
 					name,
 					cfh,
 					meterRegistry,
@@ -1265,15 +1195,13 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			);
 		} else if (db instanceof TransactionDB transactionDB) {
 			return new PessimisticRocksDBColumn(transactionDB,
-					nettyDirect,
-					allocator,
 					name,
 					cfh,
 					meterRegistry,
 					closeLock
 			);
 		} else {
-			return new StandardRocksDBColumn(db, nettyDirect, allocator, name, cfh, meterRegistry, closeLock);
+			return new StandardRocksDBColumn(db, name, cfh, meterRegistry, closeLock);
 		}
 	}
 
@@ -1287,308 +1215,273 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		return databaseOptions;
 	}
 
-	public Flux<Path> getSSTS() {
+	public Stream<Path> getSSTS() {
 		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumes());
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						return db.getLiveFiles();
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.flatMapIterable(liveFiles -> liveFiles.files)
-				.filter(file -> file.endsWith(".sst"))
-				.map(file -> file.substring(1))
-				.flatMapSequential(file -> Mono.fromCallable(() -> {
-					{
-						var path = dbPath.resolve(file);
-						if (Files.exists(path)) {
-							return path;
+
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			return db.getLiveFiles().files.stream()
+					.filter(file -> file.endsWith(".sst"))
+					.map(file -> file.substring(1))
+					.mapMulti((file, sink) -> {
+						{
+							var path = dbPath.resolve(file);
+							if (Files.exists(path)) {
+								sink.accept(path);
+								return;
+							}
 						}
-					}
-					for (var volumePath : paths) {
-						var path = volumePath.path().resolve(file);
-						if (Files.exists(path)) {
-							return path;
+						for (var volumePath : paths) {
+							var path = volumePath.path().resolve(file);
+							if (Files.exists(path)) {
+								sink.accept(path);
+								return;
+							}
 						}
-					}
-					return null;
-				}).subscribeOn(Schedulers.boundedElastic()));
+					});
+		} catch (RocksDBException e) {
+			throw new DBException(e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
-	public Mono<Void> ingestSSTS(Flux<Path> sstsFlux) {
-		return sstsFlux
-				.map(path -> path.toAbsolutePath().toString())
-				.flatMap(sst -> Mono.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try (var opts = new IngestExternalFileOptions()) {
-						try {
-							logger.info("Ingesting SST \"{}\"...", sst);
-							db.ingestExternalFile(List.of(sst), opts);
-							logger.info("Ingested SST \"{}\" successfully", sst);
-						} catch (RocksDBException e) {
-							logger.error("Can't ingest SST \"{}\"", sst, e);
-						}
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-					return null;
-				}).subscribeOn(Schedulers.boundedElastic()))
-				.then();
-	}
-
-	@Override
-	public Mono<MemoryStats> getMemoryStats() {
-		return Mono
-				.fromCallable(() -> {
-					if (closeRequested || closed) return null;
-					long closeReadLock = 0;
-					try {
-						//noinspection BlockingMethodInNonBlockingContext
-						closeReadLock = closeLock.tryReadLock(1, TimeUnit.SECONDS);
-					} catch (InterruptedException ignored) {}
-					try {
-						if (closeRequested || closed || closeReadLock == 0) return null;
-						ensureOpen();
-						return new MemoryStats(db.getAggregatedLongProperty("rocksdb.estimate-table-readers-mem"),
-								db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
-								db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
-								db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
-								db.getAggregatedLongProperty("rocksdb.block-cache-usage") / this.handles.size(),
-								db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage") / this.handles.size()
-						);
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.onErrorMap(cause -> new IOException("Failed to read memory stats", cause))
-				.subscribeOn(dbRScheduler);
-	}
-
-	@Override
-	public Mono<Map<String, String>> getMapProperty(@Nullable Column column, RocksDBMapProperty property) {
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						if (column == null) {
-							return db.getMapProperty(property.getName());
-						} else {
-							var cfh = requireNonNull(handles.get(column));
-							return db.getMapProperty(cfh, property.getName());
-						}
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.transform(this::convertNotFoundToEmpty)
-				.onErrorMap(cause -> new IOException("Failed to read property " + property.name(), cause))
-				.subscribeOn(dbRScheduler);
-	}
-
-	@Override
-	public Flux<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
-		return Flux
-				.fromIterable(getAllColumnFamilyHandles().keySet())
-				.flatMapSequential(c -> this
-						.getMapProperty(c, property)
-						.map(result -> new ColumnProperty<>(c.name(), property.getName(), result)));
-	}
-
-	@Override
-	public Mono<String> getStringProperty(@Nullable Column column, RocksDBStringProperty property) {
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						if (column == null) {
-							return db.getProperty(property.getName());
-						} else {
-							var cfh = requireNonNull(handles.get(column));
-							return db.getProperty(cfh, property.getName());
-						}
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.transform(this::convertNotFoundToEmpty)
-				.onErrorMap(cause -> new IOException("Failed to read property " + property.name(), cause))
-				.subscribeOn(dbRScheduler);
-	}
-
-	@Override
-	public Flux<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
-		return Flux
-				.fromIterable(getAllColumnFamilyHandles().keySet())
-				.flatMapSequential(c -> this
-						.getStringProperty(c, property)
-						.map(result -> new ColumnProperty<>(c.name(), property.getName(), result)));
-	}
-
-	@Override
-	public Mono<Long> getLongProperty(@Nullable Column column, RocksDBLongProperty property) {
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						if (column == null) {
-							return db.getLongProperty(property.getName());
-						} else {
-							var cfh = requireNonNull(handles.get(column));
-							return db.getLongProperty(cfh, property.getName());
-						}
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.transform(this::convertNotFoundToEmpty)
-				.onErrorMap(cause -> new IOException("Failed to read property " + property.name(), cause))
-				.subscribeOn(dbRScheduler);
-	}
-
-	@Override
-	public Flux<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
-		return Flux
-				.fromIterable(getAllColumnFamilyHandles().keySet())
-				.flatMapSequential(c -> this
-						.getLongProperty(c, property)
-						.map(result -> new ColumnProperty<>(c.name(), property.getName(), result)));
-	}
-
-	@Override
-	public Mono<Long> getAggregatedLongProperty(RocksDBLongProperty property) {
-		return Mono
-				.fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						return db.getAggregatedLongProperty(property.getName());
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.transform(this::convertNotFoundToEmpty)
-				.onErrorMap(cause -> new IOException("Failed to read property " + property.name(), cause))
-				.subscribeOn(dbRScheduler);
-	}
-
-	private <V> Mono<V> convertNotFoundToEmpty(Mono<V> mono) {
-		return mono.onErrorResume(RocksDBException.class, ex -> {
-			if (ex.getMessage().equals("NotFound")) {
-				return Mono.empty();
-			} else {
-				return Mono.error(ex);
+	public void ingestSSTS(Stream<Path> sstsFlux) {
+		sstsFlux.map(path -> path.toAbsolutePath().toString()).forEachOrdered(sst -> {
+			var closeReadLock = closeLock.readLock();
+			try (var opts = new IngestExternalFileOptions()) {
+				try {
+					logger.info("Ingesting SST \"{}\"...", sst);
+					db.ingestExternalFile(List.of(sst), opts);
+					logger.info("Ingested SST \"{}\" successfully", sst);
+				} catch (RocksDBException e) {
+					logger.error("Can't ingest SST \"{}\"", sst, e);
+				}
+			} finally {
+				closeLock.unlockRead(closeReadLock);
 			}
 		});
 	}
 
 	@Override
-	public Mono<String> getRocksDBStats() {
-		return Mono
-				.fromCallable(() -> {
-					if (closeRequested || closed) return null;
-					long closeReadLock = 0;
-					try {
-						//noinspection BlockingMethodInNonBlockingContext
-						closeReadLock = closeLock.tryReadLock(1, TimeUnit.SECONDS);
-					} catch (InterruptedException ignored) {}
-					try {
-						if (closeRequested || closed || closeReadLock == 0) return null;
-						ensureOpen();
-						StringBuilder aggregatedStats = new StringBuilder();
-						for (var entry : this.handles.entrySet()) {
-							aggregatedStats
-									.append(entry.getKey().name())
-									.append("\n")
-									.append(db.getProperty(entry.getValue(), "rocksdb.stats"))
-									.append("\n");
-						}
-						return aggregatedStats.toString();
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.onErrorMap(cause -> new IOException("Failed to read stats", cause))
-				.subscribeOn(dbRScheduler);
+	public MemoryStats getMemoryStats() {
+		if (closeRequested || closed) return null;
+		long closeReadLock = 0;
+		try {
+			//noinspection BlockingMethodInNonBlockingContext
+			closeReadLock = closeLock.tryReadLock(1, TimeUnit.SECONDS);
+		} catch (InterruptedException ignored) {}
+		try {
+			if (closeRequested || closed || closeReadLock == 0) return null;
+			ensureOpen();
+			return new MemoryStats(db.getAggregatedLongProperty("rocksdb.estimate-table-readers-mem"),
+					db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
+					db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
+					db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
+					db.getAggregatedLongProperty("rocksdb.block-cache-usage") / this.handles.size(),
+					db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage") / this.handles.size()
+			);
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to read memory stats", e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	@Override
-	public Flux<TableWithProperties> getTableProperties() {
-		return Flux
-				.fromIterable(handles.entrySet())
-				.flatMapSequential(handle -> Mono
-						.fromCallable(() -> {
-							if (closeRequested || closed) return null;
-							long closeReadLock = 0;
-							try {
-								//noinspection BlockingMethodInNonBlockingContext
-								closeReadLock = closeLock.tryReadLock(1, TimeUnit.SECONDS);
-							} catch (InterruptedException ignored) {}
-							try {
-								if (closeRequested || closed || closeReadLock == 0) return null;
-								ensureOpen();
-								return db.getPropertiesOfAllTables(handle.getValue());
-							} finally {
-								closeLock.unlockRead(closeReadLock);
-							}
-						})
-						.subscribeOn(dbRScheduler)
-						.flatMapIterable(Map::entrySet)
-						.map(entry -> new TableWithProperties(handle.getKey().name(), entry.getKey(), entry.getValue()))
-				)
-				.onErrorMap(cause -> new IOException("Failed to read stats", cause));
-	}
-
-	@Override
-	public Mono<Void> verifyChecksum() {
-		return Mono
-				.<Void>fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try {
-						ensureOpen();
-						db.verifyChecksum();
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-					return null;
-				})
-				.onErrorMap(cause -> new IOException("Failed to verify checksum of database \""
-						+ getDatabaseName() + "\"", cause))
-				.subscribeOn(dbRScheduler);
-	}
-
-	@Override
-	public Mono<Void> compact() {
-		return Mono.<Void>fromCallable(() -> {
-			this.forceCompaction(getLastVolumeId());
-			return null;
-		}).subscribeOn(dbWScheduler);
-	}
-
-	@Override
-	public Mono<Void> flush() {
-		return Mono.<Void>fromCallable(() -> {
-			try (var fo = new FlushOptions().setWaitForFlush(true)) {
-				this.flush(fo);
-			} catch (RocksDBException ex) {
-				if (!"ShutdownInProgress".equals(ex.getMessage())) {
-					throw ex;
-				}
-				logger.warn("Shutdown in progress. Flush cancelled", ex);
+	public Map<String, String> getMapProperty(@Nullable Column column, RocksDBMapProperty property) {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			Map<String, String> result;
+			if (column == null) {
+				result = db.getMapProperty(property.getName());
+			} else {
+				var cfh = requireNonNull(handles.get(column));
+				result = db.getMapProperty(cfh, property.getName());
 			}
-			return null;
-		}).subscribeOn(dbWScheduler);
+			return result;
+		} catch (RocksDBException e) {
+			if (isEmpty(e)) return null;
+			throw new DBException("Failed to read property " + property.name(), e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	private boolean isEmpty(RocksDBException ex) {
+		return "NotFound".equals(ex.getMessage());
 	}
 
 	@Override
-	public BufferAllocator getAllocator() {
-		return allocator;
+	public Stream<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
+		return getAllColumnFamilyHandles().keySet().stream().map(c -> {
+			try {
+				return new ColumnProperty<>(c.name(), property.getName(), this.getMapProperty(c, property));
+			} catch (IOException e) {
+				throw new CompletionException(e);
+			}
+		});
+	}
+
+	@Override
+	public String getStringProperty(@Nullable Column column, RocksDBStringProperty property) {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			if (column == null) {
+				return db.getProperty(property.getName());
+			} else {
+				var cfh = requireNonNull(handles.get(column));
+				return db.getProperty(cfh, property.getName());
+			}
+		} catch (RocksDBException e) {
+			if (isEmpty(e)) return null;
+			throw new DBException("Failed to read property " + property.name(), e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public Stream<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
+		return getAllColumnFamilyHandles().keySet().stream().map(c -> {
+			try {
+				return new ColumnProperty<>(c.name(), property.getName(), this.getStringProperty(c, property));
+			} catch (IOException e) {
+				throw new CompletionException(e);
+			}
+		});
+	}
+
+	@Override
+	public Long getLongProperty(@Nullable Column column, RocksDBLongProperty property) {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			if (column == null) {
+				return db.getLongProperty(property.getName());
+			} else {
+				var cfh = requireNonNull(handles.get(column));
+				return db.getLongProperty(cfh, property.getName());
+			}
+		} catch (RocksDBException e) {
+			if (isEmpty(e)) return null;
+			throw new DBException("Failed to read property " + property.name(), e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public Stream<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
+		return getAllColumnFamilyHandles().keySet().stream().map(c -> {
+			try {
+				return new ColumnProperty<>(c.name(), property.getName(), this.getLongProperty(c, property));
+			} catch (IOException e) {
+				throw new CompletionException(e);
+			}
+		});
+	}
+
+	@Override
+	public Long getAggregatedLongProperty(RocksDBLongProperty property) {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			return db.getAggregatedLongProperty(property.getName());
+		} catch (RocksDBException e) {
+			if (isEmpty(e)) return null;
+			throw new DBException("Failed to read property " + property.name(), e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public String getRocksDBStats() {
+		if (closeRequested || closed) return null;
+		long closeReadLock = 0;
+		try {
+			closeReadLock = closeLock.tryReadLock(1, TimeUnit.SECONDS);
+		} catch (InterruptedException ignored) {}
+		try {
+			if (closeRequested || closed || closeReadLock == 0) return null;
+			ensureOpen();
+			StringBuilder aggregatedStats = new StringBuilder();
+			for (var entry : this.handles.entrySet()) {
+				aggregatedStats
+						.append(entry.getKey().name())
+						.append("\n")
+						.append(db.getProperty(entry.getValue(), "rocksdb.stats"))
+						.append("\n");
+			}
+			return aggregatedStats.toString();
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to read stats", e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public Stream<TableWithProperties> getTableProperties() {
+		return handles.entrySet().stream().flatMap(handle -> {
+			if (closeRequested || closed) {
+				return null;
+			}
+			long closeReadLock = 0;
+			try {
+				closeReadLock = closeLock.tryReadLock(1, TimeUnit.SECONDS);
+			} catch (InterruptedException ignored) {
+			}
+			try {
+				if (closeRequested || closed || closeReadLock == 0) {
+					return null;
+				}
+				ensureOpen();
+				return db
+						.getPropertiesOfAllTables(handle.getValue())
+						.entrySet()
+						.stream()
+						.map(entry -> new TableWithProperties(handle.getKey().name(), entry.getKey(), entry.getValue()));
+			} catch (RocksDBException e) {
+				throw new CompletionException(new DBException("Failed to read stats", e));
+			} finally {
+				closeLock.unlockRead(closeReadLock);
+			}
+		});
+	}
+
+	@Override
+	public void verifyChecksum() {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			db.verifyChecksum();
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to verify checksum of database \"" + getDatabaseName() + "\"", e);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public void compact() throws RocksDBException {
+		this.forceCompaction(getLastVolumeId());
+	}
+
+	@Override
+	public void flush() {
+		try (var fo = new FlushOptions().setWaitForFlush(true)) {
+			this.flush(fo);
+		} catch (RocksDBException ex) {
+			if (!"ShutdownInProgress".equals(ex.getMessage())) {
+				throw new DBException(ex);
+			}
+			logger.warn("Shutdown in progress. Flush cancelled", ex);
+		}
 	}
 
 	@Override
@@ -1597,89 +1490,78 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	@Override
-	public Mono<LLSnapshot> takeSnapshot() {
-		return Mono.fromCallable(() -> {
-			var closeReadLock = closeLock.readLock();
-			try {
-				ensureOpen();
-				return snapshotTime.recordCallable(() -> {
-					var snapshot = db.getSnapshot();
-					long currentSnapshotSequenceNumber = nextSnapshotNumbers.getAndIncrement();
-					this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
-					return new LLSnapshot(currentSnapshotSequenceNumber);
-				});
-			} finally {
-				closeLock.unlockRead(closeReadLock);
+	public LLSnapshot takeSnapshot() {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			return snapshotTime.record(() -> {
+				var snapshot = db.getSnapshot();
+				long currentSnapshotSequenceNumber = nextSnapshotNumbers.getAndIncrement();
+				this.snapshotsHandles.put(currentSnapshotSequenceNumber, snapshot);
+				return new LLSnapshot(currentSnapshotSequenceNumber);
+			});
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	@Override
+	public void releaseSnapshot(LLSnapshot snapshot) {
+		var closeReadLock = closeLock.readLock();
+		try (var dbSnapshot = this.snapshotsHandles.remove(snapshot.getSequenceNumber())) {
+			if (dbSnapshot == null) {
+				throw new DBException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
 			}
-		}).subscribeOn(dbRScheduler);
+			if (!db.isOwningHandle()) {
+				return;
+			}
+			db.releaseSnapshot(dbSnapshot);
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	@Override
-	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return Mono
-				.<Void>fromCallable(() -> {
-					var closeReadLock = closeLock.readLock();
-					try (var dbSnapshot = this.snapshotsHandles.remove(snapshot.getSequenceNumber())) {
-						if (dbSnapshot == null) {
-							throw new IOException("Snapshot " + snapshot.getSequenceNumber() + " not found!");
-						}
-						if (!db.isOwningHandle()) {
-							return null;
-						}
-						db.releaseSnapshot(dbSnapshot);
-						return null;
-					} finally {
-						closeLock.unlockRead(closeReadLock);
-					}
-				})
-				.subscribeOn(dbRScheduler);
+	public void close() {
+		closeRequested = true;
+		if (statistics != null) {
+			statistics.close();
+			statistics = null;
+		}
+		try {
+			flushAndCloseDb(db,
+					standardCache,
+					compressedCache,
+					new ArrayList<>(handles.values())
+			);
+			handles.values().forEach(columnFamilyHandleRocksObj -> {
+				if (LLUtils.isAccessible(columnFamilyHandleRocksObj)) {
+					columnFamilyHandleRocksObj.close();
+				}
+			});
+			handles.clear();
+			deleteUnusedOldLogFiles();
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to close", e);
+		}
 	}
 
-	@Override
-	public Mono<Void> close() {
-		return Mono
-				.<Void>fromCallable(() -> {
-					closeRequested = true;
-					if (statistics != null) {
-						statistics.close();
-						statistics = null;
-					}
-					try {
-						flushAndCloseDb(db,
-								standardCache,
-								compressedCache,
-								new ArrayList<>(handles.values())
-						);
-						handles.values().forEach(columnFamilyHandleRocksObj -> {
-							if (LLUtils.isAccessible(columnFamilyHandleRocksObj)) {
-								columnFamilyHandleRocksObj.close();
-							}
-						});
-						handles.clear();
-						deleteUnusedOldLogFiles();
-					} catch (RocksDBException e) {
-						throw new IOException(e);
-					}
-					return null;
-				})
-				.onErrorMap(cause -> new IOException("Failed to close", cause))
-				.subscribeOn(dbWScheduler);
-	}
-
-	private Mono<Void> pauseWrites() {
-		return Mono.<Void>fromCallable(() -> {
+	private void pauseWrites() {
+		try {
 			db.pauseBackgroundWork();
 			db.disableFileDeletions();
-			return null;
-		}).subscribeOn(dbWScheduler);
+		} catch (RocksDBException e) {
+			throw new DBException(e);
+		}
 	}
 
-	private Mono<Void> resumeWrites() {
-		return Mono.<Void>fromCallable(() -> {
+	private void resumeWrites() {
+		try {
 			db.continueBackgroundWork();
 			db.enableFileDeletions(false);
-			return null;
-		}).subscribeOn(dbWScheduler);
+		} catch (RocksDBException e) {
+			throw new DBException(e);
+		}
 	}
 
 	/**

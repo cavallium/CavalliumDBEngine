@@ -1,31 +1,25 @@
 package it.cavallium.dbengine.database.memory;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
 
 public class LLMemorySingleton implements LLSingleton {
 
 	private final LLMemoryDictionary dict;
 	private final String columnNameString;
-	private final byte[] singletonName;
-	private final Mono<Buffer> singletonNameBufMono;
+	private final Buf singletonName;
 
 	public LLMemorySingleton(LLMemoryDictionary dict, String columnNameString, byte[] singletonName) {
 		this.dict = dict;
 		this.columnNameString = columnNameString;
-		this.singletonName = singletonName;
-		this.singletonNameBufMono = Mono.fromSupplier(() -> dict.getAllocator().allocate(singletonName.length)
-				.writeBytes(singletonName));
+		this.singletonName = Buf.wrap(singletonName);
 	}
 
 	@Override
@@ -34,32 +28,24 @@ public class LLMemorySingleton implements LLSingleton {
 	}
 
 	@Override
-	public BufferAllocator getAllocator() {
-		return dict.getAllocator();
+	public Buf get(@Nullable LLSnapshot snapshot) {
+		return dict.get(snapshot, singletonName);
 	}
 
 	@Override
-	public Mono<Buffer> get(@Nullable LLSnapshot snapshot) {
-		return dict.get(snapshot, singletonNameBufMono);
+	public void set(Buf value) {
+		dict.put(singletonName, value, LLDictionaryResultType.VOID);
 	}
 
 	@Override
-	public Mono<Void> set(Mono<Buffer> value) {
-		var bbKey = singletonNameBufMono;
-		return dict
-				.put(bbKey, value, LLDictionaryResultType.VOID)
-				.then();
-	}
-
-	@Override
-	public Mono<Buffer> update(BinarySerializationFunction updater,
+	public Buf update(BinarySerializationFunction updater,
 			UpdateReturnMode updateReturnMode) {
-		return dict.update(singletonNameBufMono, updater, updateReturnMode);
+		return dict.update(singletonName, updater, updateReturnMode);
 	}
 
 	@Override
-	public Mono<LLDelta> updateAndGetDelta(BinarySerializationFunction updater) {
-		return dict.updateAndGetDelta(singletonNameBufMono, updater);
+	public LLDelta updateAndGetDelta(BinarySerializationFunction updater) {
+		return dict.updateAndGetDelta(singletonName, updater);
 	}
 
 	@Override
@@ -69,6 +55,6 @@ public class LLMemorySingleton implements LLSingleton {
 
 	@Override
 	public String getName() {
-		return new String(singletonName);
+		return singletonName.toString(StandardCharsets.UTF_8);
 	}
 }

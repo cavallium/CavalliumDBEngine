@@ -1,19 +1,13 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.util.Resource;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
-import java.util.Map;
 import java.util.function.Function;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
 public class SubStageGetterHashMap<T, U, TH> implements
@@ -35,16 +29,16 @@ public class SubStageGetterHashMap<T, U, TH> implements
 	}
 
 	@Override
-	public Mono<DatabaseMapDictionaryHashed<T, U, TH>> subStage(LLDictionary dictionary,
+	public DatabaseMapDictionaryHashed<T, U, TH> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Buffer> prefixKeyMono) {
-		return prefixKeyMono.map(prefixKey -> DatabaseMapDictionaryHashed.tail(dictionary,
-				BufSupplier.ofOwned(prefixKey),
+			Buf prefixKey) {
+		return DatabaseMapDictionaryHashed.tail(dictionary,
+				prefixKey,
 				keySerializer,
 				valueSerializer,
 				keyHashFunction,
 				keyHashSerializer
-		));
+		);
 	}
 
 	public int getKeyHashBinaryLength() {

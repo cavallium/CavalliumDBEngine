@@ -1,12 +1,19 @@
 package it.cavallium.dbengine.client.query;
 
 import com.squareup.moshi.JsonAdapter;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.IntOpenHashSetJsonAdapter;
 import it.cavallium.dbengine.client.query.current.CurrentVersion;
 import it.cavallium.dbengine.client.query.current.IBaseType;
 import it.cavallium.dbengine.client.query.current.IType;
+import it.cavallium.dbengine.utils.BooleanListJsonAdapter;
+import it.cavallium.dbengine.utils.ByteListJsonAdapter;
+import it.cavallium.dbengine.utils.CharListJsonAdapter;
+import it.cavallium.dbengine.utils.IntListJsonAdapter;
+import it.cavallium.dbengine.utils.LongListJsonAdapter;
+import it.cavallium.dbengine.utils.MoshiPolymorphic;
+import it.cavallium.dbengine.utils.ShortListJsonAdapter;
 import it.unimi.dsi.fastutil.booleans.BooleanList;
-import it.unimi.dsi.fastutil.bytes.ByteList;
 import it.unimi.dsi.fastutil.chars.CharList;
 import it.unimi.dsi.fastutil.ints.IntList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
@@ -18,13 +25,6 @@ import it.unimi.dsi.fastutil.shorts.ShortList;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
-import it.cavallium.dbengine.utils.BooleanListJsonAdapter;
-import it.cavallium.dbengine.utils.ByteListJsonAdapter;
-import it.cavallium.dbengine.utils.CharListJsonAdapter;
-import it.cavallium.dbengine.utils.IntListJsonAdapter;
-import it.cavallium.dbengine.utils.LongListJsonAdapter;
-import it.cavallium.dbengine.utils.MoshiPolymorphic;
-import it.cavallium.dbengine.utils.ShortListJsonAdapter;
 
 public class QueryMoshi extends MoshiPolymorphic<IType> {
 
@@ -57,7 +57,7 @@ public class QueryMoshi extends MoshiPolymorphic<IType> {
 		this.concreteClasses = concreteClasses;
 		Object2ObjectMap<Class<?>, JsonAdapter<?>> extraAdapters = new Object2ObjectOpenHashMap<>();
 		extraAdapters.put(BooleanList.class, new BooleanListJsonAdapter());
-		extraAdapters.put(ByteList.class, new ByteListJsonAdapter());
+		extraAdapters.put(Buf.class, new ByteListJsonAdapter());
 		extraAdapters.put(ShortList.class, new ShortListJsonAdapter());
 		extraAdapters.put(CharList.class, new CharListJsonAdapter());
 		extraAdapters.put(IntList.class, new IntListJsonAdapter());

@@ -1,14 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 
-public record UpdateAtomicResultPrevious(Buffer previous) implements UpdateAtomicResult {
+public record UpdateAtomicResultPrevious(Buf previous) implements UpdateAtomicResult {
 
-	@Override
-	public void close() {
-		if (previous != null && previous.isAccessible()) {
-			previous.close();
-		}
-	}
 }

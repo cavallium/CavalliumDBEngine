@@ -1,11 +1,11 @@
 package it.cavallium.dbengine.database.collections;
 
-import reactor.core.publisher.Mono;
+import org.jetbrains.annotations.Nullable;
 
 public interface ValueGetter<KEY, VALUE> {
 
 	/**
 	 * Can return Mono error IOException
 	 */
-	Mono<VALUE> get(KEY key);
+	@Nullable VALUE get(KEY key);
 }

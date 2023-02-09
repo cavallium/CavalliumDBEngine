@@ -5,7 +5,7 @@
 
 	<groupId>it.cavallium</groupId>
 	<artifactId>dbengine</artifactId>
-	<version>3.0.${revision}</version>
+	<version>4.0.${revision}</version>
 
 	<packaging>jar</packaging>
 	<properties>
@@ -13,7 +13,8 @@
 		<revision>0-SNAPSHOT</revision>
 		<dbengine.ci>false</dbengine.ci>
 		<micrometer.version>1.9.5</micrometer.version>
-		<lucene.version>9.4.2</lucene.version>
+		<lucene.version>9.5.0</lucene.version>
+    <rocksdb.version>7.9.2</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
     <data.generator.version>1.0.244</data.generator.version>
 	</properties>
@@ -97,13 +98,6 @@
 				<version>2.2</version>
 			</dependency>
       <dependency>
-        <groupId>io.projectreactor</groupId>
-        <artifactId>reactor-bom</artifactId>
-        <version>2022.0.2</version>
-        <type>pom</type>
-        <scope>import</scope>
-      </dependency>
-      <dependency>
         <groupId>io.netty</groupId>
         <artifactId>netty-bom</artifactId>
         <version>4.1.86.Final</version>
@@ -113,33 +107,11 @@
 		</dependencies>
 	</dependencyManagement>
 	<dependencies>
-    <dependency>
-      <groupId>io.projectreactor</groupId>
-      <artifactId>reactor-tools</artifactId>
-      <classifier>original</classifier>
-      <scope>runtime</scope>
-      <version>3.5.1</version>
-    </dependency>
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
 			<version>31.1-jre</version>
 		</dependency>
-    <dependency>
-      <groupId>io.netty</groupId>
-      <artifactId>netty5-buffer</artifactId>
-      <version>5.0.0.Alpha5</version>
-      <exclusions>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-common</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-buffer</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-buffer</artifactId>
@@ -155,11 +127,6 @@
     <dependency>
       <groupId>io.netty</groupId>
       <artifactId>netty-handler</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>io.projectreactor.netty.incubator</groupId>
-      <artifactId>reactor-netty-incubator-quic</artifactId>
-      <version>0.1.2</version>
     </dependency>
 		<dependency>
 			<groupId>org.yaml</groupId>
@@ -266,7 +233,7 @@
 		<dependency>
 			<groupId>org.rocksdb</groupId>
 			<artifactId>rocksdbjni</artifactId>
-			<version>7.9.2</version>
+			<version>${rocksdb.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.lucene</groupId>
@@ -356,40 +323,6 @@
 				</exclusion>
 			</exclusions>
 		</dependency>
-    <dependency>
-      <groupId>io.projectreactor.netty</groupId>
-      <artifactId>reactor-netty</artifactId>
-      <exclusions>
-        <exclusion>
-          <groupId>io.netty.incubator</groupId>
-          <artifactId>netty-incubator-codec-native-quic</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>reactor-netty-core</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-common</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-codec</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-handler</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-transport</artifactId>
-        </exclusion>
-        <exclusion>
-          <groupId>io.netty</groupId>
-          <artifactId>netty-buffer</artifactId>
-        </exclusion>
-      </exclusions>
-    </dependency>
 		<dependency>
 			<groupId>org.bouncycastle</groupId>
 			<artifactId>bcpkix-jdk15on</artifactId>
@@ -457,11 +390,6 @@
 			<version>3.12.0</version>
 			<scope>compile</scope>
 		</dependency>
-    <dependency>
-      <groupId>io.projectreactor</groupId>
-      <artifactId>reactor-test</artifactId>
-      <scope>test</scope>
-    </dependency>
 	</dependencies>
 	<build>
 		<testSourceDirectory>src/test/java</testSourceDirectory>
@@ -638,39 +566,4 @@
 			</plugins>
 		</pluginManagement>
 	</build>
-  <profiles>
-    <profile>
-      <id>reactor-agent</id>
-      <activation>
-        <activeByDefault>false</activeByDefault>
-        <property>
-          <name>reactor.agent.enable</name>
-          <value>true</value>
-        </property>
-      </activation>
-      <build>
-        <plugins>
-          <plugin>
-            <groupId>net.bytebuddy</groupId>
-            <artifactId>byte-buddy-maven-plugin</artifactId>
-            <version>1.12.22</version>
-            <executions>
-              <execution>
-                <goals>
-                  <goal>transform</goal>
-                </goals>
-              </execution>
-            </executions>
-            <configuration>
-              <transformations>
-                <transformation>
-                  <plugin>reactor.tools.agent.ReactorDebugByteBuddyPlugin</plugin>
-                </transformation>
-              </transformations>
-            </configuration>
-          </plugin>
-        </plugins>
-      </build>
-    </profile>
-  </profiles>
 </project>

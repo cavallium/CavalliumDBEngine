@@ -19,7 +19,7 @@ public class CheckIndexOutput extends IndexOutput {
 	}
 
 	@Override
-	public void close() throws IOException {
+	public void close() {
 		warnLuceneThread();
 		output.close();
 	}
@@ -31,19 +31,19 @@ public class CheckIndexOutput extends IndexOutput {
 	}
 
 	@Override
-	public long getChecksum() throws IOException {
+	public long getChecksum() {
 		checkThread();
 		return output.getChecksum();
 	}
 
 	@Override
-	public void writeByte(byte b) throws IOException {
+	public void writeByte(byte b) {
 		checkThread();
 		output.writeByte(b);
 	}
 
 	@Override
-	public void writeBytes(byte[] b, int offset, int length) throws IOException {
+	public void writeBytes(byte[] b, int offset, int length) {
 		checkThread();
 		output.writeBytes(b, offset, length);
 	}

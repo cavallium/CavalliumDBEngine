@@ -1,195 +1,92 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.util.Send;
-import io.netty5.buffer.internal.ResourceSupport;
-import it.cavallium.dbengine.utils.SimpleResource;
+import it.cavallium.dbengine.buffers.Buf;
 import java.util.StringJoiner;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
 /**
  * Range of data, from min (inclusive), to max (exclusive)
  */
-public class LLRange extends SimpleResource {
+public class LLRange {
 
-	private static final LLRange RANGE_ALL = new LLRange( null, null, (Buffer) null, false);
+	private static final LLRange RANGE_ALL = new LLRange( null, null, (Buf) null);
 	@Nullable
-	private final Buffer min;
+	private final Buf min;
 	@Nullable
-	private final Buffer max;
+	private final Buf max;
 	@Nullable
-	private final Buffer single;
+	private final Buf single;
 
-	private LLRange(Send<Buffer> min, Send<Buffer> max, Send<Buffer> single, boolean closeable) {
-		super(closeable);
+	private LLRange(@Nullable Buf min, @Nullable Buf max, @Nullable Buf single) {
 		assert single == null || (min == null && max == null);
-		this.min = min != null ? min.receive().makeReadOnly() : null;
-		this.max = max != null ? max.receive().makeReadOnly() : null;
-		this.single = single != null ? single.receive().makeReadOnly() : null;
-	}
-
-	private LLRange(Buffer min, Buffer max, Buffer single, boolean closeable) {
-		super(closeable);
-		assert single == null || (min == null && max == null);
-		this.min = min != null ? min.makeReadOnly() : null;
-		this.max = max != null ? max.makeReadOnly() : null;
-		this.single = single != null ? single.makeReadOnly() : null;
+		this.min = min;
+		this.max = max;
+		this.single = single;
 	}
 
 	public static LLRange all() {
 		return RANGE_ALL;
 	}
 
-	public static LLRange from(Send<Buffer> min) {
-		return new LLRange(min, null, null, true);
+	public static LLRange from(Buf min) {
+		return new LLRange(min, null, null);
 	}
 
-	public static LLRange to(Send<Buffer> max) {
-		return new LLRange(null, max, null, true);
+	public static LLRange to(Buf max) {
+		return new LLRange(null, max, null);
 	}
 
-	public static LLRange single(Send<Buffer> single) {
-		return new LLRange(null, null, single, true);
+	public static LLRange single(Buf single) {
+		return new LLRange(null, null, single);
 	}
 
-	public static LLRange singleUnsafe(Buffer single) {
-		return new LLRange(null, null, single, true);
-	}
-
-	public static LLRange of(Send<Buffer> min, Send<Buffer> max) {
-		return new LLRange(min, max, null, true);
-	}
-
-	public static LLRange ofUnsafe(Buffer min, Buffer max) {
-		return new LLRange(min, max, null, true);
+	public static LLRange of(Buf min, Buf max) {
+		return new LLRange(min, max, null);
 	}
 
 	public boolean isAll() {
-		ensureOpen();
 		return min == null && max == null && single == null;
 	}
 
 	public boolean isSingle() {
-		ensureOpen();
 		return single != null;
 	}
 
 	public boolean hasMin() {
-		ensureOpen();
 		return min != null || single != null;
 	}
 
-	public Send<Buffer> getMin() {
-		ensureOpen();
-		if (min != null) {
-			// todo: use a read-only copy
-			return min.copy().send();
-		} else if (single != null) {
-			// todo: use a read-only copy
-			return single.copy().send();
-		} else {
-			return null;
-		}
-	}
-
-	public Buffer getMinUnsafe() {
-		ensureOpen();
+	public Buf getMin() {
+		// todo: use a read-only copy
 		if (min != null) {
 			return min;
-		} else if (single != null) {
+		} else {
 			return single;
-		} else {
-			return null;
-		}
-	}
-
-	public Buffer getMinCopy() {
-		ensureOpen();
-		if (min != null) {
-			return min.copy();
-		} else if (single != null) {
-			return single.copy();
-		} else {
-			return null;
 		}
 	}
 
 	public boolean hasMax() {
-		ensureOpen();
 		return max != null || single != null;
 	}
 
-	public Send<Buffer> getMax() {
-		ensureOpen();
-		if (max != null) {
-			// todo: use a read-only copy
-			return max.copy().send();
-		} else if (single != null) {
-			// todo: use a read-only copy
-			return single.copy().send();
-		} else {
-			return null;
-		}
-	}
-
-	public Buffer getMaxUnsafe() {
-		ensureOpen();
+	public Buf getMax() {
+		// todo: use a read-only copy
 		if (max != null) {
 			return max;
-		} else if (single != null) {
+		} else {
 			return single;
-		} else {
-			return null;
 		}
 	}
 
-	public Buffer getMaxCopy() {
-		ensureOpen();
-		if (max != null) {
-			return max.copy();
-		} else if (single != null) {
-			return single.copy();
-		} else {
-			return null;
-		}
-	}
-
-	public Send<Buffer> getSingle() {
-		ensureOpen();
+	public Buf getSingle() {
 		assert isSingle();
 		// todo: use a read-only copy
-		return single != null ? single.copy().send() : null;
-	}
-
-	public Buffer getSingleUnsafe() {
-		ensureOpen();
-		assert isSingle();
 		return single;
 	}
 
-	@Override
-	protected void ensureOpen() {
-		super.ensureOpen();
-		assert min == null || min.isAccessible() : "Range min not owned";
-		assert max == null || max.isAccessible() : "Range max not owned";
-		assert single == null || single.isAccessible() : "Range single not owned";
-	}
-
-	@Override
-	protected void onClose() {
-		if (min != null && min.isAccessible()) {
-			min.close();
-		}
-		if (max != null && max.isAccessible()) {
-			max.close();
-		}
-		if (single != null && single.isAccessible()) {
-			single.close();
-		}
+	public Buf getSingleUnsafe() {
+		assert isSingle();
+		return single;
 	}
 
 	@Override
@@ -220,12 +117,7 @@ public class LLRange extends SimpleResource {
 	}
 
 	public LLRange copy() {
-		ensureOpen();
 		// todo: use a read-only copy
-		return new LLRange(min != null ? min.copy().send() : null,
-				max != null ? max.copy().send() : null,
-				single != null ? single.copy().send() : null,
-				true
-		);
+		return new LLRange(min, max, single);
 	}
 }

@@ -1,12 +1,10 @@
 package it.cavallium.dbengine.lucene.collector;
 
-import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.TIE_BREAKER;
-
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import org.apache.commons.lang3.NotImplementedException;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.FieldDoc;
@@ -19,7 +17,6 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopFieldCollector;
 import org.apache.lucene.search.TopFieldDocs;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.scheduler.Schedulers;
 
 public class ScoringShardsCollectorMultiManager implements CollectorMultiManager<TopDocs, TopDocs> {
 
@@ -87,13 +84,13 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 	public CollectorManager<TopFieldCollector, TopDocs> get(IndexSearcher indexSearcher, int shardIndex) {
 		return new CollectorManager<>() {
 			@Override
-			public TopFieldCollector newCollector() throws IOException {
+			public TopFieldCollector newCollector() {
 				return sharedCollectorManager.newCollector();
 			}
 
 			@Override
-			public TopDocs reduce(Collection<TopFieldCollector> collectors) throws IOException {
-				if (Schedulers.isInNonBlockingThread()) {
+			public TopDocs reduce(Collection<TopFieldCollector> collectors) {
+				if (LLUtils.isInNonBlockingThread()) {
 					throw new UnsupportedOperationException("Called reduce in a nonblocking thread");
 				}
 				if (USE_CLASSIC_REDUCE) {

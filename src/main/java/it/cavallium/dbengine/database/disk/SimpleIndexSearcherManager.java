@@ -1,26 +1,21 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
-
-import com.google.common.cache.CacheBuilder;
-import com.google.common.cache.CacheLoader;
-import com.google.common.cache.LoadingCache;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.lang.ref.Cleaner;
+import it.cavallium.dbengine.utils.DBException;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Supplier;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.index.IndexWriter;
@@ -29,15 +24,7 @@ import org.apache.lucene.search.SearcherFactory;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.AlreadyClosedException;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
-import reactor.core.Disposable;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.Sinks;
-import reactor.core.publisher.Sinks.Empty;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 // todo: deduplicate code between Cached and Simple searcher managers
 public class SimpleIndexSearcherManager extends SimpleResource implements IndexSearcherManager, LuceneCloseable {
@@ -52,24 +39,22 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 
 	@Nullable
 	private final SnapshotsManager snapshotsManager;
-	private final Scheduler luceneHeavyTasksScheduler;
+	private final ScheduledExecutorService luceneHeavyTasksScheduler;
 	private final Similarity similarity;
 	private final SearcherManager searcherManager;
 	private final Duration queryRefreshDebounceTime;
 
-	private Mono<LLIndexSearcher> noSnapshotSearcherMono;
-
 	private final AtomicLong activeSearchers = new AtomicLong(0);
 	private final AtomicLong activeRefreshes = new AtomicLong(0);
-	private final Disposable refreshSubscription;
+	private final Future<?> refreshSubscription;
 
 	public SimpleIndexSearcherManager(IndexWriter indexWriter,
 			@Nullable SnapshotsManager snapshotsManager,
-			Scheduler luceneHeavyTasksScheduler,
+			ScheduledExecutorService luceneHeavyTasksScheduler,
 			Similarity similarity,
 			boolean applyAllDeletes,
 			boolean writeAllDeletes,
-			Duration queryRefreshDebounceTime) throws IOException {
+			Duration queryRefreshDebounceTime) {
 		this.snapshotsManager = snapshotsManager;
 		this.luceneHeavyTasksScheduler = luceneHeavyTasksScheduler;
 		this.similarity = similarity;
@@ -77,15 +62,13 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 
 		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
 
-		refreshSubscription = LLUtils.scheduleRepeated(luceneHeavyTasksScheduler, () -> {
+		refreshSubscription = luceneHeavyTasksScheduler.scheduleAtFixedRate(() -> {
 			try {
 				maybeRefresh();
 			} catch (Exception ex) {
 				LOG.error("Failed to refresh the searcher manager", ex);
 			}
-		}, queryRefreshDebounceTime);
-
-		this.noSnapshotSearcherMono = retrieveSearcherInternal(null);
+		}, queryRefreshDebounceTime.toMillis(), queryRefreshDebounceTime.toMillis(), TimeUnit.MILLISECONDS);
 	}
 
 	private void dropCachedIndexSearcher() {
@@ -94,7 +77,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 	}
 
 	@Override
-	public void maybeRefreshBlocking() throws IOException {
+	public void maybeRefreshBlocking() {
 		try {
 			activeRefreshes.incrementAndGet();
 			searcherManager.maybeRefreshBlocking();
@@ -106,7 +89,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 	}
 
 	@Override
-	public void maybeRefresh() throws IOException {
+	public void maybeRefresh() {
 		try {
 			activeRefreshes.incrementAndGet();
 			searcherManager.maybeRefresh();
@@ -118,46 +101,46 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 	}
 
 	@Override
-	public Mono<LLIndexSearcher> retrieveSearcher(@Nullable LLSnapshot snapshot) {
+	public LLIndexSearcher retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		if (snapshot == null) {
-			return noSnapshotSearcherMono;
+			return retrieveSearcherInternal(null);
 		} else {
 			return retrieveSearcherInternal(snapshot);
 		}
 	}
 
-	private Mono<LLIndexSearcher> retrieveSearcherInternal(@Nullable LLSnapshot snapshot) {
-		return Mono.fromCallable(() -> {
-					if (isClosed()) {
-						return null;
-					}
-					try {
-						if (snapshotsManager == null || snapshot == null) {
-							return new OnDemandIndexSearcher(searcherManager, similarity);
-						} else {
-							activeSearchers.incrementAndGet();
-							IndexSearcher indexSearcher = snapshotsManager
-									.resolveSnapshot(snapshot)
-									.getIndexSearcher(SEARCH_EXECUTOR);
-							indexSearcher.setSimilarity(similarity);
-							assert indexSearcher.getIndexReader().getRefCount() > 0;
-							return new SnapshotIndexSearcher(indexSearcher);
-						}
-					} catch (Throwable ex) {
-						activeSearchers.decrementAndGet();
-						throw ex;
-					}
-				})
-				.transform(LuceneUtils::scheduleLucene);
+	private LLIndexSearcher retrieveSearcherInternal(@Nullable LLSnapshot snapshot) {
+		if (isClosed()) {
+			return null;
+		}
+		try {
+			if (snapshotsManager == null || snapshot == null) {
+				return new OnDemandIndexSearcher(searcherManager, similarity);
+			} else {
+				activeSearchers.incrementAndGet();
+				IndexSearcher indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
+				indexSearcher.setSimilarity(similarity);
+				assert indexSearcher.getIndexReader().getRefCount() > 0;
+				return new SnapshotIndexSearcher(indexSearcher);
+			}
+		} catch (Throwable ex) {
+			activeSearchers.decrementAndGet();
+			throw ex;
+		}
 	}
 
 	@Override
 	protected void onClose() {
 		LOG.debug("Closing IndexSearcherManager...");
-		refreshSubscription.dispose();
+		refreshSubscription.cancel(false);
+		long initTime = System.nanoTime();
+		while (!refreshSubscription.isDone() && (System.nanoTime() - initTime) <= 15000000000L) {
+			LockSupport.parkNanos(50000000);
+		}
+		refreshSubscription.cancel(true);
 		LOG.debug("Closed IndexSearcherManager");
 		LOG.debug("Closing refreshes...");
-		long initTime = System.nanoTime();
+		initTime = System.nanoTime();
 		while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 			LockSupport.parkNanos(50000000);
 		}
@@ -209,7 +192,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 			try {
 				searcherManager.release(indexSearcher);
 			} catch (IOException ex) {
-				throw new UncheckedIOException(ex);
+				throw new DBException(ex);
 			}
 		}
 	}
@@ -268,7 +251,7 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 					}
 				}
 			} catch (IOException ex) {
-				throw new UncheckedIOException(ex);
+				throw new DBException(ex);
 			}
 		}
 	}

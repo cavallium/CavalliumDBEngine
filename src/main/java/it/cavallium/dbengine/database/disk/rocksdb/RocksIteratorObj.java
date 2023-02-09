@@ -1,14 +1,8 @@
 package it.cavallium.dbengine.database.disk.rocksdb;
 
-import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
-
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferComponent;
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.buffer.internal.ResourceSupport;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
@@ -21,9 +15,8 @@ public class RocksIteratorObj extends SimpleResource {
 	private RocksIterator rocksIterator;
 	private AbstractSlice<?> sliceMin;
 	private AbstractSlice<?> sliceMax;
-	private Buffer min;
-	private Buffer max;
-	private final boolean allowNettyDirect;
+	private Buf min;
+	private Buf max;
 	private final Counter startedIterSeek;
 	private final Counter endedIterSeek;
 	private final Timer iterSeekTime;
@@ -36,9 +29,8 @@ public class RocksIteratorObj extends SimpleResource {
 	public RocksIteratorObj(RocksIterator rocksIterator,
 			AbstractSlice<?> sliceMin,
 			AbstractSlice<?> sliceMax,
-			Buffer min,
-			Buffer max,
-			boolean allowNettyDirect,
+			Buf min,
+			Buf max,
 			Counter startedIterSeek,
 			Counter endedIterSeek,
 			Timer iterSeekTime,
@@ -50,7 +42,6 @@ public class RocksIteratorObj extends SimpleResource {
 				sliceMax,
 				min,
 				max,
-				allowNettyDirect,
 				startedIterSeek,
 				endedIterSeek,
 				iterSeekTime,
@@ -65,9 +56,8 @@ public class RocksIteratorObj extends SimpleResource {
 	private RocksIteratorObj(RocksIterator rocksIterator,
 			AbstractSlice<?> sliceMin,
 			AbstractSlice<?> sliceMax,
-			Buffer min,
-			Buffer max,
-			boolean allowNettyDirect,
+			Buf min,
+			Buf max,
 			Counter startedIterSeek,
 			Counter endedIterSeek,
 			Timer iterSeekTime,
@@ -81,7 +71,6 @@ public class RocksIteratorObj extends SimpleResource {
 		this.min = min;
 		this.max = max;
 		this.rocksIterator = rocksIterator;
-		this.allowNettyDirect = allowNettyDirect;
 		this.startedIterSeek = startedIterSeek;
 		this.endedIterSeek = endedIterSeek;
 		this.iterSeekTime = iterSeekTime;
@@ -139,43 +128,25 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * Useful for reverse iterations
 	 */
-	public void seekFrom(Buffer key) {
+	public void seekFrom(Buf key) {
 		ensureOpen();
-		if (allowNettyDirect && isReadOnlyDirect(key)) {
-			ByteBuffer keyInternalByteBuffer = ((BufferComponent) key).readableBuffer();
-			assert keyInternalByteBuffer.position() == 0;
-			rocksIterator.seekForPrev(keyInternalByteBuffer);
-			// This is useful to retain the key buffer in memory and avoid deallocations
-			this.seekingFrom = key;
-		} else {
-			var keyArray = LLUtils.toArray(key);
-			rocksIterator.seekForPrev(keyArray);
-			// This is useful to retain the key buffer in memory and avoid deallocations
-			this.seekingFrom = keyArray;
-		}
+		var keyArray = LLUtils.asArray(key);
+		rocksIterator.seekForPrev(keyArray);
+		// This is useful to retain the key buffer in memory and avoid deallocations
+		this.seekingFrom = keyArray;
 	}
 
 	/**
 	 * Useful for forward iterations
 	 */
-	public void seekTo(Buffer key) {
+	public void seekTo(Buf key) {
 		ensureOpen();
-		if (allowNettyDirect && isReadOnlyDirect(key)) {
-			ByteBuffer keyInternalByteBuffer = ((BufferComponent) key).readableBuffer();
-			assert keyInternalByteBuffer.position() == 0;
-			startedIterSeek.increment();
-			iterSeekTime.record(() -> rocksIterator.seek(keyInternalByteBuffer));
-			endedIterSeek.increment();
-			// This is useful to retain the key buffer in memory and avoid deallocations
-			this.seekingTo = key;
-		} else {
-			var keyArray = LLUtils.toArray(key);
-			startedIterSeek.increment();
-			iterSeekTime.record(() -> rocksIterator.seek(keyArray));
-			endedIterSeek.increment();
-			// This is useful to retain the key buffer in memory and avoid deallocations
-			this.seekingTo = keyArray;
-		}
+		var keyArray = LLUtils.asArray(key);
+		startedIterSeek.increment();
+		iterSeekTime.record(() -> rocksIterator.seek(keyArray));
+		endedIterSeek.increment();
+		// This is useful to retain the key buffer in memory and avoid deallocations
+		this.seekingTo = keyArray;
 	}
 
 	public boolean isValid() {
@@ -183,24 +154,46 @@ public class RocksIteratorObj extends SimpleResource {
 		return rocksIterator.isValid();
 	}
 
+	@Deprecated(forRemoval = true)
 	public int key(ByteBuffer buffer) {
 		ensureOpen();
 		return rocksIterator.key(buffer);
 	}
 
+	@Deprecated(forRemoval = true)
 	public int value(ByteBuffer buffer) {
 		ensureOpen();
 		return rocksIterator.value(buffer);
 	}
 
+	/**
+	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+	 */
 	public byte[] key() {
 		ensureOpen();
 		return rocksIterator.key();
 	}
 
+	/**
+	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+	 */
 	public byte[] value() {
 		ensureOpen();
 		return rocksIterator.value();
+	}
+
+	/**
+	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+	 */
+	public Buf keyBuf() {
+		return Buf.wrap(this.key());
+	}
+
+	/**
+	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+	 */
+	public Buf valueBuf() {
+		return Buf.wrap(this.value());
 	}
 
 	public void next() throws RocksDBException {

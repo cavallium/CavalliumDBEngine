@@ -10,12 +10,12 @@ import org.jetbrains.annotations.NotNull;
 public class CompressionSerializer implements DataSerializer<Compression> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Compression compression) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull Compression compression) {
 		dataOutput.writeInt(compression.ordinal());
 	}
 
 	@Override
-	public @NotNull Compression deserialize(DataInput dataInput) throws IOException {
+	public @NotNull Compression deserialize(DataInput dataInput) {
 		return Compression.values()[dataInput.readInt()];
 	}
 }

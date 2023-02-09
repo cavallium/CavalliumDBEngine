@@ -1,16 +1,13 @@
 package it.cavallium.dbengine.lucene;
 
 import java.io.IOException;
-import java.util.HashSet;
 import java.util.Objects;
-import java.util.Set;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.FieldType;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.FieldInfo;
 import org.apache.lucene.index.StoredFieldVisitor;
-import org.apache.lucene.index.StoredFieldVisitor.Status;
 
 public class DocumentStoredSingleFieldVisitor extends StoredFieldVisitor {
 	private final Document doc = new Document();
@@ -24,11 +21,11 @@ public class DocumentStoredSingleFieldVisitor extends StoredFieldVisitor {
 		this.fieldToAdd = null;
 	}
 
-	public void binaryField(FieldInfo fieldInfo, byte[] value) throws IOException {
+	public void binaryField(FieldInfo fieldInfo, byte[] value) {
 		this.doc.add(new StoredField(fieldInfo.name, value));
 	}
 
-	public void stringField(FieldInfo fieldInfo, String value) throws IOException {
+	public void stringField(FieldInfo fieldInfo, String value) {
 		FieldType ft = new FieldType(TextField.TYPE_STORED);
 		ft.setStoreTermVectors(fieldInfo.hasVectors());
 		ft.setOmitNorms(fieldInfo.omitsNorms());

@@ -1,11 +1,11 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import it.cavallium.dbengine.database.BufSupplier;
+import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.database.LLDictionary;
+import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import java.util.function.Supplier;
 import org.jetbrains.annotations.NotNull;
 
 public class DatabaseEmpty {
@@ -13,16 +13,16 @@ public class DatabaseEmpty {
 	@SuppressWarnings({"unused", "InstantiationOfUtilityClass"})
 	public static final Nothing NOTHING = new Nothing();
 
-	public static Serializer<Nothing> nothingSerializer(BufferAllocator bufferAllocator) {
+	public static Serializer<Nothing> nothingSerializer() {
 		return new Serializer<>() {
 
 			@Override
-			public @NotNull Nothing deserialize(@NotNull Buffer serialized) {
+			public @NotNull Nothing deserialize(@NotNull BufDataInput in) throws SerializationException {
 				return NOTHING;
 			}
 
 			@Override
-			public void serialize(@NotNull Nothing deserialized, Buffer output) {
+			public void serialize(@NotNull Nothing deserialized, BufDataOutput out) throws SerializationException {
 
 			}
 
@@ -36,8 +36,8 @@ public class DatabaseEmpty {
 	private DatabaseEmpty() {
 	}
 
-	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, BufSupplier key) {
-		return new DatabaseMapSingle<>(dictionary, key, nothingSerializer(dictionary.getAllocator()));
+	public static DatabaseStageEntry<Nothing> create(LLDictionary dictionary, Buf key) {
+		return new DatabaseMapSingle<>(dictionary, key, nothingSerializer());
 	}
 
 	public static final class Nothing {

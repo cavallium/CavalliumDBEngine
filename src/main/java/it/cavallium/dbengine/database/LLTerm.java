@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database;
 
 import java.util.Objects;
-import org.apache.lucene.index.Term;
 import org.apache.lucene.util.BytesRef;
 
 public class LLTerm {

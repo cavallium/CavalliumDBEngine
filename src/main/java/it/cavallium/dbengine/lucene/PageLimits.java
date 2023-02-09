@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.lucene;
 
-import it.cavallium.dbengine.lucene.LuceneUtils;
-
 public interface PageLimits {
 
 	int DEFAULT_MIN_ITEMS_PER_PAGE = 10;

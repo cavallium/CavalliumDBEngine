@@ -51,16 +51,7 @@ import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.lucene.analysis.Analyzer;
-import org.apache.lucene.analysis.LowerCaseFilter;
-import org.apache.lucene.analysis.StopFilter;
-import org.apache.lucene.analysis.TokenStream;
-import org.apache.lucene.analysis.Tokenizer;
-import org.apache.lucene.analysis.core.KeywordTokenizer;
-import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
-import org.apache.lucene.analysis.en.PorterStemFilter;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
-import org.apache.lucene.analysis.miscellaneous.SetKeywordMarkerFilter;
-import org.apache.lucene.analysis.standard.StandardTokenizer;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
@@ -89,7 +80,7 @@ public class QueryParser {
 			return null;
 		}
 		switch (query.getBaseType$()) {
-			case StandardQuery:
+			case StandardQuery -> {
 				var standardQuery = (it.cavallium.dbengine.client.query.current.data.StandardQuery) query;
 
 				// Fix the analyzer
@@ -98,19 +89,12 @@ public class QueryParser {
 						.stream()
 						.collect(Collectors.toMap(Function.identity(), term -> new NoOpAnalyzer()));
 				analyzer = new PerFieldAnalyzerWrapper(analyzer, customAnalyzers);
-
 				var standardQueryParser = new StandardQueryParser(analyzer);
-
-				standardQueryParser.setPointsConfigMap(standardQuery
-						.pointsConfig()
-						.stream()
-						.collect(Collectors.toMap(
-								PointConfig::field,
-								pointConfig -> new PointsConfig(
-										toNumberFormat(pointConfig.data().numberFormat()),
-										toType(pointConfig.data().type())
-								)
-						)));
+				standardQueryParser.setPointsConfigMap(standardQuery.pointsConfig().stream().collect(
+						Collectors.toMap(PointConfig::field, pointConfig ->
+								new PointsConfig(toNumberFormat(pointConfig.data().numberFormat()), toType(pointConfig.data().type()))
+						))
+				);
 				var defaultFields = standardQuery.defaultFields();
 				try {
 					Query parsed;
@@ -126,7 +110,8 @@ public class QueryParser {
 				} catch (QueryNodeException e) {
 					throw new IllegalStateException("Can't parse query expression \"" + standardQuery.query() + "\"", e);
 				}
-			case BooleanQuery:
+			}
+			case BooleanQuery -> {
 				var booleanQuery = (it.cavallium.dbengine.client.query.current.data.BooleanQuery) query;
 				var bq = new Builder();
 				for (BooleanQueryPart part : booleanQuery.parts()) {
@@ -141,101 +126,127 @@ public class QueryParser {
 				}
 				bq.setMinimumNumberShouldMatch(booleanQuery.minShouldMatch());
 				return bq.build();
-			case IntPointExactQuery:
+			}
+			case IntPointExactQuery -> {
 				var intPointExactQuery = (IntPointExactQuery) query;
 				return IntPoint.newExactQuery(intPointExactQuery.field(), intPointExactQuery.value());
-			case IntNDPointExactQuery:
+			}
+			case IntNDPointExactQuery -> {
 				var intndPointExactQuery = (IntNDPointExactQuery) query;
 				var intndValues = intndPointExactQuery.value().toIntArray();
 				return IntPoint.newRangeQuery(intndPointExactQuery.field(), intndValues, intndValues);
-			case LongPointExactQuery:
+			}
+			case LongPointExactQuery -> {
 				var longPointExactQuery = (LongPointExactQuery) query;
 				return LongPoint.newExactQuery(longPointExactQuery.field(), longPointExactQuery.value());
-			case FloatPointExactQuery:
+			}
+			case FloatPointExactQuery -> {
 				var floatPointExactQuery = (FloatPointExactQuery) query;
 				return FloatPoint.newExactQuery(floatPointExactQuery.field(), floatPointExactQuery.value());
-			case DoublePointExactQuery:
+			}
+			case DoublePointExactQuery -> {
 				var doublePointExactQuery = (DoublePointExactQuery) query;
 				return DoublePoint.newExactQuery(doublePointExactQuery.field(), doublePointExactQuery.value());
-			case LongNDPointExactQuery:
+			}
+			case LongNDPointExactQuery -> {
 				var longndPointExactQuery = (LongNDPointExactQuery) query;
 				var longndValues = longndPointExactQuery.value().toLongArray();
 				return LongPoint.newRangeQuery(longndPointExactQuery.field(), longndValues, longndValues);
-			case FloatNDPointExactQuery:
+			}
+			case FloatNDPointExactQuery -> {
 				var floatndPointExactQuery = (FloatNDPointExactQuery) query;
 				var floatndValues = floatndPointExactQuery.value().toFloatArray();
 				return FloatPoint.newRangeQuery(floatndPointExactQuery.field(), floatndValues, floatndValues);
-			case DoubleNDPointExactQuery:
+			}
+			case DoubleNDPointExactQuery -> {
 				var doublendPointExactQuery = (DoubleNDPointExactQuery) query;
 				var doublendValues = doublendPointExactQuery.value().toDoubleArray();
 				return DoublePoint.newRangeQuery(doublendPointExactQuery.field(), doublendValues, doublendValues);
-			case IntPointSetQuery:
+			}
+			case IntPointSetQuery -> {
 				var intPointSetQuery = (IntPointSetQuery) query;
 				return IntPoint.newSetQuery(intPointSetQuery.field(), intPointSetQuery.values().toIntArray());
-			case LongPointSetQuery:
+			}
+			case LongPointSetQuery -> {
 				var longPointSetQuery = (LongPointSetQuery) query;
 				return LongPoint.newSetQuery(longPointSetQuery.field(), longPointSetQuery.values().toLongArray());
-			case FloatPointSetQuery:
+			}
+			case FloatPointSetQuery -> {
 				var floatPointSetQuery = (FloatPointSetQuery) query;
 				return FloatPoint.newSetQuery(floatPointSetQuery.field(), floatPointSetQuery.values().toFloatArray());
-			case DoublePointSetQuery:
+			}
+			case DoublePointSetQuery -> {
 				var doublePointSetQuery = (DoublePointSetQuery) query;
 				return DoublePoint.newSetQuery(doublePointSetQuery.field(), doublePointSetQuery.values().toDoubleArray());
-			case TermQuery:
+			}
+			case TermQuery -> {
 				var termQuery = (TermQuery) query;
 				return new org.apache.lucene.search.TermQuery(toTerm(termQuery.term()));
-			case IntTermQuery:
+			}
+			case IntTermQuery -> {
 				var intTermQuery = (IntTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(intTermQuery.field(),
 						IntPoint.pack(intTermQuery.value())
 				));
-			case IntNDTermQuery:
+			}
+			case IntNDTermQuery -> {
 				var intNDTermQuery = (IntNDTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(intNDTermQuery.field(),
 						IntPoint.pack(intNDTermQuery.value().toIntArray())
 				));
-			case LongTermQuery:
+			}
+			case LongTermQuery -> {
 				var longTermQuery = (LongTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(longTermQuery.field(),
 						LongPoint.pack(longTermQuery.value())
 				));
-			case LongNDTermQuery:
+			}
+			case LongNDTermQuery -> {
 				var longNDTermQuery = (LongNDTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(longNDTermQuery.field(),
 						LongPoint.pack(longNDTermQuery.value().toLongArray())
 				));
-			case FloatTermQuery:
+			}
+			case FloatTermQuery -> {
 				var floatTermQuery = (FloatTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(floatTermQuery.field(),
 						FloatPoint.pack(floatTermQuery.value())
 				));
-			case FloatNDTermQuery:
+			}
+			case FloatNDTermQuery -> {
 				var floatNDTermQuery = (FloatNDTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(floatNDTermQuery.field(),
 						FloatPoint.pack(floatNDTermQuery.value().toFloatArray())
 				));
-			case DoubleTermQuery:
+			}
+			case DoubleTermQuery -> {
 				var doubleTermQuery = (DoubleTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(doubleTermQuery.field(),
 						DoublePoint.pack(doubleTermQuery.value())
 				));
-			case DoubleNDTermQuery:
+			}
+			case DoubleNDTermQuery -> {
 				var doubleNDTermQuery = (DoubleNDTermQuery) query;
 				return new org.apache.lucene.search.TermQuery(new Term(doubleNDTermQuery.field(),
 						DoublePoint.pack(doubleNDTermQuery.value().toDoubleArray())
 				));
-			case FieldExistsQuery:
+			}
+			case FieldExistsQuery -> {
 				var fieldExistQuery = (FieldExistsQuery) query;
 				return new org.apache.lucene.search.FieldExistsQuery(fieldExistQuery.field());
-			case BoostQuery:
+			}
+			case BoostQuery -> {
 				var boostQuery = (BoostQuery) query;
 				return new org.apache.lucene.search.BoostQuery(toQuery(boostQuery.query(), analyzer), boostQuery.scoreBoost());
-			case ConstantScoreQuery:
+			}
+			case ConstantScoreQuery -> {
 				var constantScoreQuery = (ConstantScoreQuery) query;
 				return new org.apache.lucene.search.ConstantScoreQuery(toQuery(constantScoreQuery.query(), analyzer));
-			case BoxedQuery:
+			}
+			case BoxedQuery -> {
 				return toQuery(((BoxedQuery) query).query(), analyzer);
-			case FuzzyQuery:
+			}
+			case FuzzyQuery -> {
 				var fuzzyQuery = (it.cavallium.dbengine.client.query.current.data.FuzzyQuery) query;
 				return new FuzzyQuery(toTerm(fuzzyQuery.term()),
 						fuzzyQuery.maxEdits(),
@@ -243,56 +254,67 @@ public class QueryParser {
 						fuzzyQuery.maxExpansions(),
 						fuzzyQuery.transpositions()
 				);
-			case IntPointRangeQuery:
+			}
+			case IntPointRangeQuery -> {
 				var intPointRangeQuery = (IntPointRangeQuery) query;
 				return IntPoint.newRangeQuery(intPointRangeQuery.field(), intPointRangeQuery.min(), intPointRangeQuery.max());
-			case IntNDPointRangeQuery:
+			}
+			case IntNDPointRangeQuery -> {
 				var intndPointRangeQuery = (IntNDPointRangeQuery) query;
 				return IntPoint.newRangeQuery(intndPointRangeQuery.field(),
 						intndPointRangeQuery.min().toIntArray(),
 						intndPointRangeQuery.max().toIntArray()
 				);
-			case LongPointRangeQuery:
+			}
+			case LongPointRangeQuery -> {
 				var longPointRangeQuery = (LongPointRangeQuery) query;
 				return LongPoint.newRangeQuery(longPointRangeQuery.field(),
 						longPointRangeQuery.min(),
 						longPointRangeQuery.max()
 				);
-			case FloatPointRangeQuery:
+			}
+			case FloatPointRangeQuery -> {
 				var floatPointRangeQuery = (FloatPointRangeQuery) query;
 				return FloatPoint.newRangeQuery(floatPointRangeQuery.field(),
 						floatPointRangeQuery.min(),
 						floatPointRangeQuery.max()
 				);
-			case DoublePointRangeQuery:
+			}
+			case DoublePointRangeQuery -> {
 				var doublePointRangeQuery = (DoublePointRangeQuery) query;
 				return DoublePoint.newRangeQuery(doublePointRangeQuery.field(),
 						doublePointRangeQuery.min(),
 						doublePointRangeQuery.max()
 				);
-			case LongNDPointRangeQuery:
+			}
+			case LongNDPointRangeQuery -> {
 				var longndPointRangeQuery = (LongNDPointRangeQuery) query;
 				return LongPoint.newRangeQuery(longndPointRangeQuery.field(),
 						longndPointRangeQuery.min().toLongArray(),
 						longndPointRangeQuery.max().toLongArray()
 				);
-			case FloatNDPointRangeQuery:
+			}
+			case FloatNDPointRangeQuery -> {
 				var floatndPointRangeQuery = (FloatNDPointRangeQuery) query;
 				return FloatPoint.newRangeQuery(floatndPointRangeQuery.field(),
 						floatndPointRangeQuery.min().toFloatArray(),
 						floatndPointRangeQuery.max().toFloatArray()
 				);
-			case DoubleNDPointRangeQuery:
+			}
+			case DoubleNDPointRangeQuery -> {
 				var doublendPointRangeQuery = (DoubleNDPointRangeQuery) query;
 				return DoublePoint.newRangeQuery(doublendPointRangeQuery.field(),
 						doublendPointRangeQuery.min().toDoubleArray(),
 						doublendPointRangeQuery.max().toDoubleArray()
 				);
-			case MatchAllDocsQuery:
+			}
+			case MatchAllDocsQuery -> {
 				return new MatchAllDocsQuery();
-			case MatchNoDocsQuery:
+			}
+			case MatchNoDocsQuery -> {
 				return new MatchNoDocsQuery();
-			case PhraseQuery:
+			}
+			case PhraseQuery -> {
 				var phraseQuery = (PhraseQuery) query;
 				var pqb = new org.apache.lucene.search.PhraseQuery.Builder();
 				for (TermPosition phrase : phraseQuery.phrase()) {
@@ -300,27 +322,31 @@ public class QueryParser {
 				}
 				pqb.setSlop(phraseQuery.slop());
 				return pqb.build();
-			case SortedDocFieldExistsQuery:
+			}
+			case SortedDocFieldExistsQuery -> {
 				var sortedDocFieldExistsQuery = (SortedDocFieldExistsQuery) query;
 				return new DocValuesFieldExistsQuery(sortedDocFieldExistsQuery.field());
-			case SynonymQuery:
+			}
+			case SynonymQuery -> {
 				var synonymQuery = (SynonymQuery) query;
 				var sqb = new org.apache.lucene.search.SynonymQuery.Builder(synonymQuery.field());
 				for (TermAndBoost part : synonymQuery.parts()) {
 					sqb.addTerm(toTerm(part.term()), part.boost());
 				}
 				return sqb.build();
-			case SortedNumericDocValuesFieldSlowRangeQuery:
+			}
+			case SortedNumericDocValuesFieldSlowRangeQuery -> {
 				var sortedNumericDocValuesFieldSlowRangeQuery = (SortedNumericDocValuesFieldSlowRangeQuery) query;
 				return SortedNumericDocValuesField.newSlowRangeQuery(sortedNumericDocValuesFieldSlowRangeQuery.field(),
 						sortedNumericDocValuesFieldSlowRangeQuery.min(),
 						sortedNumericDocValuesFieldSlowRangeQuery.max()
 				);
-			case WildcardQuery:
+			}
+			case WildcardQuery -> {
 				var wildcardQuery = (WildcardQuery) query;
 				return new org.apache.lucene.search.WildcardQuery(new Term(wildcardQuery.field(), wildcardQuery.pattern()));
-			default:
-				throw new IllegalStateException("Unexpected value: " + query.getBaseType$());
+			}
+			default -> throw new IllegalStateException("Unexpected value: " + query.getBaseType$());
 		}
 	}
 

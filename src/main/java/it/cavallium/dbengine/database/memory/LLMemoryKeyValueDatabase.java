@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.memory;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.BufferAllocator;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.ColumnProperty;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -15,8 +15,6 @@ import it.cavallium.dbengine.database.RocksDBStringProperty;
 import it.cavallium.dbengine.database.TableWithProperties;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.rpc.current.data.Column;
-import it.cavallium.dbengine.utils.InternalMonoUtils;
-import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
@@ -24,31 +22,21 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
-import org.reactivestreams.Publisher;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
-
-	static {
-		LLUtils.initHooks();
-	}
-
-	private final BufferAllocator allocator;
 	private final MeterRegistry meterRegistry;
 	private final String name;
 	private final AtomicLong nextSnapshotNumber = new AtomicLong(1);
 
-	private final ConcurrentHashMap<Long, ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>>> snapshots = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>> mainDb;
+	private final ConcurrentHashMap<Long, ConcurrentHashMap<String, ConcurrentSkipListMap<Buf, Buf>>> snapshots = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, ConcurrentSkipListMap<Buf, Buf>> mainDb;
 	private final ConcurrentHashMap<String, LLMemoryDictionary> singletons = new ConcurrentHashMap<>();
 
-	public LLMemoryKeyValueDatabase(BufferAllocator allocator,
-			MeterRegistry meterRegistry,
+	public LLMemoryKeyValueDatabase(MeterRegistry meterRegistry,
 			String name,
 			List<Column> columns) {
-		this.allocator = allocator;
 		this.meterRegistry = meterRegistry;
 		this.name = name;
 		this.mainDb = new ConcurrentHashMap<>();
@@ -59,113 +47,95 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<? extends LLSingleton> getSingleton(byte[] singletonListColumnName,
+	public LLSingleton getSingleton(byte[] singletonListColumnName,
 			byte[] singletonName,
 			byte @Nullable[] defaultValue) {
 		var columnNameString = new String(singletonListColumnName, StandardCharsets.UTF_8);
-		var dict = singletons.computeIfAbsent(columnNameString, _unused -> new LLMemoryDictionary(allocator,
-				name,
+		var dict = singletons.computeIfAbsent(columnNameString, _unused -> new LLMemoryDictionary(name,
 				columnNameString,
 				UpdateMode.ALLOW,
 				snapshots,
 				mainDb
 		));
-		return Mono
-				.fromCallable(() -> new LLMemorySingleton(dict, columnNameString, singletonName)).flatMap(singleton -> singleton
-						.get(null)
-						.transform(mono -> {
-							if (defaultValue != null) {
-								return mono.switchIfEmpty(singleton
-										.set(Mono.fromSupplier(() -> allocator.copyOf(defaultValue)))
-										.as(InternalMonoUtils::toAny));
-							} else {
-								return mono;
-							}
-						})
-						.thenReturn(singleton)
-				);
+		var singleton = new LLMemorySingleton(dict, columnNameString, singletonName);
+		Buf returnValue = singleton.get(null);
+		if (returnValue == null) {
+			singleton.set(Buf.wrap(defaultValue));
+		}
+		return singleton;
 	}
 
 	@Override
-	public Mono<? extends LLDictionary> getDictionary(byte[] columnName, UpdateMode updateMode) {
+	public LLDictionary getDictionary(byte[] columnName, UpdateMode updateMode) {
 		var columnNameString = new String(columnName, StandardCharsets.UTF_8);
-		return Mono.fromCallable(() -> new LLMemoryDictionary(allocator,
-				name,
+		return new LLMemoryDictionary(name,
 				columnNameString,
 				updateMode,
 				snapshots,
 				mainDb
-		));
+		);
 	}
 
 	@Override
-	public Mono<MemoryStats> getMemoryStats() {
-		return Mono.just(new MemoryStats(0, 0, 0, 0, 0, 0));
+	public MemoryStats getMemoryStats() {
+		return new MemoryStats(0, 0, 0, 0, 0, 0);
 	}
 
 	@Override
-	public Mono<String> getRocksDBStats() {
-		return Mono.empty();
+	public String getRocksDBStats() {
+		return null;
 	}
 
 	@Override
-	public Mono<Map<String, String>> getMapProperty(@Nullable Column column, RocksDBMapProperty property) {
-		return Mono.empty();
+	public Map<String, String> getMapProperty(@Nullable Column column, RocksDBMapProperty property) {
+		return null;
 	}
 
 	@Override
-	public Flux<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
-		return Flux.empty();
+	public Stream<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
+		return Stream.empty();
 	}
 
 	@Override
-	public Mono<String> getStringProperty(@Nullable Column column, RocksDBStringProperty property) {
-		return Mono.empty();
+	public String getStringProperty(@Nullable Column column, RocksDBStringProperty property) {
+		return null;
 	}
 
 	@Override
-	public Flux<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
-		return Flux.empty();
+	public Stream<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
+		return Stream.empty();
 	}
 
 	@Override
-	public Mono<Long> getLongProperty(@Nullable Column column, RocksDBLongProperty property) {
-		return Mono.empty();
+	public Long getLongProperty(@Nullable Column column, RocksDBLongProperty property) {
+		return null;
 	}
 
 	@Override
-	public Flux<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
-		return Flux.empty();
+	public Stream<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
+		return Stream.empty();
 	}
 
 	@Override
-	public Mono<Long> getAggregatedLongProperty(RocksDBLongProperty property) {
-		return Mono.empty();
+	public Long getAggregatedLongProperty(RocksDBLongProperty property) {
+		return null;
 	}
 
 	@Override
-	public Flux<TableWithProperties> getTableProperties() {
-		return Flux.empty();
+	public Stream<TableWithProperties> getTableProperties() {
+		return Stream.empty();
 	}
 
 	@Override
-	public Mono<Void> verifyChecksum() {
-		return Mono.empty();
+	public void verifyChecksum() {
 	}
 
 	@Override
-	public Mono<Void> compact() {
-		return Mono.empty();
+	public void compact() {
 	}
 
 	@Override
-	public Mono<Void> flush() {
-		return Mono.empty();
-	}
-
-	@Override
-	public BufferAllocator getAllocator() {
-		return allocator;
+	public void flush() {
 	}
 
 	@Override
@@ -174,19 +144,16 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<Void> preClose() {
-		return null;
+	public void preClose() {
 	}
 
 	@Override
-	public Mono<Void> close() {
-		return Mono.fromRunnable(() -> {
-			snapshots.forEach((snapshot, dbs) -> dbs.forEach((columnName, db) -> {
-				db.clear();
-			}));
-			mainDb.forEach((columnName, db) -> {
-				db.clear();
-			});
+	public void close() {
+		snapshots.forEach((snapshot, dbs) -> dbs.forEach((columnName, db) -> {
+			db.clear();
+		}));
+		mainDb.forEach((columnName, db) -> {
+			db.clear();
 		});
 	}
 
@@ -196,35 +163,28 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<LLSnapshot> takeSnapshot() {
-		return Mono
-				.fromCallable(() -> {
-					var snapshotNumber = nextSnapshotNumber.getAndIncrement();
-					var snapshot = new ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>>();
-					mainDb.forEach((columnName, column) -> {
-						var cloned = column.clone();
-						snapshot.put(columnName, cloned);
-					});
-					snapshots.put(snapshotNumber, snapshot);
-					return new LLSnapshot(snapshotNumber);
-				});
+	public LLSnapshot takeSnapshot() {
+		var snapshotNumber = nextSnapshotNumber.getAndIncrement();
+		var snapshot = new ConcurrentHashMap<String, ConcurrentSkipListMap<Buf, Buf>>();
+		mainDb.forEach((columnName, column) -> {
+			var cloned = column.clone();
+			snapshot.put(columnName, cloned);
+		});
+		snapshots.put(snapshotNumber, snapshot);
+		return new LLSnapshot(snapshotNumber);
 	}
 
 	@Override
-	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return Mono
-				.fromCallable(() -> snapshots.remove(snapshot.getSequenceNumber()))
-				.then();
+	public void releaseSnapshot(LLSnapshot snapshot) {
+		snapshots.remove(snapshot.getSequenceNumber());
 	}
 
 	@Override
-	public Mono<Void> pauseForBackup() {
-		return Mono.empty();
+	public void pauseForBackup() {
 	}
 
 	@Override
-	public Mono<Void> resumeAfterBackup() {
-		return Mono.empty();
+	public void resumeAfterBackup() {
 	}
 
 	@Override
@@ -233,7 +193,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	}
 
 	@Override
-	public Mono<Void> ingestSST(Column column, Publisher<Path> files, boolean replaceExisting) {
-		return Mono.error(new UnsupportedOperationException("Memory db doesn't support SST files"));
+	public void ingestSST(Column column, Stream<Path> files, boolean replaceExisting) {
+		throw new UnsupportedOperationException("Memory db doesn't support SST files");
 	}
 }

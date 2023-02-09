@@ -1,6 +1,5 @@
 package it.cavallium.dbengine.utils;
 
-import it.cavallium.dbengine.MetricUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import java.lang.ref.Cleaner;
 import java.util.concurrent.atomic.AtomicBoolean;

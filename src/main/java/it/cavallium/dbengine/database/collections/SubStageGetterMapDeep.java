@@ -1,17 +1,11 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.util.Resource;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
-import java.util.Map;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
 
 public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 		SubStageGetter<Object2ObjectSortedMap<T, U>, DatabaseMapDictionaryDeep<T, U, US>> {
@@ -41,15 +35,15 @@ public class SubStageGetterMapDeep<T, U, US extends DatabaseStage<U>> implements
 	}
 
 	@Override
-	public Mono<DatabaseMapDictionaryDeep<T, U, US>> subStage(LLDictionary dictionary,
+	public DatabaseMapDictionaryDeep<T, U, US> subStage(LLDictionary dictionary,
 			@Nullable CompositeSnapshot snapshot,
-			Mono<Buffer> prefixKeyMono) {
-		return prefixKeyMono.map(prefixKey -> DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
-				BufSupplier.ofOwned(prefixKey),
+			Buf prefixKey) {
+		return DatabaseMapDictionaryDeep.deepIntermediate(dictionary,
+				prefixKey,
 				keySerializer,
 				subStageGetter,
 				keyExtLength
-		));
+		);
 	}
 
 	public int getKeyBinaryLength() {

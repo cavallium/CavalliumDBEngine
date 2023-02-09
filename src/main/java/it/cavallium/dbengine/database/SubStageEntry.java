@@ -4,7 +4,7 @@ import it.cavallium.dbengine.database.collections.DatabaseStage;
 import java.util.Map.Entry;
 import java.util.Objects;
 
-public final class SubStageEntry<T, U extends DatabaseStage<?>> implements DiscardingCloseable, Entry<T, U> {
+public final class SubStageEntry<T, U extends DatabaseStage<?>> implements Entry<T, U> {
 
 	private final T key;
 	private final U value;
@@ -12,13 +12,6 @@ public final class SubStageEntry<T, U extends DatabaseStage<?>> implements Disca
 	public SubStageEntry(T key, U value) {
 		this.key = key;
 		this.value = value;
-	}
-
-	@Override
-	public void close() {
-		if (value != null) {
-			value.close();
-		}
 	}
 
 	@Override

@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.client;
 
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
-import it.cavallium.dbengine.rpc.current.serializers.IndicizerAnalyzersSerializer;
 import java.util.Map;
 
 public class IndicizerAnalyzers {

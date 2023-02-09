@@ -10,12 +10,12 @@ import org.rocksdb.ColumnFamilyHandle;
 public class ColumnFamilyHandleSerializer implements DataSerializer<ColumnFamilyHandle> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull ColumnFamilyHandle columnFamilyHandle) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull ColumnFamilyHandle columnFamilyHandle) {
 		throw new UnsupportedOperationException("Can't encode this type");
 	}
 
 	@Override
-	public @NotNull ColumnFamilyHandle deserialize(DataInput dataInput) throws IOException {
+	public @NotNull ColumnFamilyHandle deserialize(DataInput dataInput) {
 		throw new UnsupportedOperationException("Can't encode this type");
 	}
 }

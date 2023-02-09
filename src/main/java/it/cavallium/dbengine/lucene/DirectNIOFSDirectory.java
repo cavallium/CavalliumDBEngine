@@ -3,13 +3,7 @@ package it.cavallium.dbengine.lucene;
 import static it.cavallium.dbengine.lucene.LuceneUtils.alignUnsigned;
 import static it.cavallium.dbengine.lucene.LuceneUtils.readInternalAligned;
 
-import com.sun.nio.file.ExtendedOpenOption;
-import java.nio.file.OpenOption;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
-import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.LockFactory;
-
+import it.cavallium.dbengine.utils.DBException;
 import java.io.Closeable;
 import java.io.EOFException;
 import java.io.IOException;
@@ -98,7 +92,7 @@ public class DirectNIOFSDirectory extends FSDirectory {
 			return clone;
 		}
 
-		public IndexInput slice(String sliceDescription, long offset, long length) throws IOException {
+		public IndexInput slice(String sliceDescription, long offset, long length) {
 			if (offset >= 0L && length >= 0L && offset + length <= this.length()) {
 				return new DirectNIOFSDirectory.NIOFSIndexInput(this.getFullSliceDescription(sliceDescription), this.channel, this.off + offset, length, this.getBufferSize());
 			} else {
@@ -110,7 +104,7 @@ public class DirectNIOFSDirectory extends FSDirectory {
 			return this.end - this.off;
 		}
 
-		protected void readInternal(ByteBuffer b) throws IOException {
+		protected void readInternal(ByteBuffer b) throws EOFException {
 			long pos = this.getFilePointer() + this.off;
 			if (pos + (long)b.remaining() > this.end) {
 				throw new EOFException("read past EOF: " + this);
@@ -136,11 +130,11 @@ public class DirectNIOFSDirectory extends FSDirectory {
 					b.limit(b.position());
 				}
 			} catch (IOException var7) {
-				throw new IOException(var7.getMessage() + ": " + this, var7);
+				throw new DBException(var7.getMessage() + ": " + this, var7);
 			}
 		}
 
-		protected void seekInternal(long pos) throws IOException {
+		protected void seekInternal(long pos) throws EOFException {
 			if (pos > this.length()) {
 				throw new EOFException("read past EOF: pos=" + pos + " vs length=" + this.length() + ": " + this);
 			}

@@ -17,7 +17,6 @@
 package it.cavallium.dbengine.lucene.collector;
 
 import it.cavallium.dbengine.database.DiscardingCloseable;
-import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.FullDocs;
 import it.cavallium.dbengine.lucene.LLDoc;
 import it.cavallium.dbengine.lucene.LazyFullDocs;
@@ -26,7 +25,6 @@ import it.cavallium.dbengine.lucene.ResourceIterable;
 import it.cavallium.dbengine.lucene.Reversable;
 import it.cavallium.dbengine.lucene.ReversableResourceIterable;
 import it.cavallium.dbengine.utils.SimpleResource;
-import java.io.Closeable;
 import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TotalHits;

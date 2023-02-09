@@ -10,11 +10,8 @@ import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.ScoreMode;
-
-import org.apache.lucene.search.SimpleCollector;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.TopDocsCollector;
-import org.jetbrains.annotations.Nullable;
 
 public class UnscoredCollector extends TopDocsCollector<ScoreDoc> implements LeafCollector {
 	private final IntArrayList docIds = new IntArrayList();

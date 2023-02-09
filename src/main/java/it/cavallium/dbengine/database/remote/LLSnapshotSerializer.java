@@ -10,12 +10,12 @@ import org.jetbrains.annotations.NotNull;
 public class LLSnapshotSerializer implements DataSerializer<LLSnapshot> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull LLSnapshot llSnapshot) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull LLSnapshot llSnapshot) {
 		dataOutput.writeLong(llSnapshot.getSequenceNumber());
 	}
 
 	@Override
-	public @NotNull LLSnapshot deserialize(DataInput dataInput) throws IOException {
+	public @NotNull LLSnapshot deserialize(DataInput dataInput) {
 		return new LLSnapshot(dataInput.readLong());
 	}
 }

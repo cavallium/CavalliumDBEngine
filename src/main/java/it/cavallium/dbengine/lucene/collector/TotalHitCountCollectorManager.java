@@ -28,7 +28,7 @@ public class TotalHitCountCollectorManager implements CollectorManager<TimeLimit
 	}
 
 	@Override
-	public Long reduce(Collection<TimeLimitingTotalHitCountCollector> collectors) throws IOException {
+	public Long reduce(Collection<TimeLimitingTotalHitCountCollector> collectors) {
 		long totalHits = 0;
 		for (var collector : collectors) {
 			totalHits += collector.getTotalHits();
@@ -48,7 +48,7 @@ public class TotalHitCountCollectorManager implements CollectorManager<TimeLimit
 		}
 
 		@Override
-		public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+		public LeafCollector getLeafCollector(LeafReaderContext context) {
 			return timeLimitingCollector.getLeafCollector(context);
 		}
 

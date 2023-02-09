@@ -1,24 +1,17 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
-
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import it.cavallium.dbengine.utils.DBException;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executor;
 import java.util.concurrent.Phaser;
 import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class SnapshotsManager extends SimpleResource {
 
@@ -49,17 +42,15 @@ public class SnapshotsManager extends SimpleResource {
 		);
 	}
 
-	public Mono<LLSnapshot> takeSnapshot() {
-		return Mono
-				.fromCallable(() -> takeLuceneSnapshot())
-				.transform(LuceneUtils::scheduleLucene);
+	public LLSnapshot takeSnapshot() {
+		return takeLuceneSnapshot();
 	}
 
 	/**
 	 * Use internally. This method commits before taking the snapshot if there are no commits in a new database,
 	 * avoiding the exception.
 	 */
-	private LLSnapshot takeLuceneSnapshot() throws IOException {
+	private LLSnapshot takeLuceneSnapshot() {
 		activeTasks.register();
 		try {
 			if (snapshotter.getSnapshots().isEmpty()) {
@@ -73,32 +64,34 @@ public class SnapshotsManager extends SimpleResource {
 			if (prevSnapshot != null) {
 				try {
 					prevSnapshot.close();
-				} catch (UncheckedIOException e) {
+				} catch (DBException e) {
 					throw new IllegalStateException("Can't close snapshot", e);
 				}
 			}
 
 			return new LLSnapshot(snapshotSeqNo);
+		} catch (IOException e) {
+			throw new DBException(e);
 		} finally {
 			activeTasks.arriveAndDeregister();
 		}
 	}
 
-	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return Mono.<Void>fromCallable(() -> {
-			activeTasks.register();
-			try (var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber())) {
-				if (indexSnapshot == null) {
-					throw new IOException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
-				}
-
-				var luceneIndexSnapshot = indexSnapshot.getSnapshot();
-				snapshotter.release(luceneIndexSnapshot);
-				return null;
-			} finally {
-				activeTasks.arriveAndDeregister();
+	public void releaseSnapshot(LLSnapshot snapshot) {
+		activeTasks.register();
+		try {
+			var indexSnapshot = this.snapshots.remove(snapshot.getSequenceNumber());
+			if (indexSnapshot == null) {
+				throw new DBException("LLSnapshot " + snapshot.getSequenceNumber() + " not found!");
 			}
-		}).transform(LuceneUtils::scheduleLucene);
+
+			var luceneIndexSnapshot = indexSnapshot.getSnapshot();
+			snapshotter.release(luceneIndexSnapshot);
+		} catch (IOException e) {
+			throw new DBException(e);
+		} finally {
+			activeTasks.arriveAndDeregister();
+		}
 	}
 
 	/**

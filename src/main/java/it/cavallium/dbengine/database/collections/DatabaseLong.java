@@ -1,16 +1,14 @@
 package it.cavallium.dbengine.database.collections;
 
-import com.google.common.primitives.Ints;
-import com.google.common.primitives.Longs;
+import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
 
 public class DatabaseLong implements LLKeyValueDatabaseStructure {
 
@@ -20,82 +18,63 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 
 	public DatabaseLong(LLSingleton singleton) {
 		this.singleton = singleton;
-		this.serializer = SerializerFixedBinaryLength.longSerializer(singleton.getAllocator());
-		this.bugSerializer = SerializerFixedBinaryLength.intSerializer(singleton.getAllocator());
+		this.serializer = SerializerFixedBinaryLength.longSerializer();
+		this.bugSerializer = SerializerFixedBinaryLength.intSerializer();
 	}
 
-	public Mono<Long> get(@Nullable LLSnapshot snapshot) {
-		var resultMono = singleton.get(snapshot);
-		return Mono.usingWhen(resultMono,
-				result -> Mono.fromSupplier(() -> {
-					if (result.readableBytes() == 4) {
-						return (long) (int) bugSerializer.deserialize(result);
-					} else {
-						return serializer.deserialize(result);
-					}
-				}),
-				LLUtils::finalizeResource
-		);
+	public Long get(@Nullable LLSnapshot snapshot) {
+		var result = BufDataInput.create(singleton.get(snapshot));
+		if (result.available() == 4) {
+			return (long) (int) bugSerializer.deserialize(result);
+		} else {
+			return serializer.deserialize(result);
+		}
 	}
 
-	public Mono<Long> incrementAndGet() {
+	public Long incrementAndGet() {
 		return addAnd(1, UpdateReturnMode.GET_NEW_VALUE);
 	}
 
-	public Mono<Long> getAndIncrement() {
+	public Long getAndIncrement() {
 		return addAnd(1, UpdateReturnMode.GET_OLD_VALUE);
 	}
 
-	public Mono<Long> decrementAndGet() {
+	public Long decrementAndGet() {
 		return addAnd(-1, UpdateReturnMode.GET_NEW_VALUE);
 	}
 
-	public Mono<Long> getAndDecrement() {
+	public Long getAndDecrement() {
 		return addAnd(-1, UpdateReturnMode.GET_OLD_VALUE);
 	}
 
-	public Mono<Long> addAndGet(long count) {
+	public Long addAndGet(long count) {
 		return addAnd(count, UpdateReturnMode.GET_NEW_VALUE);
 	}
 
-	public Mono<Long> getAndAdd(long count) {
+	public Long getAndAdd(long count) {
 		return addAnd(count, UpdateReturnMode.GET_OLD_VALUE);
 	}
 
-	private Mono<Long> addAnd(long count, UpdateReturnMode updateReturnMode) {
-		var resultMono = singleton.update(prev -> {
-			try (prev) {
-				if (prev != null) {
-					var prevLong = prev.readLong();
-					var alloc = singleton.getAllocator();
-					var buf = alloc.allocate(Long.BYTES);
-					buf.writeLong(prevLong + count);
-					return buf;
-				} else {
-					var alloc = singleton.getAllocator();
-					var buf = alloc.allocate(Long.BYTES);
-					buf.writeLong(count);
-					return buf;
-				}
+	private Long addAnd(long count, UpdateReturnMode updateReturnMode) {
+		var result = singleton.update(prev -> {
+			if (prev != null) {
+				var prevLong = prev.getLong(0);
+				var buf = Buf.createZeroes(Long.BYTES);
+				buf.setLong(0, prevLong + count);
+				return buf;
+			} else {
+				var buf = Buf.createZeroes(Long.BYTES);
+				buf.setLong(0, count);
+				return buf;
 			}
 		}, updateReturnMode);
-		return Mono.usingWhen(resultMono,
-				result -> Mono.fromSupplier(result::readLong),
-				LLUtils::finalizeResource
-		).single();
+		return result.getLong(0);
 	}
 
-	public Mono<Void> set(long value) {
-		return singleton.set(Mono.fromCallable(() -> {
-			var buf = singleton.getAllocator().allocate(Long.BYTES);
-			try {
-				serializer.serialize(value, buf);
-			} catch (Throwable ex) {
-				buf.close();
-				throw ex;
-			}
-			return buf;
-		}));
+	public void set(long value) {
+		var buf = BufDataOutput.createLimited(Long.BYTES);
+		serializer.serialize(value, buf);
+		singleton.set(buf.asList());
 	}
 
 	@Override

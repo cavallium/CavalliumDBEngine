@@ -1,10 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
-import java.io.IOException;
-import java.util.Iterator;
-import java.util.NoSuchElementException;
-import org.jetbrains.annotations.NotNull;
-import reactor.core.publisher.Flux;
+import java.util.stream.Stream;
 
 public class EmptyPriorityQueue<T> implements PriorityQueue<T> {
 
@@ -45,8 +41,8 @@ public class EmptyPriorityQueue<T> implements PriorityQueue<T> {
 	}
 
 	@Override
-	public Flux<T> iterate() {
-		return Flux.empty();
+	public Stream<T> iterate() {
+		return Stream.empty();
 	}
 
 	@Override

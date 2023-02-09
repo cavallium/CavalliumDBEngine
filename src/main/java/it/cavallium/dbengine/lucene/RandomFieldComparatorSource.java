@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.utils.LFSR;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.FieldComparatorSource;
-import it.cavallium.dbengine.utils.LFSR;
 
 public class RandomFieldComparatorSource extends FieldComparatorSource {
 

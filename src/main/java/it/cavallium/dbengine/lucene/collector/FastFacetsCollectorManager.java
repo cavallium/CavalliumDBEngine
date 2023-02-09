@@ -4,7 +4,6 @@ import it.cavallium.dbengine.lucene.IntSmear;
 import it.unimi.dsi.fastutil.ints.IntHash;
 import java.io.IOException;
 import java.util.Collection;
-import java.util.concurrent.atomic.AtomicLong;
 import org.apache.lucene.facet.FacetsCollectorManager;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.CollectorManager;
@@ -31,7 +30,7 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 	}
 
 	@Override
-	public FacetsCollector reduce(Collection<FacetsCollector> collectors) throws IOException {
+	public FacetsCollector reduce(Collection<FacetsCollector> collectors) {
 		return FacetsCollector.wrap(facetsCollectorManager.reduce(collectors
 				.stream()
 				.map(facetsCollector -> facetsCollector.getLuceneFacetsCollector())
@@ -62,23 +61,23 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 		}
 
 		@Override
-		public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+		public LeafCollector getLeafCollector(LeafReaderContext context) {
 			var leafCollector = collector.getLeafCollector(context);
 			return new LeafCollector() {
 				@Override
-				public void setScorer(Scorable scorer) throws IOException {
+				public void setScorer(Scorable scorer) {
 					leafCollector.setScorer(scorer);
 				}
 
 				@Override
-				public void collect(int doc) throws IOException {
+				public void collect(int doc) {
 					if (collectionRate == 1 || hash.hashCode(doc) % collectionRate == 0) {
 						leafCollector.collect(doc);
 					}
 				}
 
 				@Override
-				public DocIdSetIterator competitiveIterator() throws IOException {
+				public DocIdSetIterator competitiveIterator() {
 					return leafCollector.competitiveIterator();
 				}
 			};

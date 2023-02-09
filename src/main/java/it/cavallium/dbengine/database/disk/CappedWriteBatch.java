@@ -1,19 +1,9 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.database.LLUtils.isDirect;
-import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
+import static it.cavallium.dbengine.database.LLUtils.asArray;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.buffer.BufferComponent;
-import io.netty5.util.Send;
-import io.netty5.util.internal.PlatformDependent;
-import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.RocksDBColumn;
-import java.io.Closeable;
+import it.cavallium.dbengine.buffers.Buf;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.List;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteBatch;
@@ -21,61 +11,30 @@ import org.rocksdb.WriteOptions;
 
 public class CappedWriteBatch extends WriteBatch {
 
-	/**
-	 * Default: true, Use false to debug problems with direct buffers
-	 */
-	private static final boolean USE_FAST_DIRECT_BUFFERS = true;
 	private final RocksDBColumn db;
-	private final BufferAllocator alloc;
 	private final int cap;
 	private final WriteOptions writeOptions;
-
-	private final List<Buffer> buffersToRelease;
-	private final List<ByteBuffer> byteBuffersToRelease;
 
 	/**
 	 * @param db
 	 * @param cap The limit of operations
 	 */
 	public CappedWriteBatch(RocksDBColumn db,
-			BufferAllocator alloc,
 			int cap,
 			int reservedWriteBatchSize,
 			long maxWriteBatchSize,
 			WriteOptions writeOptions) {
 		super(reservedWriteBatchSize);
 		this.db = db;
-		this.alloc = alloc;
 		this.cap = cap;
 		this.writeOptions = writeOptions;
 		this.setMaxBytes(maxWriteBatchSize);
-		this.buffersToRelease = new ArrayList<>();
-		this.byteBuffersToRelease = new ArrayList<>();
 	}
 
 	private synchronized void flushIfNeeded(boolean force) throws RocksDBException {
 		if (this.count() >= (force ? 1 : cap)) {
-			try {
-				db.write(writeOptions, this.getWriteBatch());
-				this.clear();
-			} finally {
-				releaseAllBuffers();
-			}
-		}
-	}
-
-	public synchronized void releaseAllBuffers() {
-		if (!buffersToRelease.isEmpty()) {
-			for (Buffer byteBuffer : buffersToRelease) {
-				byteBuffer.close();
-			}
-			buffersToRelease.clear();
-		}
-		if (!byteBuffersToRelease.isEmpty()) {
-			for (var byteBuffer : byteBuffersToRelease) {
-				PlatformDependent.freeDirectBuffer(byteBuffer);
-			}
-			byteBuffersToRelease.clear();
+			db.write(writeOptions, this.getWriteBatch());
+			this.clear();
 		}
 	}
 
@@ -109,29 +68,9 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	public synchronized void put(ColumnFamilyHandle columnFamilyHandle,
-			Send<Buffer> keyToReceive,
-			Send<Buffer> valueToReceive) throws RocksDBException {
-		var key = keyToReceive.receive();
-		var value = valueToReceive.receive();
-		if (USE_FAST_DIRECT_BUFFERS
-				&& (isReadOnlyDirect(key))
-				&& (isReadOnlyDirect(value))) {
-			ByteBuffer keyNioBuffer = ((BufferComponent) key).readableBuffer();
-			ByteBuffer valueNioBuffer = ((BufferComponent) value).readableBuffer();
-			buffersToRelease.add(value);
-			buffersToRelease.add(key);
-
-			super.put(columnFamilyHandle, keyNioBuffer, valueNioBuffer);
-		} else {
-			try {
-				byte[] keyArray = LLUtils.toArray(key);
-				byte[] valueArray = LLUtils.toArray(value);
-				super.put(columnFamilyHandle, keyArray, valueArray);
-			} finally {
-				key.close();
-				value.close();
-			}
-		}
+			Buf keyToReceive,
+			Buf valueToReceive) throws RocksDBException {
+		super.put(columnFamilyHandle, asArray(keyToReceive), asArray(valueToReceive));
 		flushIfNeeded(false);
 	}
 
@@ -159,19 +98,8 @@ public class CappedWriteBatch extends WriteBatch {
 		flushIfNeeded(false);
 	}
 
-	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Send<Buffer> keyToReceive) throws RocksDBException {
-		var key = keyToReceive.receive();
-		if (USE_FAST_DIRECT_BUFFERS && isReadOnlyDirect(key)) {
-			ByteBuffer keyNioBuffer = ((BufferComponent) key).readableBuffer();
-			buffersToRelease.add(key);
-			delete(columnFamilyHandle, keyNioBuffer);
-		} else {
-			try {
-				super.delete(columnFamilyHandle, LLUtils.toArray(key));
-			} finally {
-				key.close();
-			}
-		}
+	public synchronized void delete(ColumnFamilyHandle columnFamilyHandle, Buf keyToDelete) throws RocksDBException {
+		super.delete(columnFamilyHandle, asArray(keyToDelete));
 		flushIfNeeded(false);
 	}
 
@@ -221,7 +149,6 @@ public class CappedWriteBatch extends WriteBatch {
 	@Override
 	public synchronized void clear() {
 		super.clear();
-		releaseAllBuffers();
 	}
 
 	@Override
@@ -250,26 +177,11 @@ public class CappedWriteBatch extends WriteBatch {
 	}
 
 	public synchronized void writeToDbAndClose() throws RocksDBException {
-		try {
-			flushIfNeeded(true);
-			super.close();
-		} finally {
-			releaseAllBuffers();
-		}
+		flushIfNeeded(true);
+		super.close();
 	}
 
 	public void flush() throws RocksDBException {
-		try {
-			flushIfNeeded(true);
-		} finally {
-			releaseAllBuffers();
-		}
+		flushIfNeeded(true);
 	}
-
-	/*
-	protected void disposeInternal(boolean owningHandle) {
-		super.disposeInternal(owningHandle);
-		releaseAllBuffers();
-	}
-	 */
 }

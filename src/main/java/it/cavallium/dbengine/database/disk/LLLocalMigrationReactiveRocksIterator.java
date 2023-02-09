@@ -2,57 +2,59 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.util.Send;
-import io.netty5.buffer.internal.ResourceSupport;
+import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.utils.SimpleResource;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
+import it.cavallium.dbengine.utils.DBException;
+import java.io.IOException;
+import java.util.Objects;
+import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import java.util.stream.Stream;
+import org.jetbrains.annotations.NotNull;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuples;
 
 public final class LLLocalMigrationReactiveRocksIterator {
 
 	private final RocksDBColumn db;
-	private Mono<LLRange> rangeMono;
+	private LLRange range;
 	private Supplier<ReadOptions> readOptions;
 
 	public LLLocalMigrationReactiveRocksIterator(RocksDBColumn db,
-			Mono<LLRange> rangeMono,
+			LLRange range,
 			Supplier<ReadOptions> readOptions) {
 		this.db = db;
-		this.rangeMono = rangeMono;
+		this.range = range;
 		this.readOptions = readOptions;
 	}
 
-	public record ByteEntry(byte[] key, byte[] value) {}
-
-	public Flux<ByteEntry> flux() {
-		return Flux.usingWhen(rangeMono, range -> Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
-			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(false, readOptions, range, false));
-		}, (tuple, sink) -> {
+	public Stream<LLEntry> stream() {
+		var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
+		RocksIteratorObj rocksIterator;
+		try {
+			rocksIterator = db.newRocksIterator(readOptions, range, false);
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to open iterator", e);
+		}
+		return Stream.generate(() -> {
 			try {
-				var rocksIterator = tuple.iter();
 				if (rocksIterator.isValid()) {
-					byte[] key = rocksIterator.key();
-					byte[] value = rocksIterator.value();
+					var key = rocksIterator.keyBuf().copy();
+					var value = rocksIterator.valueBuf().copy();
 					rocksIterator.next(false);
-					sink.next(new ByteEntry(key, value));
+					return LLEntry.of(key, value);
 				} else {
-					sink.complete();
+					return null;
 				}
 			} catch (RocksDBException ex) {
-				sink.error(ex);
+				throw new CompletionException(new DBException("Failed to iterate", ex));
 			}
-			return tuple;
-		}, RocksIterWithReadOpts::close), LLUtils::finalizeResource);
+		}).takeWhile(Objects::nonNull).onClose(() -> {
+			rocksIterator.close();
+			readOptions.close();
+		});
 	}
 }

@@ -2,7 +2,6 @@ package it.cavallium.dbengine.lucene.analyzer;
 
 import com.ibm.icu.text.Collator;
 import com.ibm.icu.util.ULocale;
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
@@ -17,7 +16,6 @@ import org.apache.lucene.analysis.Tokenizer;
 import org.apache.lucene.analysis.en.EnglishPossessiveFilter;
 import org.apache.lucene.analysis.en.KStemFilter;
 import org.apache.lucene.analysis.icu.ICUCollationAttributeFactory;
-import org.apache.lucene.analysis.icu.ICUCollationKeyAnalyzer;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.miscellaneous.LengthFilter;
 import org.apache.lucene.analysis.standard.StandardTokenizer;

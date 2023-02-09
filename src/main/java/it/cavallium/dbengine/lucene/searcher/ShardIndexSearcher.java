@@ -8,7 +8,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import java.util.Optional;
 import java.util.Set;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.index.TermStates;
@@ -78,7 +77,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 	}
 
 	@Override
-	public Query rewrite(Query original) throws IOException {
+	public Query rewrite(Query original) {
 		final IndexSearcher localSearcher = new IndexSearcher(getIndexReader());
 		original = localSearcher.rewrite(original);
 		final Set<Term> terms = new HashSet<>();
@@ -113,7 +112,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 
 	// Mock: in a real env, this would hit the wire and get
 	// term stats from remote node
-	Map<Term, TermStatistics> getNodeTermStats(Set<Term> terms, int nodeID) throws IOException {
+	Map<Term, TermStatistics> getNodeTermStats(Set<Term> terms, int nodeID) {
 		var s = searchers[nodeID];
 		final Map<Term, TermStatistics> stats = new HashMap<>();
 		if (s == null) {
@@ -158,7 +157,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 	}
 
 	@Override
-	public CollectionStatistics collectionStatistics(String field) throws IOException {
+	public CollectionStatistics collectionStatistics(String field) {
 		// TODO: we could compute this on init and cache,
 		// since we are re-inited whenever any nodes have a
 		// new reader
@@ -205,7 +204,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 		}
 	}
 
-	private CollectionStatistics computeNodeCollectionStatistics(FieldAndShar fieldAndShard) throws IOException {
+	private CollectionStatistics computeNodeCollectionStatistics(FieldAndShar fieldAndShard) {
 		var searcher = searchers[fieldAndShard.nodeID];
 		return searcher.collectionStatistics(fieldAndShard.field);
 	}

@@ -9,11 +9,11 @@ import org.apache.lucene.store.IOContext;
 
 public class AlwaysDirectIOFSDirectory extends DirectIODirectory {
 
-	public AlwaysDirectIOFSDirectory(Path path, int mergeBufferSize, long minBytesDirect) throws IOException {
+	public AlwaysDirectIOFSDirectory(Path path, int mergeBufferSize, long minBytesDirect) {
 		super(FSDirectory.open(path), mergeBufferSize, minBytesDirect);
 	}
 
-	public AlwaysDirectIOFSDirectory(Path path) throws IOException {
+	public AlwaysDirectIOFSDirectory(Path path) {
 		super(FSDirectory.open(path));
 	}
 

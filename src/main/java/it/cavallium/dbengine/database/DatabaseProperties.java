@@ -2,30 +2,30 @@ package it.cavallium.dbengine.database;
 
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.rpc.current.data.Column;
+import java.io.IOException;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 public interface DatabaseProperties {
 
-	Mono<MemoryStats> getMemoryStats();
+	MemoryStats getMemoryStats();
 
-	Mono<String> getRocksDBStats();
+	String getRocksDBStats();
 
-	Mono<Map<String, String>> getMapProperty(@Nullable Column column, RocksDBMapProperty property);
+	Map<String, String> getMapProperty(@Nullable Column column, RocksDBMapProperty property);
 
-	Flux<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property);
+	Stream<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property);
 
-	Mono<String> getStringProperty(@Nullable Column column, RocksDBStringProperty property);
+	String getStringProperty(@Nullable Column column, RocksDBStringProperty property);
 
-	Flux<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property);
+	Stream<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property);
 
-	Mono<Long> getLongProperty(@Nullable Column column, RocksDBLongProperty property);
+	Long getLongProperty(@Nullable Column column, RocksDBLongProperty property);
 
-	Flux<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property);
+	Stream<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property);
 
-	Mono<Long> getAggregatedLongProperty(RocksDBLongProperty property);
+	Long getAggregatedLongProperty(RocksDBLongProperty property);
 
-	Flux<TableWithProperties> getTableProperties();
+	Stream<TableWithProperties> getTableProperties();
 }

@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database.remote;
 
 import it.cavallium.data.generator.DataSerializer;
-import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -24,7 +23,7 @@ public class StringMapSerializer implements DataSerializer<Map<String, String>> 
 	}
 
 	@Override
-	public @NotNull Map<String, String> deserialize(DataInput dataInput) throws IOException {
+	public @NotNull Map<String, String> deserialize(DataInput dataInput) {
 		var size = dataInput.readInt();
 		var result = new HashMap<String, String>(size);
 		for (int i = 0; i < size; i++) {

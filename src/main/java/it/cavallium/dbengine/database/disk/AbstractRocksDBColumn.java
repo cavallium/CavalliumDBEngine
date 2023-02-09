@@ -1,27 +1,16 @@
 package it.cavallium.dbengine.database.disk;
 
-import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
-import static it.cavallium.dbengine.database.LLUtils.INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES;
-import static it.cavallium.dbengine.database.LLUtils.isReadOnlyDirect;
-import static java.lang.Boolean.parseBoolean;
-import static java.lang.System.getProperty;
 import static java.util.Objects.requireNonNull;
-import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithValue;
-import static org.rocksdb.KeyMayExist.KeyMayExistEnum.kExistsWithoutValue;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.buffer.BufferComponent;
-import io.netty5.buffer.DefaultBufferAllocators;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -37,12 +26,9 @@ import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.AbstractSlice;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
-import org.rocksdb.DirectSlice;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist;
-import org.rocksdb.KeyMayExist.KeyMayExistEnum;
-import org.rocksdb.Range;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -53,23 +39,15 @@ import org.rocksdb.Transaction;
 import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
 import org.rocksdb.WriteOptions;
-import reactor.core.scheduler.Schedulers;
 
 public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements RocksDBColumn
 		permits StandardRocksDBColumn, OptimisticRocksDBColumn, PessimisticRocksDBColumn {
-
-	/**
-	 * Default: true
-	 */
-	private static final boolean USE_DIRECT_BUFFER_BOUNDS = true;
 	private static final byte[] NO_DATA = new byte[0];
 	protected static final UpdateAtomicResult RESULT_NOTHING = new UpdateAtomicResultNothing();
 
 	protected final Logger logger = LogManager.getLogger(this.getClass());
 
 	private final T db;
-	private final boolean nettyDirect;
-	private final BufferAllocator alloc;
 	private final ColumnFamilyHandle cfh;
 
 	protected final MeterRegistry meterRegistry;
@@ -103,15 +81,11 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final DBColumnKeyMayExistGetter keyMayExistGetter;
 
 	public AbstractRocksDBColumn(T db,
-			boolean nettyDirect,
-			BufferAllocator alloc,
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
 			StampedLock closeLock) {
 		this.db = db;
-		this.nettyDirect = nettyDirect && alloc.getAllocationType() == OFF_HEAP;
-		this.alloc = alloc;
 		this.cfh = cfh;
 		String columnName;
 		try {
@@ -253,18 +227,10 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the key
 	 */
-	static AbstractSlice<?> setIterateBound(boolean allowNettyDirect,
-			ReadOptions readOpts, IterateBound boundType, Buffer key) {
+	static AbstractSlice<?> setIterateBound(ReadOptions readOpts, IterateBound boundType, Buf key) {
 		requireNonNull(key);
 		AbstractSlice<?> slice;
-		if (allowNettyDirect && USE_DIRECT_BUFFER_BOUNDS && isReadOnlyDirect(key)) {
-			ByteBuffer keyInternalByteBuffer = ((BufferComponent) key).readableBuffer();
-			assert keyInternalByteBuffer.position() == 0;
-			slice = new DirectSlice(keyInternalByteBuffer, key.readableBytes());
-			assert slice.size() == key.readableBytes();
-		} else {
-			slice = new Slice(requireNonNull(LLUtils.toArray(key)));
-		}
+		slice = new Slice(requireNonNull(LLUtils.asArray(key)));
 		if (boundType == IterateBound.LOWER) {
 			readOpts.setIterateLowerBound(slice);
 		} else {
@@ -282,23 +248,22 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
+	@Override
 	@NotNull
-	public RocksIteratorObj newRocksIterator(boolean allowNettyDirect,
-			ReadOptions readOptions,
-			LLRange range,
-			boolean reverse) throws RocksDBException {
-		assert !Schedulers.isInNonBlockingThread() : "Called getRocksIterator in a nonblocking thread";
-		var rocksIterator = this.newIterator(readOptions, range.getMinUnsafe(), range.getMaxUnsafe());
+	public RocksIteratorObj newRocksIterator(ReadOptions readOptions, LLRange range, boolean reverse)
+			throws RocksDBException {
+		assert !LLUtils.isInNonBlockingThread() : "Called getRocksIterator in a nonblocking thread";
+		var rocksIterator = this.newIterator(readOptions, range.getMin(), range.getMax());
 		try {
 			if (reverse) {
 				if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMax()) {
-					rocksIterator.seekFrom(range.getMaxUnsafe());
+					rocksIterator.seekFrom(range.getMax());
 				} else {
 					rocksIterator.seekToLast();
 				}
 			} else {
 				if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
-					rocksIterator.seekTo(range.getMinUnsafe());
+					rocksIterator.seekTo(range.getMin());
 				} else {
 					rocksIterator.seekToFirst();
 				}
@@ -331,14 +296,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		RocksDBUtils.ensureOwned(rocksObject);
 	}
 
-	protected void ensureOwned(Buffer buffer) {
-		if (buffer != null && !buffer.isAccessible()) {
-			throw new IllegalStateException("Buffer is not accessible");
-		}
-	}
-
 	@Override
-	public @Nullable Buffer get(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+	public @Nullable Buf get(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -350,221 +309,74 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException {
+	public void put(@NotNull WriteOptions writeOptions, Buf key, Buf value) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
-			assert key.isAccessible();
-			assert value.isAccessible();
-			this.keyBufferSize.record(key.readableBytes());
-			this.writeValueBufferSize.record(value.readableBytes());
-			if (nettyDirect) {
-				// Get the key nio buffer to pass to RocksDB
-				ByteBuffer keyNioBuffer;
-				boolean mustCloseKey;
-				{
-					if (!LLUtils.isReadOnlyDirect(key)) {
-						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-						mustCloseKey = true;
-						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-						key = directKey;
-					} else {
-						mustCloseKey = false;
-					}
-					keyNioBuffer = ((BufferComponent) key).readableBuffer();
-					assert keyNioBuffer.isDirect();
-					assert keyNioBuffer.limit() == key.readableBytes();
-				}
-				try {
-					// Get the value nio buffer to pass to RocksDB
-					ByteBuffer valueNioBuffer;
-					boolean mustCloseValue;
-					{
-						if (!LLUtils.isReadOnlyDirect(value)) {
-							// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-							mustCloseValue = true;
-							var directValue = DefaultBufferAllocators.offHeapAllocator().allocate(value.readableBytes());
-							value.copyInto(value.readerOffset(), directValue, 0, value.readableBytes());
-							value = directValue;
-						} else {
-							mustCloseValue = false;
-						}
-						valueNioBuffer = ((BufferComponent) value).readableBuffer();
-						assert valueNioBuffer.isDirect();
-						assert valueNioBuffer.limit() == value.readableBytes();
-					}
-
-					try {
-						db.put(cfh, writeOptions, keyNioBuffer, valueNioBuffer);
-					} finally {
-						if (mustCloseValue) {
-							value.close();
-						}
-					}
-				} finally {
-					if (mustCloseKey) {
-						key.close();
-					}
-				}
-			} else {
-				db.put(cfh, writeOptions, LLUtils.toArray(key), LLUtils.toArray(value));
-			}
+			this.keyBufferSize.record(key.size());
+			this.writeValueBufferSize.record(value.size());
+			db.put(cfh, writeOptions, LLUtils.asArray(key), LLUtils.asArray(value));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+	public boolean exists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
-			if (nettyDirect) {
-				// Get the key nio buffer to pass to RocksDB
-				ByteBuffer keyNioBuffer;
-				boolean mustCloseKey;
-				{
-					if (!LLUtils.isReadOnlyDirect(key)) {
-						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-						mustCloseKey = true;
-						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-						key = directKey;
-					} else {
-						mustCloseKey = false;
-					}
-					keyNioBuffer = ((BufferComponent) key).readableBuffer();
-					assert keyNioBuffer.isDirect();
-					assert keyNioBuffer.limit() == key.readableBytes();
-				}
-				try {
-					if (db.keyMayExist(cfh, keyNioBuffer)) {
-						int size = db.get(cfh, readOptions, keyNioBuffer.position(0), LLUtils.EMPTY_BYTE_BUFFER);
-						boolean found = size != RocksDB.NOT_FOUND;
-						if (found) {
-							readValueFoundWithBloomSimpleBufferSize.record(size);
-							return true;
-						} else {
-							readValueNotFoundWithMayExistBloomBufferSize.record(0);
-							return false;
-						}
-					} else {
-						readValueNotFoundWithBloomBufferSize.record(0);
-						return false;
-					}
-				} finally {
-					if (mustCloseKey) {
-						key.close();
-					}
-				}
-			} else {
-				int size = RocksDB.NOT_FOUND;
-				byte[] keyBytes = LLUtils.toArray(key);
-				Holder<byte[]> data = new Holder<>();
-				boolean mayExistHit = false;
-				if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
-					mayExistHit = true;
-					if (data.getValue() != null) {
-						size = data.getValue().length;
-					} else {
-						size = db.get(cfh, readOptions, keyBytes, NO_DATA);
-					}
-				}
-				boolean found = size != RocksDB.NOT_FOUND;
-				if (found) {
-					readValueFoundWithBloomSimpleBufferSize.record(size);
+			int size = RocksDB.NOT_FOUND;
+			byte[] keyBytes = LLUtils.asArray(key);
+			Holder<byte[]> data = new Holder<>();
+			boolean mayExistHit = false;
+			if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
+				mayExistHit = true;
+				if (data.getValue() != null) {
+					size = data.getValue().length;
 				} else {
-					if (mayExistHit) {
-						readValueNotFoundWithMayExistBloomBufferSize.record(0);
-					} else {
-						readValueNotFoundWithBloomBufferSize.record(0);
-					}
+					size = db.get(cfh, readOptions, keyBytes, NO_DATA);
 				}
-				return found;
 			}
+			boolean found = size != RocksDB.NOT_FOUND;
+			if (found) {
+				readValueFoundWithBloomSimpleBufferSize.record(size);
+			} else {
+				if (mayExistHit) {
+					readValueNotFoundWithMayExistBloomBufferSize.record(0);
+				} else {
+					readValueNotFoundWithBloomBufferSize.record(0);
+				}
+			}
+			return found;
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException {
+	public boolean mayExists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
-			if (nettyDirect) {
-				// Get the key nio buffer to pass to RocksDB
-				ByteBuffer keyNioBuffer;
-				boolean mustCloseKey;
-				{
-					if (!LLUtils.isReadOnlyDirect(key)) {
-						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-						mustCloseKey = true;
-						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-						key = directKey;
-					} else {
-						mustCloseKey = false;
-					}
-					keyNioBuffer = ((BufferComponent) key).readableBuffer();
-					assert keyNioBuffer.isDirect();
-					assert keyNioBuffer.limit() == key.readableBytes();
-				}
-				try {
-					return db.keyMayExist(cfh, readOptions, keyNioBuffer);
-				} finally {
-					if (mustCloseKey) {
-						key.close();
-					}
-				}
-			} else {
-				byte[] keyBytes = LLUtils.toArray(key);
-				return db.keyMayExist(cfh, readOptions, keyBytes, null);
-			}
+			byte[] keyBytes = LLUtils.asArray(key);
+			return db.keyMayExist(cfh, readOptions, keyBytes, null);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException {
+	public void delete(WriteOptions writeOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
-			keyBufferSize.record(key.readableBytes());
-			if (nettyDirect) {
-				// Get the key nio buffer to pass to RocksDB
-				ByteBuffer keyNioBuffer;
-				boolean mustCloseKey;
-				{
-					if (!LLUtils.isReadOnlyDirect(key)) {
-						// If the nio buffer is not available, copy the netty buffer into a new direct buffer
-						mustCloseKey = true;
-						var directKey = DefaultBufferAllocators.offHeapAllocator().allocate(key.readableBytes());
-						key.copyInto(key.readerOffset(), directKey, 0, key.readableBytes());
-						key = directKey;
-					} else {
-						mustCloseKey = false;
-					}
-					keyNioBuffer = ((BufferComponent) key).readableBuffer();
-					assert keyNioBuffer.isDirect();
-					assert keyNioBuffer.limit() == key.readableBytes();
-				}
-				try {
-					db.delete(cfh, writeOptions, keyNioBuffer);
-				} finally {
-					if (mustCloseKey) {
-						key.close();
-					}
-				}
-			} else {
-				db.delete(cfh, writeOptions, LLUtils.toArray(key));
-			}
+			keyBufferSize.record(key.size());
+			db.delete(cfh, writeOptions, LLUtils.asArray(key));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -690,21 +502,17 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Buffer key,
+			Buf key,
 			BinarySerializationFunction updater,
-			UpdateAtomicResultMode returnMode) throws IOException {
+			UpdateAtomicResultMode returnMode) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
 			try {
-				keyBufferSize.record(key.readableBytes());
+				keyBufferSize.record(key.size());
 				startedUpdate.increment();
 				return updateAtomicImpl(readOptions, writeOptions, key, updater, returnMode);
-			} catch (IOException e) {
-				throw e;
-			} catch (Exception e) {
-				throw new IOException(e);
 			} finally {
 				endedUpdate.increment();
 			}
@@ -733,31 +541,29 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 
 	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Buffer key,
+			Buf key,
 			BinarySerializationFunction updater,
-			UpdateAtomicResultMode returnMode) throws IOException;
+			UpdateAtomicResultMode returnMode) throws RocksDBException;
 
 	@Override
 	@NotNull
 	public RocksIteratorObj newIterator(@NotNull ReadOptions readOptions,
-			@Nullable Buffer min,
-			@Nullable Buffer max) {
+			@Nullable Buf min,
+			@Nullable Buf max) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
-			ensureOwned(min);
-			ensureOwned(max);
 			AbstractSlice<?> sliceMin;
 			AbstractSlice<?> sliceMax;
 			if (min != null) {
-				sliceMin = setIterateBound(nettyDirect, readOptions, IterateBound.LOWER, min);
+				sliceMin = setIterateBound(readOptions, IterateBound.LOWER, min);
 			} else {
 				sliceMin = null;
 			}
 			try {
 				if (max != null) {
-					sliceMax = setIterateBound(nettyDirect, readOptions, IterateBound.UPPER, max);
+					sliceMax = setIterateBound(readOptions, IterateBound.UPPER, max);
 				} else {
 					sliceMax = null;
 				}
@@ -769,7 +575,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 								sliceMax,
 								min,
 								max,
-								nettyDirect,
 								this.startedIterSeek,
 								this.endedIterSeek,
 								this.iterSeekTime,
@@ -814,6 +619,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try {
 			ensureOpen();
 			RocksDBUtils.forceCompaction(db, db.getName(), cfh, volumeId, logger);
+		} catch (RocksDBException e) {
+			throw new RuntimeException(e);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -822,11 +629,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	@Override
 	public ColumnFamilyHandle getColumnFamilyHandle() {
 		return cfh;
-	}
-
-	@Override
-	public BufferAllocator getAllocator() {
-		return alloc;
 	}
 
 	public MeterRegistry getMeterRegistry() {
@@ -846,10 +648,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	private class DBColumnKeyMayExistGetter extends KeyMayExistGetter {
-
-		public DBColumnKeyMayExistGetter() {
-			super(alloc, nettyDirect);
-		}
 
 		@Override
 		protected KeyMayExist keyMayExist(ReadOptions readOptions, ByteBuffer key, ByteBuffer value) {

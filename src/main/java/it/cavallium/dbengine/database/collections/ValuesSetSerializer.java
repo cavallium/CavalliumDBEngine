@@ -1,8 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
@@ -11,7 +10,6 @@ import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 
@@ -24,17 +22,17 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 	}
 
 	@Override
-	public @NotNull ObjectArraySet<X> deserialize(@NotNull Buffer serialized) throws SerializationException {
+	public @NotNull ObjectArraySet<X> deserialize(@NotNull BufDataInput in) throws SerializationException {
 		try {
-			Objects.requireNonNull(serialized);
-			if (serialized.readableBytes() == 0) {
+			Objects.requireNonNull(in);
+			if (in.available() <= 0) {
 				logger.error("Can't deserialize, 0 bytes are readable");
 				return new ObjectArraySet<>();
 			}
-			int entriesLength = serialized.readInt();
+			int entriesLength = in.readInt();
 			ArrayList<X> deserializedElements = new ArrayList<>(entriesLength);
 			for (int i = 0; i < entriesLength; i++) {
-				var deserializationResult = entrySerializer.deserialize(serialized);
+				var deserializationResult = entrySerializer.deserialize(in);
 				deserializedElements.add(deserializationResult);
 			}
 			return new ObjectArraySet<>(deserializedElements);
@@ -45,10 +43,10 @@ class ValuesSetSerializer<X> implements Serializer<ObjectArraySet<X>> {
 	}
 
 	@Override
-	public void serialize(@NotNull ObjectArraySet<X> deserialized, Buffer output) throws SerializationException {
-		output.writeInt(deserialized.size());
+	public void serialize(@NotNull ObjectArraySet<X> deserialized, BufDataOutput out) throws SerializationException {
+		out.writeInt(deserialized.size());
 		for (X entry : deserialized) {
-			entrySerializer.serialize(entry, output);
+			entrySerializer.serialize(entry, out);
 		}
 	}
 

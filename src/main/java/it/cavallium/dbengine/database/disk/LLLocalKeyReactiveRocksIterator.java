@@ -1,28 +1,22 @@
 package it.cavallium.dbengine.database.disk;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import java.util.function.Supplier;
 import org.rocksdb.ReadOptions;
-import reactor.core.publisher.Mono;
 
-public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterator<Buffer> {
+public class LLLocalKeyReactiveRocksIterator extends LLLocalReactiveRocksIterator<Buf> {
 
 	public LLLocalKeyReactiveRocksIterator(RocksDBColumn db,
-			Mono<LLRange> rangeMono,
-			boolean allowNettyDirect,
+			LLRange rangeMono,
 			Supplier<ReadOptions> readOptions,
 			boolean reverse,
 			boolean smallRange) {
-		super(db, rangeMono, allowNettyDirect, readOptions, false, reverse, smallRange);
+		super(db, rangeMono, readOptions, false, reverse, smallRange);
 	}
 
 	@Override
-	public Buffer getEntry(Buffer key, Buffer value) {
-		if (value != null) {
-			value.close();
-		}
-		return key;
+	public Buf getEntry(Buf key, Buf value) {
+		return key != null ? key.copy() : null;
 	}
 }

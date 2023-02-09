@@ -1,36 +1,31 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLKeyScore;
-import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.Objects;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import reactor.core.publisher.Flux;
 
 public class LuceneSearchResult extends SimpleResource implements DiscardingCloseable {
 
 	private static final Logger logger = LogManager.getLogger(LuceneSearchResult.class);
 
 	private final TotalHitsCount totalHitsCount;
-	private final Flux<LLKeyScore> results;
+	private final Stream<LLKeyScore> results;
 
-	public LuceneSearchResult(TotalHitsCount totalHitsCount, Flux<LLKeyScore> results) {
+	public LuceneSearchResult(TotalHitsCount totalHitsCount, Stream<LLKeyScore> results) {
 		this.totalHitsCount = totalHitsCount;
 		this.results = results;
 	}
 
 	public TotalHitsCount totalHitsCount() {
-		ensureOpen();
 		return totalHitsCount;
 	}
 
-	public Flux<LLKeyScore> results() {
-		ensureOpen();
+	public Stream<LLKeyScore> results() {
 		return results;
 	}
 
@@ -56,5 +51,6 @@ public class LuceneSearchResult extends SimpleResource implements DiscardingClos
 
 	@Override
 	protected void onClose() {
+		results.close();
 	}
 }

@@ -1,22 +1,11 @@
 package it.cavallium.dbengine.database;
 
-import static io.netty5.buffer.StandardAllocationTypes.OFF_HEAP;
-import static io.netty5.buffer.internal.InternalBufferUtils.NO_OP_DROP;
-import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
 import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty5.buffer.AllocatorControl;
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.buffer.BufferComponent;
-import io.netty5.buffer.CompositeBuffer;
-import io.netty5.buffer.Drop;
-import io.netty5.util.Resource;
-import io.netty5.util.Send;
-import io.netty5.util.IllegalReferenceCountException;
-import it.cavallium.dbengine.database.serialization.SerializationException;
+import io.netty.util.IllegalReferenceCountException;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -26,8 +15,6 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
 import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
-import java.nio.charset.Charset;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -36,11 +23,8 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Function;
-import java.util.function.ToIntFunction;
+import java.util.function.Consumer;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.Marker;
@@ -69,16 +53,7 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.AbstractNativeReference;
-import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.ReadOptions;
-import org.rocksdb.RocksDB;
-import reactor.core.Disposable;
-import reactor.core.Fuseable.QueueSubscription;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Hooks;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 @SuppressWarnings("unused")
 public class LLUtils {
@@ -89,13 +64,11 @@ public class LLUtils {
 
 	public static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
 	public static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0).asReadOnlyBuffer();
-	private static final AllocatorControl NO_OP_ALLOCATION_CONTROL = (AllocatorControl) BufferAllocator.offHeapUnpooled();
 	private static final byte[] RESPONSE_TRUE = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE = new byte[]{0};
 	private static final byte[] RESPONSE_TRUE_BUF = new byte[]{1};
 	private static final byte[] RESPONSE_FALSE_BUF = new byte[]{0};
 	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
-	public static final AtomicBoolean hookRegistered = new AtomicBoolean();
 	public static final boolean MANUAL_READAHEAD = false;
 	public static final boolean ALLOW_STATIC_OPTIONS = false;
 
@@ -111,29 +84,38 @@ public class LLUtils {
 
 	private static final MethodHandle IS_ACCESSIBLE_METHOD_HANDLE;
 
+	private static final MethodHandle IS_IN_NON_BLOCKING_THREAD_MH;
+	private static final Consumer<Object> NULL_CONSUMER = ignored -> {};
+
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
 			var b = LEXICONOGRAPHIC_ITERATION_SEEKS[i1];
 			b[0] = (byte) i1;
 		}
-		var methodType = MethodType.methodType(boolean.class);
-		MethodHandle isAccessibleMethodHandle = null;
-		try {
-			isAccessibleMethodHandle = PUBLIC_LOOKUP.findVirtual(AbstractNativeReference.class, "isAccessible", methodType);
-		} catch (NoSuchMethodException e) {
-			logger.debug("Failed to find isAccessible(): no such method");
-		} catch (IllegalAccessException e) {
-			logger.debug("Failed to find isAccessible()", e);
+		{
+			var methodType = MethodType.methodType(boolean.class);
+			MethodHandle isAccessibleMethodHandle = null;
+			try {
+				isAccessibleMethodHandle = PUBLIC_LOOKUP.findVirtual(AbstractNativeReference.class, "isAccessible", methodType);
+			} catch (NoSuchMethodException e) {
+				logger.debug("Failed to find isAccessible(): no such method");
+			} catch (IllegalAccessException e) {
+				logger.debug("Failed to find isAccessible()", e);
+			}
+			IS_ACCESSIBLE_METHOD_HANDLE = isAccessibleMethodHandle;
 		}
-		IS_ACCESSIBLE_METHOD_HANDLE = isAccessibleMethodHandle;
-		initHooks();
-	}
+		{
+			MethodHandle isInNonBlockingThreadMethodHandle = null;
+			try {
+				var clz = Objects.requireNonNull(PUBLIC_LOOKUP.findClass("reactor.core.scheduler.Schedulers"),
+						"reactor.core.scheduler.Schedulers not found");
 
-	public static void initHooks() {
-		if (hookRegistered.compareAndSet(false, true)) {
-			Hooks.onNextDropped(LLUtils::onNextDropped);
-			//todo: add Hooks.onDiscard when it will be implemented
-			//  Hooks.onDiscard(LLUtils::onDiscard);
+				var methodType = MethodType.methodType(boolean.class);
+				isInNonBlockingThreadMethodHandle = PUBLIC_LOOKUP.findStatic(clz, "isInNonBlockingThread", methodType);
+			} catch (NoSuchMethodException | ClassNotFoundException | IllegalAccessException | NullPointerException e) {
+				logger.debug("Failed to obtain access to reactor core schedulers");
+			}
+			IS_IN_NON_BLOCKING_THREAD_MH = isInNonBlockingThreadMethodHandle;
 		}
 	}
 
@@ -141,26 +123,17 @@ public class LLUtils {
 		return response[0] == 1;
 	}
 
-	public static boolean responseToBoolean(Send<Buffer> responseToReceive) {
-		try (var response = responseToReceive.receive()) {
-			assert response.readableBytes() == 1;
-			return response.getByte(response.readerOffset()) == 1;
-		}
-	}
-
-	public static boolean responseToBoolean(Buffer response) {
-		try (response) {
-			assert response.readableBytes() == 1;
-			return response.getByte(response.readerOffset()) == 1;
-		}
+	public static boolean responseToBoolean(Buf response) {
+		assert response.size() == 1;
+		return response.getBoolean(0);
 	}
 
 	public static byte[] booleanToResponse(boolean bool) {
 		return bool ? RESPONSE_TRUE : RESPONSE_FALSE;
 	}
 
-	public static Buffer booleanToResponseByteBuffer(BufferAllocator alloc, boolean bool) {
-		return alloc.allocate(1).writeByte(bool ? (byte) 1 : 0);
+	public static Buf booleanToResponseByteBuffer(boolean bool) {
+		return Buf.wrap(new byte[] {bool ? (byte) 1 : 0});
 	}
 
 	@Nullable
@@ -307,9 +280,9 @@ public class LLUtils {
 		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.shardId(), hit.score(), hit.key());
 	}
 
-	public static String toStringSafe(@Nullable Buffer key) {
+	public static String toStringSafe(byte @Nullable[] key) {
 		try {
-			if (key == null || key.isAccessible()) {
+			if (key == null) {
 				return toString(key);
 			} else {
 				return "(released)";
@@ -319,7 +292,7 @@ public class LLUtils {
 		}
 	}
 
-	public static String toStringSafe(byte @Nullable[] key) {
+	public static String toStringSafe(@Nullable Buf key) {
 		try {
 			if (key == null) {
 				return toString(key);
@@ -333,7 +306,7 @@ public class LLUtils {
 
 	public static String toStringSafe(@Nullable LLRange range) {
 		try {
-			if (range == null || !range.isClosed()) {
+			if (range == null) {
 				return toString(range);
 			} else {
 				return "(released)";
@@ -349,60 +322,21 @@ public class LLUtils {
 		} else if (range.isAll()) {
 			return "ξ";
 		} else if (range.hasMin() && range.hasMax()) {
-			return "[" + toStringSafe(range.getMinUnsafe()) + "," + toStringSafe(range.getMaxUnsafe()) + ")";
+			return "[" + toStringSafe(range.getMin()) + "," + toStringSafe(range.getMax()) + ")";
 		} else if (range.hasMin()) {
-			return "[" + toStringSafe(range.getMinUnsafe()) + ",*)";
+			return "[" + toStringSafe(range.getMin()) + ",*)";
 		} else if (range.hasMax()) {
-			return "[*," + toStringSafe(range.getMaxUnsafe()) + ")";
+			return "[*," + toStringSafe(range.getMax()) + ")";
 		} else {
 			return "∅";
 		}
 	}
 
-	public static String toString(@Nullable Buffer key) {
+	public static String toString(@Nullable Buf key) {
 		if (key == null) {
 			return "null";
 		} else {
-			int startIndex = key.readerOffset();
-			int iMax = key.readableBytes() - 1;
-			int iLimit = 128;
-			if (iMax <= -1) {
-				return "[]";
-			} else {
-				StringBuilder arraySB = new StringBuilder();
-				StringBuilder asciiSB = new StringBuilder();
-				boolean isAscii = true;
-				arraySB.append('[');
-				int i = 0;
-
-				while (true) {
-					var byteVal = key.getUnsignedByte(startIndex + i);
-					arraySB.append(byteVal);
-					if (isAscii) {
-						if (byteVal >= 32 && byteVal < 127) {
-							asciiSB.append((char) byteVal);
-						} else if (byteVal == 0) {
-							asciiSB.append('␀');
-						} else {
-							isAscii = false;
-							asciiSB = null;
-						}
-					}
-					if (i == iLimit) {
-						arraySB.append("…");
-					}
-					if (i == iMax || i == iLimit) {
-						if (isAscii) {
-							return asciiSB.insert(0, "\"").append("\"").toString();
-						} else {
-							return arraySB.append(']').toString();
-						}
-					}
-
-					arraySB.append(", ");
-					++i;
-				}
-			}
+			return toString(key.asArray());
 		}
 	}
 
@@ -453,21 +387,11 @@ public class LLUtils {
 		}
 	}
 
-	public static boolean equals(Buffer a, Buffer b) {
+	public static boolean equals(Buf a, Buf b) {
 		if (a == null && b == null) {
 			return true;
 		} else if (a != null && b != null) {
-			var aCur = a.openCursor();
-			var bCur = b.openCursor();
-			if (aCur.bytesLeft() != bCur.bytesLeft()) {
-				return false;
-			}
-			while (aCur.readByte() && bCur.readByte()) {
-				if (aCur.getByte() != bCur.getByte()) {
-					return false;
-				}
-			}
-			return true;
+			return a.equals(b);
 		} else {
 			return false;
 		}
@@ -481,123 +405,27 @@ public class LLUtils {
 	 * <p>
 	 * {@code a[aStartIndex : aStartIndex + length] == b[bStartIndex : bStartIndex + length]}
 	 */
-	public static boolean equals(Buffer a, int aStartIndex, Buffer b, int bStartIndex, int length) {
-		var aCur = a.openCursor(aStartIndex, length);
-		var bCur = b.openCursor(bStartIndex, length);
-		if (aCur.bytesLeft() != bCur.bytesLeft()) {
-			return false;
-		}
-		while (aCur.readByte() && bCur.readByte()) {
-			if (aCur.getByte() != bCur.getByte()) {
-				return false;
-			}
-		}
-		return true;
+	public static boolean equals(Buf a, int aStartIndex, Buf b, int bStartIndex, int length) {
+		return a.equals(aStartIndex, b, bStartIndex, length);
 	}
 
-	public static byte[] toArray(@Nullable Buffer key) {
+	/**
+	 *
+	 * @return the inner array, DO NOT MODIFY IT
+	 */
+	public static byte[] asArray(@Nullable Buf key) {
 		if (key == null) {
 			return EMPTY_BYTE_ARRAY;
 		}
-		byte[] array = new byte[key.readableBytes()];
-		key.copyInto(key.readerOffset(), array, 0, key.readableBytes());
-		return array;
+		return key.asArray();
 	}
 
-	public static List<byte[]> toArray(List<Buffer> input) {
-		List<byte[]> result = new ArrayList<>(input.size());
-		for (Buffer byteBuf : input) {
-			result.add(toArray(byteBuf));
-		}
-		return result;
-	}
-
-	public static int hashCode(Buffer buf) {
+	public static int hashCode(Buf buf) {
 		if (buf == null) {
 			return 0;
 		}
 
-		int result = 1;
-		var cur = buf.openCursor();
-		while (cur.readByte()) {
-			var element = cur.getByte();
-			result = 31 * result + element;
-		}
-
-		return result;
-	}
-
-	/**
-	 * @return null if size is equal to RocksDB.NOT_FOUND
-	 */
-	@Nullable
-	public static Buffer readNullableDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		if (alloc.getAllocationType() != OFF_HEAP) {
-			throw new UnsupportedOperationException("Allocator type is not direct: " + alloc);
-		}
-		var directBuffer = alloc.allocate(INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES);
-		try {
-			assert directBuffer.readerOffset() == 0;
-			assert directBuffer.writerOffset() == 0;
-			var directBufferWriter = ((BufferComponent) directBuffer).writableBuffer();
-			assert directBufferWriter.position() == 0;
-			assert directBufferWriter.capacity() >= directBuffer.capacity();
-			assert directBufferWriter.isDirect();
-			int trueSize = reader.applyAsInt(directBufferWriter);
-			if (trueSize == RocksDB.NOT_FOUND) {
-				directBuffer.close();
-				return null;
-			}
-			int readSize = directBufferWriter.limit();
-			if (trueSize < readSize) {
-				throw new IllegalStateException();
-			} else if (trueSize == readSize) {
-				return directBuffer.writerOffset(directBufferWriter.limit());
-			} else {
-				assert directBuffer.readerOffset() == 0;
-				directBuffer.ensureWritable(trueSize);
-				assert directBuffer.writerOffset() == 0;
-				directBufferWriter = ((BufferComponent) directBuffer).writableBuffer();
-				assert directBufferWriter.position() == 0;
-				assert directBufferWriter.isDirect();
-				reader.applyAsInt(directBufferWriter.position(0));
-				return directBuffer.writerOffset(trueSize);
-			}
-		} catch (Throwable t) {
-			directBuffer.close();
-			throw t;
-		}
-	}
-
-	public static void ensureBlocking() {
-		if (Schedulers.isInNonBlockingThread()) {
-			throw new UnsupportedOperationException("Called collect in a nonblocking thread");
-		}
-	}
-
-	// todo: remove this ugly method
-	/**
-	 * cleanup resource
-	 * @param cleanupOnSuccess if true the resource will be cleaned up if the function is successful
-	 */
-	public static <U, T extends Resource<T>> Mono<U> usingSendResource(Mono<Send<T>> resourceSupplier,
-			Function<T, Mono<U>> resourceClosure,
-			boolean cleanupOnSuccess) {
-		return Mono.usingWhen(resourceSupplier.map(Send::receive), resourceClosure, r -> {
-					if (cleanupOnSuccess) {
-						return Mono.fromRunnable(() -> r.close());
-					} else {
-						return Mono.empty();
-					}
-				}, (r, ex) -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}), r -> Mono.fromRunnable(() -> {
-					if (r.isAccessible()) {
-						r.close();
-					}
-				}));
+		return buf.hashCode();
 	}
 
 	public static boolean isSet(ScoreDoc[] scoreDocs) {
@@ -607,26 +435,6 @@ public class LLUtils {
 			}
 		}
 		return true;
-	}
-
-	public static Send<Buffer> empty(BufferAllocator allocator) {
-		try {
-			return allocator.allocate(0).send();
-		} catch (Exception ex) {
-			try (var empty = CompositeBuffer.compose(allocator)) {
-				assert empty.readableBytes() == 0;
-				assert empty.capacity() == 0;
-				return empty.send();
-			}
-		}
-	}
-
-	public static Send<Buffer> copy(BufferAllocator allocator, Buffer buf) {
-		if (CompositeBuffer.isComposite(buf) && buf.capacity() == 0) {
-			return empty(allocator);
-		} else {
-			return buf.copy().send();
-		}
 	}
 
 	public static boolean isBoundedRange(LLRange rangeShared) {
@@ -649,122 +457,24 @@ public class LLUtils {
 			//noinspection resource
 			readOptions = new ReadOptions();
 		}
-		if (boundedRange || smallRange) {
-			readOptions.setFillCache(canFillCache);
-		} else {
+		var hugeRange = !boundedRange && !smallRange;
+		if (hugeRange) {
 			if (readOptions.readaheadSize() <= 0) {
 				readOptions.setReadaheadSize(4 * 1024 * 1024); // 4MiB
 			}
-			readOptions.setFillCache(false);
-			readOptions.setVerifyChecksums(false);
 		}
-
-		if (FORCE_DISABLE_CHECKSUM_VERIFICATION) {
-			readOptions.setVerifyChecksums(false);
-		}
+		readOptions.setFillCache(canFillCache && !hugeRange);
+		readOptions.setVerifyChecksums(!FORCE_DISABLE_CHECKSUM_VERIFICATION && !hugeRange);
 
 		return readOptions;
 	}
 
-	public static Mono<Void> finalizeResource(Resource<?> resource) {
-		Mono<Void> runnable = Mono.fromRunnable(() -> LLUtils.finalizeResourceNow(resource));
-		if (resource instanceof LuceneCloseable) {
-			return runnable.transform(LuceneUtils::scheduleLucene);
-		} else {
-			return runnable;
-		}
-	}
-
-	public static Mono<Void> finalizeResource(SafeCloseable resource) {
-		Mono<Void> runnable = Mono.fromRunnable(resource::close);
-		if (resource instanceof LuceneCloseable) {
-			return runnable.transform(LuceneUtils::scheduleLucene);
-		} else {
-			return runnable;
-		}
-	}
-
-	public static void finalizeResourceNow(Resource<?> resource) {
-		if (resource.isAccessible()) {
-			resource.close();
-		}
+	public static void finalizeResource(SafeCloseable resource) {
+		resource.close();
 	}
 
 	public static void finalizeResourceNow(SafeCloseable resource) {
 		resource.close();
-	}
-
-	public static <V> Flux<V> handleDiscard(Flux<V> flux) {
-		return flux.doOnDiscard(Object.class, LLUtils::onDiscard);
-	}
-
-	public static <V> Mono<V> handleDiscard(Mono<V> flux) {
-		return flux.doOnDiscard(Object.class, LLUtils::onDiscard);
-	}
-
-	/**
-	 * Obtain the resource, then run the closure.
-	 * If the closure publisher returns a single element, then the resource is kept open,
-	 * otherwise it is closed.
-	 */
-	public static <T extends AutoCloseable, U> Mono<U> singleOrClose(Mono<T> resourceMono,
-			Function<T, Mono<U>> closure) {
-		return Mono.usingWhen(resourceMono, resource -> {
-			if (resource instanceof LuceneCloseable) {
-				return closure.apply(resource).publishOn(luceneScheduler()).doOnSuccess(s -> {
-					if (s == null) {
-						try {
-							resource.close();
-						} catch (Exception e) {
-							throw new RuntimeException(e);
-						}
-					}
-				}).publishOn(Schedulers.parallel());
-			} else {
-				return closure.apply(resource).doOnSuccess(s -> {
-					if (s == null) {
-						try {
-							resource.close();
-						} catch (Exception e) {
-							throw new RuntimeException(e);
-						}
-					}
-				});
-			}
-		}, resource -> Mono.empty(), (resource, ex) -> Mono.fromCallable(() -> {
-			resource.close();
-			return null;
-		}), r -> (r instanceof SafeCloseable s) ? LLUtils.finalizeResource(s) : Mono.fromCallable(() -> {
-			r.close();
-			return null;
-		}));
-	}
-
-	public static Disposable scheduleRepeated(Scheduler scheduler, Runnable action, Duration delay) {
-		var currentDisposable = new AtomicReference<Disposable>();
-		var disposed = new AtomicBoolean(false);
-		scheduleRepeatedInternal(scheduler, action, delay, currentDisposable, disposed);
-		return () -> {
-			disposed.set(true);
-			currentDisposable.get().dispose();
-		};
-	}
-
-	private static void scheduleRepeatedInternal(Scheduler scheduler,
-			Runnable action,
-			Duration delay,
-			AtomicReference<Disposable> currentDisposable,
-			AtomicBoolean disposed) {
-		if (disposed.get()) return;
-		currentDisposable.set(scheduler.schedule(() -> {
-			if (disposed.get()) return;
-			try {
-				action.run();
-			} catch (Throwable ex) {
-				logger.error(ex);
-			}
-			scheduleRepeatedInternal(scheduler, action, delay, currentDisposable, disposed);
-		}, delay.toMillis(), TimeUnit.MILLISECONDS));
 	}
 
 	public static boolean isAccessible(AbstractNativeReference abstractNativeReference) {
@@ -778,218 +488,114 @@ public class LLUtils {
 		return true;
 	}
 
-	@Deprecated
-	public record DirectBuffer(@NotNull Buffer buffer, @NotNull ByteBuffer byteBuffer) {}
-
-	@NotNull
-	public static ByteBuffer newDirect(int size) {
-		return ByteBuffer.allocateDirect(size);
+	public static Buf unmodifiableBytes(Buf previous) {
+		previous.freeze();
+		return previous;
 	}
 
-	private static Drop<Buffer> drop() {
-		// We cannot reliably drop unsafe memory. We have to rely on the cleaner to do that.
-		return NO_OP_DROP;
-	}
-
-	public static boolean isReadOnlyDirect(Buffer inputBuffer) {
-		return inputBuffer instanceof BufferComponent component && component.readableNativeAddress() != 0;
-	}
-
-	public static ByteBuffer getReadOnlyDirect(Buffer inputBuffer) {
-		assert isReadOnlyDirect(inputBuffer);
-		return ((BufferComponent) inputBuffer).readableBuffer();
-	}
-
-	public static Buffer fromByteArray(BufferAllocator alloc, byte[] array) {
-		Buffer result = alloc.allocate(array.length);
-		result.writeBytes(array);
-		return result;
-	}
-
-	@NotNull
-	public static Buffer readDirectNioBuffer(BufferAllocator alloc, ToIntFunction<ByteBuffer> reader) {
-		var nullable = readNullableDirectNioBuffer(alloc, reader);
-		if (nullable == null) {
-			throw new IllegalStateException("A non-nullable buffer read operation tried to return a \"not found\" element");
-		}
-		return nullable;
-	}
-
-	public static Buffer compositeBuffer(BufferAllocator alloc, Send<Buffer> buffer) {
-		return buffer.receive();
-	}
-
-	@NotNull
-	public static Buffer compositeBuffer(BufferAllocator alloc,
-			@NotNull Send<Buffer> buffer1,
-			@NotNull Send<Buffer> buffer2) {
-		var b1 = buffer1.receive();
-		try (var b2 = buffer2.receive()) {
-			if (b1.writerOffset() < b1.capacity() || b2.writerOffset() < b2.capacity()) {
-				b1.ensureWritable(b2.readableBytes(), b2.readableBytes(), true);
-				b2.copyInto(b2.readerOffset(), b1, b1.writerOffset(), b2.readableBytes());
-				b1.writerOffset(b1.writerOffset() + b2.readableBytes());
-				return b1;
-			} else {
-				return alloc.compose(List.of(b1.send(), b2.send()));
-			}
-		}
-	}
-
-	@NotNull
-	public static Buffer compositeBuffer(BufferAllocator alloc,
-			@NotNull Send<Buffer> buffer1,
-			@NotNull Send<Buffer> buffer2,
-			@NotNull Send<Buffer> buffer3) {
-		var b1 = buffer1.receive();
-		try (var b2 = buffer2.receive()) {
-			try (var b3 = buffer3.receive()) {
-				if (b1.writerOffset() < b1.capacity()
-						|| b2.writerOffset() < b2.capacity()
-						|| b3.writerOffset() < b3.capacity()) {
-					b1.ensureWritable(b2.readableBytes(), b2.readableBytes(), true);
-					b2.copyInto(b2.readerOffset(), b1, b1.writerOffset(), b2.readableBytes());
-					b1.writerOffset(b1.writerOffset() + b2.readableBytes());
-
-					b1.ensureWritable(b3.readableBytes(), b3.readableBytes(), true);
-					b3.copyInto(b3.readerOffset(), b1, b1.writerOffset(), b3.readableBytes());
-					b1.writerOffset(b1.writerOffset() + b3.readableBytes());
-					return b1;
-				} else {
-					return alloc.compose(List.of(b1.send(), b2.send(), b3.send()));
-				}
-			}
-		}
-	}
-
-	public static <T> Mono<T> resolveDelta(Mono<Delta<T>> prev, UpdateReturnMode updateReturnMode) {
-		return prev.handle((delta, sink) -> {
-			switch (updateReturnMode) {
-				case GET_NEW_VALUE -> {
-					var current = delta.current();
-					if (current != null) {
-						sink.next(current);
-					} else {
-						sink.complete();
-					}
-				}
-				case GET_OLD_VALUE -> {
-					var previous = delta.previous();
-					if (previous != null) {
-						sink.next(previous);
-					} else {
-						sink.complete();
-					}
-				}
-				case NOTHING -> sink.complete();
-				default -> sink.error(new IllegalStateException());
-			}
-		});
-	}
-
-	public static Mono<Buffer> resolveLLDelta(Mono<LLDelta> prev, UpdateReturnMode updateReturnMode) {
-		return prev.mapNotNull(delta -> {
-			final Buffer previous = delta.previousUnsafe();
-			final Buffer current = delta.currentUnsafe();
-			return switch (updateReturnMode) {
-				case GET_NEW_VALUE -> {
-					if (previous != null && previous.isAccessible()) {
-						previous.close();
-					}
-					yield current;
-				}
-				case GET_OLD_VALUE -> {
-					if (current != null && current.isAccessible()) {
-						current.close();
-					}
-					yield previous;
-				}
-				case NOTHING -> {
-					if (previous != null && previous.isAccessible()) {
-						previous.close();
-					}
-					if (current != null && current.isAccessible()) {
-						current.close();
-					}
-					yield null;
-				}
-			};
-		});
-	}
-
-	public static <T, U> Mono<Delta<U>> mapDelta(Mono<Delta<T>> mono,
-			SerializationFunction<@NotNull T, @Nullable U> mapper) {
-		return mono.handle((delta, sink) -> {
+	public static boolean isInNonBlockingThread() {
+		if (IS_IN_NON_BLOCKING_THREAD_MH != null) {
 			try {
-				T prev = delta.previous();
-				T curr = delta.current();
-				U newPrev;
-				U newCurr;
-				if (prev != null) {
-					newPrev = mapper.apply(prev);
-				} else {
-					newPrev = null;
-				}
-				if (curr != null) {
-					newCurr = mapper.apply(curr);
-				} else {
-					newCurr = null;
-				}
-				sink.next(new Delta<>(newPrev, newCurr));
-			} catch (SerializationException ex) {
-				sink.error(ex);
+				return (boolean) IS_IN_NON_BLOCKING_THREAD_MH.invokeExact();
+			} catch (Throwable e) {
+				throw new RuntimeException(e);
 			}
-		});
+		}
+		return false;
 	}
 
-	public static <U> Mono<Delta<U>> mapLLDelta(Mono<LLDelta> mono,
-			SerializationFunction<@NotNull Buffer, @Nullable U> mapper) {
-		return Mono.usingWhen(mono, delta -> Mono.fromCallable(() -> {
-			Buffer prev = delta.previousUnsafe();
-			Buffer curr = delta.currentUnsafe();
-			U newPrev;
-			U newCurr;
-			if (prev != null) {
-				newPrev = mapper.apply(prev);
-			} else {
-				newPrev = null;
-			}
-			if (curr != null) {
-				newCurr = mapper.apply(curr);
-			} else {
-				newCurr = null;
-			}
-			return new Delta<>(newPrev, newCurr);
-		}), LLUtils::finalizeResource);
+	public static Buf copy(Buf buf) {
+		return buf.copy();
+	}
+
+	public static Buf asByteList(byte[] array) {
+		return Buf.wrap(array);
+	}
+
+	public static Buf toByteList(byte[] array) {
+		return Buf.copyOf(array);
+	}
+
+
+	public static Buf compositeBuffer(Buf buffer) {
+		return buffer;
+	}
+
+	@NotNull
+	public static Buf compositeBuffer(Buf buffer1, Buf buffer2) {
+		// todo: create a composite buffer without allocating a new array
+		var out = Buf.create(buffer1.size() + buffer2.size());
+		out.addAll(buffer1);
+		out.addAll(buffer2);
+		return out;
+	}
+
+	@NotNull
+	public static Buf compositeBuffer(Buf buffer1, Buf buffer2, Buf buffer3) {
+		// todo: create a composite buffer without allocating a new array
+		var out = Buf.create(buffer1.size() + buffer2.size());
+		out.addAll(buffer1);
+		out.addAll(buffer2);
+		out.addAll(buffer3);
+		return out;
+	}
+
+	public static <T> T resolveDelta(Delta<T> delta, UpdateReturnMode updateReturnMode) {
+		return switch (updateReturnMode) {
+			case GET_NEW_VALUE -> delta.current();
+			case GET_OLD_VALUE -> delta.previous();
+			case NOTHING -> null;
+		};
+	}
+
+	public static Buf resolveLLDelta(LLDelta delta, UpdateReturnMode updateReturnMode) {
+		final Buf previous = delta.previous();
+		final Buf current = delta.current();
+		return switch (updateReturnMode) {
+			case GET_NEW_VALUE -> current;
+			case GET_OLD_VALUE -> previous;
+			case NOTHING -> null;
+		};
+	}
+
+	public static <T, U> Delta<U> mapDelta(Delta<T> delta, SerializationFunction<@NotNull T, @Nullable U> mapper) {
+		T prev = delta.previous();
+		T curr = delta.current();
+		U newPrev;
+		U newCurr;
+		if (prev != null) {
+			newPrev = mapper.apply(prev);
+		} else {
+			newPrev = null;
+		}
+		if (curr != null) {
+			newCurr = mapper.apply(curr);
+		} else {
+			newCurr = null;
+		}
+		return new Delta<>(newPrev, newCurr);
+	}
+
+	public static <U> Delta<U> mapLLDelta(LLDelta delta, SerializationFunction<@NotNull Buf, @Nullable U> mapper) {
+		var prev = delta.previous();
+		var curr = delta.current();
+		U newPrev;
+		U newCurr;
+		if (prev != null) {
+			newPrev = mapper.apply(prev);
+		} else {
+			newPrev = null;
+		}
+		if (curr != null) {
+			newCurr = mapper.apply(curr);
+		} else {
+			newCurr = null;
+		}
+		return new Delta<>(newPrev, newCurr);
 	}
 
 	public static <R, V> boolean isDeltaChanged(Delta<V> delta) {
 		return !Objects.equals(delta.previous(), delta.current());
-	}
-
-	public static boolean isDirect(Buffer key) {
-		var readableComponents = key.countReadableComponents();
-		if (readableComponents == 0) {
-			return true;
-		} else if (readableComponents == 1) {
-			return key.isDirect();
-		} else {
-			return false;
-		}
-	}
-
-	public static String deserializeString(Send<Buffer> bufferSend, int readerOffset, int length, Charset charset) {
-		try (var buffer = bufferSend.receive()) {
-			byte[] bytes = new byte[Math.min(length, buffer.readableBytes())];
-			buffer.copyInto(readerOffset, bytes, 0, length);
-			return new String(bytes, charset);
-		}
-	}
-
-	public static String deserializeString(@NotNull Buffer buffer, int readerOffset, int length, Charset charset) {
-		byte[] bytes = new byte[Math.min(length, buffer.readableBytes())];
-		buffer.copyInto(readerOffset, bytes, 0, length);
-		return new String(bytes, charset);
 	}
 
 	public static int utf8MaxBytes(String deserialized) {
@@ -1015,18 +621,14 @@ public class LLUtils {
 	}
 
 	private static void closeResource(Object next, boolean manual) {
-		if (next instanceof Send<?> send) {
-			send.close();
-		} if (next instanceof SafeCloseable closeable) {
+		if (next instanceof SafeCloseable closeable) {
 			if (manual || closeable instanceof DiscardingCloseable) {
 				if (!manual && !LuceneUtils.isLuceneThread() && closeable instanceof LuceneCloseable luceneCloseable) {
-					luceneScheduler().schedule(() -> luceneCloseable.close());
+					luceneCloseable.close();
 				} else {
 					closeable.close();
 				}
 			}
-		} else if (next instanceof Resource<?> resource && resource.isAccessible()) {
-			resource.close();
 		} else if (next instanceof List<?> iterable) {
 			iterable.forEach(obj -> closeResource(obj, manual));
 		} else if (next instanceof Set<?> iterable) {
@@ -1078,6 +680,12 @@ public class LLUtils {
 		@Override
 		public BytesRef toBytesRef() {
 			return term.getValueBytesRef();
+		}
+	}
+
+	public static <X> void consume(Stream<X> stream) {
+		try (stream) {
+			stream.forEach(NULL_CONSUMER);
 		}
 	}
 }

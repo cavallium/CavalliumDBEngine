@@ -1,78 +1,71 @@
 package it.cavallium.dbengine.client;
 
-import io.netty5.util.Send;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSnapshottable;
-import it.cavallium.dbengine.database.collections.ValueGetter;
-import it.cavallium.dbengine.database.collections.ValueTransformer;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
-import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 public interface LuceneIndex<T, U> extends LLSnapshottable {
 
-	Mono<Void> addDocument(T key, U value);
+	void addDocument(T key, U value);
 
-	Mono<Long> addDocuments(boolean atomic, Flux<Entry<T, U>> entries);
+	long addDocuments(boolean atomic, Stream<Entry<T, U>> entries);
 
-	Mono<Void> deleteDocument(T key);
+	void deleteDocument(T key);
 
-	Mono<Void> updateDocument(T key, @NotNull U value);
+	void updateDocument(T key, @NotNull U value);
 
-	Mono<Long> updateDocuments(Flux<Entry<T, U>> entries);
+	long updateDocuments(Stream<Entry<T, U>> entries);
 
-	default Mono<Void> updateOrDeleteDocument(T key, @Nullable U value) {
+	default void updateOrDeleteDocument(T key, @Nullable U value) {
 		if (value == null) {
-			return deleteDocument(key);
+			deleteDocument(key);
 		} else {
-			return updateDocument(key, value);
+			updateDocument(key, value);
 		}
 	}
 
-	default Mono<Void> updateOrDeleteDocumentIfModified(T key, @NotNull Delta<U> delta) {
-		return updateOrDeleteDocumentIfModified(key, delta.current(), delta.isModified());
+	default void updateOrDeleteDocumentIfModified(T key, @NotNull Delta<U> delta) {
+		updateOrDeleteDocumentIfModified(key, delta.current(), delta.isModified());
 	}
 
-	default Mono<Void> updateOrDeleteDocumentIfModified(T key, @Nullable U currentValue, boolean modified) {
+	default void updateOrDeleteDocumentIfModified(T key, @Nullable U currentValue, boolean modified) {
 		if (modified) {
-			return updateOrDeleteDocument(key, currentValue);
-		} else {
-			return Mono.empty();
+			updateOrDeleteDocument(key, currentValue);
 		}
 	}
 
-	Mono<Void> deleteAll();
+	void deleteAll();
 
-	Mono<Hits<HitKey<T>>> moreLikeThis(ClientQueryParams queryParams, T key,
+	Hits<HitKey<T>> moreLikeThis(ClientQueryParams queryParams, T key,
 			U mltDocumentValue);
 
-	Mono<Hits<HitKey<T>>> search(ClientQueryParams queryParams);
+	Hits<HitKey<T>> search(ClientQueryParams queryParams);
 
-	Mono<Buckets> computeBuckets(@Nullable CompositeSnapshot snapshot,
+	Buckets computeBuckets(@Nullable CompositeSnapshot snapshot,
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams);
 
-	Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query);
+	TotalHitsCount count(@Nullable CompositeSnapshot snapshot, Query query);
 
 	boolean isLowMemoryMode();
 
 	void close();
 
-	Mono<Void> flush();
+	void flush();
 
-	Mono<Void> waitForMerges();
+	void waitForMerges();
 
-	Mono<Void> waitForLastMerges();
+	void waitForLastMerges();
 
-	Mono<Void> refresh(boolean force);
+	void refresh(boolean force);
 }

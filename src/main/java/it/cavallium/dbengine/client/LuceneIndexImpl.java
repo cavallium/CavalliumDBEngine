@@ -5,7 +5,6 @@ import it.cavallium.dbengine.client.Hits.LuceneHits;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
-import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
@@ -13,8 +12,6 @@ import it.cavallium.dbengine.database.LLSearchResultShard.LuceneLLSearchResultSh
 import it.cavallium.dbengine.database.LLSearchResultShard.ResourcesLLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
-import it.cavallium.dbengine.database.LLUpdateDocument;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -26,14 +23,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.logging.Level;
+import java.util.function.Function;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
@@ -56,96 +51,87 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<Void> addDocument(T key, U value) {
-		return indicizer
-				.toDocument(key, value)
-				.flatMap(doc -> luceneIndex.addDocument(indicizer.toIndex(key), doc));
+	public void addDocument(T key, U value) {
+		luceneIndex.addDocument(indicizer.toIndex(key), indicizer.toDocument(key, value));
 	}
 
 	@Override
-	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<T, U>> entries) {
-		return luceneIndex.addDocuments(atomic, entries.flatMap(entry -> indicizer
-				.toDocument(entry.getKey(), entry.getValue())
-				.map(doc -> Map.entry(indicizer.toIndex(entry.getKey()), doc))));
+	public long addDocuments(boolean atomic, Stream<Entry<T, U>> entries) {
+		return luceneIndex.addDocuments(atomic, entries.map(entry ->
+				Map.entry(indicizer.toIndex(entry.getKey()), indicizer.toDocument(entry.getKey(), entry.getValue()))));
 	}
 
 	@Override
-	public Mono<Void> deleteDocument(T key) {
+	public void deleteDocument(T key) {
 		LLTerm id = indicizer.toIndex(key);
-		return luceneIndex.deleteDocument(id);
+		luceneIndex.deleteDocument(id);
 	}
 
 	@Override
-	public Mono<Void> updateDocument(T key, @NotNull U value) {
-		return indicizer
-				.toIndexRequest(key, value)
-				.flatMap(doc -> luceneIndex.update(indicizer.toIndex(key), doc));
+	public void updateDocument(T key, @NotNull U value) {
+		luceneIndex.update(indicizer.toIndex(key), indicizer.toIndexRequest(key, value));
 	}
 
 	@Override
-	public Mono<Long> updateDocuments(Flux<Entry<T, U>> entries) {
-		Flux<Entry<LLTerm, LLUpdateDocument>> mappedEntries = entries
-				.flatMap(entry -> Mono
-						.zip(Mono.just(indicizer.toIndex(entry.getKey())),
-								indicizer.toDocument(entry.getKey(), entry.getValue()).single(),
-								Map::entry
-						)
-						.single()
-				)
-				.log("impl-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE);
-		return luceneIndex.updateDocuments(mappedEntries);
+	public long updateDocuments(Stream<Entry<T, U>> entries) {
+		return luceneIndex.updateDocuments(entries.map(entry ->
+				Map.entry(indicizer.toIndex(entry.getKey()), indicizer.toDocument(entry.getKey(), entry.getValue()))));
 	}
 
 	@Override
-	public Mono<Void> deleteAll() {
-		return luceneIndex.deleteAll();
+	public void deleteAll() {
+		luceneIndex.deleteAll();
 	}
 
 	@Override
-	public Mono<Hits<HitKey<T>>> moreLikeThis(ClientQueryParams queryParams,
+	public Hits<HitKey<T>> moreLikeThis(ClientQueryParams queryParams,
 			T key,
 			U mltDocumentValue) {
 		var mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 
-		return luceneIndex
+		var results = luceneIndex
 				.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
 				)
-				.collectList()
-				.mapNotNull(shards -> mergeResults(queryParams, shards))
-				.map(llSearchResult -> mapResults(llSearchResult))
-				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
+				.toList();
+		LLSearchResultShard mergedResults = mergeResults(queryParams, results);
+		if (mergedResults != null) {
+			return mapResults(mergedResults);
+		} else {
+			return Hits.empty();
+		}
 	}
 
 	@Override
-	public Mono<Hits<HitKey<T>>> search(ClientQueryParams queryParams) {
-		return luceneIndex
+	public Hits<HitKey<T>> search(ClientQueryParams queryParams) {
+		var results = luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()
 				)
-				.collectList()
-				.mapNotNull(shards -> mergeResults(queryParams, shards))
-				.map(llSearchResult -> mapResults(llSearchResult))
-				.defaultIfEmpty(Hits.empty())
-				.doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
+				.toList();
+
+		var mergedResults = mergeResults(queryParams, results);
+		if (mergedResults != null) {
+			return mapResults(mergedResults);
+		} else {
+			return Hits.empty();
+		}
 	}
 
 	@Override
-	public Mono<Buckets> computeBuckets(@Nullable CompositeSnapshot snapshot,
+	public Buckets computeBuckets(@Nullable CompositeSnapshot snapshot,
 			@NotNull List<Query> query,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
-		return luceneIndex.computeBuckets(resolveSnapshot(snapshot), query,
-				normalizationQuery, bucketParams).single();
+		return luceneIndex.computeBuckets(resolveSnapshot(snapshot), query, normalizationQuery, bucketParams);
 	}
 
 	private Hits<HitKey<T>> mapResults(LLSearchResultShard llSearchResult) {
-		Flux<HitKey<T>> scoresWithKeysFlux = llSearchResult.results()
+		Stream<HitKey<T>> scoresWithKeysFlux = llSearchResult.results()
 				.map(hit -> new HitKey<>(indicizer.getKey(hit.key()), hit.score()));
 
 		if (llSearchResult instanceof LuceneCloseable luceneCloseable) {
@@ -156,10 +142,8 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	@Override
-	public Mono<TotalHitsCount> count(@Nullable CompositeSnapshot snapshot, Query query) {
-		return luceneIndex
-				.count(resolveSnapshot(snapshot), query, MAX_COUNT_TIME)
-				.doOnDiscard(DiscardingCloseable.class, LLUtils::onDiscard);
+	public TotalHitsCount count(@Nullable CompositeSnapshot snapshot, Query query) {
+		return luceneIndex.count(resolveSnapshot(snapshot), query, MAX_COUNT_TIME);
 	}
 
 	@Override
@@ -176,36 +160,36 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	 * Flush writes to disk
 	 */
 	@Override
-	public Mono<Void> flush() {
-		return luceneIndex.flush();
+	public void flush() {
+		luceneIndex.flush();
 	}
 
 	@Override
-	public Mono<Void> waitForMerges() {
-		return luceneIndex.waitForMerges();
+	public void waitForMerges() {
+		luceneIndex.waitForMerges();
 	}
 
 	@Override
-	public Mono<Void> waitForLastMerges() {
-		return luceneIndex.waitForLastMerges();
+	public void waitForLastMerges() {
+		luceneIndex.waitForLastMerges();
 	}
 
 	/**
 	 * Refresh index searcher
 	 */
 	@Override
-	public Mono<Void> refresh(boolean force) {
-		return luceneIndex.refresh(force);
+	public void refresh(boolean force) {
+		luceneIndex.refresh(force);
 	}
 
 	@Override
-	public Mono<LLSnapshot> takeSnapshot() {
+	public LLSnapshot takeSnapshot() {
 		return luceneIndex.takeSnapshot();
 	}
 
 	@Override
-	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return luceneIndex.releaseSnapshot(snapshot);
+	public void releaseSnapshot(LLSnapshot snapshot) {
+		luceneIndex.releaseSnapshot(snapshot);
 	}
 
 	@SuppressWarnings({"unchecked", "rawtypes"})
@@ -217,7 +201,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 			return shards.get(0);
 		}
 		TotalHitsCount count = null;
-		ObjectArrayList<Flux<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
+		ObjectArrayList<Stream<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
 		ObjectArrayList resources = new ObjectArrayList(shards.size());
 		boolean luceneResources = false;
 		for (LLSearchResultShard shard : shards) {
@@ -230,17 +214,17 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 				count = LuceneUtils.sum(count, shard.totalHitsCount());
 			}
 			var maxLimit = queryParams.offset() + queryParams.limit();
-			results.add(shard.results().take(maxLimit, true));
+			results.add(shard.results().limit(maxLimit));
 			resources.add(shard);
 		}
 		Objects.requireNonNull(count);
-		Flux<LLKeyScore> resultsFlux;
+		Stream<LLKeyScore> resultsFlux;
 		if (results.size() == 0) {
-			resultsFlux = Flux.empty();
+			resultsFlux = Stream.empty();
 		} else if (results.size() == 1) {
 			resultsFlux = results.get(0);
 		} else {
-			resultsFlux = Flux.merge(results);
+			resultsFlux = results.parallelStream().flatMap(Function.identity());
 		}
 		if (luceneResources) {
 			return new LuceneLLSearchResultShard(resultsFlux, count, (List<LuceneCloseable>) resources);

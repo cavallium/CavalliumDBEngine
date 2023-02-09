@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.database.memory;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.util.Resource;
-import io.netty5.util.Send;
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.mapping;
+
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -17,46 +17,42 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.utils.InternalMonoUtils;
-import it.unimi.dsi.fastutil.bytes.ByteList;
+import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 public class LLMemoryDictionary implements LLDictionary {
 
 	private final String databaseName;
 	private final String columnName;
-	private final BufferAllocator allocator;
 	private final UpdateMode updateMode;
-	private final Getter<Long, ConcurrentSkipListMap<ByteList, ByteList>> snapshots;
-	private final ConcurrentSkipListMap<ByteList, ByteList> mainDb;
+	private final Getter<Long, ConcurrentSkipListMap<Buf, Buf>> snapshots;
+	private final ConcurrentSkipListMap<Buf, Buf> mainDb;
 
 	private interface Getter<T, U> {
 		U get(T argument);
 	}
 
-	public LLMemoryDictionary(BufferAllocator allocator,
-			String databaseName,
+	public LLMemoryDictionary(String databaseName,
 			String columnName,
 			UpdateMode updateMode,
-			ConcurrentHashMap<Long, ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>>> snapshots,
-			ConcurrentHashMap<String, ConcurrentSkipListMap<ByteList, ByteList>> mainDb) {
+			ConcurrentHashMap<Long, ConcurrentHashMap<String, ConcurrentSkipListMap<Buf, Buf>>> snapshots,
+			ConcurrentHashMap<String, ConcurrentSkipListMap<Buf, Buf>> mainDb) {
 		this.databaseName = databaseName;
 		this.columnName = columnName;
-		this.allocator = allocator;
 		this.updateMode = updateMode;
 		this.snapshots = (snapshotId) -> snapshots.get(snapshotId).get(columnName);
 		this.mainDb = mainDb.get(columnName);
@@ -65,11 +61,6 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public String getColumnName() {
 		return columnName;
-	}
-
-	@Override
-	public BufferAllocator getAllocator() {
-		return allocator;
 	}
 
 	private long resolveSnapshot(LLSnapshot snapshot) {
@@ -82,71 +73,58 @@ public class LLMemoryDictionary implements LLDictionary {
 		}
 	}
 
-	private Mono<Buffer> transformResult(Mono<ByteList> result, LLDictionaryResultType resultType) {
+	private Buf transformResult(Buf result, LLDictionaryResultType resultType) {
 		if (resultType == LLDictionaryResultType.PREVIOUS_VALUE) {
 			// Don't retain the result because it has been removed from the skip list
-			return result.map(this::kkB);
+			return kkB(result);
 		} else if (resultType == LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE) {
-			return result
-					.map(prev -> true)
-					.defaultIfEmpty(false)
-					.map((Boolean bool) -> LLUtils.booleanToResponseByteBuffer(allocator, bool));
+			return LLUtils.booleanToResponseByteBuffer(result != null);
 		} else {
-			return result.as(InternalMonoUtils::ignoreElements);
+			return null;
 		}
 	}
 
-	private ByteList k(Send<Buffer> buf) {
-		try (var b = buf.receive()) {
-			return new BinaryLexicographicList(LLUtils.toArray(b));
-		}
+	private Buf k(Buf buf) {
+		if (buf == null) return null;
+		return buf;
 	}
 
-	private ByteList kShr(Buffer buf) {
-		return new BinaryLexicographicList(LLUtils.toArray(buf));
+	private Buf kShr(Buf buf) {
+		if (buf == null) return null;
+		return buf;
 	}
 
-	private ByteList kOwn(Buffer buf) {
-		try (buf) {
-			return new BinaryLexicographicList(LLUtils.toArray(buf));
-		}
+	private Buf kOwn(Buf buf) {
+		if (buf == null) return null;
+		return buf;
 	}
 
-	private Send<Buffer> kk(ByteList bytesList) {
-		try (var buffer = getAllocator().allocate(bytesList.size())) {
-			buffer.writeBytes(bytesList.toByteArray());
-			return buffer.send();
-		}
+	private Buf kk(Buf bytesList) {
+		if (bytesList == null) return null;
+		return bytesList;
 	}
 
-	private Buffer kkB(ByteList bytesList) {
-		var buffer = getAllocator().allocate(bytesList.size());
-		try {
-			buffer.writeBytes(bytesList.toByteArray());
-			return buffer;
-		} catch (Throwable t) {
-			buffer.close();
-			throw t;
-		}
+	private Buf kkB(Buf bytesList) {
+		if (bytesList == null) return null;
+		return bytesList;
 	}
 
 	private BLRange r(Supplier<LLRange> send) {
-		try(var range = send.get()) {
-			if (range.isAll()) {
-				return new BLRange(null, null, null);
-			} else if (range.isSingle()) {
-				return new BLRange(null, null, k(range.getSingle()));
-			} else if (range.hasMin() && range.hasMax()) {
-				return new BLRange(k(range.getMin()), k(range.getMax()), null);
-			} else if (range.hasMin()) {
-				return new BLRange(k(range.getMin()), null, null);
-			} else {
-				return new BLRange(k(range.getMax()), null, null);
-			}
+		var range = send.get();
+		if (range.isAll()) {
+			return new BLRange(null, null, null);
+		} else if (range.isSingle()) {
+			return new BLRange(null, null, k(range.getSingle()));
+		} else if (range.hasMin() && range.hasMax()) {
+			return new BLRange(k(range.getMin()), k(range.getMax()), null);
+		} else if (range.hasMin()) {
+			return new BLRange(k(range.getMin()), null, null);
+		} else {
+			return new BLRange(k(range.getMax()), null, null);
 		}
 	}
 
-	private ConcurrentNavigableMap<ByteList, ByteList> mapSlice(LLSnapshot snapshot, LLRange range) {
+	private ConcurrentNavigableMap<Buf, Buf> mapSlice(LLSnapshot snapshot, LLRange range) {
 		if (range.isAll()) {
 			return snapshots.get(resolveSnapshot(snapshot));
 		} else if (range.isSingle()) {
@@ -180,25 +158,14 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> keyMono) {
-		return Mono.usingWhen(keyMono,
-				key -> Mono
-						.fromCallable(() -> snapshots.get(resolveSnapshot(snapshot)).get(kShr(key)))
-						.map(this::kkB)
-						.onErrorMap(cause -> new IOException("Failed to read", cause)),
-				LLUtils::finalizeResource
-		);
+	public Buf get(@Nullable LLSnapshot snapshot, Buf key) {
+		return snapshots.get(resolveSnapshot(snapshot)).get(kShr(key));
 	}
 
 	@Override
-	public Mono<Buffer> put(Mono<Buffer> keyMono, Mono<Buffer> valueMono, LLDictionaryResultType resultType) {
-		var kMono = keyMono.map(this::kOwn);
-		var vMono = valueMono.map(this::kOwn);
-		return Mono
-				.zip(kMono, vMono)
-				.mapNotNull(tuple -> mainDb.put(tuple.getT1(), tuple.getT2()))
-				.transform(result -> this.transformResult(result, resultType))
-				.onErrorMap(cause -> new IOException("Failed to read", cause));
+	public Buf put(Buf key, Buf value, LLDictionaryResultType resultType) {
+		var result = mainDb.put(key, value);
+		return this.transformResult(result, resultType);
 	}
 
 	@Override
@@ -207,308 +174,217 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<LLDelta> updateAndGetDelta(Mono<Buffer> keyMono, BinarySerializationFunction updater) {
-		return Mono.usingWhen(keyMono,
-				key -> Mono.fromCallable(() -> {
-					if (updateMode == UpdateMode.DISALLOW) {
-						throw new UnsupportedOperationException("update() is disallowed");
-					}
-					AtomicReference<ByteList> oldRef = new AtomicReference<>(null);
-					var newValue = mainDb.compute(kShr(key), (_unused, old) -> {
-						if (old != null) {
-							oldRef.set(old);
-						}
-						Buffer v;
-						var oldToSend = old != null ? kkB(old) : null;
-						try {
-							assert oldToSend == null || oldToSend.isAccessible();
-							v = updater.apply(oldToSend);
-							assert v == null || v.isAccessible();
-						} catch (SerializationException e) {
-							throw new IllegalStateException(e);
-						} finally {
-							if (oldToSend != null && oldToSend.isAccessible()) {
-								oldToSend.close();
-							}
-						}
-						if (v != null) {
-							return kOwn(v);
-						} else {
-							return null;
-						}
-					});
-					var oldVal = oldRef.get();
-					return LLDelta.of(oldVal != null ? kkB(oldRef.get()) : null, newValue != null ? kkB(newValue) : null);
-				}),
-				LLUtils::finalizeResource
-		);
+	public LLDelta updateAndGetDelta(Buf key, BinarySerializationFunction updater) {
+		if (updateMode == UpdateMode.DISALLOW) {
+			throw new UnsupportedOperationException("update() is disallowed");
+		}
+		AtomicReference<Buf> oldRef = new AtomicReference<>(null);
+		var newValue = mainDb.compute(kShr(key), (_unused, old) -> {
+			if (old != null) {
+				oldRef.set(old);
+			}
+			Buf v;
+			var oldToSend = old != null ? kkB(old) : null;
+			try {
+				v = updater.apply(oldToSend);
+			} catch (SerializationException e) {
+				throw new IllegalStateException(e);
+			}
+			if (v != null) {
+				return kOwn(v);
+			} else {
+				return null;
+			}
+		});
+		var oldVal = oldRef.get();
+		return LLDelta.of(oldVal != null ? kkB(oldRef.get()) : null, newValue != null ? kkB(newValue) : null);
 	}
 
 	@Override
-	public Mono<Void> clear() {
-		return Mono.fromRunnable(mainDb::clear);
+	public void clear() {
+		mainDb.clear();
 	}
 
 	@Override
-	public Mono<Buffer> remove(Mono<Buffer> keyMono, LLDictionaryResultType resultType) {
-		return Mono.usingWhen(keyMono,
-				key -> Mono
-						.fromCallable(() -> mainDb.remove(kShr(key)))
-						// Don't retain the result because it has been removed from the skip list
-						.mapNotNull(bytesList -> switch (resultType) {
-							case VOID -> null;
-							case PREVIOUS_VALUE_EXISTENCE -> LLUtils.booleanToResponseByteBuffer(allocator, true);
-							case PREVIOUS_VALUE -> kkB(bytesList);
-						})
-						.switchIfEmpty(Mono.defer(() -> {
-							if (resultType == LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE) {
-								return Mono.fromCallable(() -> LLUtils.booleanToResponseByteBuffer(allocator, false));
-							} else {
-								return Mono.empty();
-							}
-						}))
-						.onErrorMap(cause -> new IOException("Failed to read", cause)),
-				LLUtils::finalizeResource
-		);
+	public Buf remove(Buf key, LLDictionaryResultType resultType) {
+		var prev = mainDb.remove(kShr(key));
+		// Don't retain the result because it has been removed from the skip list
+		if (prev != null) {
+			return switch (resultType) {
+				case VOID -> null;
+				case PREVIOUS_VALUE_EXISTENCE -> LLUtils.booleanToResponseByteBuffer(true);
+				case PREVIOUS_VALUE -> kkB(prev);
+			};
+		} else {
+			if (resultType == LLDictionaryResultType.PREVIOUS_VALUE_EXISTENCE) {
+				return LLUtils.booleanToResponseByteBuffer(false);
+			} else {
+				return null;
+			}
+		}
 	}
 
 	@Override
-	public Flux<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys) {
+	public Stream<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Stream<Buf> keys) {
 		return keys.map(key -> {
-			try (key) {
-				ByteList v = snapshots.get(resolveSnapshot(snapshot)).get(k(key.copy().send()));
-				if (v != null) {
-					return OptionalBuf.of(kkB(v));
-				} else {
-					return OptionalBuf.empty();
-				}
+			Buf v = snapshots.get(resolveSnapshot(snapshot)).get(k(key));
+			if (v != null) {
+				return OptionalBuf.of(kkB(v));
+			} else {
+				return OptionalBuf.empty();
 			}
 		});
 	}
 
 	@Override
-	public Mono<Void> putMulti(Flux<LLEntry> entries) {
-		return entries.doOnNext(entry -> {
-			try (entry) {
-				mainDb.put(k(entry.getKeyUnsafe().send()), k(entry.getValueUnsafe().send()));
-			}
-		}).then();
+	public void putMulti(Stream<LLEntry> entries) {
+		entries.forEach(entry -> mainDb.put(k(entry.getKey()), k(entry.getValue())));
 	}
 
 	@Override
-	public <K> Flux<Boolean> updateMulti(Flux<K> keys,
-			Flux<Buffer> serializedKeys,
-			KVSerializationFunction<K, @Nullable Buffer, @Nullable Buffer> updateFunction) {
-		return Flux.error(new UnsupportedOperationException("Not implemented"));
+	public <K> Stream<Boolean> updateMulti(Stream<K> keys,
+			Stream<Buf> serializedKeys,
+			KVSerializationFunction<K, @Nullable Buf, @Nullable Buf> updateFunction) {
+		throw new UnsupportedOperationException("Not implemented");
 	}
 
 	@Override
-	public Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> rangeMono,
+	public Stream<LLEntry> getRange(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			boolean reverse,
 			boolean smallRange) {
-		return Flux.usingWhen(rangeMono, range -> {
-			if (range.isSingle()) {
-				var singleToReceive = range.getSingle();
-				return Mono.fromCallable(() -> {
-					try (var single = singleToReceive.receive()) {
-						var element = snapshots.get(resolveSnapshot(snapshot)).get(k(single.copy().send()));
-						if (element != null) {
-							return LLEntry.of(single, kkB(element));
-						} else {
-							return null;
-						}
-					}
-				}).flux();
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var element = snapshots.get(resolveSnapshot(snapshot)).get(k(single));
+			if (element != null) {
+				return Stream.of(LLEntry.of(single, kkB(element)));
 			} else {
-				return Mono
-						.fromCallable(() -> mapSlice(snapshot, range))
-						.flatMapIterable(map -> {
-							if (reverse) {
-								return map.descendingMap().entrySet();
-							} else {
-								return map.entrySet();
-							}
-						})
-						.map(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())));
+				return Stream.empty();
 			}
-		}, LLUtils::finalizeResource);
+		} else {
+			var map = mapSlice(snapshot, range);
+
+			Set<Entry<Buf, Buf>> set;
+			if (reverse) {
+				set = map.descendingMap().entrySet();
+			} else {
+				set = map.entrySet();
+			}
+			return set.stream().map(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())));
+		}
 	}
 
 	@Override
-	public Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> rangeMono,
+	public Stream<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			int prefixLength, boolean smallRange) {
-		return Flux.usingWhen(rangeMono, range -> {
-			try (range) {
-				if (range.isSingle()) {
-					var singleToReceive = range.getSingle();
-					return Mono.fromCallable(() -> {
-						try (var single = singleToReceive.receive()) {
-							var element = snapshots.get(resolveSnapshot(snapshot)).get(k(single.copy().send()));
-							if (element != null) {
-								return List.of(LLEntry.of(single, kkB(element)));
-							} else {
-								return List.<LLEntry>of();
-							}
-						}
-					}).flux();
-				} else {
-					return Mono
-							.fromCallable(() -> mapSlice(snapshot, range))
-							.flatMapIterable(SortedMap::entrySet)
-							.groupBy(k -> k.getKey().subList(0, prefixLength))
-							.flatMap(groupedFlux -> groupedFlux
-									.map(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())))
-									.collectList()
-							);
-				}
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var element = snapshots.get(resolveSnapshot(snapshot)).get(k(single));
+			if (element != null) {
+				return Stream.of(List.of(LLEntry.of(single, kkB(element))));
+			} else {
+				return Stream.empty();
 			}
-		}, LLUtils::finalizeResource);
+		} else {
+			return mapSlice(snapshot, range)
+					.entrySet()
+					.stream()
+					.collect(groupingBy(k -> k.getKey().subList(0, prefixLength),
+							mapping(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())), Collectors.toList())
+					))
+					.values()
+					.stream();
+		}
 	}
 
 	@Override
-	public Flux<Buffer> getRangeKeys(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> rangeMono,
-			boolean reverse,
+	public Stream<Buf> getRangeKeys(@Nullable LLSnapshot snapshot, LLRange range, boolean reverse, boolean smallRange) {
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var contains = snapshots.get(resolveSnapshot(snapshot)).containsKey(k(single));
+			return contains ? Stream.of(single) : Stream.empty();
+		} else {
+			var map = mapSlice(snapshot, range);
+			if (reverse) {
+				map = map.descendingMap();
+			}
+			return map.keySet().stream().map(this::kkB);
+		}
+	}
+
+	@Override
+	public Stream<List<Buf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
+			int prefixLength, boolean smallRange) {
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var containsElement = snapshots.get(resolveSnapshot(snapshot)).containsKey(k(single));
+			if (containsElement) {
+				return Stream.of(List.of(single));
+			} else {
+				return Stream.empty();
+			}
+		} else {
+			return mapSlice(snapshot, range)
+					.entrySet()
+					.stream()
+					.collect(groupingBy(k -> k.getKey().subList(0, prefixLength),
+							mapping(entry -> kkB(entry.getKey()), Collectors.toList())
+					))
+					.values()
+					.stream();
+		}
+	}
+
+	@Override
+	public Stream<Buf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
+			LLRange range,
+			int prefixLength,
 			boolean smallRange) {
-		return Flux.usingWhen(rangeMono,
-				range -> {
-					if (range.isSingle()) {
-						var singleToReceive = range.getSingle();
-						return Mono.fromCallable(() -> {
-							var single = singleToReceive.receive();
-							try {
-								var contains = snapshots.get(resolveSnapshot(snapshot)).containsKey(k(single.copy().send()));
-								return contains ? single : null;
-							} catch (Throwable ex) {
-								single.close();
-								throw ex;
-							}
-						}).flux();
-					} else {
-						return Mono
-								.fromCallable(() -> mapSlice(snapshot, range))
-								.<ByteList>flatMapIterable(map -> {
-									if (reverse) {
-										return map.descendingMap().keySet();
-									} else {
-										return map.keySet();
-									}
-								})
-								.map(this::kkB);
-					}
-				},
-				LLUtils::finalizeResource
-		);
-	}
-
-	@Override
-	public Flux<List<Buffer>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> rangeMono,
-			int prefixLength, boolean smallRange) {
-		return Flux.usingWhen(rangeMono, range -> {
-			try (range) {
-				if (range.isSingle()) {
-					var singleToReceive = range.getSingle();
-					return Mono.fromCallable(() -> {
-						var single = singleToReceive.receive();
-						try {
-							var containsElement = snapshots.get(resolveSnapshot(snapshot)).containsKey(k(single.copy().send()));
-							if (containsElement) {
-								return List.of(single);
-							} else {
-								return List.<Buffer>of();
-							}
-						} catch (Throwable ex) {
-							single.close();
-							throw ex;
-						}
-					}).flux();
-				} else {
-					return Mono
-							.fromCallable(() -> mapSlice(snapshot, range))
-							.flatMapIterable(SortedMap::entrySet)
-							.groupBy(k -> k.getKey().subList(0, prefixLength))
-							.flatMap(groupedFlux -> groupedFlux
-									.map(entry -> kkB(entry.getKey()))
-									.collectList()
-							);
-				}
-			}
-		}, LLUtils::finalizeResource);
-	}
-
-	@SuppressWarnings("RedundantCast")
-	@Override
-	public Flux<Buffer> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> rangeMono,
-			int prefixLength, boolean smallRange) {
-		return Flux.usingWhen(rangeMono, range -> {
-			try (range) {
-				if (range.isSingle()) {
-					var singleToReceive = range.getSingle();
-					return Mono.fromCallable(() -> {
-						try (var single = singleToReceive.receive()) {
-							var k = k(single.copy().send());
-							var containsElement = snapshots.get(resolveSnapshot(snapshot)).containsKey(k);
-							if (containsElement) {
-								return kkB(k.subList(0, prefixLength));
-							} else {
-								return null;
-							}
-						}
-					}).flux();
-				} else {
-					return Mono
-							.fromCallable(() -> mapSlice(snapshot, range))
-							.flatMapIterable(SortedMap::entrySet)
-							.map(k -> (ByteList) k.getKey().subList(0, prefixLength))
-							.distinctUntilChanged()
-							.map(this::kkB);
-				}
-			}
-		}, LLUtils::finalizeResource);
-	}
-
-	@Override
-	public Flux<BadBlock> badBlocks(Mono<LLRange> rangeMono) {
-		return Flux.empty();
-	}
-
-	@Override
-	public Mono<Void> setRange(Mono<LLRange> rangeMono, Flux<LLEntry> entries, boolean smallRange) {
-		return Mono.usingWhen(rangeMono, range -> {
-			Mono<Void> clearMono;
-			if (range.isSingle()) {
-				var singleToReceive = range.getSingle();
-				clearMono = Mono.fromRunnable(() -> {
-					try (var single = singleToReceive.receive()) {
-						var k = k(single.copy().send());
-						mainDb.remove(k);
-					}
-				});
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var k = k(single);
+			var containsElement = snapshots.get(resolveSnapshot(snapshot)).containsKey(k);
+			if (containsElement) {
+				return Stream.of(kkB(k.subList(0, prefixLength)));
 			} else {
-				clearMono = Mono.fromRunnable(() -> mapSlice(null, range).clear());
+				return Stream.empty();
 			}
-
-			var r = r(range::copy);
-
-			return clearMono
-					.thenMany(entries)
-					.doOnNext(entry -> {
-						try (entry) {
-							if (!isInsideRange(r, kShr(entry.getKeyUnsafe()))) {
-								throw new IndexOutOfBoundsException("Trying to set a key outside the range!");
-							}
-							mainDb.put(kShr(entry.getKeyUnsafe()), kShr(entry.getValueUnsafe()));
-						}
-					})
-					.then();
-		}, LLUtils::finalizeResource);
+		} else {
+			return mapSlice(snapshot, range).keySet().stream()
+					.map(bytes -> bytes.subList(0, prefixLength))
+					.distinct()
+					.map(this::kkB);
+		}
 	}
 
-	private boolean isInsideRange(BLRange range, ByteList key) {
+	@Override
+	public Stream<BadBlock> badBlocks(LLRange range) {
+		return Stream.empty();
+	}
+
+	@Override
+	public void setRange(LLRange range, Stream<LLEntry> entries, boolean smallRange) {
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var k = k(single);
+			mainDb.remove(k);
+		} else {
+			mapSlice(null, range).clear();
+		}
+
+		var r = r(range::copy);
+
+		entries.forEach(entry -> {
+			if (!isInsideRange(r, kShr(entry.getKey()))) {
+				throw new IndexOutOfBoundsException("Trying to set a key outside the range!");
+			}
+			mainDb.put(kShr(entry.getKey()), kShr(entry.getValue()));
+		});
+	}
+
+	private boolean isInsideRange(BLRange range, Buf key) {
 		if (range.isAll()) {
 			return true;
 		} else if (range.isSingle()) {
@@ -528,68 +404,46 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fillCache) {
-		return getRangeKeys(snapshot, rangeMono, false, false)
-				.doOnNext(LLUtils::finalizeResourceNow)
-				.count()
-				.map(count -> count == 0);
+	public boolean isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range, boolean fillCache) {
+		return getRangeKeys(snapshot, range, false, false).count() == 0;
 	}
 
 	@Override
-	public Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono, boolean fast) {
-		return Mono.usingWhen(rangeMono,
-				range -> Mono.fromCallable(() -> (long) mapSlice(snapshot, range).size()),
-				LLUtils::finalizeResource
-		);
+	public long sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast) {
+		return mapSlice(snapshot, range).size();
 	}
 
 	@Override
-	public Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
-		return getRange(snapshot, rangeMono, false, false)
-				.take(1, true)
-				.singleOrEmpty();
+	public LLEntry getOne(@Nullable LLSnapshot snapshot, LLRange range) {
+		return getRange(snapshot, range, false, false).findAny().orElse(null);
 	}
 
 	@Override
-	public Mono<Buffer> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> rangeMono) {
-		return getRangeKeys(snapshot, rangeMono, false, false)
-				.take(1, true)
-				.singleOrEmpty();
+	public Buf getOneKey(@Nullable LLSnapshot snapshot, LLRange range) {
+		return getRangeKeys(snapshot, range, false, false).findAny().orElse(null);
 	}
 
 	@Override
-	public Mono<LLEntry> removeOne(Mono<LLRange> rangeMono) {
-		return Mono.usingWhen(rangeMono, range -> {
-			try (range) {
-				if (range.isSingle()) {
-					var singleToReceive = range.getSingle();
-					return Mono.fromCallable(() -> {
-						try (var single = singleToReceive.receive()) {
-							var element = mainDb.remove(k(single.copy().send()));
-							if (element != null) {
-								return LLEntry.of(single, kkB(element));
-							} else {
-								return null;
-							}
-						}
-					});
-				} else {
-					return Mono
-							.fromCallable(() -> mapSlice(null, range))
-							.mapNotNull(map -> {
-								var it = map.entrySet().iterator();
-								if (it.hasNext()) {
-									var next = it.next();
-									it.remove();
-									return next;
-								} else {
-									return null;
-								}
-							})
-							.map(entry -> LLEntry.of(kkB(entry.getKey()), kkB(entry.getValue())));
-				}
+	public LLEntry removeOne(LLRange range) {
+		if (range.isSingle()) {
+			var single = range.getSingle();
+			var element = mainDb.remove(k(single));
+			if (element != null) {
+				return LLEntry.of(single, kkB(element));
+			} else {
+				return null;
 			}
-		}, LLUtils::finalizeResource);
+		} else {
+			var map = mapSlice(null, range);
+			var it = map.entrySet().iterator();
+			if (it.hasNext()) {
+				var next = it.next();
+				it.remove();
+				return LLEntry.of(kkB(next.getKey()), kkB(next.getValue()));
+			} else {
+				return null;
+			}
+		}
 	}
 
 	@Override

@@ -10,14 +10,14 @@ import org.jetbrains.annotations.NotNull;
 public class LuceneHacksSerializer implements DataSerializer<LuceneHacks> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull LuceneHacks luceneHacks) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull LuceneHacks luceneHacks) {
 		if (luceneHacks.customLocalSearcher() != null || luceneHacks.customMultiSearcher() != null) {
 			throw new UnsupportedOperationException("Can't encode this type");
 		}
 	}
 
 	@Override
-	public @NotNull LuceneHacks deserialize(DataInput dataInput) throws IOException {
+	public @NotNull LuceneHacks deserialize(DataInput dataInput) {
 		return new LuceneHacks(null, null);
 	}
 }

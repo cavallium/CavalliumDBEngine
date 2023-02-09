@@ -1,8 +1,7 @@
 package it.cavallium.dbengine.client;
 
+import java.io.IOException;
 import java.util.concurrent.atomic.AtomicInteger;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
 
 public abstract class Backuppable implements IBackuppable {
 
@@ -13,29 +12,29 @@ public abstract class Backuppable implements IBackuppable {
 	private final AtomicInteger state = new AtomicInteger();
 
 	@Override
-	public final Mono<Void> pauseForBackup() {
-		return Mono.defer(() -> {
-			if (state.compareAndSet(State.RUNNING.ordinal(), State.PAUSING.ordinal())) {
-				return onPauseForBackup().doFinally(type -> state.compareAndSet(State.PAUSING.ordinal(),
-						type == SignalType.ON_ERROR ? State.RUNNING.ordinal() : State.PAUSED.ordinal()
-				));
-			} else {
-				return Mono.empty();
+	public final void pauseForBackup() {
+		if (state.compareAndSet(State.RUNNING.ordinal(), State.PAUSING.ordinal())) {
+			try {
+				onPauseForBackup();
+				state.compareAndSet(State.PAUSING.ordinal(), State.PAUSED.ordinal());
+			} catch (Throwable ex) {
+				state.compareAndSet(State.PAUSING.ordinal(), State.RUNNING.ordinal());
+				throw ex;
 			}
-		});
+		}
 	}
 
 	@Override
-	public final Mono<Void> resumeAfterBackup() {
-		return Mono.defer(() -> {
-			if (state.compareAndSet(State.PAUSED.ordinal(), State.RESUMING.ordinal())) {
-				return onResumeAfterBackup().doFinally(type -> state.compareAndSet(State.RESUMING.ordinal(),
-						type == SignalType.ON_ERROR ? State.PAUSED.ordinal() : State.RUNNING.ordinal()
-				));
-			} else {
-				return Mono.empty();
+	public final void resumeAfterBackup() {
+		if (state.compareAndSet(State.PAUSED.ordinal(), State.RESUMING.ordinal())) {
+			try {
+				onResumeAfterBackup();
+				state.compareAndSet(State.RESUMING.ordinal(), State.RUNNING.ordinal());
+			} catch (Throwable ex) {
+				state.compareAndSet(State.RESUMING.ordinal(), State.PAUSED.ordinal());
+				throw ex;
 			}
-		});
+		}
 	}
 
 	@Override
@@ -47,9 +46,9 @@ public abstract class Backuppable implements IBackuppable {
 		return State.values()[state.get()];
 	}
 
-	protected abstract Mono<Void> onPauseForBackup();
+	protected abstract void onPauseForBackup();
 
-	protected abstract Mono<Void> onResumeAfterBackup();
+	protected abstract void onResumeAfterBackup();
 
 	public final void setStopped() {
 		state.set(State.STOPPED.ordinal());

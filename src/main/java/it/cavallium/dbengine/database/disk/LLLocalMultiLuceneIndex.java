@@ -1,15 +1,13 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-import static it.cavallium.dbengine.lucene.LuceneUtils.luceneScheduler;
+import static it.cavallium.dbengine.lucene.LuceneUtils.getLuceneIndexId;
+import static java.util.stream.Collectors.groupingBy;
 
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.Streams;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.util.Send;
 import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.query.QueryParser;
-import it.cavallium.dbengine.client.query.current.data.NoSort;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -17,12 +15,12 @@ import it.cavallium.dbengine.database.LLIndexRequest;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.LLSnapshottable;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUpdateDocument;
-import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneHacks;
-import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.mlt.MoreLikeThisTransformer;
@@ -36,33 +34,29 @@ import it.cavallium.dbengine.lucene.searcher.MultiSearcher;
 import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.SimpleResource;
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.Optional;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.logging.Level;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.search.similarities.PerFieldSimilarityWrapper;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
-import reactor.core.scheduler.Schedulers;
 
 public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneIndex, LuceneCloseable {
 
@@ -72,10 +66,6 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			"false"
 	));
 
-	static {
-		LLUtils.initHooks();
-	}
-
 	private final String clusterName;
 	private final boolean lowMemory;
 	private final MeterRegistry meterRegistry;
@@ -84,26 +74,23 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 	private final LLLocalLuceneIndex[] luceneIndicesById;
 	private final List<LLLocalLuceneIndex> luceneIndicesSet;
 	private final int totalShards;
-	private final Flux<LLLocalLuceneIndex> luceneIndicesFlux;
 	private final PerFieldAnalyzerWrapper luceneAnalyzer;
 	private final PerFieldSimilarityWrapper luceneSimilarity;
 
 	private final MultiSearcher multiSearcher;
 	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
 
-	public LLLocalMultiLuceneIndex(LLTempHugePqEnv env,
-			MeterRegistry meterRegistry,
+	public LLLocalMultiLuceneIndex(MeterRegistry meterRegistry,
 			String clusterName,
 			IntList activeShards,
 			int totalShards,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
-			@Nullable LuceneHacks luceneHacks,
-			LuceneRocksDBManager rocksDBManager) throws IOException {
+			@Nullable LuceneHacks luceneHacks) {
 
 		if (totalShards <= 1 || totalShards > 100) {
-			throw new IOException("Unsupported instances count: " + totalShards);
+			throw new DBException("Unsupported instances count: " + totalShards);
 		}
 
 		this.meterRegistry = meterRegistry;
@@ -112,15 +99,13 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			if (!activeShards.contains(i)) {
 				continue;
 			}
-			luceneIndices[i] = new LLLocalLuceneIndex(env,
-					meterRegistry,
+			luceneIndices[i] = new LLLocalLuceneIndex(meterRegistry,
 					clusterName,
 					i,
 					indicizerAnalyzers,
 					indicizerSimilarities,
 					luceneOptions,
-					luceneHacks,
-					rocksDBManager
+					luceneHacks
 			);
 		}
 		this.clusterName = clusterName;
@@ -133,17 +118,15 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			}
 		}
 		this.luceneIndicesSet = new ArrayList<>(luceneIndicesSet);
-		this.luceneIndicesFlux = Flux.fromIterable(luceneIndicesSet);
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
 		this.lowMemory = luceneOptions.lowMemory();
 
-		var useHugePq = luceneOptions.allowNonVolatileCollection();
 		var maxInMemoryResultEntries = luceneOptions.maxInMemoryResultEntries();
 		if (luceneHacks != null && luceneHacks.customMultiSearcher() != null) {
 			multiSearcher = luceneHacks.customMultiSearcher().get();
 		} else {
-			multiSearcher = new AdaptiveMultiSearcher(env, useHugePq, maxInMemoryResultEntries);
+			multiSearcher = new AdaptiveMultiSearcher(maxInMemoryResultEntries);
 		}
 	}
 
@@ -156,111 +139,62 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 		return clusterName;
 	}
 
-	private Mono<LLIndexSearchers> getIndexSearchers(LLSnapshot snapshot) {
-		return luceneIndicesFlux.index()
-				// Resolve the snapshot of each shard
-				.flatMap(tuple -> Mono
-						.fromCallable(() -> resolveSnapshotOptional(snapshot, (int) (long) tuple.getT1()))
-						.flatMap(luceneSnapshot -> tuple.getT2().retrieveSearcher(luceneSnapshot.orElse(null)))
-				)
-				.collectList()
-				.doOnDiscard(LLIndexSearcher.class, indexSearcher -> {
-					try {
-						LLUtils.onDiscard(indexSearcher);
-					} catch (UncheckedIOException ex) {
-						LOG.error("Failed to close an index searcher", ex);
-					}
-				})
-				.map(indexSearchers -> LLIndexSearchers.of(indexSearchers));
+	private LLIndexSearchers getIndexSearchers(LLSnapshot snapshot) {
+		// Resolve the snapshot of each shard
+		return LLIndexSearchers.of(Streams.mapWithIndex(this.luceneIndicesSet.parallelStream(), (luceneIndex, index) -> {
+			var subSnapshot = resolveSnapshot(snapshot, (int) index);
+			return luceneIndex.retrieveSearcher(subSnapshot);
+		}).toList());
 	}
 
 	@Override
-	public Mono<Void> addDocument(LLTerm id, LLUpdateDocument doc) {
-		return getLuceneIndex(id).addDocument(id, doc);
+	public void addDocument(LLTerm id, LLUpdateDocument doc) {
+		getLuceneIndex(id).addDocument(id, doc);
 	}
 
 	@Override
-	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		if (BYPASS_GROUPBY_BUG) {
-			return documents
-					.buffer(8192)
-					.flatMap(inputEntries -> {
-						List<Entry<LLTerm, LLUpdateDocument>>[] sortedEntries = new List[totalShards];
-						Mono<Long>[] results = new Mono[totalShards];
+	public long addDocuments(boolean atomic, Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
+		var groupedRequests = documents
+				.collect(groupingBy(term -> getLuceneIndexId(term.getKey(), totalShards),
+						Int2ObjectOpenHashMap::new,
+						Collectors.toList()
+				));
 
-						// Sort entries
-						for(var inputEntry : inputEntries) {
-							int luceneIndexId = LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards);
-							if (sortedEntries[luceneIndexId] == null) {
-								sortedEntries[luceneIndexId] = new ArrayList<>();
-							}
-							sortedEntries[luceneIndexId].add(inputEntry);
-						}
-
-						// Add documents
-						int luceneIndexId = 0;
-						for (List<Entry<LLTerm, LLUpdateDocument>> docs : sortedEntries) {
-							if (docs != null && !docs.isEmpty()) {
-								LLLocalLuceneIndex luceneIndex = Objects.requireNonNull(luceneIndicesById[luceneIndexId]);
-								results[luceneIndexId] = luceneIndex.addDocuments(atomic, Flux.fromIterable(docs));
-							} else {
-								results[luceneIndexId] = Mono.empty();
-							}
-							luceneIndexId++;
-						}
-
-						return Flux.merge(results).reduce(0L, Long::sum);
-					})
-					.reduce(0L, Long::sum);
-		} else {
-			return documents
-					.groupBy(term -> getLuceneIndex(term.getKey()))
-					.flatMap(group -> group.key().addDocuments(atomic, group))
-					.reduce(0L, Long::sum);
-		}
+		return groupedRequests
+				.int2ObjectEntrySet()
+				.stream()
+				.map(entry -> luceneIndicesById[entry.getIntKey()].addDocuments(atomic, entry.getValue().stream()))
+				.reduce(0L, Long::sum);
 	}
 
 	@Override
-	public Mono<Void> deleteDocument(LLTerm id) {
-		return getLuceneIndex(id).deleteDocument(id);
+	public void deleteDocument(LLTerm id) {
+		getLuceneIndex(id).deleteDocument(id);
 	}
 
 	@Override
-	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
-		return getLuceneIndex(id).update(id, request);
+	public void update(LLTerm id, LLIndexRequest request) {
+		getLuceneIndex(id).update(id, request);
 	}
 
 	@Override
-	public Mono<Long> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		documents = documents
-				.log("local-multi-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE);
-		if (BYPASS_GROUPBY_BUG) {
-			int bufferSize = 8192;
-			return documents
-					.window(bufferSize)
-					.flatMap(bufferFlux -> bufferFlux
-							.collect(Collectors.groupingBy(inputEntry -> LuceneUtils.getLuceneIndexId(inputEntry.getKey(), totalShards),
-									Collectors.collectingAndThen(Collectors.toList(), docs -> {
-										var luceneIndex = getLuceneIndex(docs.get(0).getKey());
-										return luceneIndex.updateDocuments(Flux.fromIterable(docs));
-									}))
-							)
-							.map(Map::values)
-							.flatMap(parts -> Flux.merge(parts).reduce(0L, Long::sum))
-					)
-					.reduce(0L, Long::sum);
-		} else {
-			return documents
-					.groupBy(term -> getLuceneIndex(term.getKey()))
-					.flatMap(group -> group.key().updateDocuments(group))
-					.reduce(0L, Long::sum);
-		}
+	public long updateDocuments(Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
+		var groupedRequests = documents
+				.collect(groupingBy(term -> getLuceneIndexId(term.getKey(), totalShards),
+						Int2ObjectOpenHashMap::new,
+						Collectors.toList()
+				));
+
+		return groupedRequests
+				.int2ObjectEntrySet()
+				.stream()
+				.map(entry -> luceneIndicesById[entry.getIntKey()].updateDocuments(entry.getValue().stream()))
+				.reduce(0L, Long::sum);
 	}
 
 	@Override
-	public Mono<Void> deleteAll() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(llLocalLuceneIndex -> llLocalLuceneIndex.deleteAll()).iterator();
-		return Mono.whenDelayError(it);
+	public void deleteAll() {
+		luceneIndicesSet.forEach(LLLuceneIndex::deleteAll);
 	}
 
 	private LLSnapshot resolveSnapshot(LLSnapshot multiSnapshot, int instanceId) {
@@ -271,12 +205,8 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 		}
 	}
 
-	private Optional<LLSnapshot> resolveSnapshotOptional(LLSnapshot multiSnapshot, int instanceId) {
-		return Optional.ofNullable(resolveSnapshot(multiSnapshot, instanceId));
-	}
-
 	@Override
-	public Flux<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Stream<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			String keyFieldName,
 			Multimap<String, String> mltDocumentFields) {
@@ -285,24 +215,22 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 		var transformer = new MoreLikeThisTransformer(mltDocumentFields, luceneAnalyzer, luceneSimilarity);
 
 		// Collect all the shards results into a single global result
-		return multiSearcher
-				.collectMulti(searchers, localQueryParams, keyFieldName, transformer)
-				// Transform the result type
-				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
-				.flux();
+		LuceneSearchResult result = multiSearcher.collectMulti(searchers, localQueryParams, keyFieldName, transformer);
+
+		// Transform the result type
+		return Stream.of(new LLSearchResultShard(result.results(), result.totalHitsCount()));
 	}
 
 	@Override
-	public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
+	public Stream<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName) {
-		return searchInternal(snapshot, queryParams, keyFieldName)
-				// Transform the result type
-				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
-				.flux();
+		LuceneSearchResult result = searchInternal(snapshot, queryParams, keyFieldName);
+		// Transform the result type
+		return Stream.of(new LLSearchResultShard(result.results(), result.totalHitsCount()));
 	}
 
-	private Mono<LuceneSearchResult> searchInternal(@Nullable LLSnapshot snapshot,
+	private LuceneSearchResult searchInternal(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
@@ -313,18 +241,14 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 	}
 
 	@Override
-	public Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
+	public TotalHitsCount count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
 		var params = LuceneUtils.getCountQueryParams(query);
-		return Mono
-				.usingWhen(this.searchInternal(snapshot, params, null),
-						result -> Mono.just(result.totalHitsCount()),
-						LLUtils::finalizeResource
-				)
-				.defaultIfEmpty(TotalHitsCount.of(0, true));
+		var result = this.searchInternal(snapshot, params, null);
+		return result != null ? result.totalHitsCount() : TotalHitsCount.of(0, true);
 	}
 
 	@Override
-	public Mono<Buckets> computeBuckets(@Nullable LLSnapshot snapshot,
+	public Buckets computeBuckets(@Nullable LLSnapshot snapshot,
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
@@ -341,76 +265,53 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	protected void onClose() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet
-				.stream()
-				.map(part -> Mono
-						.<Void>fromRunnable(part::close)
-						.transform(LuceneUtils::scheduleLucene)
-				)
-				.iterator();
-		var indicesCloseMono = Mono.whenDelayError(it);
-		indicesCloseMono
-				.then(Mono.fromCallable(() -> {
-					if (multiSearcher instanceof Closeable closeable) {
-						//noinspection BlockingMethodInNonBlockingContext
-						closeable.close();
-					}
-					return null;
-				}).transform(LuceneUtils::scheduleLucene))
-				.then()
-				.transform(LLUtils::handleDiscard)
-				.block();
+		luceneIndicesSet.parallelStream().forEach(SafeCloseable::close);
+		if (multiSearcher instanceof Closeable closeable) {
+			try {
+				closeable.close();
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
+		}
 	}
 
 	@Override
-	public Mono<Void> flush() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::flush).iterator();
-		return Mono.whenDelayError(it);
+	public void flush() {
+		luceneIndicesSet.parallelStream().forEach(LLLuceneIndex::flush);
 	}
 
 	@Override
-	public Mono<Void> waitForMerges() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::waitForMerges).iterator();
-		return Mono.whenDelayError(it);
+	public void waitForMerges() {
+		luceneIndicesSet.parallelStream().forEach(LLLuceneIndex::waitForMerges);
 	}
 
 	@Override
-	public Mono<Void> waitForLastMerges() {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(LLLuceneIndex::waitForLastMerges).iterator();
-		return Mono.whenDelayError(it);
+	public void waitForLastMerges() {
+		luceneIndicesSet.parallelStream().forEach(LLLuceneIndex::waitForLastMerges);
 	}
 
 	@Override
-	public Mono<Void> refresh(boolean force) {
-		Iterable<Mono<Void>> it = () -> luceneIndicesSet.stream().map(index -> index.refresh(force)).iterator();
-		return Mono.whenDelayError(it);
+	public void refresh(boolean force) {
+		luceneIndicesSet.parallelStream().forEach(index -> index.refresh(force));
 	}
 
 	@Override
-	public Mono<LLSnapshot> takeSnapshot() {
-		return Mono
-				// Generate next snapshot index
-				.fromCallable(nextSnapshotNumber::getAndIncrement)
-				.flatMap(snapshotIndex -> luceneIndicesFlux
-						.flatMapSequential(llLocalLuceneIndex -> llLocalLuceneIndex.takeSnapshot())
-						.collectList()
-						.doOnNext(instancesSnapshotsArray -> registeredSnapshots.put(snapshotIndex, instancesSnapshotsArray))
-						.thenReturn(new LLSnapshot(snapshotIndex))
-				);
+	public LLSnapshot takeSnapshot() {
+		// Generate next snapshot index
+		var snapshotIndex = nextSnapshotNumber.getAndIncrement();
+		var snapshot = luceneIndicesSet.parallelStream().map(LLSnapshottable::takeSnapshot).toList();
+		registeredSnapshots.put(snapshotIndex, snapshot);
+		return new LLSnapshot(snapshotIndex);
 	}
 
 	@Override
-	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
-		return Mono
-				.fromCallable(() -> registeredSnapshots.remove(snapshot.getSequenceNumber()))
-				.flatMapIterable(list -> list)
-				.index()
-				.flatMapSequential(tuple -> {
-					int index = (int) (long) tuple.getT1();
-					LLSnapshot instanceSnapshot = tuple.getT2();
-					return luceneIndicesSet.get(index).releaseSnapshot(instanceSnapshot);
-				})
-				.then();
+	public void releaseSnapshot(LLSnapshot snapshot) {
+		var list = registeredSnapshots.remove(snapshot.getSequenceNumber());
+		for (int shardIndex = 0; shardIndex < list.size(); shardIndex++) {
+			var luceneIndex = luceneIndicesSet.get(shardIndex);
+			LLSnapshot instanceSnapshot = list.get(shardIndex);
+			luceneIndex.releaseSnapshot(instanceSnapshot);
+		}
 	}
 
 	@Override
@@ -419,22 +320,17 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 	}
 
 	@Override
-	public Mono<Void> pauseForBackup() {
-		return Mono.whenDelayError(Iterables.transform(this.luceneIndicesSet, IBackuppable::pauseForBackup));
+	public void pauseForBackup() {
+		this.luceneIndicesSet.forEach(IBackuppable::pauseForBackup);
 	}
 
 	@Override
-	public Mono<Void> resumeAfterBackup() {
-		return Mono.whenDelayError(Iterables.transform(this.luceneIndicesSet, IBackuppable::resumeAfterBackup));
+	public void resumeAfterBackup() {
+		this.luceneIndicesSet.forEach(IBackuppable::resumeAfterBackup);
 	}
 
 	@Override
 	public boolean isPaused() {
-		for (LLLuceneIndex llLuceneIndex : this.luceneIndicesSet) {
-			if (llLuceneIndex.isPaused()) {
-				return true;
-			}
-		}
-		return false;
+		return this.luceneIndicesSet.stream().anyMatch(IBackuppable::isPaused);
 	}
 }

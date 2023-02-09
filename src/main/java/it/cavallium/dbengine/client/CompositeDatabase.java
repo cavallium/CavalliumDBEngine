@@ -1,36 +1,32 @@
 package it.cavallium.dbengine.client;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.database.DatabaseOperations;
 import it.cavallium.dbengine.database.DatabaseProperties;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
+import java.util.stream.Stream;
 
 public interface CompositeDatabase extends DatabaseProperties, DatabaseOperations {
 
-	Mono<Void> preClose();
+	void preClose();
 
-	Mono<Void> close();
-
-	/**
-	 * Can return SnapshotException
-	 */
-	Mono<CompositeSnapshot> takeSnapshot();
+	void close();
 
 	/**
 	 * Can return SnapshotException
 	 */
-	Mono<Void> releaseSnapshot(CompositeSnapshot snapshot);
+	CompositeSnapshot takeSnapshot();
 
-	BufferAllocator getAllocator();
+	/**
+	 * Can return SnapshotException
+	 */
+	void releaseSnapshot(CompositeSnapshot snapshot);
 
 	MeterRegistry getMeterRegistry();
 
 	/**
 	 * Find corrupted items
 	 */
-	Flux<BadBlock> badBlocks();
+	Stream<BadBlock> badBlocks();
 
-	Mono<Void> verifyChecksum();
+	void verifyChecksum();
 }

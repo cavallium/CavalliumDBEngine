@@ -1,17 +1,13 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.buffer.CompositeBuffer;
-import io.netty5.util.Send;
-import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 
@@ -26,17 +22,17 @@ class ValueWithHashSerializer<X, Y> implements Serializer<Entry<X, Y>> {
 	}
 
 	@Override
-	public @NotNull Entry<X, Y> deserialize(@NotNull Buffer serialized) throws SerializationException {
-		Objects.requireNonNull(serialized);
-		X deserializedKey = keySuffixSerializer.deserialize(serialized);
-		Y deserializedValue = valueSerializer.deserialize(serialized);
+	public @NotNull Entry<X, Y> deserialize(@NotNull BufDataInput in) throws SerializationException {
+		Objects.requireNonNull(in);
+		X deserializedKey = keySuffixSerializer.deserialize(in);
+		Y deserializedValue = valueSerializer.deserialize(in);
 		return Map.entry(deserializedKey, deserializedValue);
 	}
 
 	@Override
-	public void serialize(@NotNull Entry<X, Y> deserialized, Buffer output) throws SerializationException {
-		keySuffixSerializer.serialize(deserialized.getKey(), output);
-		valueSerializer.serialize(deserialized.getValue(), output);
+	public void serialize(@NotNull Entry<X, Y> deserialized, BufDataOutput out) throws SerializationException {
+		keySuffixSerializer.serialize(deserialized.getKey(), out);
+		valueSerializer.serialize(deserialized.getValue(), out);
 	}
 
 	@Override

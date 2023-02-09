@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.dbengine.client.Mapper;
-
 public class NoMapper<T> implements Mapper<T, T> {
 
 	@Override

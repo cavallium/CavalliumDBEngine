@@ -1,49 +1,40 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.LLDictionary;
-import it.cavallium.dbengine.database.LLUtils;
-import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implements
-		DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
+public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T, U, DatabaseStageEntry<U>> {
 
 	private static final Logger logger = LogManager.getLogger(DatabaseMapDictionaryHashed.class);
 
-	private final BufferAllocator alloc;
 	private final Function<T, TH> keySuffixHashFunction;
 
 	private final DatabaseMapDictionary<TH, ObjectArraySet<Entry<T, U>>> subDictionary;
 
 	protected DatabaseMapDictionaryHashed(LLDictionary dictionary,
-			@Nullable BufSupplier prefixKeySupplier,
+			@Nullable Buf prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, TH> keySuffixHashFunction,
@@ -52,7 +43,6 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 		if (updateMode != UpdateMode.ALLOW) {
 			throw new IllegalArgumentException("Hashed maps only works when UpdateMode is ALLOW");
 		}
-		this.alloc = dictionary.getAllocator();
 		ValueWithHashSerializer<T, U> valueWithHashSerializer
 				= new ValueWithHashSerializer<>(keySuffixSerializer, valueSerializer);
 		ValuesSetSerializer<Entry<T, U>> valuesSetSerializer
@@ -62,11 +52,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 		this.keySuffixHashFunction = keySuffixHashFunction;
 	}
 
-	private DatabaseMapDictionaryHashed(BufferAllocator alloc,
-			Function<T, TH> keySuffixHashFunction,
-			DatabaseStage<Object2ObjectSortedMap<TH, ObjectArraySet<Entry<T, U>>>> subDictionary,
-			Drop<DatabaseMapDictionaryHashed<T, U, TH>> drop) {
-		this.alloc = alloc;
+	private DatabaseMapDictionaryHashed(Function<T, TH> keySuffixHashFunction,
+			DatabaseStage<Object2ObjectSortedMap<TH, ObjectArraySet<Entry<T, U>>>> subDictionary) {
 		this.keySuffixHashFunction = keySuffixHashFunction;
 
 		this.subDictionary = (DatabaseMapDictionary<TH, ObjectArraySet<Entry<T, U>>>) subDictionary;
@@ -88,7 +75,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 	}
 
 	public static <T, U, UH> DatabaseMapDictionaryHashed<T, U, UH> tail(LLDictionary dictionary,
-			@Nullable BufSupplier prefixKeySupplier,
+			@Nullable Buf prefixKeySupplier,
 			Serializer<T> keySuffixSerializer,
 			Serializer<U> valueSerializer,
 			Function<T, UH> keySuffixHashFunction,
@@ -121,36 +108,35 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 	}
 
 	@Override
-	public Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot) {
-		return subDictionary.get(snapshot).map(map -> deserializeMap(map));
+	public Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
+		var v = subDictionary.get(snapshot);
+		return v != null ? deserializeMap(v) : null;
 	}
 
 	@Override
-	public Mono<Object2ObjectSortedMap<T, U>> getOrDefault(@Nullable CompositeSnapshot snapshot,
-			Mono<Object2ObjectSortedMap<T, U>> defaultValue) {
-		return this.get(snapshot).switchIfEmpty(defaultValue);
+	public Object2ObjectSortedMap<T, U> getOrDefault(@Nullable CompositeSnapshot snapshot,
+			Object2ObjectSortedMap<T, U> defaultValue) {
+		return Objects.requireNonNullElse(this.get(snapshot), defaultValue);
 	}
 
 	@Override
-	public Mono<Void> set(Object2ObjectSortedMap<T, U> map) {
-		return Mono.fromSupplier(() -> this.serializeMap(map)).flatMap(value -> subDictionary.set(value));
+	public void set(Object2ObjectSortedMap<T, U> map) {
+		var value = this.serializeMap(map);
+		subDictionary.set(value);
 	}
 
 	@Override
-	public Mono<Boolean> setAndGetChanged(Object2ObjectSortedMap<T, U> map) {
-		return Mono
-				.fromSupplier(() -> this.serializeMap(map))
-				.flatMap(value -> subDictionary.setAndGetChanged(value))
-				.single();
+	public boolean setAndGetChanged(Object2ObjectSortedMap<T, U> map) {
+		return subDictionary.setAndGetChanged(this.serializeMap(map));
 	}
 
 	@Override
-	public Mono<Boolean> clearAndGetStatus() {
+	public boolean clearAndGetStatus() {
 		return subDictionary.clearAndGetStatus();
 	}
 
 	@Override
-	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
+	public boolean isEmpty(@Nullable CompositeSnapshot snapshot) {
 		return subDictionary.isEmpty(snapshot);
 	}
 
@@ -160,20 +146,17 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 	}
 
 	@Override
-	public Flux<BadBlock> badBlocks() {
+	public Stream<BadBlock> badBlocks() {
 		return this.subDictionary.badBlocks();
 	}
 
 	@Override
-	public Mono<DatabaseStageEntry<U>> at(@Nullable CompositeSnapshot snapshot, T key) {
-		return this
-				.atPrivate(snapshot, key, keySuffixHashFunction.apply(key))
-				.map(cast -> cast);
+	public @NotNull DatabaseStageEntry<U> at(@Nullable CompositeSnapshot snapshot, T key) {
+		return this.atPrivate(snapshot, key, keySuffixHashFunction.apply(key));
 	}
 
-	private Mono<DatabaseSingleBucket<T, U, TH>> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
-		return subDictionary.at(snapshot, hash)
-				.map(entry -> new DatabaseSingleBucket<T, U, TH>(entry, key));
+	private DatabaseSingleBucket<T, U, TH> atPrivate(@Nullable CompositeSnapshot snapshot, T key, TH hash) {
+		return new DatabaseSingleBucket<T, U, TH>(subDictionary.at(snapshot, hash), key);
 	}
 
 	@Override
@@ -182,57 +165,55 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 	}
 
 	@Override
-	public Flux<SubStageEntry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot,
+	public Stream<SubStageEntry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot,
 			boolean smallRange) {
 		return subDictionary
 				.getAllValues(snapshot, smallRange)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
-				.flatMap(bucket -> Flux
-						.fromIterable(bucket)
+				.flatMap(bucket -> bucket.stream()
 						.map(Entry::getKey)
-						.flatMap(key -> this.at(snapshot, key).map(stage -> new SubStageEntry<>(key, stage))));
+						.map(key -> new SubStageEntry<>(key, this.at(snapshot, key))));
 	}
 
 	@Override
-	public Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+	public Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return subDictionary
 				.getAllValues(snapshot, smallRange)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
-				.concatMapIterable(list -> list);
+				.flatMap(Collection::stream);
 	}
 
 	@Override
-	public Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries) {
-		return entries.flatMap(entry -> Mono.usingWhen(this.at(null, entry.getKey()),
-				stage -> stage.setAndGetPrevious(entry.getValue()).map(prev -> Map.entry(entry.getKey(), prev)),
-				LLUtils::finalizeResource
-		));
+	public Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries) {
+		return entries.mapMulti((entry, sink) -> {
+			var prev = this.at(null, entry.getKey()).setAndGetPrevious(entry.getValue());
+			if (prev != null) {
+				sink.accept(Map.entry(entry.getKey(), prev));
+			}
+		});
 	}
 
 	@Override
-	public Mono<Void> clear() {
-		return subDictionary.clear();
+	public void clear() {
+		subDictionary.clear();
 	}
 
 	@Override
-	public Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
-		return Mono
-				.fromSupplier(() -> this.serializeMap(value))
-				.flatMap(value1 -> subDictionary.setAndGetPrevious(value1))
-				.map(map -> deserializeMap(map));
+	public Object2ObjectSortedMap<T, U> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
+		var v = subDictionary.setAndGetPrevious(this.serializeMap(value));
+		return v != null ? deserializeMap(v) : null;
 	}
 
 	@Override
-	public Mono<Object2ObjectSortedMap<T, U>> clearAndGetPrevious() {
-		return subDictionary
-				.clearAndGetPrevious()
-				.map(map -> deserializeMap(map));
+	public Object2ObjectSortedMap<T, U> clearAndGetPrevious() {
+		var v = subDictionary.clearAndGetPrevious();
+		return v != null ? deserializeMap(v) : null;
 	}
 
 	@Override
-	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
+	public long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
 		return subDictionary.leavesCount(snapshot, fast);
 	}
 
@@ -245,13 +226,14 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 	@Override
 	public ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {
 		ValueGetter<TH, ObjectArraySet<Entry<T, U>>> getter = subDictionary.getAsyncDbValueGetter(snapshot);
-		return key -> getter
-				.get(keySuffixHashFunction.apply(key))
-				.flatMap(set -> this.extractValueTransformation(set, key));
-	}
-
-	private Mono<U> extractValueTransformation(ObjectArraySet<Entry<T, U>> entries, T key) {
-		return Mono.fromCallable(() -> extractValue(entries, key));
+		return key -> {
+			ObjectArraySet<Entry<T, U>> set = getter.get(keySuffixHashFunction.apply(key));
+			if (set != null) {
+				return this.extractValue(set, key);
+			} else {
+				return null;
+			}
+		};
 	}
 
 	@Nullable
@@ -297,17 +279,6 @@ public class DatabaseMapDictionaryHashed<T, U, TH> extends SimpleResource implem
 			}
 		} else {
 			return null;
-		}
-	}
-
-	@Override
-	protected void onClose() {
-		try {
-			if (subDictionary != null) {
-				subDictionary.close();
-			}
-		} catch (Throwable ex) {
-			logger.error("Failed to close subDictionary", ex);
 		}
 	}
 }

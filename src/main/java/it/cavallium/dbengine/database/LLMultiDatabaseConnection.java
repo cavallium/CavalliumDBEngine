@@ -2,14 +2,10 @@ package it.cavallium.dbengine.database;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.BufferAllocator;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart.ConnectionPartLucene;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart.ConnectionPartRocksDB;
-import it.cavallium.dbengine.client.IndicizerAnalyzers;
-import it.cavallium.dbengine.client.IndicizerSimilarities;
 import it.cavallium.dbengine.lucene.LuceneHacks;
-import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
@@ -18,6 +14,7 @@ import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,12 +22,10 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.CompletionException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
 
 public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
@@ -84,29 +79,25 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public BufferAllocator getAllocator() {
-		return anyConnection.getAllocator();
-	}
-
-	@Override
 	public MeterRegistry getMeterRegistry() {
 		return anyConnection.getMeterRegistry();
 	}
 
 	@Override
-	public Mono<? extends LLDatabaseConnection> connect() {
-		return Flux
-				.fromIterable(allConnections)
-				.flatMap((LLDatabaseConnection databaseConnection) -> databaseConnection
-						.connect()
-						.doOnError(ex -> LOG.error("Failed to open connection", ex))
-				)
-				.then()
-				.thenReturn(this);
+	public LLDatabaseConnection connect() {
+		// todo: parallelize?
+		for (LLDatabaseConnection connection : allConnections) {
+			try {
+				connection.connect();
+			} catch (Exception ex) {
+				LOG.error("Failed to open connection", ex);
+			}
+		}
+		return this;
 	}
 
 	@Override
-	public Mono<? extends LLKeyValueDatabase> getDatabase(String name,
+	public LLKeyValueDatabase getDatabase(String name,
 			List<Column> columns,
 			DatabaseOptions databaseOptions) {
 		var conn = databaseShardConnections.getOrDefault(name, defaultDatabaseConnection);
@@ -115,7 +106,7 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	@Override
-	public Mono<? extends LLLuceneIndex> getLuceneIndex(String clusterName,
+	public LLLuceneIndex getLuceneIndex(String clusterName,
 			LuceneIndexStructure indexStructure,
 			it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers indicizerAnalyzers,
 			it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities indicizerSimilarities,
@@ -150,51 +141,44 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 							luceneHacks
 					);
 		} else {
-			return Flux
-					.fromIterable(connectionToShardMap.entrySet())
-					.flatMap(entry -> {
-						var connectionIndexStructure = indexStructure
-								.setActiveShards(new IntArrayList(entry.getValue()));
+			record ShardToIndex(int shard, LLLuceneIndex connIndex) {}
+			var indices = connectionToShardMap.entrySet().stream().flatMap(entry -> {
+				var connectionIndexStructure = indexStructure.setActiveShards(new IntArrayList(entry.getValue()));
 
-						Flux<LLLuceneIndex> connIndex = entry.getKey()
-								.getLuceneIndex(clusterName,
-										connectionIndexStructure,
-										indicizerAnalyzers,
-										indicizerSimilarities,
-										luceneOptions,
-										luceneHacks
-								).cast(LLLuceneIndex.class).cache().repeat();
-						return Flux
-								.fromIterable(entry.getValue())
-								.zipWith(connIndex);
-					})
-					.collectList()
-					.map(indices -> {
-						var luceneIndices = new LLLuceneIndex[indexStructure.totalShards()];
-						for (var index : indices) {
-							luceneIndices[index.getT1()] = index.getT2();
-						}
-						return new LLMultiLuceneIndex(clusterName,
-								indexStructure,
-								indicizerAnalyzers,
-								indicizerSimilarities,
-								luceneOptions,
-								luceneHacks,
-								luceneIndices
-						);
-					});
+				LLLuceneIndex connIndex;
+				try {
+					connIndex = entry.getKey().getLuceneIndex(clusterName, connectionIndexStructure,
+							indicizerAnalyzers, indicizerSimilarities, luceneOptions, luceneHacks);
+				} catch (IOException e) {
+					throw new CompletionException(e);
+				}
+
+				return entry.getValue().intStream().mapToObj(shard -> new ShardToIndex(shard, connIndex));
+			}).toList();
+			var luceneIndices = new LLLuceneIndex[indexStructure.totalShards()];
+			for (var index : indices) {
+				luceneIndices[index.shard] = index.connIndex;
+			}
+			return new LLMultiLuceneIndex(clusterName,
+					indexStructure,
+					indicizerAnalyzers,
+					indicizerSimilarities,
+					luceneOptions,
+					luceneHacks,
+					luceneIndices
+			);
 		}
 	}
 
 	@Override
-	public Mono<Void> disconnect() {
-		return Flux
-				.fromIterable(allConnections)
-				.flatMap(databaseConnection -> databaseConnection
-						.disconnect()
-						.doOnError(ex -> LOG.error("Failed to close connection", ex))
-						.onErrorResume(ex -> Mono.empty())
-				)
-				.then();
+	public void disconnect() {
+		// todo: parallelize?
+		for (LLDatabaseConnection connection : allConnections) {
+			try {
+				connection.disconnect();
+			} catch (Exception ex) {
+				LOG.error("Failed to close connection", ex);
+			}
+		}
 	}
 }

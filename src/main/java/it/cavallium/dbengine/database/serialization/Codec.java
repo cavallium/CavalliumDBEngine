@@ -1,11 +1,13 @@
 package it.cavallium.dbengine.database.serialization;
 
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 
 public interface Codec<A> {
 
-	@NotNull A deserialize(@NotNull BufferDataInput serialized) throws IOException;
+	@NotNull A deserialize(@NotNull BufDataInput serialized);
 
-	void serialize(@NotNull BufferDataOutput outputStream, @NotNull A deserialized) throws IOException;
+	void serialize(@NotNull BufDataOutput outputStream, @NotNull A deserialized);
 }

@@ -3,28 +3,26 @@ package it.cavallium.dbengine.utils;
 import com.squareup.moshi.JsonAdapter;
 import com.squareup.moshi.JsonReader;
 import com.squareup.moshi.JsonWriter;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
-import it.unimi.dsi.fastutil.bytes.ByteList;
-import it.unimi.dsi.fastutil.bytes.ByteLists;
+import it.cavallium.dbengine.buffers.Buf;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public class ByteListJsonAdapter extends JsonAdapter<ByteList> {
+public class ByteListJsonAdapter extends JsonAdapter<Buf> {
 
 	@Override
-	public @NotNull ByteList fromJson(@NotNull JsonReader reader) throws IOException {
+	public @NotNull Buf fromJson(@NotNull JsonReader reader) {
 		reader.beginArray();
-		ByteArrayList modifiableOutput = new ByteArrayList();
+		var modifiableOutput = Buf.create();
 		while (reader.hasNext()) {
 			modifiableOutput.add((byte) reader.nextInt());
 		}
 		reader.endArray();
-		return ByteLists.unmodifiable(modifiableOutput);
+		return modifiableOutput;
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable ByteList value) throws IOException {
+	public void toJson(@NotNull JsonWriter writer, @Nullable Buf value) {
 		if (value == null) {
 			writer.nullValue();
 			return;

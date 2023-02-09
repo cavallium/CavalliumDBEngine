@@ -77,7 +77,7 @@ public class Lucene90NoCompressionStoredFieldsFormat extends StoredFieldsFormat 
 	private static final Compressor DUMMY_COMPRESSOR = new Compressor() {
 
 		@Override
-		public void compress(ByteBuffersDataInput byteBuffersDataInput, DataOutput dataOutput) throws IOException {
+		public void compress(ByteBuffersDataInput byteBuffersDataInput, DataOutput dataOutput) {
 			dataOutput.copyBytes(byteBuffersDataInput, byteBuffersDataInput.size());
 		}
 
@@ -96,7 +96,7 @@ public class Lucene90NoCompressionStoredFieldsFormat extends StoredFieldsFormat 
 	}
 
 	@Override
-	public StoredFieldsWriter fieldsWriter(Directory directory, SegmentInfo si, IOContext context) throws IOException {
+	public StoredFieldsWriter fieldsWriter(Directory directory, SegmentInfo si, IOContext context) {
 		return impl().fieldsWriter(directory, si, context);
 	}
 

@@ -24,7 +24,7 @@ public class MoreLikeThisTransformer implements GlobalQueryRewrite {
 	}
 
 	@Override
-	public LocalQueryParams rewrite(LLIndexSearchers indexSearchers, LocalQueryParams queryParams) throws IOException {
+	public LocalQueryParams rewrite(LLIndexSearchers indexSearchers, LocalQueryParams queryParams) {
 		var rewrittenQuery = LuceneUtils.getMoreLikeThisQuery(indexSearchers,
 				queryParams,
 				luceneAnalyzer,

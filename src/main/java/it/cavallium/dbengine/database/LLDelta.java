@@ -1,69 +1,35 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.util.Send;
-import io.netty5.buffer.internal.ResourceSupport;
-import it.cavallium.dbengine.utils.SimpleResource;
+import static it.cavallium.dbengine.database.LLUtils.unmodifiableBytes;
+
+import it.cavallium.dbengine.buffers.Buf;
 import java.util.StringJoiner;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
-public class LLDelta extends SimpleResource implements DiscardingCloseable {
+public class LLDelta {
 
 	@Nullable
-	private final Buffer previous;
+	private final Buf previous;
 	@Nullable
-	private final Buffer current;
+	private final Buf current;
 
-	private LLDelta(@Nullable Buffer previous, @Nullable Buffer current) {
+	private LLDelta(@Nullable Buf previous, @Nullable Buf current) {
 		super();
-		this.previous = previous != null ? previous.makeReadOnly() : null;
-		this.current = current != null ? current.makeReadOnly() : null;
+		this.previous = unmodifiableBytes(previous);
+		this.current = unmodifiableBytes(current);
 	}
 
-	@Override
-	protected void ensureOpen() {
-		super.ensureOpen();
-		assert previous == null || previous.isAccessible();
-		assert current == null || current.isAccessible();
-	}
-
-	@Override
-	protected void onClose() {
-		if (previous != null && previous.isAccessible()) {
-			previous.close();
-		}
-		if (current != null && current.isAccessible()) {
-			current.close();
-		}
-	}
-
-	public static LLDelta of(Buffer previous, Buffer current) {
+	public static LLDelta of(Buf previous, Buf current) {
 		assert (previous == null && current == null) || (previous != current);
 		return new LLDelta(previous, current);
 	}
 
-	public Send<Buffer> previous() {
-		ensureOpen();
-		return previous != null ? previous.copy().send() : null;
-	}
-
-	public Send<Buffer> current() {
-		ensureOpen();
-		return current != null ? current.copy().send() : null;
-	}
-
-	public Buffer currentUnsafe() {
-		ensureOpen();
-		return current;
-	}
-
-	public Buffer previousUnsafe() {
-		ensureOpen();
+	public Buf previous() {
 		return previous;
+	}
+
+	public Buf current() {
+		return current;
 	}
 
 	public boolean isModified() {

@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
+import it.cavallium.dbengine.utils.LFSR.LFSRIterator;
 import java.io.IOException;
 import java.math.BigInteger;
 import org.apache.lucene.index.LeafReaderContext;
@@ -8,7 +9,6 @@ import org.apache.lucene.search.LeafFieldComparator;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreCachingWrappingScorer;
 import org.jetbrains.annotations.NotNull;
-import it.cavallium.dbengine.utils.LFSR.LFSRIterator;
 
 //todo: fix
 public class RandomFieldComparator extends FieldComparator<Float> implements LeafFieldComparator {
@@ -31,14 +31,14 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 	}
 
 	@Override
-	public int compareBottom(int doc) throws IOException {
+	public int compareBottom(int doc) {
 		float score = scorer.score();
 		assert !Float.isNaN(score);
 		return Float.compare(score, bottom);
 	}
 
 	@Override
-	public void copy(int slot, int doc) throws IOException {
+	public void copy(int slot, int doc) {
 		scores[slot] = scorer.score();
 		assert !Float.isNaN(scores[slot]);
 	}
@@ -93,7 +93,7 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 	}
 
 	@Override
-	public int compareTop(int doc) throws IOException {
+	public int compareTop(int doc) {
 		float docValue = scorer.score();
 		assert !Float.isNaN(docValue);
 		return Float.compare(docValue, topValue);

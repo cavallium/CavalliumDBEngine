@@ -1,14 +1,12 @@
 package it.cavallium.dbengine.database.collections;
 
-import com.google.common.primitives.Ints;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
 
 public class DatabaseInt implements LLKeyValueDatabaseStructure {
 
@@ -17,28 +15,18 @@ public class DatabaseInt implements LLKeyValueDatabaseStructure {
 
 	public DatabaseInt(LLSingleton singleton) {
 		this.singleton = singleton;
-		this.serializer = SerializerFixedBinaryLength.intSerializer(singleton.getAllocator());
+		this.serializer = SerializerFixedBinaryLength.intSerializer();
 	}
 
-	public Mono<Integer> get(@Nullable LLSnapshot snapshot) {
-		var resultMono = singleton.get(snapshot);
-		return Mono.usingWhen(resultMono,
-				result -> Mono.fromSupplier(() -> serializer.deserialize(result)),
-				LLUtils::finalizeResource
-		);
+	public Integer get(@Nullable LLSnapshot snapshot) {
+		var result = singleton.get(snapshot);
+		return serializer.deserialize(BufDataInput.create(result));
 	}
 
-	public Mono<Void> set(int value) {
-		return singleton.set(Mono.fromCallable(() -> {
-			var buf = singleton.getAllocator().allocate(Integer.BYTES);
-			try {
-				serializer.serialize(value, buf);
-				return buf;
-			} catch (Throwable ex) {
-				buf.close();
-				throw ex;
-			}
-		}));
+	public void set(int value) {
+		var buf = BufDataOutput.createLimited(Integer.BYTES);
+		serializer.serialize(value, buf);
+		singleton.set(buf.asList());
 	}
 
 	@Override

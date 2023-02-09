@@ -3,7 +3,6 @@ package it.cavallium.dbengine.database.disk;
 import static com.google.common.collect.Lists.partition;
 
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.rpc.current.data.Column;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -19,8 +18,6 @@ import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.SstFileMetaData;
 import org.rocksdb.util.SizeUnit;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class RocksDBUtils {
 
@@ -48,7 +45,7 @@ public class RocksDBUtils {
 			String logDbName,
 			ColumnFamilyHandle cfh,
 			int volumeId,
-			Logger logger) {
+			Logger logger) throws RocksDBException {
 		try (var co = new CompactionOptions()
 				.setCompression(CompressionType.LZ4_COMPRESSION)
 				.setMaxSubcompactions(0)
@@ -64,7 +61,7 @@ public class RocksDBUtils {
 					partitions = List.of(filesToCompact);
 				}
 				int finalBottommostLevelId = getLevels(db, cfh) - 1;
-				Mono.whenDelayError(partitions.stream().map(partition -> Mono.<Void>fromCallable(() -> {
+				for (List<String> partition : partitions) {
 					logger.info("Compacting {} files in database {} in column family {} to level {}",
 							partition.size(),
 							logDbName,
@@ -92,14 +89,13 @@ public class RocksDBUtils {
 							);
 						}
 					}
-					return null;
-				}).subscribeOn(Schedulers.boundedElastic())).toList()).transform(LLUtils::handleDiscard).block();
+				};
 			}
 		}
 	}
 
 	public static void ensureOpen(RocksDB db, @Nullable ColumnFamilyHandle cfh) {
-		if (Schedulers.isInNonBlockingThread()) {
+		if (LLUtils.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called in a nonblocking thread");
 		}
 		ensureOwned(db);

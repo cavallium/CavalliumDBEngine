@@ -4,13 +4,11 @@ import java.io.IOException;
 import java.math.BigInteger;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
-import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.apache.lucene.document.Document;
@@ -18,8 +16,6 @@ import org.apache.lucene.document.DocumentStoredFieldVisitor;
 import org.apache.lucene.index.Fields;
 import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.index.IndexReader;
-import org.apache.lucene.index.IndexReaderContext;
-import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.StoredFieldVisitor;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.store.AlreadyClosedException;
@@ -90,7 +86,7 @@ public class BigCompositeReader<R extends IndexReader> {
 		}
 	}
 
-	public long getDocCount(String field) throws IOException {
+	public long getDocCount(String field) {
 		this.ensureOpen();
 		long total = 0;
 
@@ -107,7 +103,7 @@ public class BigCompositeReader<R extends IndexReader> {
 		return total;
 	}
 
-	public long docFreq(Term term) throws IOException {
+	public long docFreq(Term term) {
 		this.ensureOpen();
 		long total = 0;
 
@@ -141,7 +137,7 @@ public class BigCompositeReader<R extends IndexReader> {
 		return numDocs;
 	}
 
-	public Fields getTermVectors(long docID) throws IOException {
+	public Fields getTermVectors(long docID) {
 		this.ensureOpen();
 		int i = this.readerIndex(docID);
 		return this.subReaders[i].getTermVectors(Math.toIntExact(docID - this.starts[i]));
@@ -181,19 +177,19 @@ public class BigCompositeReader<R extends IndexReader> {
 		return hi;
 	}
 
-	public final void document(long docID, StoredFieldVisitor visitor) throws IOException {
+	public final void document(long docID, StoredFieldVisitor visitor) {
 		this.ensureOpen();
 		int i = this.readerIndex(docID);
 		this.subReaders[i].document(Math.toIntExact(docID - this.starts[i]), visitor);
 	}
 
-	public final Document document(long docID) throws IOException {
+	public final Document document(long docID) {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor();
 		this.document(docID, visitor);
 		return visitor.getDocument();
 	}
 
-	public final Document document(long docID, Set<String> fieldsToLoad) throws IOException {
+	public final Document document(long docID, Set<String> fieldsToLoad) {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor(fieldsToLoad);
 		this.document(docID, visitor);
 		return visitor.getDocument();

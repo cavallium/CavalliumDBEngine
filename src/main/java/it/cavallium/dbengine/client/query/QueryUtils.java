@@ -17,7 +17,6 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.util.QueryBuilder;
 import org.jetbrains.annotations.NotNull;
@@ -63,29 +62,17 @@ public class QueryUtils {
 			for (BooleanClause booleanClause : booleanQuery) {
 				org.apache.lucene.search.Query queryPartQuery = booleanClause.getQuery();
 
-				Occur occur;
-				switch (booleanClause.getOccur()) {
-					case MUST:
-						occur = OccurMust.of();
-						break;
-					case FILTER:
-						occur = OccurFilter.of();
-						break;
-					case SHOULD:
-						occur = OccurShould.of();
-						break;
-					case MUST_NOT:
-						occur = OccurMustNot.of();
-						break;
-					default:
-						throw new IllegalArgumentException();
-				}
+				Occur occur = switch (booleanClause.getOccur()) {
+					case MUST -> OccurMust.of();
+					case FILTER -> OccurFilter.of();
+					case SHOULD -> OccurShould.of();
+					case MUST_NOT -> OccurMustNot.of();
+				};
 				queryParts.add(BooleanQueryPart.of(transformQuery(field, queryPartQuery), occur));
 			}
 			return BooleanQuery.of(List.copyOf(queryParts), booleanQuery.getMinimumNumberShouldMatch());
 		}
-		if (luceneQuery instanceof org.apache.lucene.search.PhraseQuery) {
-			var phraseQuery = (org.apache.lucene.search.PhraseQuery) luceneQuery;
+		if (luceneQuery instanceof org.apache.lucene.search.PhraseQuery phraseQuery) {
 			int slop = phraseQuery.getSlop();
 			var terms = phraseQuery.getTerms();
 			var positions = phraseQuery.getPositions();

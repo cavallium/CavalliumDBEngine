@@ -1,30 +1,24 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.util.Send;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
-import io.netty5.buffer.internal.ResourceSupport;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.utils.SimpleResource;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 @SuppressWarnings("unused")
-public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements DatabaseStageEntry<V> {
+public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 
 	private static final Logger logger = LogManager.getLogger(DatabaseSingleBucket.class);
 
@@ -43,33 +37,35 @@ public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements Da
 	}
 
 	@Override
-	public Mono<V> get(@Nullable CompositeSnapshot snapshot) {
-		return bucketStage.get(snapshot).flatMap(entries -> extractValueTransformation(entries));
+	public V get(@Nullable CompositeSnapshot snapshot) {
+		var entries = bucketStage.get(snapshot);
+		return entries != null ? extractValue(entries) : null;
 	}
 
 	@Override
-	public Mono<V> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<V> defaultValue) {
-		return bucketStage.get(snapshot).flatMap(entries -> extractValueTransformation(entries)).switchIfEmpty(defaultValue);
+	public V getOrDefault(@Nullable CompositeSnapshot snapshot, V defaultValue) {
+		var entries = bucketStage.get(snapshot);
+		return entries != null ? extractValue(entries) : defaultValue;
 	}
 
 	@Override
-	public Mono<Void> set(V value) {
-		return this.update(prev -> value, UpdateReturnMode.NOTHING).then();
+	public void set(V value) {
+		this.update(prev -> value, UpdateReturnMode.NOTHING);
 	}
 
 	@Override
-	public Mono<V> setAndGetPrevious(V value) {
+	public V setAndGetPrevious(V value) {
 		return this.update(prev -> value, UpdateReturnMode.GET_OLD_VALUE);
 	}
 
 	@Override
-	public Mono<Boolean> setAndGetChanged(V value) {
-		return this.updateAndGetDelta(prev -> value).map(delta -> LLUtils.isDeltaChanged(delta));
+	public boolean setAndGetChanged(V value) {
+		return LLUtils.isDeltaChanged(this.updateAndGetDelta(prev -> value));
 	}
 
 	@Override
-	public Mono<V> update(SerializationFunction<@Nullable V, @Nullable V> updater, UpdateReturnMode updateReturnMode) {
-		return bucketStage
+	public V update(SerializationFunction<@Nullable V, @Nullable V> updater, UpdateReturnMode updateReturnMode) {
+		var result = bucketStage
 				.update(oldBucket -> {
 					V oldValue = extractValue(oldBucket);
  					V newValue = updater.apply(oldValue);
@@ -79,13 +75,13 @@ public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements Da
 					} else {
 						return this.insertValueOrCreate(oldBucket, newValue);
 					}
-				}, updateReturnMode)
-				.flatMap(entries -> extractValueTransformation(entries));
+				}, updateReturnMode);
+		return result != null ? extractValue(result) : null;
 	}
 
 	@Override
-	public Mono<Delta<V>> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater) {
-		return bucketStage.updateAndGetDelta(oldBucket -> {
+	public Delta<V> updateAndGetDelta(SerializationFunction<@Nullable V, @Nullable V> updater) {
+		var delta = bucketStage.updateAndGetDelta(oldBucket -> {
 			V oldValue = extractValue(oldBucket);
 			var result = updater.apply(oldValue);
 			if (result == null) {
@@ -93,32 +89,33 @@ public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements Da
 			} else {
 				return this.insertValueOrCreate(oldBucket, result);
 			}
-		}).transform(mono -> LLUtils.mapDelta(mono, entries -> extractValue(entries)));
+		});
+		return LLUtils.mapDelta(delta, this::extractValue);
 	}
 
 	@Override
-	public Mono<Void> clear() {
-		return this.update(prev -> null, UpdateReturnMode.NOTHING).then();
+	public void clear() {
+		this.update(prev -> null, UpdateReturnMode.NOTHING);
 	}
 
 	@Override
-	public Mono<V> clearAndGetPrevious() {
+	public V clearAndGetPrevious() {
 		return this.update(prev -> null, UpdateReturnMode.GET_OLD_VALUE);
 	}
 
 	@Override
-	public Mono<Boolean> clearAndGetStatus() {
-		return this.updateAndGetDelta(prev -> null).map(delta -> LLUtils.isDeltaChanged(delta));
+	public boolean clearAndGetStatus() {
+		return LLUtils.isDeltaChanged(this.updateAndGetDelta(prev -> null));
 	}
 
 	@Override
-	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return this.get(snapshot).map(prev -> 1L).defaultIfEmpty(0L);
+	public long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
+		return this.get(snapshot) != null ? 1L : 0L;
 	}
 
 	@Override
-	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return this.get(snapshot).map(prev -> true).defaultIfEmpty(true);
+	public boolean isEmpty(@Nullable CompositeSnapshot snapshot) {
+		return this.get(snapshot) == null;
 	}
 
 	@Override
@@ -127,12 +124,8 @@ public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements Da
 	}
 
 	@Override
-	public Flux<BadBlock> badBlocks() {
+	public Stream<BadBlock> badBlocks() {
 		return bucketStage.badBlocks();
-	}
-
-	private Mono<V> extractValueTransformation(Set<Entry<K, V>> entries) {
-		return Mono.fromCallable(() -> extractValue(entries));
 	}
 
 	@Nullable
@@ -186,17 +179,6 @@ public class DatabaseSingleBucket<K, V, TH> extends SimpleResource implements Da
 			}
 		} else {
 			return null;
-		}
-	}
-
-	@Override
-	protected void onClose() {
-		try {
-			if (bucketStage != null) {
-				bucketStage.close();
-			}
-		} catch (Throwable ex) {
-			logger.error("Failed to close bucketStage", ex);
 		}
 	}
 }

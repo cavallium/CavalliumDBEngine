@@ -10,12 +10,12 @@ import org.rocksdb.RocksDB;
 public class RocksDBSerializer implements DataSerializer<RocksDB> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull RocksDB rocksDB) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull RocksDB rocksDB) {
 		throw new UnsupportedOperationException("Can't encode this type");
 	}
 
 	@Override
-	public @NotNull RocksDB deserialize(DataInput dataInput) throws IOException {
+	public @NotNull RocksDB deserialize(DataInput dataInput) {
 		throw new UnsupportedOperationException("Can't encode this type");
 	}
 }

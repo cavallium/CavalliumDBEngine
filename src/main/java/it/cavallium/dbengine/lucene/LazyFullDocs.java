@@ -1,10 +1,8 @@
 package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.utils.SimpleResource;
-import java.io.Closeable;
-import java.io.IOException;
+import java.util.stream.Stream;
 import org.apache.lucene.search.TotalHits;
-import reactor.core.publisher.Flux;
 
 public class LazyFullDocs<T extends LLDoc> extends SimpleResource implements FullDocs<T> {
 
@@ -17,12 +15,12 @@ public class LazyFullDocs<T extends LLDoc> extends SimpleResource implements Ful
 	}
 
 	@Override
-	public Flux<T> iterate() {
+	public Stream<T> iterate() {
 		return pq.iterate();
 	}
 
 	@Override
-	public Flux<T> iterate(long skips) {
+	public Stream<T> iterate(long skips) {
 		return pq.iterate(skips);
 	}
 

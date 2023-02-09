@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.lucene;
 
 import it.cavallium.dbengine.database.DiscardingCloseable;
-import it.cavallium.dbengine.database.SafeCloseable;
 
 public interface PriorityQueue<T> extends ResourceIterable<T>, DiscardingCloseable {
 

@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
+import static it.cavallium.dbengine.database.LLUtils.consume;
+
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -7,7 +9,6 @@ import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
-import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
@@ -16,261 +17,211 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.util.function.Tuple2;
-import reactor.util.function.Tuples;
 
 @SuppressWarnings("unused")
-public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends
-		DatabaseStageEntry<Object2ObjectSortedMap<T, U>> {
+public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends DatabaseStageEntry<Object2ObjectSortedMap<T, U>> {
 
-	Mono<US> at(@Nullable CompositeSnapshot snapshot, T key);
+	@NotNull US at(@Nullable CompositeSnapshot snapshot, T key);
 
-	default Mono<Boolean> containsKey(@Nullable CompositeSnapshot snapshot, T key) {
-		return Mono.usingWhen(this.at(snapshot, key),
-				stage -> stage.isEmpty(snapshot).map(empty -> !empty),
-				LLUtils::finalizeResource
-		);
+	default boolean containsKey(@Nullable CompositeSnapshot snapshot, T key) {
+		return !this.at(snapshot, key).isEmpty(snapshot);
 	}
 
-	default Mono<U> getValue(@Nullable CompositeSnapshot snapshot, T key) {
-		return Mono.usingWhen(this.at(snapshot, key),
-				stage -> stage.get(snapshot),
-				LLUtils::finalizeResource
-		);
+	default @Nullable U getValue(@Nullable CompositeSnapshot snapshot, T key) {
+		return this.at(snapshot, key).get(snapshot);
 	}
 
-	default Mono<U> getValueOrDefault(@Nullable CompositeSnapshot snapshot, T key, Mono<U> defaultValue) {
-		return getValue(snapshot, key).switchIfEmpty(defaultValue).single();
+	default U getValueOrDefault(@Nullable CompositeSnapshot snapshot, T key, U defaultValue) {
+		return Objects.requireNonNullElse(getValue(snapshot, key), defaultValue);
 	}
 
-	default Mono<Void> putValue(T key, U value) {
-		return Mono.usingWhen(at(null, key).single(), stage -> stage.set(value), LLUtils::finalizeResource);
+	default U getValueOrDefault(@Nullable CompositeSnapshot snapshot, T key, Supplier<U> defaultValue) {
+		return Objects.requireNonNullElseGet(getValue(snapshot, key), defaultValue);
+	}
+
+	default void putValue(T key, U value) {
+		at(null, key).set(value);
 	}
 
 	UpdateMode getUpdateMode();
 
-	default Mono<U> updateValue(T key,
+	default U updateValue(T key,
 			UpdateReturnMode updateReturnMode,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return Mono.usingWhen(at(null, key).single(),
-				stage -> stage.update(updater, updateReturnMode),
-				LLUtils::finalizeResource
-		);
+		return at(null, key).update(updater, updateReturnMode);
 	}
 
-	default Flux<Boolean> updateMulti(Flux<T> keys, KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
-		return keys.flatMapSequential(key -> this.updateValue(key, prevValue -> updater.apply(key, prevValue)));
+	default Stream<Boolean> updateMulti(Stream<T> keys, KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
+		return keys.parallel().map(key -> this.updateValue(key, prevValue -> updater.apply(key, prevValue)));
 	}
 
-	default Mono<Boolean> updateValue(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return updateValueAndGetDelta(key, updater).map(delta -> LLUtils.isDeltaChanged(delta)).single();
+	default boolean updateValue(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
+		return LLUtils.isDeltaChanged(updateValueAndGetDelta(key, updater));
 	}
 
-	default Mono<Delta<U>> updateValueAndGetDelta(T key,
-			SerializationFunction<@Nullable U, @Nullable U> updater) {
-		var stageMono = this.at(null, key).single();
-		return stageMono.flatMap(stage -> stage
-				.updateAndGetDelta(updater)
-				.doFinally(s -> stage.close()));
+	default Delta<U> updateValueAndGetDelta(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
+		return this.at(null, key).updateAndGetDelta(updater);
 	}
 
-	default Mono<U> putValueAndGetPrevious(T key, U value) {
-		return Mono.usingWhen(at(null, key).single(),
-				stage -> stage.setAndGetPrevious(value),
-				LLUtils::finalizeResource
-		);
+	default @Nullable U putValueAndGetPrevious(T key, @Nullable U value) {
+		return at(null, key).setAndGetPrevious(value);
 	}
 
 	/**
 	 * @return true if the key was associated with any value, false if the key didn't exist.
 	 */
-	default Mono<Boolean> putValueAndGetChanged(T key, U value) {
-		return Mono
-				.usingWhen(at(null, key).single(), stage -> stage.setAndGetChanged(value), LLUtils::finalizeResource)
-				.single();
+	default boolean putValueAndGetChanged(T key, @Nullable U value) {
+		return at(null, key).setAndGetChanged(value);
 	}
 
-	default Mono<Void> remove(T key) {
-		return removeAndGetStatus(key).then();
+	default void remove(T key) {
+		removeAndGetStatus(key);
 	}
 
-	default Mono<U> removeAndGetPrevious(T key) {
-		return Mono.usingWhen(at(null, key), us -> us.clearAndGetPrevious(), LLUtils::finalizeResource);
+	default @Nullable U removeAndGetPrevious(T key) {
+		return at(null, key).clearAndGetPrevious();
 	}
 
-	default Mono<Boolean> removeAndGetStatus(T key) {
-		return removeAndGetPrevious(key).map(o -> true).defaultIfEmpty(false);
+	default boolean removeAndGetStatus(T key) {
+		return removeAndGetPrevious(key) != null;
 	}
 
 	/**
 	 * GetMulti must return the elements in sequence!
 	 */
-	default Flux<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Flux<T> keys) {
-		return keys.flatMapSequential(key -> this
-				.getValue(snapshot, key)
-				.map(Optional::of)
-				.defaultIfEmpty(Optional.empty())
-		);
+	default Stream<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Stream<T> keys) {
+		return keys.parallel().map(key -> Optional.ofNullable(this.getValue(snapshot, key)));
 	}
 
-	default Mono<Void> putMulti(Flux<Entry<T, U>> entries) {
-		return entries.flatMap(entry -> this.putValue(entry.getKey(), entry.getValue())).then();
+	default void putMulti(Stream<Entry<T, U>> entries) {
+		try (var stream = entries.parallel()) {
+			stream.forEach(entry -> this.putValue(entry.getKey(), entry.getValue()));
+		}
 	}
 
-	Flux<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
+	Stream<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
 
-	default Flux<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
-		return this
-				.getAllStages(snapshot, smallRange)
-				.flatMapSequential(stage -> stage
-						.getValue()
-						.get(snapshot)
-						.map(value -> Map.entry(stage.getKey(), value))
-						.doFinally(s -> stage.getValue().close())
-				);
+	default Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return this.getAllStages(snapshot, smallRange).parallel().mapMulti((stage, mapper) -> {
+			var val = stage.getValue().get(snapshot);
+			if (val != null) {
+				mapper.accept(Map.entry(stage.getKey(), val));
+			}
+		});
 	}
 
-	default Mono<Void> setAllValues(Flux<Entry<T, U>> entries) {
-		return setAllValuesAndGetPrevious(entries).then();
+	default void setAllValues(Stream<Entry<T, U>> entries) {
+		consume(setAllValuesAndGetPrevious(entries));
 	}
 
-	Flux<Entry<T, U>> setAllValuesAndGetPrevious(Flux<Entry<T, U>> entries);
+	Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries);
 
-	default Mono<Void> clear() {
-		return setAllValues(Flux.empty());
+	default void clear() {
+		setAllValues(Stream.empty());
 	}
 
-	default Mono<Void> replaceAllValues(boolean canKeysChange,
-			Function<Entry<T, U>, Mono<Entry<T, U>>> entriesReplacer,
+	default void replaceAllValues(boolean canKeysChange,
+			Function<Entry<T, U>, @NotNull Entry<T, U>> entriesReplacer,
 			boolean smallRange) {
 		if (canKeysChange) {
-			return this.setAllValues(this.getAllValues(null, smallRange).flatMap(entriesReplacer)).then();
+			this.setAllValues(this.getAllValues(null, smallRange).map(entriesReplacer));
 		} else {
-			return this
-					.getAllValues(null, smallRange)
-					.flatMap(entriesReplacer)
-					.flatMap(replacedEntry -> this
-							.at(null, replacedEntry.getKey())
-							.flatMap(stage -> stage
-									.set(replacedEntry.getValue())
-									.doFinally(s -> stage.close())
-							)
-					)
-					.then();
+			this.getAllValues(null, smallRange).map(entriesReplacer)
+					.forEach(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()));
 		}
 	}
 
-	default Mono<Void> replaceAll(Function<Entry<T, US>, Mono<Void>> entriesReplacer) {
-		return this
-				.getAllStages(null, false)
-				.flatMap(stage -> entriesReplacer.apply(stage)
-						.doFinally(s -> stage.getValue().close())
-				)
-				.then();
+	default void replaceAll(Consumer<Entry<T, US>> entriesReplacer) {
+		this.getAllStages(null, false).forEach(entriesReplacer);
 	}
 
 	@Override
-	default Mono<Object2ObjectSortedMap<T, U>> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
-		return this
-				.setAllValuesAndGetPrevious(Flux.fromIterable(value.entrySet()))
-				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
-				.map(map -> (Object2ObjectSortedMap<T, U>) map)
-				.filter(map -> !map.isEmpty());
+	default Object2ObjectSortedMap<T, U> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
+		Object2ObjectSortedMap<T, U> map;
+		if (value == null) {
+			map = this.clearAndGetPrevious();
+		} else {
+			map = this
+					.setAllValuesAndGetPrevious(value.entrySet().stream())
+					.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+		}
+		return map;
 	}
 
 	@Override
-	default Mono<Boolean> setAndGetChanged(Object2ObjectSortedMap<T, U> value) {
-		return this
-				.setAndGetPrevious(value)
-				.map(oldValue -> !Objects.equals(oldValue, value.isEmpty() ? null : value))
-				.switchIfEmpty(Mono.fromSupplier(() -> !value.isEmpty()));
+	default boolean setAndGetChanged(@Nullable Object2ObjectSortedMap<T, U> value) {
+		if (value != null && value.isEmpty()) {
+			value = null;
+		}
+		var prev = this.setAndGetPrevious(value);
+		if (prev == null) {
+			return value != null;
+		} else {
+			return !Objects.equals(prev, value);
+		}
 	}
 
 	@Override
-	default Mono<Delta<Object2ObjectSortedMap<T, U>>> updateAndGetDelta(SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater) {
+	default Delta<Object2ObjectSortedMap<T, U>> updateAndGetDelta(
+			SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater) {
 		var updateMode = this.getUpdateMode();
 		if (updateMode == UpdateMode.ALLOW_UNSAFE) {
-			return this
+			Object2ObjectSortedMap<T, U> v = this
 					.getAllValues(null, true)
-					.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
-					.map(map -> (Object2ObjectSortedMap<T, U>) map)
-					.single()
-					.<Tuple2<Optional<Object2ObjectSortedMap<T, U>>, Optional<Object2ObjectSortedMap<T, U>>>>handle((v, sink) -> {
-						if (v.isEmpty()) {
-							v = null;
-						}
-						try {
-							var result = updater.apply(v);
-							if (result != null && result.isEmpty()) {
-								result = null;
-							}
-							sink.next(Tuples.of(Optional.ofNullable(v), Optional.ofNullable(result)));
-						} catch (SerializationException ex) {
-							sink.error(ex);
-						}
-					})
-					.flatMap(result -> Mono
-							.justOrEmpty(result.getT2())
-							.flatMap(values -> this.setAllValues(Flux.fromIterable(values.entrySet())))
-							.thenReturn(new Delta<>(result.getT1().orElse(null), result.getT2().orElse(null)))
-					);
+					.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+
+			if (v.isEmpty()) {
+				v = null;
+			}
+
+			var result = updater.apply(v);
+			if (result != null && result.isEmpty()) {
+				result = null;
+			}
+			this.setAllValues(result != null ? result.entrySet().stream() : null);
+			return new Delta<>(v, result);
 		} else if (updateMode == UpdateMode.ALLOW) {
-			return Mono.fromCallable(() -> {
-				throw new UnsupportedOperationException("Maps can't be updated atomically");
-			});
+			throw new UnsupportedOperationException("Maps can't be updated atomically");
 		} else if (updateMode == UpdateMode.DISALLOW) {
-			return Mono.fromCallable(() -> {
-				throw new UnsupportedOperationException("Map can't be updated because updates are disabled");
-			});
+			throw new UnsupportedOperationException("Map can't be updated because updates are disabled");
 		} else {
-			return Mono.fromCallable(() -> {
-				throw new UnsupportedOperationException("Unknown update mode: " + updateMode);
-			});
+			throw new UnsupportedOperationException("Unknown update mode: " + updateMode);
 		}
 	}
 
 	@Override
-	default Mono<Object2ObjectSortedMap<T, U>> clearAndGetPrevious() {
+	default Object2ObjectSortedMap<T, U> clearAndGetPrevious() {
 		return this.setAndGetPrevious(Object2ObjectSortedMaps.emptyMap());
 	}
 
 	@Override
-	default Mono<Object2ObjectSortedMap<T, U>> get(@Nullable CompositeSnapshot snapshot) {
-		return this
+	default Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
+		Object2ObjectSortedMap<T, U> map = this
 				.getAllValues(snapshot, true)
-				.collectMap(Entry::getKey, Entry::getValue, Object2ObjectLinkedOpenHashMap::new)
-				.map(map -> (Object2ObjectSortedMap<T, U>) map)
-				.filter(map -> !map.isEmpty());
+				.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+		return map.isEmpty() ? null : map;
 	}
 
 	@Override
-	default Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return this
-				.getAllStages(snapshot, false)
-				.doOnNext(stage -> stage.getValue().close())
-				.count();
+	default long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
+		return this.getAllStages(snapshot, false).count();
 	}
 
 	/**
 	 * Value getter doesn't lock data. Please make sure to lock before getting data.
 	 */
 	default ValueGetterBlocking<T, U> getDbValueGetter(@Nullable CompositeSnapshot snapshot) {
-		return k -> getValue(snapshot, k).transform(LLUtils::handleDiscard).block();
+		return k -> getValue(snapshot, k);
 	}
 
 	default ValueGetter<T, U> getAsyncDbValueGetter(@Nullable CompositeSnapshot snapshot) {
 		return k -> getValue(snapshot, k);
-	}
-
-	default ValueTransformer<T, U> getAsyncDbValueTransformer(@Nullable CompositeSnapshot snapshot) {
-		return keys -> {
-			var sharedKeys = keys.publish().refCount(2);
-			var values = DatabaseStageMap.this.getMulti(snapshot, sharedKeys);
-			return Flux.zip(sharedKeys, values, Map::entry);
-		};
 	}
 }

@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 public class CharListJsonAdapter extends JsonAdapter<CharList> {
 
 	@Override
-	public @NotNull CharList fromJson(@NotNull JsonReader reader) throws IOException {
+	public @NotNull CharList fromJson(@NotNull JsonReader reader) {
 		reader.beginArray();
 		CharArrayList modifiableOutput = new CharArrayList();
 		while (reader.hasNext()) {
@@ -24,7 +24,7 @@ public class CharListJsonAdapter extends JsonAdapter<CharList> {
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable CharList value) throws IOException {
+	public void toJson(@NotNull JsonWriter writer, @Nullable CharList value) {
 		if (value == null) {
 			writer.nullValue();
 			return;

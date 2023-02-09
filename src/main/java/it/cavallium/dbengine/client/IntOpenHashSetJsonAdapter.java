@@ -2,7 +2,6 @@ package it.cavallium.dbengine.client;
 
 import com.squareup.moshi.JsonReader;
 import com.squareup.moshi.JsonWriter;
-import it.cavallium.data.generator.nativedata.Int52;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;

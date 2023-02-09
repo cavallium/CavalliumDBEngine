@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.client.query;
 
 import io.soabase.recordbuilder.core.RecordBuilder;
-import it.cavallium.data.generator.nativedata.Nullablefloat;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.Sort;
 import it.cavallium.dbengine.client.query.current.data.NoSort;

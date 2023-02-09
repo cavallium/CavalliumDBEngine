@@ -1,12 +1,10 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.buffer.internal.ResourceSupport;
+import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
-import it.cavallium.dbengine.database.BufSupplier;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -14,32 +12,26 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
-import it.cavallium.dbengine.utils.SimpleResource;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-public class DatabaseMapSingle<U> extends SimpleResource implements DatabaseStageEntry<U> {
+public final class DatabaseMapSingle<U> implements DatabaseStageEntry<U> {
 
 	private static final Logger LOG = LogManager.getLogger(DatabaseMapSingle.class);
 
-	private final AtomicLong totalZeroBytesErrors = new AtomicLong();
-
 	private final LLDictionary dictionary;
-	private final Mono<Buffer> keyMono;
+	private final Buf key;
 	private final Serializer<U> serializer;
-	private final BufSupplier keySupplier;
 
-	public DatabaseMapSingle(LLDictionary dictionary, BufSupplier keySupplier, Serializer<U> serializer) {
+	public DatabaseMapSingle(LLDictionary dictionary, Buf key, Serializer<U> serializer) {
 		this.dictionary = dictionary;
-		this.keySupplier = keySupplier;
-		this.keyMono = Mono.fromSupplier(() -> keySupplier.get());
+		this.key = key;
 		this.serializer = serializer;
 	}
 
@@ -51,127 +43,98 @@ public class DatabaseMapSingle<U> extends SimpleResource implements DatabaseStag
 		}
 	}
 
-	private U deserializeValue(Buffer value) {
+	private U deserializeValue(Buf value) {
 		try {
-			return serializer.deserialize(value);
+			return serializer.deserialize(BufDataInput.create(value));
 		} catch (IndexOutOfBoundsException ex) {
 			var exMessage = ex.getMessage();
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {
-				try (var key = keySupplier.get()) {
-					LOG.error("Unexpected zero-bytes value at "
-							+ dictionary.getDatabaseName() + ":" + dictionary.getColumnName() + ":" + LLUtils.toStringSafe(key));
-				}
+				LOG.error("Unexpected zero-bytes value at %s:%s:%s".formatted(dictionary.getDatabaseName(),
+						dictionary.getColumnName(),
+						LLUtils.toStringSafe(key)
+				));
 				return null;
 			} else {
 				throw ex;
 			}
-		} catch (SerializationException ex) {
-			throw ex;
 		}
 	}
 
-	private Buffer serializeValue(U value) throws SerializationException {
-		var valSizeHint = serializer.getSerializedSizeHint();
-		if (valSizeHint == -1) valSizeHint = 128;
-		var valBuf = dictionary.getAllocator().allocate(valSizeHint);
-		try {
-			serializer.serialize(value, valBuf);
-			return valBuf;
-		} catch (Throwable ex) {
-			valBuf.close();
-			throw ex;
+	private Buf serializeValue(U value) throws SerializationException {
+		BufDataOutput valBuf = BufDataOutput.create(serializer.getSerializedSizeHint());
+		serializer.serialize(value, valBuf);
+		return valBuf.asList();
+	}
+
+	@Override
+	public U get(@Nullable CompositeSnapshot snapshot) {
+		var result = dictionary.get(resolveSnapshot(snapshot), key);
+		if (result != null) {
+			return deserializeValue(result);
+		} else {
+			return null;
 		}
 	}
 
 	@Override
-	public Mono<U> get(@Nullable CompositeSnapshot snapshot) {
-		return Mono.usingWhen(dictionary.get(resolveSnapshot(snapshot), keyMono),
-				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
-				LLUtils::finalizeResource
-		);
+	public U setAndGetPrevious(U value) {
+		var serializedKey = value != null ? serializeValue(value) : null;
+		var result = dictionary.put(key, serializedKey, LLDictionaryResultType.PREVIOUS_VALUE);
+		if (result != null) {
+			return deserializeValue(result);
+		} else {
+			return null;
+		}
 	}
 
 	@Override
-	public Mono<U> setAndGetPrevious(U value) {
-		return Mono.usingWhen(dictionary
-						.put(keyMono, Mono.fromCallable(() -> serializeValue(value)), LLDictionaryResultType.PREVIOUS_VALUE),
-				buf -> Mono.fromSupplier(() -> deserializeValue(buf)),
-				LLUtils::finalizeResource);
-	}
-
-	@Override
-	public Mono<U> update(SerializationFunction<@Nullable U, @Nullable U> updater,
+	public U update(SerializationFunction<@Nullable U, @Nullable U> updater,
 			UpdateReturnMode updateReturnMode) {
-		var resultMono = dictionary
-				.update(keyMono, (oldValueSer) -> {
-					try (oldValueSer) {
-						U result;
-						if (oldValueSer == null) {
-							result = updater.apply(null);
-						} else {
-							U deserializedValue = serializer.deserialize(oldValueSer);
-							result = updater.apply(deserializedValue);
-						}
-						if (result == null) {
-							return null;
-						} else {
-							return serializeValue(result);
-						}
-					}
-				}, updateReturnMode);
-		return Mono.usingWhen(resultMono,
-				result -> Mono.fromSupplier(() -> deserializeValue(result)),
-				LLUtils::finalizeResource
-		);
+		Buf resultBytes = dictionary.update(key, this.createUpdater(updater), updateReturnMode);
+		return deserializeValue(resultBytes);
 	}
 
 	@Override
-	public Mono<Delta<U>> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return dictionary
-				.updateAndGetDelta(keyMono, (oldValueSer) -> {
-					U result;
-					if (oldValueSer == null) {
-						result = updater.apply(null);
-					} else {
-						U deserializedValue = serializer.deserialize(oldValueSer);
-						result = updater.apply(deserializedValue);
-					}
-					if (result == null) {
-						return null;
-					} else {
-						return serializeValue(result);
-					}
-				}).transform(mono -> LLUtils.mapLLDelta(mono, serialized -> serializer.deserialize(serialized)));
+	public Delta<U> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater) {
+		var delta = dictionary.updateAndGetDelta(key, this.createUpdater(updater));
+		return LLUtils.mapLLDelta(delta, bytes -> serializer.deserialize(BufDataInput.create(bytes)));
+	}
+
+	private BinarySerializationFunction createUpdater(SerializationFunction<U, U> updater) {
+		return oldBytes -> {
+			U result;
+			if (oldBytes == null) {
+				result = updater.apply(null);
+			} else {
+				U deserializedValue = serializer.deserialize(BufDataInput.create(oldBytes));
+				result = updater.apply(deserializedValue);
+			}
+			if (result == null) {
+				return null;
+			} else {
+				return serializeValue(result);
+			}
+		};
 	}
 
 	@Override
-	public Mono<U> clearAndGetPrevious() {
-		return Mono.usingWhen(dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE),
-				result -> Mono.fromSupplier(() -> deserializeValue(result)),
-				LLUtils::finalizeResource
-		);
+	public U clearAndGetPrevious() {
+		return deserializeValue(dictionary.remove(key, LLDictionaryResultType.PREVIOUS_VALUE));
 	}
 
 	@Override
-	public Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(single -> LLRange.singleUnsafe(single)), false)
-				.map(empty -> empty ? 0L : 1L);
+	public long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key), false) ? 0L : 1L;
 	}
 
 	@Override
-	public Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return dictionary
-				.isRangeEmpty(resolveSnapshot(snapshot), keyMono.map(single -> LLRange.singleUnsafe(single)), true);
+	public boolean isEmpty(@Nullable CompositeSnapshot snapshot) {
+		return dictionary.isRangeEmpty(resolveSnapshot(snapshot), LLRange.single(key), true);
 	}
 
 	@Override
-	public Flux<BadBlock> badBlocks() {
-		return dictionary.badBlocks(keyMono.map(single -> LLRange.singleUnsafe(single)));
+	public Stream<BadBlock> badBlocks() {
+		return dictionary.badBlocks(LLRange.single(key));
 	}
 
-	@Override
-	protected void onClose() {
-		keySupplier.close();
-	}
 }

@@ -1,28 +1,21 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
+import static com.google.common.collect.Streams.mapWithIndex;
 
-import io.netty5.util.Send;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.MaxScoreAccumulator;
 import java.io.IOException;
-import java.io.UncheckedIOException;
 import java.util.List;
-import it.cavallium.dbengine.lucene.hugepq.search.CustomHitsThresholdChecker;
+import java.util.function.Function;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.ScoreDoc;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 
@@ -30,41 +23,35 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	protected static final Logger LOG = LogManager.getLogger(UnsortedStreamingMultiSearcher.class);
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
+	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
 		}
 		if (queryParams.isSorted() && queryParams.limitLong() > 0) {
 			throw new UnsupportedOperationException("Sorted queries are not supported" + " by UnsortedContinuousLuceneMultiSearcher");
 		}
 		var localQueryParams = getLocalQueryParams(queryParams);
-		return singleOrClose(indexSearchersMono, indexSearchers -> Mono.fromCallable(() -> {
-			var shards = indexSearchers.shards();
 
-			Flux<ScoreDoc> scoreDocsFlux = getScoreDocs(localQueryParams, shards);
+		var shards = indexSearchers.shards();
 
-			Flux<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName, false);
+		Stream<ScoreDoc> scoreDocsFlux = getScoreDocs(localQueryParams, shards);
 
-			var totalHitsCount = new TotalHitsCount(0, false);
-			Flux<LLKeyScore> mergedFluxes = resultsFlux.skip(queryParams.offsetLong()).take(queryParams.limitLong(), true);
+		Stream<LLKeyScore> resultsFlux = LuceneUtils.convertHits(scoreDocsFlux, shards, keyFieldName);
 
-			return new MyLuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers);
-		}));
+		var totalHitsCount = new TotalHitsCount(0, false);
+		Stream<LLKeyScore> mergedFluxes = resultsFlux.skip(queryParams.offsetLong()).limit(queryParams.limitLong());
+
+		return new MyLuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers);
 	}
 
-	private Flux<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {
-		return Flux.defer(() -> {
-			var hitsThreshold = CustomHitsThresholdChecker.createShared(localQueryParams.getTotalHitsThresholdLong());
-			MaxScoreAccumulator maxScoreAccumulator = new MaxScoreAccumulator();
-			return Flux.fromIterable(shards).index().flatMap(tuple -> {
-				var shardIndex = (int) (long) tuple.getT1();
-				var shard = tuple.getT2();
-				return LuceneGenerator.reactive(shard, localQueryParams, shardIndex);
-			});
-		});
+	private Stream<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {
+		return mapWithIndex(shards.stream(),
+				(shard, shardIndex) -> LuceneGenerator.reactive(shard, localQueryParams, (int) shardIndex))
+				.parallel()
+				.flatMap(Function.identity());
 	}
 
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
@@ -88,7 +75,7 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 		private final LLIndexSearchers indexSearchers;
 
 		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
-				Flux<LLKeyScore> hitsFlux,
+				Stream<LLKeyScore> hitsFlux,
 				LLIndexSearchers indexSearchers) {
 			super(totalHitsCount, hitsFlux);
 			this.indexSearchers = indexSearchers;

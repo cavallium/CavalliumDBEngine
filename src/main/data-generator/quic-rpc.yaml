@@ -77,8 +77,6 @@ superTypesData:
     NIOFSDirectory,
     RAFFSDirectory,
     DirectIOFSDirectory,
-    RocksDBStandaloneDirectory,
-    RocksDBSharedDirectory,
     NRTCachingDirectory
   ]
   StandardFSDirectoryOptions: [
@@ -90,7 +88,6 @@ superTypesData:
     MemoryMappedFSDirectory,
     NIOFSDirectory,
     RAFFSDirectory,
-    RocksDBStandaloneDirectory,
     StandardFSDirectoryOptions
   ]
   Filter: [
@@ -134,8 +131,8 @@ customTypesData:
     serializer: it.cavallium.dbengine.database.remote.LLSnapshotSerializer
 
   Bytes:
-    javaClass: it.unimi.dsi.fastutil.bytes.ByteList
-    serializer: it.cavallium.dbengine.database.remote.ByteListSerializer
+    javaClass: it.cavallium.dbengine.buffers.Buf
+    serializer: it.cavallium.dbengine.database.remote.BufSerializer
   StringMap:
     javaClass: java.util.Map<java.lang.String, java.lang.String>
     serializer: it.cavallium.dbengine.database.remote.StringMapSerializer
@@ -248,7 +245,6 @@ baseTypesData:
       lowMemory: boolean
       useDirectIO: boolean
       allowMemoryMapping: boolean
-      allowNettyDirect: boolean
       optimistic: boolean
       maxOpenFiles: -int
       blockCache: -long
@@ -331,7 +327,6 @@ baseTypesData:
       indexWriterMaxBufferedDocs: -int
       applyAllDeletes: -boolean
       writeAllDeletes: -boolean
-      allowNonVolatileCollection: boolean
       maxInMemoryResultEntries: int
       mergePolicy: TieredMergePolicy
   TieredMergePolicy:
@@ -359,14 +354,6 @@ baseTypesData:
       delegate: StandardFSDirectoryOptions
       mergeBufferSize: -int
       minBytesDirect: -long
-  RocksDBStandaloneDirectory:
-    data:
-      managedPath: Path
-      blockSize: int
-  RocksDBSharedDirectory:
-    data:
-      managedPath: Path
-      blockSize: int
   NRTCachingDirectory:
     data:
       delegate: LuceneDirectoryOptions

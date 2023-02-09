@@ -3,11 +3,9 @@ package it.cavallium.dbengine.database.disk;
 import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.utils.SimpleResource;
-import java.io.Closeable;
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import it.cavallium.dbengine.utils.DBException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.ForkJoinPool;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexCommit;
 import org.apache.lucene.search.IndexSearcher;
@@ -69,7 +67,7 @@ public class LuceneIndexSnapshot extends SimpleResource implements DiscardingClo
 			try {
 				indexReader.close();
 			} catch (IOException e) {
-				throw new UncheckedIOException(e);
+				throw new DBException(e);
 			}
 			indexSearcher = null;
 		}

@@ -4,5 +4,5 @@ import java.io.IOException;
 
 public interface ValueGetterBlocking<KEY, VALUE> {
 
-	VALUE get(KEY key) throws IOException;
+	VALUE get(KEY key);
 }

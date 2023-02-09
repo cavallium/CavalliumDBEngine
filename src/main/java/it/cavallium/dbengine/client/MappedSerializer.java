@@ -1,11 +1,11 @@
 package it.cavallium.dbengine.client;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public class MappedSerializer<A, B> implements Serializer<B> {
 
@@ -19,13 +19,13 @@ public class MappedSerializer<A, B> implements Serializer<B> {
 	}
 
 	@Override
-	public @NotNull B deserialize(@NotNull Buffer serialized) throws SerializationException {
-		return keyMapper.map(serializer.deserialize(serialized));
+	public @NotNull B deserialize(@NotNull BufDataInput in) throws SerializationException {
+		return keyMapper.map(serializer.deserialize(in));
 	}
 
 	@Override
-	public void serialize(@NotNull B deserialized, Buffer output) throws SerializationException {
-		serializer.serialize(keyMapper.unmap(deserialized), output);
+	public void serialize(@NotNull B deserialized, BufDataOutput out) throws SerializationException {
+		serializer.serialize(keyMapper.unmap(deserialized), out);
 	}
 
 	@Override

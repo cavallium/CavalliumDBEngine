@@ -1,8 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
@@ -23,8 +22,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
-	@NotNull RocksIteratorObj newRocksIterator(boolean allowNettyDirect,
-			ReadOptions readOptions,
+	@NotNull RocksIteratorObj newRocksIterator(ReadOptions readOptions,
 			LLRange range,
 			boolean reverse) throws RocksDBException;
 
@@ -32,48 +30,35 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 			byte[] key,
 			boolean existsAlmostCertainly)
 			throws RocksDBException {
-		var allocator = getAllocator();
-		try (var keyBuf = allocator.allocate(key.length)) {
-			keyBuf.writeBytes(key);
-			try (var result = this.get(readOptions, keyBuf)) {
-				if (result == null) {
-					return null;
-				}
-				return LLUtils.toArray(result);
-			}
+		var result = this.get(readOptions, Buf.wrap(key));
+		if (result == null) {
+			return null;
 		}
+		return LLUtils.asArray(result);
 	}
 
 	@Nullable
-	Buffer get(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+	Buf get(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
 
-	boolean exists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+	boolean exists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
 
-	boolean mayExists(@NotNull ReadOptions readOptions, Buffer key) throws RocksDBException;
+	boolean mayExists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
 
-	void put(@NotNull WriteOptions writeOptions, Buffer key, Buffer value) throws RocksDBException;
+	void put(@NotNull WriteOptions writeOptions, Buf key, Buf value) throws RocksDBException;
 
 	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value) throws RocksDBException {
-		var allocator = getAllocator();
-		try (var keyBuf = allocator.allocate(key.length)) {
-			keyBuf.writeBytes(key);
-			try (var valBuf = allocator.allocate(value.length)) {
-				valBuf.writeBytes(value);
-
-				this.put(writeOptions, keyBuf, valBuf);
-			}
-		}
+		this.put(writeOptions, Buf.wrap(key), Buf.wrap(value));
 	}
 
-	@NotNull RocksIteratorObj newIterator(@NotNull ReadOptions readOptions, @Nullable Buffer min, @Nullable Buffer max);
+	@NotNull RocksIteratorObj newIterator(@NotNull ReadOptions readOptions, @Nullable Buf min, @Nullable Buf max);
 
 	@NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
-			Buffer key,
+			Buf key,
 			BinarySerializationFunction updater,
-			UpdateAtomicResultMode returnMode) throws RocksDBException, IOException;
+			UpdateAtomicResultMode returnMode) throws RocksDBException;
 
-	void delete(WriteOptions writeOptions, Buffer key) throws RocksDBException;
+	void delete(WriteOptions writeOptions, Buf key) throws RocksDBException;
 
 	void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException;
 
@@ -94,8 +79,6 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	long getNumEntries() throws RocksDBException;
 
 	ColumnFamilyHandle getColumnFamilyHandle();
-
-	BufferAllocator getAllocator();
 
 	MeterRegistry getMeterRegistry();
 

@@ -1,13 +1,10 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 import static java.util.Objects.requireNonNull;
-import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_QUEUESIZE;
-import static reactor.core.scheduler.Schedulers.DEFAULT_BOUNDED_ELASTIC_SIZE;
 
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.Counter;
@@ -32,7 +29,6 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneConcurrentMergeScheduler;
 import it.cavallium.dbengine.lucene.LuceneHacks;
-import it.cavallium.dbengine.lucene.LuceneRocksDBManager;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.directory.Lucene91CodecWithNoFieldCompression;
@@ -48,18 +44,23 @@ import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import it.cavallium.dbengine.utils.DBException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Phaser;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Supplier;
 import java.util.logging.Level;
+import java.util.stream.Stream;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -75,14 +76,9 @@ import org.apache.lucene.index.SnapshotDeletionPolicy;
 import org.apache.lucene.search.similarities.Similarity;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.MMapDirectory;
+import org.apache.lucene.util.IOSupplier;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import it.cavallium.dbengine.utils.ShortNamedThreadFactory;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
-import reactor.core.publisher.SignalType;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, LLLuceneIndex, LuceneCloseable {
 
@@ -94,19 +90,13 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 	 * There is only a single thread globally to not overwhelm the disk with
 	 * concurrent commits or concurrent refreshes.
 	 */
-	private static final Scheduler luceneHeavyTasksScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
-			DEFAULT_BOUNDED_ELASTIC_SIZE,
-			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			new LuceneThreadFactory("heavy-tasks").setDaemon(true).withGroup(new ThreadGroup("lucene-heavy-tasks")),
-			Math.toIntExact(Duration.ofHours(1).toSeconds())
-	));
-	private static final Scheduler luceneWriteScheduler = uninterruptibleScheduler(Schedulers.newBoundedElastic(
-			DEFAULT_BOUNDED_ELASTIC_SIZE,
-			DEFAULT_BOUNDED_ELASTIC_QUEUESIZE,
-			new LuceneThreadFactory("lucene-write").setDaemon(true).withGroup(new ThreadGroup("lucene-write")),
-			Math.toIntExact(Duration.ofHours(1).toSeconds())
-	));
-	private static final Scheduler bulkScheduler = luceneWriteScheduler;
+	private static final ScheduledExecutorService luceneHeavyTasksScheduler = Executors.newScheduledThreadPool(4,
+			new LuceneThreadFactory("heavy-tasks").setDaemon(true).withGroup(new ThreadGroup("lucene-heavy-tasks"))
+	);
+	private static final ScheduledExecutorService luceneWriteScheduler = Executors.newScheduledThreadPool(8,
+			new LuceneThreadFactory("lucene-write").setDaemon(true).withGroup(new ThreadGroup("lucene-write"))
+	);
+	private static final ScheduledExecutorService bulkScheduler = luceneWriteScheduler;
 
 	private static final boolean ENABLE_SNAPSHOTS
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.lucene.snapshot.enable", "true"));
@@ -115,10 +105,6 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.lucene.cachedsearchermanager.enable", "true"));
 
 	private static final LLSnapshot DUMMY_SNAPSHOT = new LLSnapshot(-1);
-
-	static {
-		LLUtils.initHooks();
-	}
 
 	private final LocalSearcher localSearcher;
 	private final DecimalBucketMultiSearcher decimalBucketMultiSearcher = new DecimalBucketMultiSearcher();
@@ -138,25 +124,22 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 	private final IndexSearcherManager searcherManager;
 	private final PerFieldAnalyzerWrapper luceneAnalyzer;
 	private final Similarity luceneSimilarity;
-	private final LuceneRocksDBManager rocksDBManager;
 	private final Directory directory;
 	private final LuceneBackuppable backuppable;
 	private final boolean lowMemory;
 
 	private final Phaser activeTasks = new Phaser(1);
 
-	public LLLocalLuceneIndex(LLTempHugePqEnv env,
-			MeterRegistry meterRegistry,
+	public LLLocalLuceneIndex(MeterRegistry meterRegistry,
 			@NotNull String clusterName,
 			int shardIndex,
 			IndicizerAnalyzers indicizerAnalyzers,
 			IndicizerSimilarities indicizerSimilarities,
 			LuceneOptions luceneOptions,
-			@Nullable LuceneHacks luceneHacks,
-			@Nullable LuceneRocksDBManager rocksDBManager) throws IOException {
+			@Nullable LuceneHacks luceneHacks) {
 
 		if (clusterName.isBlank()) {
-			throw new IOException("Empty lucene database name");
+			throw new DBException("Empty lucene database name");
 		}
 		if (!MMapDirectory.UNMAP_SUPPORTED) {
 			logger.error("Unmap is unsupported, lucene will run slower: {}", MMapDirectory.UNMAP_NOT_SUPPORTED_REASON);
@@ -165,21 +148,21 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 		}
 		this.lowMemory = luceneOptions.lowMemory();
 		this.shardName = LuceneUtils.getStandardName(clusterName, shardIndex);
-		this.directory = LuceneUtils.createLuceneDirectory(luceneOptions.directoryOptions(),
-				shardName,
-				rocksDBManager);
+		try {
+			this.directory = LuceneUtils.createLuceneDirectory(luceneOptions.directoryOptions(), shardName);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 		boolean isFilesystemCompressed = LuceneUtils.getIsFilesystemCompressed(luceneOptions.directoryOptions());
 
 		this.luceneAnalyzer = LuceneUtils.toPerFieldAnalyzerWrapper(indicizerAnalyzers);
 		this.luceneSimilarity = LuceneUtils.toPerFieldSimilarityWrapper(indicizerSimilarities);
-		this.rocksDBManager = rocksDBManager;
 
-		var useHugePq = luceneOptions.allowNonVolatileCollection();
 		var maxInMemoryResultEntries = luceneOptions.maxInMemoryResultEntries();
 		if (luceneHacks != null && luceneHacks.customLocalSearcher() != null) {
 			localSearcher = luceneHacks.customLocalSearcher().get();
 		} else {
-			localSearcher = new AdaptiveLocalSearcher(env, useHugePq, maxInMemoryResultEntries);
+			localSearcher = new AdaptiveLocalSearcher(maxInMemoryResultEntries);
 		}
 
 		var indexWriterConfig = new IndexWriterConfig(luceneAnalyzer);
@@ -225,7 +208,11 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 			indexWriterConfig.setReaderPooling(luceneOptions.indexWriterReaderPooling().get());
 		}
 		indexWriterConfig.setSimilarity(getLuceneSimilarity());
-		this.indexWriter = new IndexWriter(directory, indexWriterConfig);
+		try {
+			this.indexWriter = new IndexWriter(directory, indexWriterConfig);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 		if (ENABLE_SNAPSHOTS) {
 			this.snapshotsManager = new SnapshotsManager(indexWriter, (SnapshotDeletionPolicy) deletionPolicy);
 		} else {
@@ -281,7 +268,7 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 
 		// Start scheduled tasks
 		var commitMillis = luceneOptions.commitDebounceTime().toMillis();
-		luceneHeavyTasksScheduler.schedulePeriodically(this::scheduledCommit, commitMillis, commitMillis,
+		luceneHeavyTasksScheduler.scheduleAtFixedRate(this::scheduledCommit, commitMillis, commitMillis,
 				TimeUnit.MILLISECONDS);
 
 		this.backuppable = new LuceneBackuppable();
@@ -297,205 +284,206 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 	}
 
 	@Override
-	public Mono<LLSnapshot> takeSnapshot() {
-		if (snapshotsManager == null) {
-			return Mono.just(DUMMY_SNAPSHOT);
-		}
-		return snapshotsManager.takeSnapshot().elapsed().map(elapsed -> {
-			snapshotTime.record(elapsed.getT1(), TimeUnit.MILLISECONDS);
-			return elapsed.getT2();
-		}).transform(this::ensureOpen);
-	}
-
-	private <V> Mono<V> ensureOpen(Mono<V> mono) {
-		return Mono.<Void>fromCallable(() -> {
-			if (isClosed()) {
-				throw new IllegalStateException("Lucene index is closed");
-			} else {
-				return null;
+	public LLSnapshot takeSnapshot() {
+		return runTask(() -> {
+			if (snapshotsManager == null) {
+				return DUMMY_SNAPSHOT;
 			}
-		}).then(mono).doFirst(activeTasks::register).doFinally(s -> activeTasks.arriveAndDeregister());
+			try {
+				return snapshotTime.recordCallable(snapshotsManager::takeSnapshot);
+			} catch (Exception e) {
+				throw new DBException("Failed to take snapshot", e);
+			}
+		});
 	}
 
-	private <V> Mono<V> runSafe(Callable<V> callable) {
-		return Mono
-				.fromCallable(callable)
-				.subscribeOn(luceneWriteScheduler)
-				.publishOn(Schedulers.parallel());
+	private <V> V runTask(Supplier<V> supplier) {
+		if (isClosed()) {
+			throw new IllegalStateException("Lucene index is closed");
+		} else {
+			activeTasks.register();
+			try {
+				return supplier.get();
+			} finally {
+				activeTasks.arriveAndDeregister();
+			}
+		}
 	}
 
 	@Override
-	public Mono<Void> releaseSnapshot(LLSnapshot snapshot) {
+	public void releaseSnapshot(LLSnapshot snapshot) {
 		if (snapshotsManager == null) {
 			if (snapshot != null && !Objects.equals(snapshot, DUMMY_SNAPSHOT)) {
-				return Mono.error(new IllegalStateException("Can't release snapshot " + snapshot));
+				throw new IllegalStateException("Can't release snapshot " + snapshot);
 			}
-			return Mono.empty();
+			return;
 		}
-		return snapshotsManager
-				.releaseSnapshot(snapshot)
-				.elapsed()
-				.doOnNext(elapsed -> snapshotTime.record(elapsed.getT1(), TimeUnit.MILLISECONDS))
-				.then();
+		snapshotsManager.releaseSnapshot(snapshot);
 	}
 
 	@Override
-	public Mono<Void> addDocument(LLTerm key, LLUpdateDocument doc) {
-		return this.<Void>runSafe(() -> {
-			docIndexingTime.recordCallable(() -> {
-				startedDocIndexings.increment();
-				try {
-					indexWriter.addDocument(toDocument(doc));
-				} finally {
-					endeddDocIndexings.increment();
-				}
-				return null;
-			});
+	public void addDocument(LLTerm key, LLUpdateDocument doc) {
+		runTask(() -> {
+			try {
+				docIndexingTime.recordCallable(() -> {
+					startedDocIndexings.increment();
+					try {
+						indexWriter.addDocument(toDocument(doc));
+					} finally {
+						endeddDocIndexings.increment();
+					}
+					return null;
+				});
+			} catch (Exception e) {
+				throw new DBException("Failed to add document", e);
+			}
 			logger.trace(MARKER_LUCENE, "Added document {}: {}", key, doc);
 			return null;
-		}).transform(this::ensureOpen);
+		});
 	}
 
 	@Override
-	public Mono<Long> addDocuments(boolean atomic, Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		if (!atomic) {
-			return documents
-					.publishOn(bulkScheduler)
-					.handle((document, sink) -> {
-						LLUpdateDocument value = document.getValue();
-						startedDocIndexings.increment();
-						try {
-							docIndexingTime.recordCallable(() -> {
-								indexWriter.addDocument(toDocument(value));
-								return null;
-							});
-						} catch (Exception ex) {
-							sink.error(ex);
-							return;
-						} finally {
-							endeddDocIndexings.increment();
-						}
-						logger.trace(MARKER_LUCENE, "Added document: {}", document);
-						sink.next(true);
-					})
-					.count()
-					.transform(this::ensureOpen);
-		} else {
-			return documents
-					.collectList()
-					.publishOn(bulkScheduler)
-					.<Long>handle((documentsList, sink) -> {
-						var count = documentsList.size();
-						StopWatch stopWatch = StopWatch.createStarted();
-						try {
-							startedDocIndexings.increment(count);
-							try {
-								indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
-							} finally {
-								endeddDocIndexings.increment(count);
-							}
-						} catch (IOException ex) {
-							sink.error(ex);
-							return;
-						} finally {
-							docIndexingTime.record(stopWatch.getTime(TimeUnit.MILLISECONDS) / Math.max(count, 1),
-									TimeUnit.MILLISECONDS
-							);
-						}
-						sink.next((long) documentsList.size());
-					})
-					.transform(this::ensureOpen);
-		}
-	}
-
-
-	@Override
-	public Mono<Void> deleteDocument(LLTerm id) {
-		return this.<Void>runSafe(() -> docIndexingTime.recordCallable(() -> {
-			startedDocIndexings.increment();
-			try {
-				indexWriter.deleteDocuments(LLUtils.toTerm(id));
-			} finally {
-				endeddDocIndexings.increment();
-			}
-			return null;
-		})).transform(this::ensureOpen);
-	}
-
-	@Override
-	public Mono<Void> update(LLTerm id, LLIndexRequest request) {
-		return this.<Void>runSafe(() -> {
-			docIndexingTime.recordCallable(() -> {
-				startedDocIndexings.increment();
-				try {
-					if (request instanceof LLUpdateDocument updateDocument) {
-						indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
-					} else if (request instanceof LLSoftUpdateDocument softUpdateDocument) {
-						indexWriter.softUpdateDocument(LLUtils.toTerm(id),
-								toDocument(softUpdateDocument.items()),
-								toFields(softUpdateDocument.softDeleteItems())
-						);
-					} else if (request instanceof LLUpdateFields updateFields) {
-						indexWriter.updateDocValues(LLUtils.toTerm(id), toFields(updateFields.items()));
-					} else {
-						throw new UnsupportedOperationException("Unexpected request type: " + request);
-					}
-				} finally {
-					endeddDocIndexings.increment();
-				}
-				return null;
-			});
-			logger.trace(MARKER_LUCENE, "Updated document {}: {}", id, request);
-			return null;
-		}).transform(this::ensureOpen);
-	}
-
-	@Override
-	public Mono<Long> updateDocuments(Flux<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return documents
-				.log("local-update-documents", Level.FINEST, false, SignalType.ON_NEXT, SignalType.ON_COMPLETE)
-				.publishOn(bulkScheduler)
-				.handle((document, sink) -> {
-					LLTerm key = document.getKey();
+	public long addDocuments(boolean atomic, Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
+		return this.runTask(() -> {
+			if (!atomic) {
+				LongAdder count = new LongAdder();
+				documents.forEach(document -> {
+					count.increment();
 					LLUpdateDocument value = document.getValue();
 					startedDocIndexings.increment();
 					try {
 						docIndexingTime.recordCallable(() -> {
-							indexWriter.updateDocument(LLUtils.toTerm(key), toDocument(value));
+							indexWriter.addDocument(toDocument(value));
 							return null;
 						});
-						logger.trace(MARKER_LUCENE, "Updated document {}: {}", key, value);
 					} catch (Exception ex) {
-						sink.error(ex);
-						return;
+						throw new CompletionException("Failed to add document", ex);
 					} finally {
 						endeddDocIndexings.increment();
 					}
-					sink.next(true);
-				})
-				.count()
-				.transform(this::ensureOpen);
+					logger.trace(MARKER_LUCENE, "Added document: {}", document);
+				});
+				return count.sum();
+			} else {
+				var documentsList = documents.toList();
+				var count = documentsList.size();
+				StopWatch stopWatch = StopWatch.createStarted();
+				try {
+					startedDocIndexings.increment(count);
+					try {
+						indexWriter.addDocuments(LLUtils.toDocumentsFromEntries(documentsList));
+					} catch (IOException e) {
+						throw new DBException(e);
+					} finally {
+						endeddDocIndexings.increment(count);
+					}
+				} finally {
+					docIndexingTime.record(stopWatch.getTime(TimeUnit.MILLISECONDS) / Math.max(count, 1),
+							TimeUnit.MILLISECONDS
+					);
+				}
+				return (long) documentsList.size();
+			}
+		});
 	}
 
 
 	@Override
-	public Mono<Void> deleteAll() {
-		return this.<Void>runSafe(() -> {
+	public void deleteDocument(LLTerm id) {
+		this.runTask(() -> {
+			try {
+				return docIndexingTime.recordCallable(() -> {
+					startedDocIndexings.increment();
+					try {
+						indexWriter.deleteDocuments(LLUtils.toTerm(id));
+					} finally {
+						endeddDocIndexings.increment();
+					}
+					return null;
+				});
+			} catch (Exception e) {
+				throw new DBException("Failed to delete document", e);
+			}
+		});
+	}
+
+	@Override
+	public void update(LLTerm id, LLIndexRequest request) {
+		this.runTask(() -> {
+			try {
+				docIndexingTime.recordCallable(() -> {
+					startedDocIndexings.increment();
+					try {
+						if (request instanceof LLUpdateDocument updateDocument) {
+							indexWriter.updateDocument(LLUtils.toTerm(id), toDocument(updateDocument));
+						} else if (request instanceof LLSoftUpdateDocument softUpdateDocument) {
+							indexWriter.softUpdateDocument(LLUtils.toTerm(id),
+									toDocument(softUpdateDocument.items()),
+									toFields(softUpdateDocument.softDeleteItems())
+							);
+						} else if (request instanceof LLUpdateFields updateFields) {
+							indexWriter.updateDocValues(LLUtils.toTerm(id), toFields(updateFields.items()));
+						} else {
+							throw new UnsupportedOperationException("Unexpected request type: " + request);
+						}
+					} finally {
+						endeddDocIndexings.increment();
+					}
+					return null;
+				});
+			} catch (Exception e) {
+				throw new DBException("Failed to update document", e);
+			}
+			logger.trace(MARKER_LUCENE, "Updated document {}: {}", id, request);
+			return null;
+		});
+	}
+
+	@Override
+	public long updateDocuments(Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
+		return runTask(() -> {
+			var count = new LongAdder();
+			documents.forEach(document -> {
+				count.increment();
+				LLTerm key = document.getKey();
+				LLUpdateDocument value = document.getValue();
+				startedDocIndexings.increment();
+				try {
+					docIndexingTime.recordCallable(() -> {
+						indexWriter.updateDocument(LLUtils.toTerm(key), toDocument(value));
+						return null;
+					});
+					logger.trace(MARKER_LUCENE, "Updated document {}: {}", key, value);
+				} catch (Exception ex) {
+					throw new CompletionException(ex);
+				} finally {
+					endeddDocIndexings.increment();
+				}
+			});
+			return count.sum();
+		});
+	}
+
+	@Override
+	public void deleteAll() {
+		this.runTask(() -> {
 			shutdownLock.lock();
 			try {
 				indexWriter.deleteAll();
 				indexWriter.forceMergeDeletes(true);
 				indexWriter.commit();
 				indexWriter.deleteUnusedFiles();
+			} catch (IOException e) {
+				throw new DBException(e);
 			} finally {
 				shutdownLock.unlock();
 			}
 			return null;
-		}).subscribeOn(luceneHeavyTasksScheduler).publishOn(Schedulers.parallel()).transform(this::ensureOpen);
+		});
 	}
 
 	@Override
-	public Flux<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
+	public Stream<LLSearchResultShard> moreLikeThis(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName,
 			Multimap<String, String> mltDocumentFieldsFlux) {
@@ -503,21 +491,18 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 		var searcher = this.searcherManager.retrieveSearcher(snapshot);
 		var transformer = new MoreLikeThisTransformer(mltDocumentFieldsFlux, luceneAnalyzer, luceneSimilarity);
 
-		return localSearcher
-				.collect(searcher, localQueryParams, keyFieldName, transformer)
-				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
-				.flux();
+		var result = localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer);
+		return Stream.of(LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result));
 	}
 
 	@Override
-	public Flux<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
+	public Stream<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
-		return searchInternal(snapshot, queryParams, keyFieldName)
-				.map(result -> LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result))
-				.flux();
+		var result = searchInternal(snapshot, queryParams, keyFieldName);
+		return Stream.of(LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result));
 	}
 
-	public Mono<LuceneSearchResult> searchInternal(@Nullable LLSnapshot snapshot, QueryParams queryParams,
+	public LuceneSearchResult searchInternal(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		var searcher = searcherManager.retrieveSearcher(snapshot);
@@ -526,18 +511,16 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 	}
 
 	@Override
-	public Mono<TotalHitsCount> count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
+	public TotalHitsCount count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
 		var params = LuceneUtils.getCountQueryParams(query);
-		return Mono
-				.usingWhen(this.searchInternal(snapshot, params, null),
-						result -> Mono.just(result.totalHitsCount()),
-						LLUtils::finalizeResource
-				)
-				.defaultIfEmpty(TotalHitsCount.of(0, true));
+		try (var result = this.searchInternal(snapshot, params, null)) {
+			if (result == null) return TotalHitsCount.of(0, true);
+			return result.totalHitsCount();
+		}
 	}
 
 	@Override
-	public Mono<Buckets> computeBuckets(@Nullable LLSnapshot snapshot,
+	public Buckets computeBuckets(@Nullable LLSnapshot snapshot,
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
@@ -546,14 +529,12 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 			localQueries.add(QueryParser.toQuery(query, luceneAnalyzer));
 		}
 		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
-		Mono<LLIndexSearchers> searchers = searcherManager
-				.retrieveSearcher(snapshot)
-				.map(indexSearcher -> LLIndexSearchers.unsharded(indexSearcher));
+		LLIndexSearchers searchers = LLIndexSearchers.unsharded(searcherManager.retrieveSearcher(snapshot));
 
 		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
 	}
 
-	public Mono<LLIndexSearcher> retrieveSearcher(@Nullable LLSnapshot snapshot) {
+	public LLIndexSearcher retrieveSearcher(@Nullable LLSnapshot snapshot) {
 		return searcherManager.retrieveSearcher(snapshot);
 	}
 
@@ -572,112 +553,107 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 			directory.close();
 			logger.debug("IndexWriter closed");
 		} catch (IOException ex) {
-			throw new UncheckedIOException(ex);
+			throw new DBException(ex);
 		} finally {
 			shutdownLock.unlock();
 		}
 	}
 
 	@Override
-	public Mono<Void> flush() {
-		return Mono
-				.<Void>fromCallable(() -> {
-					if (activeTasks.isTerminated()) return null;
-					shutdownLock.lock();
-					try {
-						if (isClosed()) {
-							return null;
-						}
-						flushTime.recordCallable(() -> {
-							indexWriter.flush();
-							return null;
-						});
-					} finally {
-						shutdownLock.unlock();
-					}
+	public void flush() {
+		runTask(() -> {
+			if (activeTasks.isTerminated()) return null;
+			shutdownLock.lock();
+			try {
+				if (isClosed()) {
 					return null;
-				})
-				.subscribeOn(luceneHeavyTasksScheduler)
-				.transform(this::ensureOpen);
+				}
+				flushTime.recordCallable(() -> {
+					indexWriter.flush();
+					return null;
+				});
+			} catch (Exception e) {
+				throw new DBException("Failed to flush", e);
+			} finally {
+				shutdownLock.unlock();
+			}
+			return null;
+		});
 	}
 
 	@Override
-	public Mono<Void> waitForMerges() {
-		return Mono
-				.<Void>fromCallable(() -> {
-					if (activeTasks.isTerminated()) return null;
-					shutdownLock.lock();
-					try {
-						if (isClosed()) {
-							return null;
-						}
-						var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
-						if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
-							concurrentMergeScheduler.sync();
-						}
-					} finally {
-						shutdownLock.unlock();
-					}
+	public void waitForMerges() {
+		runTask(() -> {
+			if (activeTasks.isTerminated()) return null;
+			shutdownLock.lock();
+			try {
+				if (isClosed()) {
 					return null;
-				})
-				.subscribeOn(luceneHeavyTasksScheduler)
-				.transform(this::ensureOpen);
+				}
+				var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
+				if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
+					concurrentMergeScheduler.sync();
+				}
+			} finally {
+				shutdownLock.unlock();
+			}
+			return null;
+		});
 	}
 
 	@Override
-	public Mono<Void> waitForLastMerges() {
-		return Mono
-				.<Void>fromCallable(() -> {
-					if (activeTasks.isTerminated()) return null;
-					shutdownLock.lock();
-					try {
-						if (isClosed()) {
-							return null;
-						}
-						indexWriter.getConfig().setMergePolicy(NoMergePolicy.INSTANCE);
-						var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
-						if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
-							concurrentMergeScheduler.sync();
-						}
-						indexWriter.deleteUnusedFiles();
-					} finally {
-						shutdownLock.unlock();
-					}
+	public void waitForLastMerges() {
+		runTask(() -> {
+			if (activeTasks.isTerminated()) return null;
+			shutdownLock.lock();
+			try {
+				if (isClosed()) {
 					return null;
-				})
-				.subscribeOn(luceneHeavyTasksScheduler)
-				.transform(this::ensureOpen);
+				}
+				indexWriter.getConfig().setMergePolicy(NoMergePolicy.INSTANCE);
+				var mergeScheduler = indexWriter.getConfig().getMergeScheduler();
+				if (mergeScheduler instanceof ConcurrentMergeScheduler concurrentMergeScheduler) {
+					concurrentMergeScheduler.sync();
+				}
+				indexWriter.deleteUnusedFiles();
+			} catch (IOException e) {
+				throw new DBException(e);
+			} finally {
+				shutdownLock.unlock();
+			}
+			return null;
+		});
 	}
 
 	@Override
-	public Mono<Void> refresh(boolean force) {
-		return Mono
-				.<Void>fromCallable(() -> {
-					activeTasks.register();
-					try {
-						if (activeTasks.isTerminated()) return null;
-						shutdownLock.lock();
-						try {
-							if (isClosed()) {
-								return null;
-							}
-							refreshTime.recordCallable(() -> {
-								if (force) {
-									searcherManager.maybeRefreshBlocking();
-								} else {
-									searcherManager.maybeRefresh();
-								}
-								return null;
-							});
-						} finally {
-							shutdownLock.unlock();
-						}
-					} finally {
-						activeTasks.arriveAndDeregister();
+	public void refresh(boolean force) {
+		runTask(() -> {
+			activeTasks.register();
+			try {
+				if (activeTasks.isTerminated()) return null;
+				shutdownLock.lock();
+				try {
+					if (isClosed()) {
+						return null;
 					}
-					return null;
-				})
-				.subscribeOn(luceneHeavyTasksScheduler);
+					refreshTime.recordCallable(() -> {
+						if (force) {
+							searcherManager.maybeRefreshBlocking();
+						} else {
+							searcherManager.maybeRefresh();
+						}
+						return null;
+					});
+				} catch (Exception e) {
+					throw new DBException("Failed to refresh", e);
+				} finally {
+					shutdownLock.unlock();
+				}
+			} finally {
+				activeTasks.arriveAndDeregister();
+			}
+			return null;
+		});
 	}
 
 	/**
@@ -855,13 +831,13 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 	}
 
 	@Override
-	public Mono<Void> pauseForBackup() {
-		return backuppable.pauseForBackup();
+	public void pauseForBackup() {
+		backuppable.pauseForBackup();
 	}
 
 	@Override
-	public Mono<Void> resumeAfterBackup() {
-		return backuppable.resumeAfterBackup();
+	public void resumeAfterBackup() {
+		backuppable.resumeAfterBackup();
 	}
 
 	@Override
@@ -874,21 +850,20 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 		private LLSnapshot snapshot;
 
 		@Override
-		protected Mono<Void> onPauseForBackup() {
-			return LLLocalLuceneIndex.this.takeSnapshot().doOnSuccess(snapshot -> {
-				if (snapshot == null) {
-					logger.error("Can't pause index \"{}\" because snapshots are not enabled!", shardName);
-				}
-				this.snapshot = snapshot;
-			}).then();
+		protected void onPauseForBackup() {
+			var snapshot = LLLocalLuceneIndex.this.takeSnapshot();
+			if (snapshot == null) {
+				logger.error("Can't pause index \"{}\" because snapshots are not enabled!", shardName);
+			}
+			this.snapshot = snapshot;
 		}
 
 		@Override
-		protected Mono<Void> onResumeAfterBackup() {
+		protected void onResumeAfterBackup() {
 			if (snapshot == null) {
-				return Mono.empty();
+				return;
 			}
-			return LLLocalLuceneIndex.this.releaseSnapshot(snapshot);
+			LLLocalLuceneIndex.this.releaseSnapshot(snapshot);
 		}
 	}
 }

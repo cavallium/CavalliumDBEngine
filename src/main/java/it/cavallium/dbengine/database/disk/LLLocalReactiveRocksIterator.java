@@ -4,127 +4,112 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
-import io.netty5.buffer.Buffer;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
+import it.cavallium.dbengine.utils.DBException;
+import java.io.IOException;
+import java.util.Objects;
+import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
 public abstract class LLLocalReactiveRocksIterator<T> {
 
 	protected static final Logger logger = LogManager.getLogger(LLLocalReactiveRocksIterator.class);
 
 	private final RocksDBColumn db;
-	private final Mono<LLRange> rangeMono;
-	private final boolean allowNettyDirect;
+	private final LLRange range;
 	private final Supplier<ReadOptions> readOptions;
 	private final boolean readValues;
 	private final boolean reverse;
 	private final boolean smallRange;
 
 	public LLLocalReactiveRocksIterator(RocksDBColumn db,
-			Mono<LLRange> rangeMono,
-			boolean allowNettyDirect,
+			LLRange range,
 			Supplier<ReadOptions> readOptions,
 			boolean readValues,
 			boolean reverse,
 			boolean smallRange) {
 		this.db = db;
-		this.rangeMono = rangeMono;
-		this.allowNettyDirect = allowNettyDirect;
+		this.range = range;
 		this.readOptions = readOptions != null ? readOptions : ReadOptions::new;
 		this.readValues = readValues;
 		this.reverse = reverse;
 		this.smallRange = smallRange;
 	}
 
-	public final Flux<T> flux() {
-		return Flux.usingWhen(rangeMono, range -> Flux.generate(() -> {
-			var readOptions = generateCustomReadOptions(this.readOptions.get(), true, isBoundedRange(range), smallRange);
-			if (logger.isTraceEnabled()) {
-				logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-			}
-			return new RocksIterWithReadOpts(readOptions, db.newRocksIterator(allowNettyDirect, readOptions, range, reverse));
-		}, (tuple, sink) -> {
+	public final Stream<T> stream() {
+		var readOptions = generateCustomReadOptions(this.readOptions.get(), true, isBoundedRange(range), smallRange);
+		if (logger.isTraceEnabled()) {
+			logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+		}
+
+		RocksIteratorObj rocksIterator;
+		try {
+			rocksIterator = db.newRocksIterator(readOptions, range, reverse);
+		} catch (RocksDBException e) {
+			readOptions.close();
+			throw new DBException("Failed to iterate the range", e);
+		}
+
+		return Stream.generate(() -> {
 			try {
-				var rocksIterator = tuple.iter();
 				if (rocksIterator.isValid()) {
-					Buffer key;
-					if (allowNettyDirect) {
-						key = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::key);
+					// Note that the underlying array is subject to changes!
+					Buf key;
+					key = rocksIterator.keyBuf();
+					// Note that the underlying array is subject to changes!
+					Buf value;
+					if (readValues) {
+						value = rocksIterator.valueBuf();
 					} else {
-						key = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.key());
+						value = null;
 					}
-					try {
-						Buffer value;
-						if (readValues) {
-							if (allowNettyDirect) {
-								value = LLUtils.readDirectNioBuffer(db.getAllocator(), rocksIterator::value);
-							} else {
-								value = LLUtils.fromByteArray(db.getAllocator(), rocksIterator.value());
-							}
-						} else {
-							value = null;
-						}
 
-						if (logger.isTraceEnabled()) {
-							logger.trace(MARKER_ROCKSDB,
-									"Range {} is reading {}: {}",
-									LLUtils.toStringSafe(range),
-									LLUtils.toStringSafe(key),
-									LLUtils.toStringSafe(value)
-							);
-						}
-
-						try {
-							if (reverse) {
-								rocksIterator.prev();
-							} else {
-								rocksIterator.next();
-							}
-							sink.next(getEntry(key, value));
-						} catch (Throwable ex) {
-							if (value != null && value.isAccessible()) {
-								try {
-									value.close();
-								} catch (Throwable ex2) {
-									logger.error(ex2);
-								}
-							}
-							throw ex;
-						}
-					} catch (Throwable ex) {
-						if (key.isAccessible()) {
-							try {
-								key.close();
-							} catch (Throwable ex2) {
-								logger.error(ex2);
-							}
-						}
-						throw ex;
+					if (logger.isTraceEnabled()) {
+						logger.trace(MARKER_ROCKSDB,
+								"Range {} is reading {}: {}",
+								LLUtils.toStringSafe(range),
+								LLUtils.toStringSafe(key),
+								LLUtils.toStringSafe(value)
+						);
 					}
+
+					if (reverse) {
+						rocksIterator.prev();
+					} else {
+						rocksIterator.next();
+					}
+					return getEntry(key, value);
 				} else {
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
 					}
-					sink.complete();
+					return null;
 				}
 			} catch (RocksDBException ex) {
 				if (logger.isTraceEnabled()) {
 					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
 				}
-				sink.error(ex);
+				throw new CompletionException(ex);
 			}
-			return tuple;
-		}, RocksIterWithReadOpts::close), LLUtils::finalizeResource);
+		}).takeWhile(Objects::nonNull).onClose(() -> {
+			rocksIterator.close();
+			readOptions.close();
+		});
 	}
 
-	public abstract T getEntry(@Nullable Buffer key, @Nullable Buffer value);
+	/**
+	 * @param key this buffer content will be changed during the next iteration
+	 * @param value this buffer content will be changed during the next iteration
+	 */
+	public abstract T getEntry(@Nullable Buf key, @Nullable Buf value);
 
 }

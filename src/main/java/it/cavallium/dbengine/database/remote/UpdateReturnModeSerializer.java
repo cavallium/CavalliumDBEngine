@@ -10,12 +10,12 @@ import org.jetbrains.annotations.NotNull;
 public class UpdateReturnModeSerializer implements DataSerializer<UpdateReturnMode> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull UpdateReturnMode updateReturnMode) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull UpdateReturnMode updateReturnMode) {
 		dataOutput.writeInt(updateReturnMode.ordinal());
 	}
 
 	@Override
-	public @NotNull UpdateReturnMode deserialize(DataInput dataInput) throws IOException {
+	public @NotNull UpdateReturnMode deserialize(DataInput dataInput) {
 		return UpdateReturnMode.values()[dataInput.readInt()];
 	}
 }

@@ -5,8 +5,6 @@ import it.unimi.dsi.fastutil.ints.IntHash;
 import java.io.IOException;
 import org.apache.lucene.facet.RandomSamplingFacetsCollector;
 import org.apache.lucene.index.LeafReaderContext;
-import org.apache.lucene.search.Collector;
-import org.apache.lucene.search.LeafCollector;
 import org.apache.lucene.search.Scorable;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SimpleCollector;
@@ -36,17 +34,17 @@ public class FastRandomSamplingFacetsCollector extends SimpleCollector implement
 	}
 
 	@Override
-	protected void doSetNextReader(LeafReaderContext context) throws IOException {
+	protected void doSetNextReader(LeafReaderContext context) {
 		collector.getLeafCollector(context);
 	}
 
 	@Override
-	public void setScorer(Scorable scorer) throws IOException {
+	public void setScorer(Scorable scorer) {
 		collector.setScorer(scorer);
 	}
 
 	@Override
-	public void collect(int doc) throws IOException {
+	public void collect(int doc) {
 		if (collectionRate == 1 || hash.hashCode(doc) % collectionRate == 0) {
 			collector.collect(doc);
 		}

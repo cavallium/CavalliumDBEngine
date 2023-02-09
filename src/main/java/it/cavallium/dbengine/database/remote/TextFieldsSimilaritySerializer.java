@@ -10,12 +10,12 @@ import org.jetbrains.annotations.NotNull;
 public class TextFieldsSimilaritySerializer implements DataSerializer<TextFieldsSimilarity> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull TextFieldsSimilarity textFieldsSimilarity) throws IOException {
+	public void serialize(DataOutput dataOutput, @NotNull TextFieldsSimilarity textFieldsSimilarity) {
 		dataOutput.writeInt(textFieldsSimilarity.ordinal());
 	}
 
 	@Override
-	public @NotNull TextFieldsSimilarity deserialize(DataInput dataInput) throws IOException {
+	public @NotNull TextFieldsSimilarity deserialize(DataInput dataInput) {
 		return TextFieldsSimilarity.values()[dataInput.readInt()];
 	}
 }

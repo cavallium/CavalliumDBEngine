@@ -1,5 +1,5 @@
 module dbengine {
-	uses io.netty5.buffer.pool.BufferAllocatorMetricProvider;
+	exports org.warp.commonutils.stream;
 	exports it.cavallium.dbengine.lucene;
 	exports it.cavallium.dbengine.database;
 	exports it.cavallium.dbengine.rpc.current.data;
@@ -15,21 +15,16 @@ module dbengine {
 	exports it.cavallium.dbengine.lucene.analyzer;
 	exports it.cavallium.dbengine.client.query;
 	exports it.cavallium.dbengine.database.memory;
-	exports it.cavallium.dbengine.netty;
 	opens it.cavallium.dbengine.database.remote;
-	exports it.cavallium.dbengine;
 	exports it.cavallium.dbengine.utils;
 	exports it.cavallium.dbengine.database.disk.rocksdb;
+	exports it.cavallium.dbengine.buffers;
 	requires org.jetbrains.annotations;
-	requires reactor.core;
 	requires com.google.common;
 	requires micrometer.core;
-	requires io.netty5.buffer;
 	requires rocksdbjni;
-	requires org.reactivestreams;
 	requires org.apache.logging.log4j;
 	requires static io.soabase.recordbuilder.core;
-	requires io.netty5.common;
 	requires it.unimi.dsi.fastutil;
 	requires data.generator.runtime;
 	requires java.logging;
@@ -46,14 +41,11 @@ module dbengine {
 	requires io.netty.codec;
 	requires org.apache.lucene.facet;
 	requires java.management;
-	requires reactor.netty.core;
 	requires com.ibm.icu;
 	requires org.apache.lucene.analysis.icu;
 	requires io.netty.handler;
-	requires io.netty.incubator.codec.classes.quic;
 	requires io.netty.common;
 	requires org.apache.lucene.queryparser;
-	requires reactor.netty.incubator.quic;
 	requires okio;
 	requires moshi.records.reflect;
 	requires moshi;

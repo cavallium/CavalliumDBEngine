@@ -1,12 +1,10 @@
 package it.cavallium.dbengine.database.serialization;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.BufDataInput;
+import it.cavallium.dbengine.buffers.BufDataOutput;
 import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 
 public class CodecSerializer<A> implements Serializer<A> {
 
@@ -47,9 +45,8 @@ public class CodecSerializer<A> implements Serializer<A> {
 	}
 
 	@Override
-	public @NotNull A deserialize(@NotNull Buffer serializedBuf) throws SerializationException {
+	public @NotNull A deserialize(@NotNull BufDataInput is) throws SerializationException {
 		try {
-			var is = new BufferDataInputShared(serializedBuf);
 			int codecId;
 			if (microCodecs) {
 				codecId = is.readUnsignedByte();
@@ -65,9 +62,8 @@ public class CodecSerializer<A> implements Serializer<A> {
 	}
 
 	@Override
-	public void serialize(@NotNull A deserialized, Buffer output) throws SerializationException {
+	public void serialize(@NotNull A deserialized, BufDataOutput os) throws SerializationException {
 		try {
-			var os = new BufferDataOutput(output);
 			if (microCodecs) {
 				os.writeByte(serializationCodecId);
 			} else {

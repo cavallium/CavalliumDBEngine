@@ -1,32 +1,27 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.Drop;
-import io.netty5.buffer.Owned;
-import io.netty5.buffer.internal.ResourceSupport;
-import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.utils.SimpleResource;
-import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import reactor.core.publisher.Flux;
 
 public class LLSearchResultShard extends SimpleResource implements DiscardingCloseable {
 
 	private static final Logger LOG = LogManager.getLogger(LLSearchResultShard.class);
 
-	private final Flux<LLKeyScore> results;
+	private final Stream<LLKeyScore> results;
 	private final TotalHitsCount totalHitsCount;
 
-	public LLSearchResultShard(Flux<LLKeyScore> results, TotalHitsCount totalHitsCount) {
+	public LLSearchResultShard(Stream<LLKeyScore> results, TotalHitsCount totalHitsCount) {
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 	}
 
-	public static LLSearchResultShard withResource(Flux<LLKeyScore> results,
+	public static LLSearchResultShard withResource(Stream<LLKeyScore> results,
 			TotalHitsCount totalHitsCount,
 			SafeCloseable closeableResource) {
 		if (closeableResource instanceof LuceneCloseable luceneCloseable) {
@@ -36,7 +31,7 @@ public class LLSearchResultShard extends SimpleResource implements DiscardingClo
 		}
 	}
 
-	public Flux<LLKeyScore> results() {
+	public Stream<LLKeyScore> results() {
 		ensureOpen();
 		return results;
 	}
@@ -74,7 +69,7 @@ public class LLSearchResultShard extends SimpleResource implements DiscardingClo
 
 		private final List<SafeCloseable> resources;
 
-		public ResourcesLLSearchResultShard(Flux<LLKeyScore> resultsFlux,
+		public ResourcesLLSearchResultShard(Stream<LLKeyScore> resultsFlux,
 				TotalHitsCount count,
 				List<SafeCloseable> resources) {
 			super(resultsFlux, count);
@@ -102,7 +97,7 @@ public class LLSearchResultShard extends SimpleResource implements DiscardingClo
 
 		private final List<LuceneCloseable> resources;
 
-		public LuceneLLSearchResultShard(Flux<LLKeyScore> resultsFlux,
+		public LuceneLLSearchResultShard(Stream<LLKeyScore> resultsFlux,
 				TotalHitsCount count,
 				List<LuceneCloseable> resources) {
 			super(resultsFlux, count);

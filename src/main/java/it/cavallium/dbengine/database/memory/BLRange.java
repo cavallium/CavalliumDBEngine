@@ -1,14 +1,14 @@
 package it.cavallium.dbengine.database.memory;
 
-import it.unimi.dsi.fastutil.bytes.ByteList;
+import it.cavallium.dbengine.buffers.Buf;
 
 public class BLRange {
 
-	private final ByteList min;
-	private final ByteList max;
-	private final ByteList single;
+	private final Buf min;
+	private final Buf max;
+	private final Buf single;
 
-	public BLRange(ByteList min, ByteList max, ByteList single) {
+	public BLRange(Buf min, Buf max, Buf single) {
 		if (single != null && (min != null || max != null)) {
 			throw new IllegalArgumentException();
 		}
@@ -17,15 +17,15 @@ public class BLRange {
 		this.single = single;
 	}
 
-	public ByteList getMin() {
+	public Buf getMin() {
 		return min;
 	}
 
-	public ByteList getMax() {
+	public Buf getMax() {
 		return max;
 	}
 
-	public ByteList getSingle() {
+	public Buf getSingle() {
 		return single;
 	}
 

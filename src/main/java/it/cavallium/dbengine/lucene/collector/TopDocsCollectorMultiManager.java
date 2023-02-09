@@ -3,12 +3,10 @@ package it.cavallium.dbengine.lucene.collector;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.ALLOW_UNSCORED_PAGINATION_MODE;
 
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.collector.UnscoredCollector;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
 import org.apache.commons.lang3.NotImplementedException;
-import org.apache.lucene.search.Collector;
 import org.apache.lucene.search.CollectorManager;
 import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.IndexSearcher;
@@ -57,7 +55,7 @@ public class TopDocsCollectorMultiManager implements CollectorMultiManager<TopDo
 	public CollectorManager<TopDocsCollector<?>, TopDocs> get(@NotNull Query query, IndexSearcher indexSearcher) {
 		return new CollectorManager<>() {
 			@Override
-			public TopDocsCollector<?> newCollector() throws IOException {
+			public TopDocsCollector<?> newCollector() {
 				TopDocsCollector<?> collector;
 				if (after != null && !allowPagination) {
 					throw new IllegalArgumentException("\"allowPagination\" is false, but \"after\" is set");
@@ -85,7 +83,7 @@ public class TopDocsCollectorMultiManager implements CollectorMultiManager<TopDo
 			}
 
 			@Override
-			public TopDocs reduce(Collection<TopDocsCollector<?>> collectors) throws IOException {
+			public TopDocs reduce(Collection<TopDocsCollector<?>> collectors) {
 				TopDocs[] docsArray;
 				boolean needsSort = luceneSort != null;
 				boolean needsScores = luceneSort != null && luceneSort.needsScores();

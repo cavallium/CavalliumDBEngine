@@ -114,7 +114,7 @@ public class DecimalBucketMultiCollectorManager implements CollectorMultiManager
 		return new double[buckets];
 	}
 
-	public Buckets search(IndexSearcher indexSearcher) throws IOException {
+	public Buckets search(IndexSearcher indexSearcher) {
 		Query query;
 		if (USE_SINGLE_FACET_COLLECTOR && normalizationQuery != null) {
 			query = normalizationQuery;

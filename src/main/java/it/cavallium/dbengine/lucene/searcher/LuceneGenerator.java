@@ -1,13 +1,12 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import it.cavallium.dbengine.utils.DBException;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.search.DocIdSetIterator;
@@ -19,13 +18,9 @@ import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.Weight;
 import org.apache.lucene.util.Bits;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.scheduler.Scheduler;
-import reactor.core.scheduler.Schedulers;
 
 public class LuceneGenerator implements Supplier<ScoreDoc> {
 
-	private static final Scheduler SCHED = LuceneUtils.luceneScheduler();
 	private final IndexSearcher shard;
 	private final int shardIndex;
 	private final Query query;
@@ -51,23 +46,12 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		this.leavesIterator = leaves.iterator();
 	}
 
-	public static Flux<ScoreDoc> reactive(IndexSearcher shard, LocalQueryParams localQueryParams, int shardIndex) {
+	public static Stream<ScoreDoc> reactive(IndexSearcher shard, LocalQueryParams localQueryParams, int shardIndex) {
 		if (localQueryParams.sort() != null) {
-			return Flux.error(new IllegalArgumentException("Sorting is not allowed"));
+			throw new IllegalArgumentException("Sorting is not allowed");
 		}
-		return Flux
-				.<ScoreDoc, LuceneGenerator>generate(() -> new LuceneGenerator(shard, localQueryParams, shardIndex),
-						(s, sink) -> {
-							ScoreDoc val = s.get();
-							if (val == null) {
-								sink.complete();
-							} else {
-								sink.next(val);
-							}
-							return s;
-						}
-				)
-				.subscribeOn(SCHED);
+		var lg = new LuceneGenerator(shard, localQueryParams, shardIndex);
+		return Stream.generate(lg).takeWhile(Objects::nonNull);
 	}
 
 	@Override
@@ -88,7 +72,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		remainingOffset--;
 	}
 
-	private Weight createWeight() throws IOException {
+	private Weight createWeight() {
 		ScoreMode scoreMode = computeScores ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES;
 		return shard.createWeight(shard.rewrite(query), scoreMode, 1f);
 	}
@@ -98,18 +82,18 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 			try {
 				weight = createWeight();
 			} catch (IOException e) {
-				throw new UncheckedIOException(e);
+				throw new DBException(e);
 			}
 		}
 
 		try {
 			return getWeightedNext();
 		} catch (IOException e) {
-			throw new UncheckedIOException(e);
+			throw new DBException(e);
 		}
 	}
 
-	private ScoreDoc getWeightedNext() throws IOException {
+	private ScoreDoc getWeightedNext() {
 		while (tryAdvanceDocIdSetIterator()) {
 			LeafReader reader = leaf.reader();
 			Bits liveDocs = reader.getLiveDocs();
@@ -125,7 +109,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		clearState();
 		return null;
 	}
-	private boolean tryAdvanceDocIdSetIterator() throws IOException {
+	private boolean tryAdvanceDocIdSetIterator() {
 		if (docIdSetIterator != null) {
 			return true;
 		}
@@ -143,7 +127,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		return false;
 	}
 
-	private ScoreDoc transformDoc(int doc) throws IOException {
+	private ScoreDoc transformDoc(int doc) {
 		return new ScoreDoc(leaf.docBase + doc, scorer.score(), shardIndex);
 	}
 

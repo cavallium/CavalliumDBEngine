@@ -1,105 +1,93 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.Buffer;
-import io.netty5.buffer.BufferAllocator;
-import io.netty5.util.Send;
+import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
-import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 import java.util.function.Function;
+import java.util.stream.Stream;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
+import org.rocksdb.RocksDBException;
 
 @SuppressWarnings("unused")
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	String getColumnName();
 
-	BufferAllocator getAllocator();
+	Buf get(@Nullable LLSnapshot snapshot, Buf key);
 
-	Mono<Buffer> get(@Nullable LLSnapshot snapshot, Mono<Buffer> key);
-
-	Mono<Buffer> put(Mono<Buffer> key, Mono<Buffer> value, LLDictionaryResultType resultType);
+	Buf put(Buf key, Buf value, LLDictionaryResultType resultType);
 
 	UpdateMode getUpdateMode();
 
-	default Mono<Buffer> update(Mono<Buffer> key,
-			BinarySerializationFunction updater,
-			UpdateReturnMode updateReturnMode) {
-		return this
-				.updateAndGetDelta(key, updater)
-				.transform(prev -> LLUtils.resolveLLDelta(prev, updateReturnMode));
+	default Buf update(Buf key, BinarySerializationFunction updater, UpdateReturnMode updateReturnMode) {
+		LLDelta prev = this.updateAndGetDelta(key, updater);
+		return LLUtils.resolveLLDelta(prev, updateReturnMode);
 	}
 
-	Mono<LLDelta> updateAndGetDelta(Mono<Buffer> key, BinarySerializationFunction updater);
+	LLDelta updateAndGetDelta(Buf key, BinarySerializationFunction updater);
 
-	Mono<Void> clear();
+	void clear();
 
-	Mono<Buffer> remove(Mono<Buffer> key, LLDictionaryResultType resultType);
+	Buf remove(Buf key, LLDictionaryResultType resultType);
 
-	Flux<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Flux<Buffer> keys);
+	Stream<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Stream<Buf> keys);
 
-	Mono<Void> putMulti(Flux<LLEntry> entries);
+	void putMulti(Stream<LLEntry> entries);
 
-	<K> Flux<Boolean> updateMulti(Flux<K> keys, Flux<Buffer> serializedKeys,
-			KVSerializationFunction<K, @Nullable Buffer, @Nullable Buffer> updateFunction);
+	<K> Stream<Boolean> updateMulti(Stream<K> keys, Stream<Buf> serializedKeys,
+			KVSerializationFunction<K, @Nullable Buf, @Nullable Buf> updateFunction);
 
-	Flux<LLEntry> getRange(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	Stream<LLEntry> getRange(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			boolean reverse,
 			boolean smallRange);
 
-	Flux<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	Stream<List<LLEntry>> getRangeGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			int prefixLength,
 			boolean smallRange);
 
-	Flux<Buffer> getRangeKeys(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	Stream<Buf> getRangeKeys(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			boolean reverse,
-			boolean smallRange);
+			boolean smallRange) throws RocksDBException, IOException;
 
-	Flux<List<Buffer>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	Stream<List<Buf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			int prefixLength,
 			boolean smallRange);
 
-	Flux<Buffer> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
-			Mono<LLRange> range,
+	Stream<Buf> getRangeKeyPrefixes(@Nullable LLSnapshot snapshot,
+			LLRange range,
 			int prefixLength,
 			boolean smallRange);
 
-	Flux<BadBlock> badBlocks(Mono<LLRange> range);
+	Stream<BadBlock> badBlocks(LLRange range);
 
-	Mono<Void> setRange(Mono<LLRange> range, Flux<LLEntry> entries, boolean smallRange);
+	void setRange(LLRange range, Stream<LLEntry> entries, boolean smallRange);
 
-	default Mono<Void> replaceRange(Mono<LLRange> range,
+	default void replaceRange(LLRange range,
 			boolean canKeysChange,
-			Function<LLEntry, Mono<LLEntry>> entriesReplacer,
+			Function<@NotNull LLEntry, @NotNull LLEntry> entriesReplacer,
 			boolean smallRange) {
-		return Mono.defer(() -> {
-			if (canKeysChange) {
-				return this
-						.setRange(range, this
-								.getRange(null, range, false, smallRange)
-								.flatMap(entriesReplacer), smallRange);
-			} else {
-				return this.putMulti(this.getRange(null, range, false, smallRange).flatMap(entriesReplacer));
-			}
-		});
+		if (canKeysChange) {
+			this.setRange(range, this.getRange(null, range, false, smallRange).map(entriesReplacer), smallRange);
+		} else {
+			this.putMulti(this.getRange(null, range, false, smallRange).map(entriesReplacer));
+		}
 	}
 
-	Mono<Boolean> isRangeEmpty(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fillCache);
+	boolean isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range, boolean fillCache);
 
-	Mono<Long> sizeRange(@Nullable LLSnapshot snapshot, Mono<LLRange> range, boolean fast);
+	long sizeRange(@Nullable LLSnapshot snapshot, LLRange range, boolean fast);
 
-	Mono<LLEntry> getOne(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	LLEntry getOne(@Nullable LLSnapshot snapshot, LLRange range);
 
-	Mono<Buffer> getOneKey(@Nullable LLSnapshot snapshot, Mono<LLRange> range);
+	Buf getOneKey(@Nullable LLSnapshot snapshot, LLRange range);
 
-	Mono<LLEntry> removeOne(Mono<LLRange> range);
+	LLEntry removeOne(LLRange range);
 }

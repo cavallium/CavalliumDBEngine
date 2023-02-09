@@ -17,7 +17,7 @@ public interface FacetsCollector extends Collector {
 			}
 
 			@Override
-			public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
+			public LeafCollector getLeafCollector(LeafReaderContext context) {
 				return facetsCollector.getLeafCollector(context);
 			}
 

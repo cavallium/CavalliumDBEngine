@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.dbengine.database.DiscardingCloseable;
-import it.cavallium.dbengine.database.SafeCloseable;
 import java.util.ArrayList;
 import org.rocksdb.AbstractImmutableNativeReference;
 

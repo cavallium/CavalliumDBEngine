@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import io.netty5.buffer.Buffer;
+import it.cavallium.dbengine.buffers.Buf;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
@@ -9,33 +9,26 @@ import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public final class OptionalBuf implements DiscardingCloseable {
+public final class OptionalBuf {
 
 	private static final OptionalBuf EMPTY = new OptionalBuf(null);
-	private final Buffer buffer;
+	private final Buf buffer;
 
-	private OptionalBuf(@Nullable Buffer buffer) {
+	private OptionalBuf(@Nullable Buf buffer) {
 		this.buffer = buffer;
 	}
 
-	public static OptionalBuf ofNullable(@Nullable Buffer buffer) {
+	public static OptionalBuf ofNullable(@Nullable Buf buffer) {
 		return new OptionalBuf(buffer);
 	}
 
-	public static OptionalBuf of(@NotNull Buffer buffer) {
+	public static OptionalBuf of(@NotNull Buf buffer) {
 		Objects.requireNonNull(buffer);
 		return new OptionalBuf(buffer);
 	}
 
 	public static OptionalBuf empty() {
 		return EMPTY;
-	}
-
-	@Override
-	public void close() {
-		if (buffer != null && buffer.isAccessible()) {
-			buffer.close();
-		}
 	}
 
 	@Override
@@ -66,21 +59,21 @@ public final class OptionalBuf implements DiscardingCloseable {
 		return buffer != null ? buffer.hashCode() : 0;
 	}
 
-	public Buffer get() {
+	public Buf get() {
 		if (buffer == null) {
 			throw new NoSuchElementException();
 		}
 		return buffer;
 	}
 
-	public Buffer orElse(Buffer alternative) {
+	public Buf orElse(Buf alternative) {
 		if (buffer == null) {
 			return alternative;
 		}
 		return buffer;
 	}
 
-	public void ifPresent(Consumer<Buffer> consumer) {
+	public void ifPresent(Consumer<Buf> consumer) {
 		if (buffer != null) {
 			consumer.accept(buffer);
 		}
@@ -94,7 +87,7 @@ public final class OptionalBuf implements DiscardingCloseable {
 		return buffer == null;
 	}
 
-	public <U> Optional<U> map(Function<Buffer, U> mapper) {
+	public <U> Optional<U> map(Function<Buf, U> mapper) {
 		if (buffer != null) {
 			return Optional.of(mapper.apply(buffer));
 		} else {

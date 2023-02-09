@@ -1,19 +1,20 @@
 package it.cavallium.dbengine.lucene;
 
 import static it.cavallium.dbengine.lucene.LLDocElementScoreComparator.SCORE_DOC_SCORE_ELEM_COMPARATOR;
-import static org.apache.lucene.search.TotalHits.Relation.*;
+import static it.cavallium.dbengine.utils.StreamUtils.mergeComparing;
+import static org.apache.lucene.search.TotalHits.Relation.EQUAL_TO;
+import static org.apache.lucene.search.TotalHits.Relation.GREATER_THAN_OR_EQUAL_TO;
 
 import it.cavallium.dbengine.lucene.collector.FullFieldDocs;
 import it.cavallium.dbengine.utils.SimpleResource;
-import java.io.IOException;
 import java.util.Comparator;
+import java.util.stream.Stream;
 import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TotalHits;
 import org.apache.lucene.search.TotalHits.Relation;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
 
 public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 
@@ -22,10 +23,10 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 	Comparator<LLDoc> DEFAULT_TIE_BREAKER = SHARD_INDEX_TIE_BREAKER.thenComparing(DOC_ID_TIE_BREAKER);
 
 	@Override
-	Flux<T> iterate();
+	Stream<T> iterate();
 
 	@Override
-	Flux<T> iterate(long skips);
+	Stream<T> iterate(long skips);
 
 	TotalHits totalHits();
 
@@ -92,8 +93,8 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 		}
 
 		@Override
-		public Flux<T> iterate() {
-			@SuppressWarnings("unchecked") Flux<T>[] iterables = new Flux[fullDocs.length];
+		public Stream<T> iterate() {
+			@SuppressWarnings("unchecked") Stream<T>[] iterables = new Stream[fullDocs.length];
 
 			for (int i = 0; i < fullDocs.length; i++) {
 				var singleFullDocs = fullDocs[i].iterate();
@@ -140,7 +141,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 				};
 			}
 
-			@SuppressWarnings("unchecked") Flux<T>[] fluxes = new Flux[fullDocs.length];
+			@SuppressWarnings("unchecked") Stream<T>[] fluxes = new Stream[fullDocs.length];
 			for (int i = 0; i < iterables.length; i++) {
 				var shardIndex = i;
 				fluxes[i] = iterables[i].map(shard -> {
@@ -158,11 +159,11 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 					}
 				});
 				if (fullDocs[i].totalHits().relation == EQUAL_TO) {
-					fluxes[i] = fluxes[i].take(fullDocs[i].totalHits().value, true);
+					fluxes[i] = fluxes[i].limit(fullDocs[i].totalHits().value);
 				}
 			}
 
-			return Flux.mergeComparing(comp, fluxes);
+			return mergeComparing(comp, fluxes);
 		}
 	}
 
@@ -182,12 +183,12 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 		}
 
 		@Override
-		public Flux<T> iterate() {
+		public Stream<T> iterate() {
 			return mergedIterable.iterate();
 		}
 
 		@Override
-		public Flux<T> iterate(long skips) {
+		public Stream<T> iterate(long skips) {
 			return mergedIterable.iterate(skips);
 		}
 

@@ -1,8 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.util.Comparator;
-import org.apache.lucene.search.FieldDoc;
 import org.apache.lucene.search.ScoreDoc;
 import org.jetbrains.annotations.Nullable;
 

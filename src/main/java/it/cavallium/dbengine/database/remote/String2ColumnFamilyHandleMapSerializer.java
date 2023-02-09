@@ -17,7 +17,7 @@ public class String2ColumnFamilyHandleMapSerializer implements DataSerializer<Ma
 	}
 
 	@Override
-	public @NotNull Map<String, ColumnFamilyHandle> deserialize(DataInput dataInput) throws IOException {
+	public @NotNull Map<String, ColumnFamilyHandle> deserialize(DataInput dataInput) {
 		throw new UnsupportedOperationException("Can't encode this type");
 	}
 }

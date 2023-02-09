@@ -1,6 +1,0 @@
-/**
- * This package must mirror this changes:
- * <a href="https://github.com/apache/lucene/commits/main/lucene/core/src/java/org/apache/lucene/search/comparators">
- *   Lucene comparators changes on GitHub</a>
- */
-This has been moved from package-info.java due to a compilation bug

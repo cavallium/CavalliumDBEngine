@@ -6,7 +6,6 @@ import com.squareup.moshi.JsonWriter;
 import it.unimi.dsi.fastutil.booleans.BooleanArrayList;
 import it.unimi.dsi.fastutil.booleans.BooleanList;
 import it.unimi.dsi.fastutil.booleans.BooleanLists;
-import it.unimi.dsi.fastutil.bytes.ByteArrayList;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -14,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 public class BooleanListJsonAdapter extends JsonAdapter<BooleanList> {
 
 	@Override
-	public @NotNull BooleanList fromJson(@NotNull JsonReader reader) throws IOException {
+	public @NotNull BooleanList fromJson(@NotNull JsonReader reader) {
 		reader.beginArray();
 		BooleanArrayList modifiableOutput = new BooleanArrayList();
 		while (reader.hasNext()) {
@@ -25,7 +24,7 @@ public class BooleanListJsonAdapter extends JsonAdapter<BooleanList> {
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable BooleanList value) throws IOException {
+	public void toJson(@NotNull JsonWriter writer, @Nullable BooleanList value) {
 		if (value == null) {
 			writer.nullValue();
 			return;

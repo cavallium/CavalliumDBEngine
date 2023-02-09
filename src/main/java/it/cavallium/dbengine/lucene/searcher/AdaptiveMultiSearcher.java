@@ -1,19 +1,11 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.client.UninterruptibleScheduler.uninterruptibleScheduler;
-import static it.cavallium.dbengine.database.LLUtils.singleOrClose;
-import static it.cavallium.dbengine.lucene.searcher.AdaptiveLocalSearcher.FORCE_HUGE_PQ;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
-import io.netty5.util.Send;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.database.disk.LLTempHugePqEnv;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Mono;
-import reactor.core.scheduler.Schedulers;
 
 public class AdaptiveMultiSearcher implements MultiSearcher {
 
@@ -30,31 +22,27 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	 */
 	private final int maxInMemoryResultEntries;
 
-	@Nullable
-	private final SortedByScoreFullMultiSearcher sortedByScoreFull;
-
-	@Nullable
-	private final SortedScoredFullMultiSearcher sortedScoredFull;
-
-	public AdaptiveMultiSearcher(LLTempHugePqEnv env, boolean useHugePq, int maxInMemoryResultEntries) {
-		sortedByScoreFull = (FORCE_HUGE_PQ || useHugePq) ? new SortedByScoreFullMultiSearcher(env) : null;
-		sortedScoredFull = (FORCE_HUGE_PQ || useHugePq) ?  new SortedScoredFullMultiSearcher(env) : null;
+	public AdaptiveMultiSearcher(int maxInMemoryResultEntries) {
 		this.maxInMemoryResultEntries = maxInMemoryResultEntries;
 	}
 
 	@Override
-	public Mono<LuceneSearchResult> collectMulti(Mono<LLIndexSearchers> indexSearchersMono,
+	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		if (transformer != NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchersMono, queryParams, keyFieldName, transformer);
+			try {
+				return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
+			} catch (IOException e) {
+				throw new RuntimeException(e);
+			}
 		}
-		return transformedCollectMulti(indexSearchersMono, queryParams, keyFieldName, transformer);
+		return transformedCollectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 	}
 
 	// Remember to change also AdaptiveLocalSearcher
-	public Mono<LuceneSearchResult> transformedCollectMulti(Mono<LLIndexSearchers> indexSearchers,
+	public LuceneSearchResult transformedCollectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
@@ -63,32 +51,24 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 		long maxAllowedInMemoryLimit
 				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
-		if (!FORCE_HUGE_PQ && queryParams.limitLong() == 0) {
+		if (queryParams.limitLong() == 0) {
 			return count.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
-		} else if (!FORCE_HUGE_PQ && realLimit <= maxInMemoryResultEntries) {
+		} else if (realLimit <= maxInMemoryResultEntries) {
 			return standardSearcher.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 		} else if (queryParams.isSorted()) {
-			if (!FORCE_HUGE_PQ && realLimit <= maxAllowedInMemoryLimit) {
+			if (realLimit <= maxAllowedInMemoryLimit) {
 				return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 			} else {
 				if (queryParams.isSortedByScore()) {
-					if (!FORCE_HUGE_PQ && queryParams.limitLong() < maxInMemoryResultEntries) {
+					if (queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
-					if (sortedByScoreFull != null) {
-						return sortedByScoreFull.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
-					} else {
-						return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
-					}
+					return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 				} else {
-					if (!FORCE_HUGE_PQ && queryParams.limitLong() < maxInMemoryResultEntries) {
+					if (queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
-					if (sortedScoredFull != null) {
-						return sortedScoredFull.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
-					} else {
-						return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
-					}
+					return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 				}
 			}
 		} else {

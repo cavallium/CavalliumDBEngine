@@ -1,64 +1,56 @@
 package it.cavallium.dbengine.database.collections;
 
-import io.netty5.util.Resource;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.Objects;
+import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Mono;
 
-public interface DatabaseStage<T> extends DatabaseStageWithEntry<T>, SafeCloseable {
+public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 
-	Mono<T> get(@Nullable CompositeSnapshot snapshot);
+	@Nullable T get(@Nullable CompositeSnapshot snapshot);
 
-	default Mono<T> getOrDefault(@Nullable CompositeSnapshot snapshot,
-			Mono<T> defaultValue,
-			boolean existsAlmostCertainly) {
-		return get(snapshot).switchIfEmpty(defaultValue).single();
+	default T getOrDefault(@Nullable CompositeSnapshot snapshot, T defaultValue, boolean existsAlmostCertainly) {
+		return Objects.requireNonNullElse(get(snapshot), defaultValue);
 	}
 
-	default Mono<T> getOrDefault(@Nullable CompositeSnapshot snapshot, Mono<T> defaultValue) {
+	default T getOrDefault(@Nullable CompositeSnapshot snapshot, T defaultValue) {
 		return getOrDefault(snapshot, defaultValue, false);
 	}
 
-	default Mono<Void> set(T value) {
-		return this
-				.setAndGetChanged(value)
-				.then();
+	default void set(@Nullable T value) {
+		this.setAndGetChanged(value);
 	}
 
-	Mono<T> setAndGetPrevious(T value);
+	@Nullable T setAndGetPrevious(@Nullable T value);
 
-	default Mono<Boolean> setAndGetChanged(T value) {
-		return this
-				.setAndGetPrevious(value)
-				.map(oldValue -> !Objects.equals(oldValue, value))
-				.switchIfEmpty(Mono.fromSupplier(() -> value != null));
+	default boolean setAndGetChanged(@Nullable T value) {
+		T oldValue = this.setAndGetPrevious(value);
+		if (oldValue != null) {
+			return !Objects.equals(oldValue, value);
+		} else {
+			return value != null;
+		}
 	}
 
-	default Mono<T> update(SerializationFunction<@Nullable T, @Nullable T> updater,
-			UpdateReturnMode updateReturnMode) {
-		return this
-				.updateAndGetDelta(updater)
-				.transform(prev -> LLUtils.resolveDelta(prev, updateReturnMode));
+	default @Nullable T update(SerializationFunction<@Nullable T, @Nullable T> updater, UpdateReturnMode updateReturnMode) {
+		return LLUtils.resolveDelta(this.updateAndGetDelta(updater), updateReturnMode);
 	}
 
-	Mono<Delta<T>> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater);
+	Delta<T> updateAndGetDelta(SerializationFunction<@Nullable T, @Nullable T> updater);
 
-	default Mono<Void> clear() {
-		return clearAndGetStatus().then();
+	default void clear() {
+		clearAndGetStatus();
 	}
 
-	Mono<T> clearAndGetPrevious();
+	@Nullable T clearAndGetPrevious();
 
-	default Mono<Boolean> clearAndGetStatus() {
-		return clearAndGetPrevious().map(Objects::nonNull).defaultIfEmpty(false);
+	default boolean clearAndGetStatus() {
+		return clearAndGetPrevious() != null;
 	}
 
 	/**
@@ -66,11 +58,11 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T>, SafeCloseab
 	 * If it's a nested collection the count will include all the children recursively
 	 * @param fast true to return an approximate value
 	 */
-	Mono<Long> leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast);
+	long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast);
 
-	default Mono<Boolean> isEmpty(@Nullable CompositeSnapshot snapshot) {
-		return leavesCount(snapshot, false).map(size -> size <= 0);
+	default boolean isEmpty(@Nullable CompositeSnapshot snapshot) {
+		return leavesCount(snapshot, false) <= 0;
 	}
 
-	Flux<BadBlock> badBlocks();
+	Stream<BadBlock> badBlocks();
 }

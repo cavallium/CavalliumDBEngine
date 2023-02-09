@@ -11,7 +11,7 @@ public class LuceneConcurrentMergeScheduler extends ConcurrentMergeScheduler {
 	}
 
 	@Override
-	protected synchronized MergeThread getMergeThread(MergeSource mergeSource, OneMerge merge) throws IOException {
+	protected synchronized MergeThread getMergeThread(MergeSource mergeSource, OneMerge merge) {
 		final MergeThread thread = new LuceneMergeThread(mergeSource, merge);
 		thread.setDaemon(true);
 		thread.setName("lucene-merge-" + mergeThreadCount++);

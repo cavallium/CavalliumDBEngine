@@ -39,6 +39,9 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 	}
 
 	private U deserializeValue(Buf value) {
+		if (value == null) {
+			return null;
+		}
 		try {
 			return serializer.deserialize(BufDataInput.create(value));
 		} catch (IndexOutOfBoundsException ex) {

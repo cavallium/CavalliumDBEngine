@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
@@ -130,14 +131,14 @@ public class PagedLocalSearcher implements LocalSearcher {
 			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
 		AtomicReference<CurrentPageInfo> pageInfo = new AtomicReference<>(secondPageInfo);
 		Object lock = new Object();
-		Stream<ScoreDoc> topFieldDocFlux = Stream.generate(() -> {
+		Stream<ScoreDoc> topFieldDocFlux = streamWhileNonNull(() -> {
 			synchronized (lock) {
 				var currentPageInfo = pageInfo.getPlain();
 				var result = searchPageSync(queryParams, indexSearchers, true, 0, currentPageInfo);
 				pageInfo.setPlain(result.nextPageToIterate());
 				return result.pageData();
 			}
-		}).takeWhile(Objects::nonNull).flatMap(pd -> Stream.of(pd.topDocs().scoreDocs));
+		}).flatMap(pd -> Stream.of(pd.topDocs().scoreDocs));
 		return LuceneUtils.convertHits(topFieldDocFlux, indexSearchers, keyFieldName);
 	}
 

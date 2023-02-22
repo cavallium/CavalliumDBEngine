@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLEntry;
@@ -39,7 +40,7 @@ public final class LLLocalMigrationReactiveRocksIterator {
 		} catch (RocksDBException e) {
 			throw new DBException("Failed to open iterator", e);
 		}
-		return Stream.generate(() -> {
+		return streamWhileNonNull(() -> {
 			try {
 				if (rocksIterator.isValid()) {
 					var key = rocksIterator.keyBuf().copy();
@@ -52,7 +53,7 @@ public final class LLLocalMigrationReactiveRocksIterator {
 			} catch (RocksDBException ex) {
 				throw new CompletionException(new DBException("Failed to iterate", ex));
 			}
-		}).takeWhile(Objects::nonNull).onClose(() -> {
+		}).onClose(() -> {
 			rocksIterator.close();
 			readOptions.close();
 		});

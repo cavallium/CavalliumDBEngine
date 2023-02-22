@@ -176,7 +176,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					buf1.skipNBytes(keyPrefixLength);
 					suffixAndExtKeyConsistency(buf1.available());
 
-					key = deserializeSuffix(serializedValue);
+					key = deserializeSuffix(buf1);
 					U value = valueSerializer.deserialize(serializedValue);
 					deserializedEntry = Map.entry(key, value);
 					return deserializedEntry;
@@ -295,6 +295,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = serializeKeySuffixToKey(keySuffix);
 		var valueMono = serializeValue(value);
 		var valueBuf = dictionary.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE);
+		if (valueBuf == null) {
+			return null;
+		}
 		return deserializeValue(keySuffix, BufDataInput.create(valueBuf));
 	}
 

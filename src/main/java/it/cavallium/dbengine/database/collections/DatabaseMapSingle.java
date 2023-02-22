@@ -88,10 +88,9 @@ public final class DatabaseMapSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public U update(SerializationFunction<@Nullable U, @Nullable U> updater,
-			UpdateReturnMode updateReturnMode) {
+	public U update(SerializationFunction<@Nullable U, @Nullable U> updater, UpdateReturnMode updateReturnMode) {
 		Buf resultBytes = dictionary.update(key, this.createUpdater(updater), updateReturnMode);
-		return deserializeValue(resultBytes);
+		return resultBytes != null ? deserializeValue(resultBytes) : null;
 	}
 
 	@Override

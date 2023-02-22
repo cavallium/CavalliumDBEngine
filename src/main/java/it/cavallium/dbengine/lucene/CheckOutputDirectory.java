@@ -49,7 +49,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public IndexOutput createOutput(String name, IOContext context) {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			return new CheckIndexOutput(directory.createOutput(name, context));
 		} catch (IOException e) {
@@ -59,7 +59,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public IndexOutput createTempOutput(String prefix, String suffix, IOContext context) {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			return new CheckIndexOutput(directory.createTempOutput(prefix, suffix, context));
 		} catch (IOException e) {
@@ -69,7 +69,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public void sync(Collection<String> names) {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			directory.sync(names);
 		} catch (IOException e) {
@@ -79,7 +79,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public void syncMetaData() {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			directory.syncMetaData();
 		} catch (IOException e) {
@@ -89,7 +89,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public void rename(String source, String dest) {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			directory.rename(source, dest);
 		} catch (IOException e) {
@@ -99,7 +99,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public IndexInput openInput(String name, IOContext context) {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			return new CheckIndexInput(directory.openInput(name, context));
 		} catch (IOException e) {
@@ -109,7 +109,7 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public Lock obtainLock(String name) {
-		LuceneUtils.checkLuceneThread();
+		LuceneUtils.warnLuceneThread();
 		try {
 			return directory.obtainLock(name);
 		} catch (IOException e) {

@@ -16,7 +16,7 @@ public class CheckIndexInput extends IndexInput {
 	}
 
 	private static void checkThread() {
-		assert LuceneUtils.isLuceneThread();
+		warnLuceneThread();
 	}
 
 	@Override

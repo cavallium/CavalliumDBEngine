@@ -19,6 +19,7 @@ module dbengine {
 	exports it.cavallium.dbengine.utils;
 	exports it.cavallium.dbengine.database.disk.rocksdb;
 	exports it.cavallium.dbengine.buffers;
+	exports it.cavallium.dbengine.lucene.hugepq.search;
 	requires org.jetbrains.annotations;
 	requires com.google.common;
 	requires micrometer.core;

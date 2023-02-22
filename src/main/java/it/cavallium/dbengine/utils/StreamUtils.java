@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Spliterator;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -46,6 +47,31 @@ public class StreamUtils {
 		return batchSize <= 0
 				? Stream.of(stream.collect(Collectors.toList()))
 				: StreamSupport.stream(new BatchSpliterator<>(stream.spliterator(), batchSize), stream.isParallel());
+	}
+
+	@SuppressWarnings("UnstableApiUsage")
+	public static <X> Stream<X> streamWhileNonNull(Supplier<X> supplier) {
+		var it = new Iterator<X>() {
+
+			private boolean nextSet = false;
+			private X next;
+
+			@Override
+			public boolean hasNext() {
+				if (!nextSet) {
+					next = supplier.get();
+					nextSet = true;
+				}
+				return next != null;
+			}
+
+			@Override
+			public X next() {
+				nextSet = false;
+				return next;
+			}
+		};
+		return Streams.stream(it);
 	}
 
 	private record BatchSpliterator<E>(Spliterator<E> base, int batchSize) implements Spliterator<List<E>> {

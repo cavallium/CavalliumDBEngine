@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLRange;
@@ -59,7 +60,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 			throw new DBException("Failed to iterate the range", e);
 		}
 
-		return Stream.generate(() -> {
+		return streamWhileNonNull(() -> {
 			try {
 				if (rocksIterator.isValid()) {
 					// Note that the underlying array is subject to changes!
@@ -100,7 +101,7 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 				}
 				throw new CompletionException(ex);
 			}
-		}).takeWhile(Objects::nonNull).onClose(() -> {
+		}).onClose(() -> {
 			rocksIterator.close();
 			readOptions.close();
 		});

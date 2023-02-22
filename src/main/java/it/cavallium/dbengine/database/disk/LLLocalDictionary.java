@@ -5,6 +5,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
 
@@ -699,7 +700,7 @@ public class LLLocalDictionary implements LLDictionary {
 				ro.close();
 				throw new DBException("Failed to open rocksdb iterator", ex);
 			}
-			return Stream.generate(() -> {
+			return streamWhileNonNull(() -> {
 				if (!rocksIterator.isValid()) return null;
 				Buf rawKey = null;
 				try {
@@ -709,7 +710,7 @@ public class LLLocalDictionary implements LLDictionary {
 					return new BadBlock(databaseName, ColumnUtils.special(columnName), rawKey, ex);
 				}
 				return null;
-			}).takeWhile(x -> rocksIterator.isValid()).filter(Objects::nonNull).onClose(() -> {
+			}).takeWhile(x -> rocksIterator.isValid()).onClose(() -> {
 				rocksIterator.close();
 				ro.close();
 			});
@@ -1030,14 +1031,16 @@ public class LLLocalDictionary implements LLDictionary {
 			if (USE_CURRENT_FASTSIZE_FOR_OLD_SNAPSHOTS || rocksdbSnapshot.snapshot() == null) {
 				try {
 					if (USE_NUM_ENTRIES_PRECISE_COUNTER) {
-						return exactSizeAll(null);
+						return getRocksDBNumEntries();
 					}
 					return db.getLongProperty("rocksdb.estimate-num-keys");
 				} catch (RocksDBException e) {
 					logger.error(MARKER_ROCKSDB, "Failed to get RocksDB estimated keys count property", e);
 					return 0;
 				}
-			} else if (USE_NUM_ENTRIES_PRECISE_COUNTER || PARALLEL_EXACT_SIZE) {
+			} else if (USE_NUM_ENTRIES_PRECISE_COUNTER && snapshot == null) {
+				return getRocksDBNumEntries();
+			} else if (PARALLEL_EXACT_SIZE) {
 				return exactSizeAll(snapshot);
 			} else {
 				rocksdbSnapshot.setFillCache(false);
@@ -1057,16 +1060,17 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	private long getRocksDBNumEntries() {
+		try {
+			return db.getNumEntries();
+		} catch (RocksDBException ex) {
+			throw new IllegalStateException("Failed to read exact size", ex);
+		}
+	}
+
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		if (LLUtils.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called exactSizeAll in a nonblocking thread");
-		}
-		if (snapshot == null && USE_NUM_ENTRIES_PRECISE_COUNTER) {
-			try {
-				return db.getNumEntries();
-			} catch (RocksDBException ex) {
-				throw new IllegalStateException("Failed to read exact size", ex);
-			}
 		}
 		try (var readOpts = LLUtils.generateCustomReadOptions(generateReadOptionsOrNull(snapshot), false, false, false)) {
 			if (LLUtils.MANUAL_READAHEAD) {

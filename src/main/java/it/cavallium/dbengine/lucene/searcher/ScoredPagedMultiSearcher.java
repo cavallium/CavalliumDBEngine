@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import com.google.common.collect.Streams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -133,7 +134,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	private Stream<LLKeyScore> searchOtherPages(List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams, String keyFieldName, CurrentPageInfo secondPageInfo) {
 		AtomicReference<CurrentPageInfo> currentPageInfoRef = new AtomicReference<>(secondPageInfo);
-		Stream<ScoreDoc> topFieldDocStream = Stream.generate(() -> {
+		Stream<ScoreDoc> topFieldDocStream = streamWhileNonNull(() -> {
 			var currentPageInfo = currentPageInfoRef.getPlain();
 			if (currentPageInfo == null) return null;
 			LOG.trace("Current page info: {}", currentPageInfo);
@@ -145,7 +146,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 			} else {
 				return Arrays.asList(result.topDocs().scoreDocs);
 			}
-		}).takeWhile(Objects::nonNull).flatMap(Collection::stream);
+		}).flatMap(Collection::stream);
 
 		return LuceneUtils.convertHits(topFieldDocStream, indexSearchers, keyFieldName);
 	}

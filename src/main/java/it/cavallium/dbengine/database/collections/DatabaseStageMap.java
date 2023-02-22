@@ -203,10 +203,11 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	@Override
 	default Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
-		Object2ObjectSortedMap<T, U> map = this
-				.getAllValues(snapshot, true)
-				.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
-		return map.isEmpty() ? null : map;
+		try (var stream = this.getAllValues(snapshot, true)) {
+			Object2ObjectSortedMap<T, U> map = stream
+					.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+			return map.isEmpty() ? null : map;
+		}
 	}
 
 	@Override

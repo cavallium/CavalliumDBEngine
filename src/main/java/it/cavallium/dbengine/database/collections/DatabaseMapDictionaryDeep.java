@@ -18,6 +18,7 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
@@ -28,6 +29,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.VisibleForTesting;
 
 // todo: implement optimized methods (which?)
 public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implements DatabaseStageMap<T, U, US> {
@@ -74,18 +76,25 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		}
 	}
 
-	static Buf firstRangeKey(Buf prefixKey, int prefixLength, Buf suffixAndExtZeroes) {
-		var modifiablePrefixKey = Buf.create(prefixLength + suffixAndExtZeroes.size());
-		modifiablePrefixKey.addAll(prefixKey);
-		zeroFillKeySuffixAndExt(modifiablePrefixKey, prefixLength, suffixAndExtZeroes);
+	@VisibleForTesting
+	public static Buf firstRangeKey(Buf prefixKey, int prefixLength, Buf suffixAndExtZeroes) {
+		return createFullKeyWithEmptySuffixAndExt(prefixKey, prefixLength, suffixAndExtZeroes);
+	}
+
+	@VisibleForTesting
+	public static Buf nextRangeKey(Buf prefixKey, int prefixLength, Buf suffixAndExtZeroes) {
+		Buf modifiablePrefixKey = createFullKeyWithEmptySuffixAndExt(prefixKey, prefixLength, suffixAndExtZeroes);
+		incrementPrefix(modifiablePrefixKey, prefixLength);
 		return modifiablePrefixKey;
 	}
 
-	static Buf nextRangeKey(Buf prefixKey, int prefixLength, Buf suffixAndExtZeroes) {
+	private static Buf createFullKeyWithEmptySuffixAndExt(Buf prefixKey, int prefixLength, Buf suffixAndExtZeroes) {
 		var modifiablePrefixKey = Buf.create(prefixLength + suffixAndExtZeroes.size());
-		modifiablePrefixKey.addAll(prefixKey);
+		if (prefixKey != null) {
+			modifiablePrefixKey.addAll(prefixKey);
+		}
+		assert prefixKey != null || prefixLength == 0 : "Prefix length is " +  prefixLength + " but the prefix key is null";
 		zeroFillKeySuffixAndExt(modifiablePrefixKey, prefixLength, suffixAndExtZeroes);
-		incrementPrefix(modifiablePrefixKey, prefixLength);
 		return modifiablePrefixKey;
 	}
 
@@ -98,7 +107,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 		var suffixLengthAndExtLength = suffixAndExtZeroes.size();
 		assert result.size() == prefixLength;
 		assert suffixLengthAndExtLength > 0 : "Suffix length + ext length is < 0: " + suffixLengthAndExtLength;
-		result.size(prefixLength + suffixLengthAndExtLength);
+		result.size(prefixLength);
 		modifiablePrefixKey.addAll(suffixAndExtZeroes);
 		assert modifiablePrefixKey.size() == prefixLength + suffixAndExtZeroes.size() : "Result buffer size is wrong";
 	}
@@ -172,6 +181,10 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 
 	@SuppressWarnings("unused")
 	protected boolean suffixKeyLengthConsistency(int keySuffixLength) {
+		assert
+				this.keySuffixLength == keySuffixLength :
+				"Key suffix length is " + keySuffixLength + ", but it should be " + this.keySuffixLength + " bytes long";
+		//noinspection ConstantValue
 		return this.keySuffixLength == keySuffixLength;
 	}
 
@@ -313,8 +326,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	protected void serializeSuffixTo(T keySuffix, BufDataOutput output) throws SerializationException {
-		assert suffixKeyLengthConsistency(output.size());
 		var beforeWriterOffset = output.size();
+		assert beforeWriterOffset == keyPrefixLength;
 		keySuffixSerializer.serialize(keySuffix, output);
 		var afterWriterOffset = output.size();
 		assert suffixKeyLengthConsistency(afterWriterOffset - beforeWriterOffset)

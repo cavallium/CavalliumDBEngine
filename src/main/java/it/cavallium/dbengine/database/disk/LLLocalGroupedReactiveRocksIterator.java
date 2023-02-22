@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.io.IOException;
 import java.util.List;
@@ -64,7 +65,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 			throw new DBException("Failed to iterate the range", e);
 		}
 
-		return Stream.<List<T>>generate(() -> {
+		return StreamUtils.<List<T>>streamWhileNonNull(() -> {
 			try {
 				ObjectArrayList<T> values = new ObjectArrayList<>();
 				Buf firstGroupKey = null;
@@ -111,7 +112,7 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				}
 				throw new CompletionException(new DBException("Range failed", ex));
 			}
-		}).takeWhile(Objects::nonNull).onClose(() -> {
+		}).onClose(() -> {
 			rocksIterator.close();
 			readOptions.close();
 		});

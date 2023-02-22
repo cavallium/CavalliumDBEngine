@@ -3,12 +3,17 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
+import com.google.common.collect.Iterators;
+import com.google.common.collect.Streams;
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
+import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -52,7 +57,7 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 			}
 			var rocksIterator = db.newRocksIterator(readOptions, range, false);
 
-			return Stream.generate(() -> {
+			return streamWhileNonNull(() -> {
 				try {
 					Buf firstGroupKey = null;
 					while (rocksIterator.isValid()) {

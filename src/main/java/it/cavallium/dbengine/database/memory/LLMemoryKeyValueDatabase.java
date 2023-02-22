@@ -59,7 +59,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 		));
 		var singleton = new LLMemorySingleton(dict, columnNameString, singletonName);
 		Buf returnValue = singleton.get(null);
-		if (returnValue == null) {
+		if (returnValue == null && defaultValue != null) {
 			singleton.set(Buf.wrap(defaultValue));
 		}
 		return singleton;

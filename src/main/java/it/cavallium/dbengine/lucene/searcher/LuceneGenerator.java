@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
+
 import java.io.IOException;
 import it.cavallium.dbengine.utils.DBException;
 import java.util.Iterator;
@@ -51,7 +53,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 			throw new IllegalArgumentException("Sorting is not allowed");
 		}
 		var lg = new LuceneGenerator(shard, localQueryParams, shardIndex);
-		return Stream.generate(lg).takeWhile(Objects::nonNull);
+		return streamWhileNonNull(lg);
 	}
 
 	@Override

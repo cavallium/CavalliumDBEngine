@@ -489,6 +489,9 @@ public class LLUtils {
 	}
 
 	public static Buf unmodifiableBytes(Buf previous) {
+		if (previous == null) {
+			return null;
+		}
 		previous.freeze();
 		return previous;
 	}

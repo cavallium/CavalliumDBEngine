@@ -18,6 +18,7 @@ import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
 import it.cavallium.dbengine.rpc.current.data.ByteBuffersDirectory;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -69,7 +70,11 @@ public class MemoryTemporaryDbGenerator implements TemporaryDbGenerator {
 	}
 
 	@Override
-	public void closeTempDb(TempDb db) {
-		db.db().close();
+	public void closeTempDb(TempDb tempDb) throws IOException {
+		tempDb.db().close();
+		tempDb.connection().disconnect();
+		tempDb.swappableLuceneSearcher().close();
+		tempDb.luceneMulti().close();
+		tempDb.luceneSingle().close();
 	}
 }

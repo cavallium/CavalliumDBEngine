@@ -499,15 +499,17 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 	public Stream<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		var result = searchInternal(snapshot, queryParams, keyFieldName);
-		return Stream.of(LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result));
+		var shard = LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result);
+		return Stream.of(shard).onClose(shard::close);
 	}
 
 	public LuceneSearchResult searchInternal(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
-		var searcher = searcherManager.retrieveSearcher(snapshot);
+		try (var searcher = searcherManager.retrieveSearcher(snapshot)) {
 
-		return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE);
+			return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE);
+		}
 	}
 
 	@Override

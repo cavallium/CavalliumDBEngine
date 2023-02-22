@@ -227,7 +227,8 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			@Nullable String keyFieldName) {
 		LuceneSearchResult result = searchInternal(snapshot, queryParams, keyFieldName);
 		// Transform the result type
-		return Stream.of(new LLSearchResultShard(result.results(), result.totalHitsCount()));
+		var shard = new LLSearchResultShard(result.results(), result.totalHitsCount());
+		return Stream.of(shard).onClose(shard::close);
 	}
 
 	private LuceneSearchResult searchInternal(@Nullable LLSnapshot snapshot,

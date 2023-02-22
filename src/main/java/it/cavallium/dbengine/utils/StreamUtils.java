@@ -3,12 +3,14 @@ package it.cavallium.dbengine.utils;
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Streams;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Spliterator;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Collector;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
@@ -72,6 +74,18 @@ public class StreamUtils {
 			}
 		};
 		return Streams.stream(it);
+	}
+
+	public static <X> List<X> toListClose(Stream<X> stream) {
+		try (stream) {
+			return stream.toList();
+		}
+	}
+
+	public static <T, R, A> R collectClose(Stream<T> stream, Collector<? super T, A, R> collector) {
+		try (stream) {
+			return stream.collect(collector);
+		}
 	}
 
 	private record BatchSpliterator<E>(Spliterator<E> base, int batchSize) implements Spliterator<List<E>> {

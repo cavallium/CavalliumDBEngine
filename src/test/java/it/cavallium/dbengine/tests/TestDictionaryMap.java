@@ -29,9 +29,9 @@ public abstract class TestDictionaryMap {
 	protected abstract TemporaryDbGenerator getTempDbGenerator();
 
 	record Tuple2<X, Y>(X getT1, Y getT2) {}
-	record Tuple3<X, Y, Z>(X getT1, Y getT2, Y getT3) {}
-	record Tuple4<X, Y, Z, W>(X getT1, Y getT2, Y getT3, W getT4) {}
-	record Tuple5<X, Y, Z, W, X1>(X getT1, Y getT2, Y getT3, W getT4, X1 getT5) {}
+	record Tuple3<X, Y, Z>(X getT1, Y getT2, Z getT3) {}
+	record Tuple4<X, Y, Z, W>(X getT1, Y getT2, Z getT3, W getT4) {}
+	record Tuple5<X, Y, Z, W, X1>(X getT1, Y getT2, Z getT3, W getT4, X1 getT5) {}
 
 	private static Stream<Arguments> provideArgumentsPut() {
 		var goodKeys = List.of("12345");

@@ -82,19 +82,19 @@ public class TestLuceneIndex {
 			return new Object[] {getT1, getT2};
 		}
 	}
-	record Tuple3<X, Y, Z>(X getT1, Y getT2, Y getT3) {
+	record Tuple3<X, Y, Z>(X getT1, Y getT2, Z getT3) {
 
 		public Object[] toArray() {
 			return new Object[] {getT1, getT2, getT3};
 		}
 	}
-	record Tuple4<X, Y, Z, W>(X getT1, Y getT2, Y getT3, W getT4) {
+	record Tuple4<X, Y, Z, W>(X getT1, Y getT2, Z getT3, W getT4) {
 
 		public Object[] toArray() {
 			return new Object[] {getT1, getT2, getT3, getT4};
 		}
 	}
-	record Tuple5<X, Y, Z, W, X1>(X getT1, Y getT2, Y getT3, W getT4, X1 getT5) {
+	record Tuple5<X, Y, Z, W, X1>(X getT1, Y getT2, Z getT3, W getT4, X1 getT5) {
 
 		public Object[] toArray() {
 			return new Object[] {getT1, getT2, getT3, getT4, getT5};
@@ -192,43 +192,48 @@ public class TestLuceneIndex {
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testGetLuceneIndex(boolean shards) {
-		var luceneIndex = getLuceneIndex(shards, null);
-		Assertions.assertNotNull(luceneIndex);
+		try (var luceneIndex = getLuceneIndex(shards, null)) {
+			Assertions.assertNotNull(luceneIndex);
+		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testDeleteAll(boolean shards) {
-		var luceneIndex = getLuceneIndex(shards, null);
-		luceneIndex.deleteAll();
-		assertCount(luceneIndex, 0);
+		try (var luceneIndex = getLuceneIndex(shards, null)) {
+			luceneIndex.deleteAll();
+			assertCount(luceneIndex, 0);
+		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testDelete(boolean shards) {
-		var luceneIndex = getLuceneIndex(shards, null);
-		var prevCount = getCount(luceneIndex);
-		luceneIndex.deleteDocument("test-key-1");
-		assertCount(luceneIndex, prevCount - 1);
+		try (var luceneIndex = getLuceneIndex(shards, null)) {
+			var prevCount = getCount(luceneIndex);
+			luceneIndex.deleteDocument("test-key-1");
+			assertCount(luceneIndex, prevCount - 1);
+		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testUpdateSameDoc(boolean shards) {
-		var luceneIndex = getLuceneIndex(shards, null);
-		var prevCount = getCount(luceneIndex);
-		luceneIndex.updateDocument("test-key-1", "new-value");
-		assertCount(luceneIndex, prevCount );
+		try (var luceneIndex = getLuceneIndex(shards, null)) {
+			var prevCount = getCount(luceneIndex);
+			luceneIndex.updateDocument("test-key-1", "new-value");
+			assertCount(luceneIndex, prevCount);
+		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArguments")
 	public void testUpdateNewDoc(boolean shards) {
-		var luceneIndex = getLuceneIndex(shards, null);
-		var prevCount = getCount(luceneIndex);
-		luceneIndex.updateDocument("test-key-new", "new-value");
-		assertCount(luceneIndex, prevCount + 1);
+		try (var luceneIndex = getLuceneIndex(shards, null)) {
+			var prevCount = getCount(luceneIndex);
+			luceneIndex.updateDocument("test-key-new", "new-value");
+			assertCount(luceneIndex, prevCount + 1);
+		}
 	}
 
 }

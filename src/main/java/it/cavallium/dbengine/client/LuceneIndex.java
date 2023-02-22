@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-public interface LuceneIndex<T, U> extends LLSnapshottable {
+public interface LuceneIndex<T, U> extends LLSnapshottable, AutoCloseable {
 
 	void addDocument(T key, U value);
 

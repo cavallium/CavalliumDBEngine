@@ -99,15 +99,20 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 	public void closeTempDb(TempDb tempDb) throws IOException {
 		tempDb.db().close();
 		tempDb.connection().disconnect();
+		tempDb.swappableLuceneSearcher().close();
+		tempDb.luceneMulti().close();
+		tempDb.luceneSingle().close();
 		ensureNoLeaks(false, false);
 		if (Files.exists(tempDb.path())) {
-			Files.walk(tempDb.path()).sorted(Comparator.reverseOrder()).forEach(file -> {
-				try {
-					Files.delete(file);
-				} catch (IOException ex) {
-					throw new CompletionException(ex);
-				}
-			});
+			try (var walk = Files.walk(tempDb.path())) {
+				walk.sorted(Comparator.reverseOrder()).forEach(file -> {
+					try {
+						Files.delete(file);
+					} catch (IOException ex) {
+						throw new CompletionException(ex);
+					}
+				});
+			}
 		}
 	}
 }

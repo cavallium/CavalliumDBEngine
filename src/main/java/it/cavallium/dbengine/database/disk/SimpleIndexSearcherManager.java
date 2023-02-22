@@ -147,16 +147,22 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		}
 		refreshSubscription.cancel(true);
 		LOG.debug("Closed IndexSearcherManager");
-		LOG.debug("Closing refreshes...");
+		LOG.debug("Closing refresh tasks...");
 		initTime = System.nanoTime();
 		while (activeRefreshes.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 			LockSupport.parkNanos(50000000);
 		}
-		LOG.debug("Closed refreshes...");
+		if (activeRefreshes.get() > 0) {
+			LOG.warn("Some refresh tasks remained active after shutdown: {}", activeRefreshes.get());
+		}
+		LOG.debug("Closed refresh tasks");
 		LOG.debug("Closing active searchers...");
 		initTime = System.nanoTime();
 		while (activeSearchers.get() > 0 && (System.nanoTime() - initTime) <= 15000000000L) {
 			LockSupport.parkNanos(50000000);
+		}
+		if (activeSearchers.get() > 0) {
+			LOG.warn("Some searchers remained active after shutdown: {}", activeSearchers.get());
 		}
 		LOG.debug("Closed active searchers");
 		LOG.debug("Stopping searcher executor...");

@@ -69,11 +69,11 @@ public interface LLLuceneIndex extends LLSnapshottable, IBackuppable, SafeClosea
 				false,
 				timeout == null ? Long.MAX_VALUE : timeout.toMillis()
 		);
-		return this
-				.search(snapshot, params, null)
-				.parallel()
-				.map(LLSearchResultShard::totalHitsCount)
-				.reduce(TotalHitsCount.of(0, true), (a, b) -> TotalHitsCount.of(a.value() + b.value(), a.exact() && b.exact()));
+		try (var stream = this.search(snapshot, params, null)) {
+			return stream.parallel().map(LLSearchResultShard::totalHitsCount).reduce(TotalHitsCount.of(0, true),
+					(a, b) -> TotalHitsCount.of(a.value() + b.value(), a.exact() && b.exact())
+			);
+		}
 	}
 
 	boolean isLowMemoryMode();

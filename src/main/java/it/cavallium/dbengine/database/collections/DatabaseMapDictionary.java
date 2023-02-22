@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
+import static it.cavallium.dbengine.utils.StreamUtils.collectClose;
+
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.buffers.BufDataInput;
 import it.cavallium.dbengine.buffers.BufDataOutput;
@@ -164,7 +166,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
-		var map = dictionary
+		var map = collectClose(dictionary
 				.getRange(resolveSnapshot(snapshot), range, false, true)
 				.map(entry -> {
 					Entry<T, U> deserializedEntry;
@@ -180,8 +182,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					U value = valueSerializer.deserialize(serializedValue);
 					deserializedEntry = Map.entry(key, value);
 					return deserializedEntry;
-				})
-				.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+				}), Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
 		return map.isEmpty() ? null : map;
 	}
 

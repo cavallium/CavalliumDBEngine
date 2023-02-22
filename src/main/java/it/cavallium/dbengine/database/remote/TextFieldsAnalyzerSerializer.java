@@ -10,12 +10,12 @@ import org.jetbrains.annotations.NotNull;
 public class TextFieldsAnalyzerSerializer implements DataSerializer<TextFieldsAnalyzer> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull TextFieldsAnalyzer textFieldsAnalyzer) {
+	public void serialize(DataOutput dataOutput, @NotNull TextFieldsAnalyzer textFieldsAnalyzer) throws IOException {
 		dataOutput.writeInt(textFieldsAnalyzer.ordinal());
 	}
 
 	@Override
-	public @NotNull TextFieldsAnalyzer deserialize(DataInput dataInput) {
+	public @NotNull TextFieldsAnalyzer deserialize(DataInput dataInput) throws IOException {
 		return TextFieldsAnalyzer.values()[dataInput.readInt()];
 	}
 }

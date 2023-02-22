@@ -14,8 +14,7 @@ import org.rocksdb.RocksDBException;
 public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure, DatabaseProperties,
 		IBackuppable, DatabaseOperations {
 
-	LLSingleton getSingleton(byte[] singletonListColumnName, byte[] name, byte @Nullable [] defaultValue)
-			throws IOException;
+	LLSingleton getSingleton(byte[] singletonListColumnName, byte[] name, byte @Nullable [] defaultValue);
 
 	LLDictionary getDictionary(byte[] columnName, UpdateMode updateMode);
 

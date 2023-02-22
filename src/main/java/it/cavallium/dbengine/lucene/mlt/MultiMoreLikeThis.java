@@ -549,7 +549,7 @@ public final class MultiMoreLikeThis {
 	 * @param docNum the documentID of the lucene doc to generate the 'More Like This" query for.
 	 * @return a query that will return docs like the passed lucene document ID.
 	 */
-	public Query like(long docNum) {
+	public Query like(long docNum) throws IOException {
 		if (fieldNames == null) {
 			// gather list of valid fields from lucene
 			Collection<String> fields;
@@ -564,7 +564,7 @@ public final class MultiMoreLikeThis {
 	 * @param filteredDocument Document with field values extracted for selected fields.
 	 * @return More Like This query for the passed document.
 	 */
-	public Query like(Map<String, ? extends Collection<?>> filteredDocument) {
+	public Query like(Map<String, ? extends Collection<?>> filteredDocument) throws IOException {
 		if (fieldNames == null) {
 			// gather list of valid fields from lucene
 			Collection<String> fields = BigCompositeReader.getIndexedFields(ir);
@@ -579,7 +579,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @return a query that will return docs like the passed Readers.
 	 */
-	public Query like(String fieldName, Reader... readers) {
+	public Query like(String fieldName, Reader... readers) throws IOException {
 		Map<String, Map<String, Long>> perFieldTermFrequencies = new HashMap<>();
 		for (Reader r : readers) {
 			addTermFrequencies(r, perFieldTermFrequencies, fieldName);
@@ -622,7 +622,7 @@ public final class MultiMoreLikeThis {
 	 *     objects as the values.
 	 */
 	private PriorityQueue<ScoreTerm> createQueue(
-			Map<String, Map<String, Long>> perFieldTermFrequencies) {
+			Map<String, Map<String, Long>> perFieldTermFrequencies) throws IOException {
 		// have collected all words in doc and their freqs
 		final long limit = Math.min(maxQueryTerms, this.getTermsCount(perFieldTermFrequencies));
 		FreqQ queue = new FreqQ(Math.toIntExact(limit)); // will order words by score
@@ -709,7 +709,7 @@ public final class MultiMoreLikeThis {
 	 *
 	 * @param docNum the id of the lucene document from which to find terms
 	 */
-	private PriorityQueue<ScoreTerm> retrieveTerms(long docNum) {
+	private PriorityQueue<ScoreTerm> retrieveTerms(long docNum) throws IOException {
 		Map<String, Map<String, Long>> field2termFreqMap = new HashMap<>();
 		retrieveTermsOfIndexReader(ir, docNum, field2termFreqMap);
 
@@ -879,14 +879,14 @@ public final class MultiMoreLikeThis {
 	 *     or best entry, first
 	 * @see #retrieveInterestingTerms
 	 */
-	private PriorityQueue<ScoreTerm> retrieveTerms(Reader r, String fieldName) {
+	private PriorityQueue<ScoreTerm> retrieveTerms(Reader r, String fieldName) throws IOException {
 		Map<String, Map<String, Long>> field2termFreqMap = new HashMap<>();
 		addTermFrequencies(r, field2termFreqMap, fieldName);
 		return createQueue(field2termFreqMap);
 	}
 
 	/** @see #retrieveInterestingTerms(java.io.Reader, String) */
-	public String[] retrieveInterestingTerms(long docNum) {
+	public String[] retrieveInterestingTerms(long docNum) throws IOException {
 		ArrayList<String> al = new ArrayList<>(Math.toIntExact(maxQueryTerms));
 		PriorityQueue<ScoreTerm> pq = retrieveTerms(docNum);
 		ScoreTerm scoreTerm;
@@ -911,7 +911,7 @@ public final class MultiMoreLikeThis {
 	 * @see #retrieveTerms(java.io.Reader, String)
 	 * @see #setMaxQueryTerms
 	 */
-	public String[] retrieveInterestingTerms(Reader r, String fieldName) {
+	public String[] retrieveInterestingTerms(Reader r, String fieldName) throws IOException {
 		ArrayList<String> al = new ArrayList<>(Math.toIntExact(maxQueryTerms));
 		PriorityQueue<ScoreTerm> pq = retrieveTerms(r, fieldName);
 		ScoreTerm scoreTerm;

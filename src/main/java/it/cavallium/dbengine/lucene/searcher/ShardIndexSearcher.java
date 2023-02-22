@@ -77,7 +77,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 	}
 
 	@Override
-	public Query rewrite(Query original) {
+	public Query rewrite(Query original) throws IOException {
 		final IndexSearcher localSearcher = new IndexSearcher(getIndexReader());
 		original = localSearcher.rewrite(original);
 		final Set<Term> terms = new HashSet<>();
@@ -112,7 +112,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 
 	// Mock: in a real env, this would hit the wire and get
 	// term stats from remote node
-	Map<Term, TermStatistics> getNodeTermStats(Set<Term> terms, int nodeID) {
+	Map<Term, TermStatistics> getNodeTermStats(Set<Term> terms, int nodeID) throws IOException {
 		var s = searchers[nodeID];
 		final Map<Term, TermStatistics> stats = new HashMap<>();
 		if (s == null) {
@@ -157,7 +157,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 	}
 
 	@Override
-	public CollectionStatistics collectionStatistics(String field) {
+	public CollectionStatistics collectionStatistics(String field) throws IOException {
 		// TODO: we could compute this on init and cache,
 		// since we are re-inited whenever any nodes have a
 		// new reader
@@ -204,7 +204,7 @@ public class ShardIndexSearcher extends IndexSearcher {
 		}
 	}
 
-	private CollectionStatistics computeNodeCollectionStatistics(FieldAndShar fieldAndShard) {
+	private CollectionStatistics computeNodeCollectionStatistics(FieldAndShar fieldAndShard) throws IOException {
 		var searcher = searchers[fieldAndShard.nodeID];
 		return searcher.collectionStatistics(fieldAndShard.field);
 	}

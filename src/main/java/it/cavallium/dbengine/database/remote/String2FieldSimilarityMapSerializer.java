@@ -26,7 +26,7 @@ public class String2FieldSimilarityMapSerializer implements DataSerializer<Map<S
 	}
 
 	@Override
-	public @NotNull Map<String, TextFieldsSimilarity> deserialize(DataInput dataInput) {
+	public @NotNull Map<String, TextFieldsSimilarity> deserialize(DataInput dataInput) throws IOException {
 		var size = dataInput.readInt();
 		var result = new HashMap<String, TextFieldsSimilarity>(size);
 		for (int i = 0; i < size; i++) {

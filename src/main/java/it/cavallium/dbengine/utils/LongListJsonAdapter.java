@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 public class LongListJsonAdapter extends JsonAdapter<LongList> {
 
 	@Override
-	public @NotNull LongList fromJson(@NotNull JsonReader reader) {
+	public @NotNull LongList fromJson(@NotNull JsonReader reader) throws IOException {
 		reader.beginArray();
 		LongArrayList modifiableOutput = new LongArrayList();
 		while (reader.hasNext()) {
@@ -24,7 +24,7 @@ public class LongListJsonAdapter extends JsonAdapter<LongList> {
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable LongList value) {
+	public void toJson(@NotNull JsonWriter writer, @Nullable LongList value) throws IOException {
 		if (value == null) {
 			writer.nullValue();
 			return;

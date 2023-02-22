@@ -48,7 +48,7 @@ public class TotalHitCountCollectorManager implements CollectorManager<TimeLimit
 		}
 
 		@Override
-		public LeafCollector getLeafCollector(LeafReaderContext context) {
+		public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
 			return timeLimitingCollector.getLeafCollector(context);
 		}
 

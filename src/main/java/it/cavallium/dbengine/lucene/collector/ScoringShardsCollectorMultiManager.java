@@ -84,12 +84,12 @@ public class ScoringShardsCollectorMultiManager implements CollectorMultiManager
 	public CollectorManager<TopFieldCollector, TopDocs> get(IndexSearcher indexSearcher, int shardIndex) {
 		return new CollectorManager<>() {
 			@Override
-			public TopFieldCollector newCollector() {
+			public TopFieldCollector newCollector() throws IOException {
 				return sharedCollectorManager.newCollector();
 			}
 
 			@Override
-			public TopDocs reduce(Collection<TopFieldCollector> collectors) {
+			public TopDocs reduce(Collection<TopFieldCollector> collectors) throws IOException {
 				if (LLUtils.isInNonBlockingThread()) {
 					throw new UnsupportedOperationException("Called reduce in a nonblocking thread");
 				}

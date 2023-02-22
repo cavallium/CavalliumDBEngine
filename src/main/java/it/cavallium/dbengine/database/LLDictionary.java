@@ -54,7 +54,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 	Stream<Buf> getRangeKeys(@Nullable LLSnapshot snapshot,
 			LLRange range,
 			boolean reverse,
-			boolean smallRange) throws RocksDBException, IOException;
+			boolean smallRange);
 
 	Stream<List<Buf>> getRangeKeysGrouped(@Nullable LLSnapshot snapshot,
 			LLRange range,

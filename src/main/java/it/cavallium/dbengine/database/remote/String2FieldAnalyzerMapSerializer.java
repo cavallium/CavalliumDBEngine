@@ -26,7 +26,7 @@ public class String2FieldAnalyzerMapSerializer implements DataSerializer<Map<Str
 	}
 
 	@Override
-	public @NotNull Map<String, TextFieldsAnalyzer> deserialize(DataInput dataInput) {
+	public @NotNull Map<String, TextFieldsAnalyzer> deserialize(DataInput dataInput) throws IOException {
 		var size = dataInput.readInt();
 		var result = new HashMap<String, TextFieldsAnalyzer>(size);
 		for (int i = 0; i < size; i++) {

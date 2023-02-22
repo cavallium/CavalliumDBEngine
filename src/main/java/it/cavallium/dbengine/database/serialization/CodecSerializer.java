@@ -46,34 +46,24 @@ public class CodecSerializer<A> implements Serializer<A> {
 
 	@Override
 	public @NotNull A deserialize(@NotNull BufDataInput is) throws SerializationException {
-		try {
-			int codecId;
-			if (microCodecs) {
-				codecId = is.readUnsignedByte();
-			} else {
-				codecId = is.readInt();
-			}
-			var serializer = deserializationCodecs.getCodec(codecId);
-			return serializer.deserialize(is);
-		} catch (IOException ex) {
-			// This shouldn't happen
-			throw new IOError(ex);
+		int codecId;
+		if (microCodecs) {
+			codecId = is.readUnsignedByte();
+		} else {
+			codecId = is.readInt();
 		}
+		var serializer = deserializationCodecs.getCodec(codecId);
+		return serializer.deserialize(is);
 	}
 
 	@Override
 	public void serialize(@NotNull A deserialized, BufDataOutput os) throws SerializationException {
-		try {
-			if (microCodecs) {
-				os.writeByte(serializationCodecId);
-			} else {
-				os.writeInt(serializationCodecId);
-			}
-			serializationCodec.serialize(os, deserialized);
-		} catch (IOException ex) {
-			// This shouldn't happen
-			throw new IOError(ex);
+		if (microCodecs) {
+			os.writeByte(serializationCodecId);
+		} else {
+			os.writeInt(serializationCodecId);
 		}
+		serializationCodec.serialize(os, deserialized);
 	}
 
 	@SuppressWarnings("unused")

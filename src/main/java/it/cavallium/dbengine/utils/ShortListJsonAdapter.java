@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 public class ShortListJsonAdapter extends JsonAdapter<ShortList> {
 
 	@Override
-	public @NotNull ShortList fromJson(@NotNull JsonReader reader) {
+	public @NotNull ShortList fromJson(@NotNull JsonReader reader) throws IOException {
 		reader.beginArray();
 		ShortArrayList modifiableOutput = new ShortArrayList();
 		while (reader.hasNext()) {
@@ -24,7 +24,7 @@ public class ShortListJsonAdapter extends JsonAdapter<ShortList> {
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable ShortList value) {
+	public void toJson(@NotNull JsonWriter writer, @Nullable ShortList value) throws IOException {
 		if (value == null) {
 			writer.nullValue();
 			return;

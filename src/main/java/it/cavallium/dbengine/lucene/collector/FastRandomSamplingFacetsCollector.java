@@ -34,17 +34,17 @@ public class FastRandomSamplingFacetsCollector extends SimpleCollector implement
 	}
 
 	@Override
-	protected void doSetNextReader(LeafReaderContext context) {
+	protected void doSetNextReader(LeafReaderContext context) throws IOException {
 		collector.getLeafCollector(context);
 	}
 
 	@Override
-	public void setScorer(Scorable scorer) {
+	public void setScorer(Scorable scorer) throws IOException {
 		collector.setScorer(scorer);
 	}
 
 	@Override
-	public void collect(int doc) {
+	public void collect(int doc) throws IOException {
 		if (collectionRate == 1 || hash.hashCode(doc) % collectionRate == 0) {
 			collector.collect(doc);
 		}

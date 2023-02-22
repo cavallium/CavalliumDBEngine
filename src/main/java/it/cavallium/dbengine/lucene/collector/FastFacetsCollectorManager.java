@@ -30,7 +30,7 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 	}
 
 	@Override
-	public FacetsCollector reduce(Collection<FacetsCollector> collectors) {
+	public FacetsCollector reduce(Collection<FacetsCollector> collectors) throws IOException {
 		return FacetsCollector.wrap(facetsCollectorManager.reduce(collectors
 				.stream()
 				.map(facetsCollector -> facetsCollector.getLuceneFacetsCollector())
@@ -61,23 +61,23 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 		}
 
 		@Override
-		public LeafCollector getLeafCollector(LeafReaderContext context) {
+		public LeafCollector getLeafCollector(LeafReaderContext context) throws IOException {
 			var leafCollector = collector.getLeafCollector(context);
 			return new LeafCollector() {
 				@Override
-				public void setScorer(Scorable scorer) {
+				public void setScorer(Scorable scorer) throws IOException {
 					leafCollector.setScorer(scorer);
 				}
 
 				@Override
-				public void collect(int doc) {
+				public void collect(int doc) throws IOException {
 					if (collectionRate == 1 || hash.hashCode(doc) % collectionRate == 0) {
 						leafCollector.collect(doc);
 					}
 				}
 
 				@Override
-				public DocIdSetIterator competitiveIterator() {
+				public DocIdSetIterator competitiveIterator() throws IOException {
 					return leafCollector.competitiveIterator();
 				}
 			};

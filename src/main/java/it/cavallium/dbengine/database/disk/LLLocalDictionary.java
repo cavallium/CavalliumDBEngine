@@ -478,13 +478,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public Stream<OptionalBuf> getMulti(@Nullable LLSnapshot snapshot, Stream<Buf> keys) {
-		return keys.map(key -> {
-			try {
-				return OptionalBuf.ofNullable(getSync(snapshot, key));
-			} catch (IOException e) {
-				throw new CompletionException(e);
-			}
-		});
+		return keys.map(key -> OptionalBuf.ofNullable(getSync(snapshot, key)));
 	}
 
 	@Override
@@ -854,12 +848,8 @@ public class LLLocalDictionary implements LLDictionary {
 			});
 
 			entries.forEach(entry -> {
-				try {
-					if (entry.getKey() != null && entry.getValue() != null) {
-						this.putInternal(entry.getKey(), entry.getValue());
-					}
-				} catch (IOException ex) {
-					throw new CompletionException(new DBException("Failed to write range", ex));
+				if (entry.getKey() != null && entry.getValue() != null) {
+					this.putInternal(entry.getKey(), entry.getValue());
 				}
 			});
 		}

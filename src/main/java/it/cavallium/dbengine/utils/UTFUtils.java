@@ -6,13 +6,13 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 
 public class UTFUtils {
-	public static void writeUTF(DataOutput out, String utf) {
+	public static void writeUTF(DataOutput out, String utf) throws IOException {
 		byte[] bytes = utf.getBytes(StandardCharsets.UTF_8);
 		out.writeInt(bytes.length);
 		out.write(bytes);
 	}
 
-	public static String readUTF(DataInput in) {
+	public static String readUTF(DataInput in) throws IOException {
 		int len = in.readInt();
 		byte[] data = new byte[len];
 		in.readFully(data, 0, len);

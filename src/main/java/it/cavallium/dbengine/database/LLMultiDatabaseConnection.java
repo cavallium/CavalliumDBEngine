@@ -145,13 +145,8 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 			var indices = connectionToShardMap.entrySet().stream().flatMap(entry -> {
 				var connectionIndexStructure = indexStructure.setActiveShards(new IntArrayList(entry.getValue()));
 
-				LLLuceneIndex connIndex;
-				try {
-					connIndex = entry.getKey().getLuceneIndex(clusterName, connectionIndexStructure,
-							indicizerAnalyzers, indicizerSimilarities, luceneOptions, luceneHacks);
-				} catch (IOException e) {
-					throw new CompletionException(e);
-				}
+				LLLuceneIndex connIndex = entry.getKey().getLuceneIndex(clusterName, connectionIndexStructure,
+						indicizerAnalyzers, indicizerSimilarities, luceneOptions, luceneHacks);
 
 				return entry.getValue().intStream().mapToObj(shard -> new ShardToIndex(shard, connIndex));
 			}).toList();

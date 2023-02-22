@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene;
 
 import static it.cavallium.dbengine.lucene.LuceneUtils.warnLuceneThread;
 
+import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.Set;
@@ -21,69 +22,117 @@ public class CheckOutputDirectory extends Directory {
 
 	@Override
 	public String[] listAll() {
-		return directory.listAll();
+		try {
+			return directory.listAll();
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public void deleteFile(String name) {
-		directory.deleteFile(name);
+		try {
+			directory.deleteFile(name);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public long fileLength(String name) {
-		return directory.fileLength(name);
+		try {
+			return directory.fileLength(name);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public IndexOutput createOutput(String name, IOContext context) {
 		LuceneUtils.checkLuceneThread();
-		return new CheckIndexOutput(directory.createOutput(name, context));
+		try {
+			return new CheckIndexOutput(directory.createOutput(name, context));
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public IndexOutput createTempOutput(String prefix, String suffix, IOContext context) {
 		LuceneUtils.checkLuceneThread();
-		return new CheckIndexOutput(directory.createTempOutput(prefix, suffix, context));
+		try {
+			return new CheckIndexOutput(directory.createTempOutput(prefix, suffix, context));
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public void sync(Collection<String> names) {
 		LuceneUtils.checkLuceneThread();
-		directory.sync(names);
+		try {
+			directory.sync(names);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public void syncMetaData() {
 		LuceneUtils.checkLuceneThread();
-		directory.syncMetaData();
+		try {
+			directory.syncMetaData();
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public void rename(String source, String dest) {
 		LuceneUtils.checkLuceneThread();
-		directory.rename(source, dest);
+		try {
+			directory.rename(source, dest);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public IndexInput openInput(String name, IOContext context) {
 		LuceneUtils.checkLuceneThread();
-		return new CheckIndexInput(directory.openInput(name, context));
+		try {
+			return new CheckIndexInput(directory.openInput(name, context));
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public Lock obtainLock(String name) {
 		LuceneUtils.checkLuceneThread();
-		return directory.obtainLock(name);
+		try {
+			return directory.obtainLock(name);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public void close() {
 		warnLuceneThread();
-		directory.close();
+		try {
+			directory.close();
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 
 	@Override
 	public Set<String> getPendingDeletions() {
-		return directory.getPendingDeletions();
+		try {
+			return directory.getPendingDeletions();
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 	}
 }

@@ -83,7 +83,7 @@ public class TopDocsCollectorMultiManager implements CollectorMultiManager<TopDo
 			}
 
 			@Override
-			public TopDocs reduce(Collection<TopDocsCollector<?>> collectors) {
+			public TopDocs reduce(Collection<TopDocsCollector<?>> collectors) throws IOException {
 				TopDocs[] docsArray;
 				boolean needsSort = luceneSort != null;
 				boolean needsScores = luceneSort != null && luceneSort.needsScores();

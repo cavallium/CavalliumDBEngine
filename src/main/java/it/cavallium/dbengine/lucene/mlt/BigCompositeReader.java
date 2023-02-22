@@ -86,7 +86,7 @@ public class BigCompositeReader<R extends IndexReader> {
 		}
 	}
 
-	public long getDocCount(String field) {
+	public long getDocCount(String field) throws IOException {
 		this.ensureOpen();
 		long total = 0;
 
@@ -103,7 +103,7 @@ public class BigCompositeReader<R extends IndexReader> {
 		return total;
 	}
 
-	public long docFreq(Term term) {
+	public long docFreq(Term term) throws IOException {
 		this.ensureOpen();
 		long total = 0;
 
@@ -137,7 +137,7 @@ public class BigCompositeReader<R extends IndexReader> {
 		return numDocs;
 	}
 
-	public Fields getTermVectors(long docID) {
+	public Fields getTermVectors(long docID) throws IOException {
 		this.ensureOpen();
 		int i = this.readerIndex(docID);
 		return this.subReaders[i].getTermVectors(Math.toIntExact(docID - this.starts[i]));
@@ -177,19 +177,19 @@ public class BigCompositeReader<R extends IndexReader> {
 		return hi;
 	}
 
-	public final void document(long docID, StoredFieldVisitor visitor) {
+	public final void document(long docID, StoredFieldVisitor visitor) throws IOException {
 		this.ensureOpen();
 		int i = this.readerIndex(docID);
 		this.subReaders[i].document(Math.toIntExact(docID - this.starts[i]), visitor);
 	}
 
-	public final Document document(long docID) {
+	public final Document document(long docID) throws IOException {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor();
 		this.document(docID, visitor);
 		return visitor.getDocument();
 	}
 
-	public final Document document(long docID, Set<String> fieldsToLoad) {
+	public final Document document(long docID, Set<String> fieldsToLoad) throws IOException {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor(fieldsToLoad);
 		this.document(docID, visitor);
 		return visitor.getDocument();

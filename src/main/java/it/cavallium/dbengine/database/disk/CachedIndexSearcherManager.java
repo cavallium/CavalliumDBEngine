@@ -63,7 +63,11 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 		this.similarity = similarity;
 		this.queryRefreshDebounceTime = queryRefreshDebounceTime;
 
-		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
+		try {
+			this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 
 		refreshSubscription = luceneHeavyTasksScheduler.scheduleAtFixedRate(() -> {
 					try {
@@ -98,7 +102,11 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 			IndexSearcher indexSearcher;
 			boolean fromSnapshot;
 			if (snapshotsManager == null || snapshot == null) {
-				indexSearcher = searcherManager.acquire();
+				try {
+					indexSearcher = searcherManager.acquire();
+				} catch (IOException ex) {
+					throw new DBException(ex);
+				}
 				fromSnapshot = false;
 			} else {
 				indexSearcher = snapshotsManager.resolveSnapshot(snapshot).getIndexSearcher(SEARCH_EXECUTOR);
@@ -131,6 +139,8 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 			searcherManager.maybeRefreshBlocking();
 		} catch (AlreadyClosedException ignored) {
 
+		} catch (IOException e) {
+			throw new DBException(e);
 		} finally {
 			activeRefreshes.decrementAndGet();
 		}
@@ -143,6 +153,8 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 			searcherManager.maybeRefresh();
 		} catch (AlreadyClosedException ignored) {
 
+		} catch (IOException e) {
+			throw new DBException(e);
 		} finally {
 			activeRefreshes.decrementAndGet();
 		}

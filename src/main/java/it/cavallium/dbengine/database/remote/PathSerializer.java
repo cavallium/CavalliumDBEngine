@@ -10,12 +10,12 @@ import org.jetbrains.annotations.NotNull;
 public class PathSerializer implements DataSerializer<Path> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Path path) {
+	public void serialize(DataOutput dataOutput, @NotNull Path path) throws IOException {
 		dataOutput.writeUTF(path.toString());
 	}
 
 	@Override
-	public @NotNull Path deserialize(DataInput dataInput) {
+	public @NotNull Path deserialize(DataInput dataInput) throws IOException {
 		return Path.of(dataInput.readUTF());
 	}
 }

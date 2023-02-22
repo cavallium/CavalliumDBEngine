@@ -11,13 +11,13 @@ import org.jetbrains.annotations.NotNull;
 public class StringEntrySerializer implements DataSerializer<Map.Entry> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Map.Entry entry) {
+	public void serialize(DataOutput dataOutput, @NotNull Map.Entry entry) throws IOException {
 		dataOutput.writeUTF((String) entry.getKey());
 		dataOutput.writeUTF((String) entry.getValue());
 	}
 
 	@Override
-	public @NotNull Map.Entry deserialize(DataInput dataInput) {
+	public @NotNull Map.Entry deserialize(DataInput dataInput) throws IOException {
 		return Map.entry(dataInput.readUTF(), dataInput.readUTF());
 	}
 }

@@ -10,7 +10,7 @@ import org.jetbrains.annotations.NotNull;
 public class BufSerializer implements DataSerializer<Buf> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Buf bytes) {
+	public void serialize(DataOutput dataOutput, @NotNull Buf bytes) throws IOException {
 		dataOutput.writeInt(bytes.size());
 		for (Byte aByte : bytes) {
 			dataOutput.writeByte(aByte);
@@ -18,7 +18,7 @@ public class BufSerializer implements DataSerializer<Buf> {
 	}
 
 	@Override
-	public @NotNull Buf deserialize(DataInput dataInput) {
+	public @NotNull Buf deserialize(DataInput dataInput) throws IOException {
 		var size = dataInput.readInt();
 		var bal = Buf.create(size);
 		for (int i = 0; i < size; i++) {

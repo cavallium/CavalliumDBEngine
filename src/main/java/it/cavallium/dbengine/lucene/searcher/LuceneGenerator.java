@@ -72,7 +72,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		remainingOffset--;
 	}
 
-	private Weight createWeight() {
+	private Weight createWeight() throws IOException {
 		ScoreMode scoreMode = computeScores ? ScoreMode.COMPLETE : ScoreMode.COMPLETE_NO_SCORES;
 		return shard.createWeight(shard.rewrite(query), scoreMode, 1f);
 	}
@@ -93,7 +93,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		}
 	}
 
-	private ScoreDoc getWeightedNext() {
+	private ScoreDoc getWeightedNext() throws IOException {
 		while (tryAdvanceDocIdSetIterator()) {
 			LeafReader reader = leaf.reader();
 			Bits liveDocs = reader.getLiveDocs();
@@ -109,7 +109,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		clearState();
 		return null;
 	}
-	private boolean tryAdvanceDocIdSetIterator() {
+	private boolean tryAdvanceDocIdSetIterator() throws IOException {
 		if (docIdSetIterator != null) {
 			return true;
 		}
@@ -127,7 +127,7 @@ public class LuceneGenerator implements Supplier<ScoreDoc> {
 		return false;
 	}
 
-	private ScoreDoc transformDoc(int doc) {
+	private ScoreDoc transformDoc(int doc) throws IOException {
 		return new ScoreDoc(leaf.docBase + doc, scorer.score(), shardIndex);
 	}
 

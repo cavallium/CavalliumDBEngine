@@ -11,7 +11,7 @@ import org.jetbrains.annotations.Nullable;
 public class ByteListJsonAdapter extends JsonAdapter<Buf> {
 
 	@Override
-	public @NotNull Buf fromJson(@NotNull JsonReader reader) {
+	public @NotNull Buf fromJson(@NotNull JsonReader reader) throws IOException {
 		reader.beginArray();
 		var modifiableOutput = Buf.create();
 		while (reader.hasNext()) {
@@ -22,7 +22,7 @@ public class ByteListJsonAdapter extends JsonAdapter<Buf> {
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable Buf value) {
+	public void toJson(@NotNull JsonWriter writer, @Nullable Buf value) throws IOException {
 		if (value == null) {
 			writer.nullValue();
 			return;

@@ -861,199 +861,202 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		}
 	}
 
-	private static OptionsWithCache openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions, RocksDBRefs refs)
-			throws IOException {
-		// Get databases directory path
-		Path databasesDirPath;
-		if (path != null) {
-			databasesDirPath = path.toAbsolutePath().getParent();
-			// Create base directories
-			if (Files.notExists(databasesDirPath)) {
-				Files.createDirectories(databasesDirPath);
+	private static OptionsWithCache openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions, RocksDBRefs refs) {
+		try {
+			// Get databases directory path
+			Path databasesDirPath;
+			if (path != null) {
+				databasesDirPath = path.toAbsolutePath().getParent();
+				// Create base directories
+				if (Files.notExists(databasesDirPath)) {
+					Files.createDirectories(databasesDirPath);
+				}
+			} else {
+				databasesDirPath = null;
 			}
-		} else {
-			databasesDirPath = null;
-		}
-		//noinspection ConstantConditions
-		if (databaseOptions.persistentCaches() != null) {
-			for (var persistentCache : databaseOptions.persistentCaches()) {
-				var persistentCachePath = Paths.get(persistentCache.path());
-				if (Files.notExists(persistentCachePath)) {
-					Files.createDirectories(persistentCachePath);
-					if (!Files.isDirectory(persistentCachePath)) {
-						throw new IllegalArgumentException(
-								"Persistent cache \"" + persistentCache.id() + "\" path \"" + persistentCachePath
-										+ "\" is not a directory!");
+			//noinspection ConstantConditions
+			if (databaseOptions.persistentCaches() != null) {
+				for (var persistentCache : databaseOptions.persistentCaches()) {
+					var persistentCachePath = Paths.get(persistentCache.path());
+					if (Files.notExists(persistentCachePath)) {
+						Files.createDirectories(persistentCachePath);
+						if (!Files.isDirectory(persistentCachePath)) {
+							throw new IllegalArgumentException(
+									"Persistent cache \"" + persistentCache.id() + "\" path \"" + persistentCachePath
+											+ "\" is not a directory!");
+						}
 					}
 				}
 			}
-		}
 
-		// the Options class contains a set of configurable DB options
-		// that determines the behaviour of the database.
-		var options = new DBOptions();
-		refs.track(options);
-		options.setEnablePipelinedWrite(true);
-		var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
-		if (maxSubCompactions >= 0) {
-			options.setMaxSubcompactions(maxSubCompactions);
-		}
-		var customWriteRate = Long.parseLong(System.getProperty("it.cavallium.dbengine.write.delayedrate", "-1"));
-		if (customWriteRate >= 0) {
-			options.setDelayedWriteRate(customWriteRate);
-		}
-		if (databaseOptions.logPath().isPresent()) {
-			options.setDbLogDir(databaseOptions.logPath().get());
-		}
-		if (databaseOptions.walPath().isPresent()) {
-			options.setWalDir(databaseOptions.walPath().get());
-		}
-		options.setCreateIfMissing(true);
-		options.setSkipStatsUpdateOnDbOpen(true);
-		options.setCreateMissingColumnFamilies(true);
-		options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
-		options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
-		options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
-		options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
-				? WALRecoveryMode.AbsoluteConsistency
-				: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted.Default: TolerateCorruptedTailRecords
-		options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
-		options.setKeepLogFileNum(10);
-
-		requireNonNull(databasesDirPath);
-		requireNonNull(path.getFileName());
-		List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes())
-				.stream()
-				.map(p -> new DbPath(p.path, p.targetSize))
-				.toList();
-		options.setDbPaths(paths);
-		options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
-		if (databaseOptions.spinning()) {
-			// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-			options.setUseFsync(false);
-		}
-
-		long writeBufferManagerSize;
-		if (databaseOptions.writeBufferManager().isPresent()) {
-			writeBufferManagerSize = databaseOptions.writeBufferManager().get();
-		} else {
-			writeBufferManagerSize = 0;
-		}
-
-		if (isDisableAutoCompactions()) {
-			options.setMaxBackgroundCompactions(0);
-			options.setMaxBackgroundJobs(0);
-		} else {
-			var backgroundJobs = Integer.parseInt(System.getProperty("it.cavallium.dbengine.jobs.background.num", "-1"));
-			if (backgroundJobs >= 0) {
-				options.setMaxBackgroundJobs(backgroundJobs);
+			// the Options class contains a set of configurable DB options
+			// that determines the behaviour of the database.
+			var options = new DBOptions();
+			refs.track(options);
+			options.setEnablePipelinedWrite(true);
+			var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
+			if (maxSubCompactions >= 0) {
+				options.setMaxSubcompactions(maxSubCompactions);
 			}
-		}
+			var customWriteRate = Long.parseLong(System.getProperty("it.cavallium.dbengine.write.delayedrate", "-1"));
+			if (customWriteRate >= 0) {
+				options.setDelayedWriteRate(customWriteRate);
+			}
+			if (databaseOptions.logPath().isPresent()) {
+				options.setDbLogDir(databaseOptions.logPath().get());
+			}
+			if (databaseOptions.walPath().isPresent()) {
+				options.setWalDir(databaseOptions.walPath().get());
+			}
+			options.setCreateIfMissing(true);
+			options.setSkipStatsUpdateOnDbOpen(true);
+			options.setCreateMissingColumnFamilies(true);
+			options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
+			options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
+			options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
+			options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
+					? WALRecoveryMode.AbsoluteConsistency
+					: WALRecoveryMode.PointInTimeRecovery); // Crash if the WALs are corrupted.Default: TolerateCorruptedTailRecords
+			options.setDeleteObsoleteFilesPeriodMicros(20 * 1000000); // 20 seconds
+			options.setKeepLogFileNum(10);
 
-		Cache blockCache;
-		//todo: compressed cache will be replaced with SecondaryCache in the future
-		Cache compressedCache;
-		final boolean useDirectIO = databaseOptions.useDirectIO();
-		final boolean allowMmapReads = !useDirectIO && databaseOptions.allowMemoryMapping();
-		final boolean allowMmapWrites = !useDirectIO && (databaseOptions.allowMemoryMapping()
-				|| parseBoolean(System.getProperty("it.cavallium.dbengine.mmapwrites.enable", "false")));
-		if (databaseOptions.lowMemory()) {
-			// LOW MEMORY
-			options
-					.setBytesPerSync(0) // default
-					.setWalBytesPerSync(0) // default
-					.setIncreaseParallelism(1)
-					.setDbWriteBufferSize(8 * SizeUnit.MB)
-					.setWalTtlSeconds(60)
-					.setMaxTotalWalSize(10 * SizeUnit.GB)
-			;
-			blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse(8L * SizeUnit.MB));
-			refs.track(blockCache);
-			if (databaseOptions.compressedBlockCache().isPresent()) {
-				compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
-				refs.track(compressedCache);
+			requireNonNull(databasesDirPath);
+			requireNonNull(path.getFileName());
+			List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes())
+					.stream()
+					.map(p -> new DbPath(p.path, p.targetSize))
+					.toList();
+			options.setDbPaths(paths);
+			options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
+			if (databaseOptions.spinning()) {
+				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+				options.setUseFsync(false);
+			}
+
+			long writeBufferManagerSize;
+			if (databaseOptions.writeBufferManager().isPresent()) {
+				writeBufferManagerSize = databaseOptions.writeBufferManager().get();
 			} else {
-				compressedCache = null;
+				writeBufferManagerSize = 0;
+			}
+
+			if (isDisableAutoCompactions()) {
+				options.setMaxBackgroundCompactions(0);
+				options.setMaxBackgroundJobs(0);
+			} else {
+				var backgroundJobs = Integer.parseInt(System.getProperty("it.cavallium.dbengine.jobs.background.num", "-1"));
+				if (backgroundJobs >= 0) {
+					options.setMaxBackgroundJobs(backgroundJobs);
+				}
+			}
+
+			Cache blockCache;
+			//todo: compressed cache will be replaced with SecondaryCache in the future
+			Cache compressedCache;
+			final boolean useDirectIO = databaseOptions.useDirectIO();
+			final boolean allowMmapReads = !useDirectIO && databaseOptions.allowMemoryMapping();
+			final boolean allowMmapWrites = !useDirectIO && (databaseOptions.allowMemoryMapping()
+					|| parseBoolean(System.getProperty("it.cavallium.dbengine.mmapwrites.enable", "false")));
+			if (databaseOptions.lowMemory()) {
+				// LOW MEMORY
+				options
+						.setBytesPerSync(0) // default
+						.setWalBytesPerSync(0) // default
+						.setIncreaseParallelism(1)
+						.setDbWriteBufferSize(8 * SizeUnit.MB)
+						.setWalTtlSeconds(60)
+						.setMaxTotalWalSize(10 * SizeUnit.GB)
+				;
+				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse(8L * SizeUnit.MB));
+				refs.track(blockCache);
+				if (databaseOptions.compressedBlockCache().isPresent()) {
+					compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
+					refs.track(compressedCache);
+				} else {
+					compressedCache = null;
+				}
+
+				if (useDirectIO) {
+					options
+							// Option to enable readahead in compaction
+							// If not set, it will be set to 2MB internally
+							.setCompactionReadaheadSize(2 * SizeUnit.MB) // recommend at least 2MB
+							// Option to tune write buffer for direct writes
+							.setWritableFileMaxBufferSize(SizeUnit.MB)
+					;
+				}
+				if (databaseOptions.spinning()) {
+					options
+							// method documentation
+							.setCompactionReadaheadSize(4 * SizeUnit.MB)
+							// guessed
+							.setWritableFileMaxBufferSize(2 * SizeUnit.MB);
+				}
+			} else {
+				// HIGH MEMORY
+				options
+						//.setDbWriteBufferSize(64 * SizeUnit.MB)
+						.setBytesPerSync(64 * SizeUnit.MB)
+						.setWalBytesPerSync(64 * SizeUnit.MB)
+
+						.setWalTtlSeconds(60) // Auto
+						.setWalSizeLimitMB(0) // Auto
+						.setMaxTotalWalSize(10 * SizeUnit.GB)
+				;
+				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
+				refs.track(blockCache);
+				if (databaseOptions.compressedBlockCache().isPresent()) {
+					compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
+					refs.track(compressedCache);
+				} else {
+					compressedCache = null;
+				}
+
+				if (useDirectIO) {
+					options
+							// Option to enable readahead in compaction
+							// If not set, it will be set to 2MB internally
+							.setCompactionReadaheadSize(4 * SizeUnit.MB) // recommend at least 2MB
+							// Option to tune write buffer for direct writes
+							.setWritableFileMaxBufferSize(2 * SizeUnit.MB)
+					;
+				}
+				if (databaseOptions.spinning()) {
+					options
+							// method documentation
+							.setCompactionReadaheadSize(16 * SizeUnit.MB)
+							// guessed
+							.setWritableFileMaxBufferSize(8 * SizeUnit.MB);
+				}
+				options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
+			}
+
+			if (databaseOptions.writeBufferManager().isPresent()) {
+				var writeBufferManager = new WriteBufferManager(writeBufferManagerSize, blockCache, false);
+				refs.track(writeBufferManager);
+				options.setWriteBufferManager(writeBufferManager);
 			}
 
 			if (useDirectIO) {
 				options
-						// Option to enable readahead in compaction
-						// If not set, it will be set to 2MB internally
-						.setCompactionReadaheadSize(2 * SizeUnit.MB) // recommend at least 2MB
-						// Option to tune write buffer for direct writes
-						.setWritableFileMaxBufferSize(SizeUnit.MB)
+						.setAllowMmapReads(false)
+						.setAllowMmapWrites(false)
+						.setUseDirectReads(true)
 				;
-			}
-			if (databaseOptions.spinning()) {
-				options
-						// method documentation
-						.setCompactionReadaheadSize(4 * SizeUnit.MB)
-						// guessed
-						.setWritableFileMaxBufferSize(2 * SizeUnit.MB);
-			}
-		} else {
-			// HIGH MEMORY
-			options
-					//.setDbWriteBufferSize(64 * SizeUnit.MB)
-					.setBytesPerSync(64 * SizeUnit.MB)
-					.setWalBytesPerSync(64 * SizeUnit.MB)
-
-					.setWalTtlSeconds(60) // Auto
-					.setWalSizeLimitMB(0) // Auto
-					.setMaxTotalWalSize(10 * SizeUnit.GB)
-			;
-			blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
-			refs.track(blockCache);
-			if (databaseOptions.compressedBlockCache().isPresent()) {
-				compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
-				refs.track(compressedCache);
 			} else {
-				compressedCache = null;
-			}
-
-			if (useDirectIO) {
 				options
-						// Option to enable readahead in compaction
-						// If not set, it will be set to 2MB internally
-						.setCompactionReadaheadSize(4 * SizeUnit.MB) // recommend at least 2MB
-						// Option to tune write buffer for direct writes
-						.setWritableFileMaxBufferSize(2 * SizeUnit.MB)
-				;
+						.setAllowMmapReads(allowMmapReads)
+						.setAllowMmapWrites(allowMmapWrites);
 			}
-			if (databaseOptions.spinning()) {
-				options
-						// method documentation
-						.setCompactionReadaheadSize(16 * SizeUnit.MB)
-						// guessed
-						.setWritableFileMaxBufferSize(8 * SizeUnit.MB);
+
+			if (useDirectIO || !allowMmapWrites) {
+				options.setUseDirectIoForFlushAndCompaction(true);
 			}
-			options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
-		}
 
-		if (databaseOptions.writeBufferManager().isPresent()) {
-			var writeBufferManager = new WriteBufferManager(writeBufferManagerSize, blockCache, false);
-			refs.track(writeBufferManager);
-			options.setWriteBufferManager(writeBufferManager);
+			return new OptionsWithCache(options, blockCache, compressedCache);
+		} catch (IOException e) {
+			throw new DBException(e);
 		}
-
-		if (useDirectIO) {
-			options
-					.setAllowMmapReads(false)
-					.setAllowMmapWrites(false)
-					.setUseDirectReads(true)
-			;
-		} else {
-			options
-					.setAllowMmapReads(allowMmapReads)
-					.setAllowMmapWrites(allowMmapWrites);
-		}
-
-		if (useDirectIO || !allowMmapWrites) {
-			options.setUseDirectIoForFlushAndCompaction(true);
-		}
-
-		return new OptionsWithCache(options, blockCache, compressedCache);
 	}
 
 	record DbPathRecord(Path path, long targetSize) {}
@@ -1316,13 +1319,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 	@Override
 	public Stream<ColumnProperty<Map<String, String>>> getMapColumnProperties(RocksDBMapProperty property) {
-		return getAllColumnFamilyHandles().keySet().stream().map(c -> {
-			try {
-				return new ColumnProperty<>(c.name(), property.getName(), this.getMapProperty(c, property));
-			} catch (IOException e) {
-				throw new CompletionException(e);
-			}
-		});
+		return getAllColumnFamilyHandles().keySet().stream().map(c -> new ColumnProperty<>(c.name(), property.getName(), this.getMapProperty(c, property)));
 	}
 
 	@Override
@@ -1347,11 +1344,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	@Override
 	public Stream<ColumnProperty<String>> getStringColumnProperties(RocksDBStringProperty property) {
 		return getAllColumnFamilyHandles().keySet().stream().map(c -> {
-			try {
-				return new ColumnProperty<>(c.name(), property.getName(), this.getStringProperty(c, property));
-			} catch (IOException e) {
-				throw new CompletionException(e);
-			}
+			return new ColumnProperty<>(c.name(), property.getName(), this.getStringProperty(c, property));
 		});
 	}
 
@@ -1377,11 +1370,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	@Override
 	public Stream<ColumnProperty<Long>> getLongColumnProperties(RocksDBLongProperty property) {
 		return getAllColumnFamilyHandles().keySet().stream().map(c -> {
-			try {
-				return new ColumnProperty<>(c.name(), property.getName(), this.getLongProperty(c, property));
-			} catch (IOException e) {
-				throw new CompletionException(e);
-			}
+			return new ColumnProperty<>(c.name(), property.getName(), this.getLongProperty(c, property));
 		});
 	}
 

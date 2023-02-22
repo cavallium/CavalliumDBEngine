@@ -4,6 +4,7 @@ import com.google.common.collect.Streams;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.collector.DecimalBucketMultiCollectorManager;
+import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
@@ -43,11 +44,11 @@ public class DecimalBucketMultiSearcher {
 				bucketParams.collectionRate(),
 				bucketParams.sampleSize()
 		);
-		return cmm.reduce(Streams.stream(indexSearchers).parallel().map(shard -> {
+		return cmm.reduce(Streams.stream(indexSearchers).parallel().map(indexSearcher -> {
 			try {
-				return cmm.search(shard);
+				return cmm.search(indexSearcher);
 			} catch (IOException e) {
-				throw new RuntimeException(e);
+				throw new DBException(e);
 			}
 		}).toList());
 	}

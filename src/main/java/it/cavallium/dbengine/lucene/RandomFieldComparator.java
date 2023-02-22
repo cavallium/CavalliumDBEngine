@@ -31,14 +31,14 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 	}
 
 	@Override
-	public int compareBottom(int doc) {
+	public int compareBottom(int doc) throws IOException {
 		float score = scorer.score();
 		assert !Float.isNaN(score);
 		return Float.compare(score, bottom);
 	}
 
 	@Override
-	public void copy(int slot, int doc) {
+	public void copy(int slot, int doc) throws IOException {
 		scores[slot] = scorer.score();
 		assert !Float.isNaN(scores[slot]);
 	}
@@ -93,7 +93,7 @@ public class RandomFieldComparator extends FieldComparator<Float> implements Lea
 	}
 
 	@Override
-	public int compareTop(int doc) {
+	public int compareTop(int doc) throws IOException {
 		float docValue = scorer.score();
 		assert !Float.isNaN(docValue);
 		return Float.compare(docValue, topValue);

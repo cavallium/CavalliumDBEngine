@@ -32,11 +32,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		if (transformer != NO_REWRITE) {
-			try {
-				return LuceneUtils.rewrite(this, indexSearcher, queryParams, keyFieldName, transformer);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
+			return LuceneUtils.rewrite(this, indexSearcher, queryParams, keyFieldName, transformer);
 		}
 		return transformedCollect(indexSearcher, queryParams, keyFieldName, transformer);
 	}

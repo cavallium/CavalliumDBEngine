@@ -23,7 +23,7 @@ public class StringMapSerializer implements DataSerializer<Map<String, String>> 
 	}
 
 	@Override
-	public @NotNull Map<String, String> deserialize(DataInput dataInput) {
+	public @NotNull Map<String, String> deserialize(DataInput dataInput) throws IOException {
 		var size = dataInput.readInt();
 		var result = new HashMap<String, String>(size);
 		for (int i = 0; i < size; i++) {

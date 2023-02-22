@@ -32,11 +32,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 			@Nullable String keyFieldName,
 			GlobalQueryRewrite transformer) {
 		if (transformer != NO_REWRITE) {
-			try {
-				return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
-			} catch (IOException e) {
-				throw new RuntimeException(e);
-			}
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
 		}
 		return transformedCollectMulti(indexSearchers, queryParams, keyFieldName, transformer);
 	}

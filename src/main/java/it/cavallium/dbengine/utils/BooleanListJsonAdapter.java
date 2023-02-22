@@ -13,7 +13,7 @@ import org.jetbrains.annotations.Nullable;
 public class BooleanListJsonAdapter extends JsonAdapter<BooleanList> {
 
 	@Override
-	public @NotNull BooleanList fromJson(@NotNull JsonReader reader) {
+	public @NotNull BooleanList fromJson(@NotNull JsonReader reader) throws IOException {
 		reader.beginArray();
 		BooleanArrayList modifiableOutput = new BooleanArrayList();
 		while (reader.hasNext()) {
@@ -24,7 +24,7 @@ public class BooleanListJsonAdapter extends JsonAdapter<BooleanList> {
 	}
 
 	@Override
-	public void toJson(@NotNull JsonWriter writer, @Nullable BooleanList value) {
+	public void toJson(@NotNull JsonWriter writer, @Nullable BooleanList value) throws IOException {
 		if (value == null) {
 			writer.nullValue();
 			return;

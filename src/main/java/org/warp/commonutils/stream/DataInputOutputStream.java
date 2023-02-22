@@ -25,79 +25,79 @@ public class DataInputOutputStream extends DataOutputStream implements DataInput
 	}
 
 	@Override
-	public void readFully(byte @NotNull [] bytes) {
+	public void readFully(byte @NotNull [] bytes) throws IOException {
 		in.readFully(bytes);
 	}
 
 	@Override
-	public void readFully(byte @NotNull [] bytes, int i, int i1) {
+	public void readFully(byte @NotNull [] bytes, int i, int i1) throws IOException {
 		in.readFully(bytes, i, i1);
 	}
 
 	@Override
-	public int skipBytes(int i) {
+	public int skipBytes(int i) throws IOException {
 		return in.skipBytes(i);
 	}
 
 	@Override
-	public boolean readBoolean() {
+	public boolean readBoolean() throws IOException {
 		return in.readBoolean();
 	}
 
 	@Override
-	public byte readByte() {
+	public byte readByte() throws IOException {
 		return in.readByte();
 	}
 
 	@Override
-	public int readUnsignedByte() {
+	public int readUnsignedByte() throws IOException {
 		return in.readUnsignedByte();
 	}
 
 	@Override
-	public short readShort() {
+	public short readShort() throws IOException {
 		return in.readShort();
 	}
 
 	@Override
-	public int readUnsignedShort() {
+	public int readUnsignedShort() throws IOException {
 		return in.readUnsignedShort();
 	}
 
 	@Override
-	public char readChar() {
+	public char readChar() throws IOException {
 		return in.readChar();
 	}
 
 	@Override
-	public int readInt() {
+	public int readInt() throws IOException {
 		return in.readInt();
 	}
 
 	@Override
-	public long readLong() {
+	public long readLong() throws IOException {
 		return in.readLong();
 	}
 
 	@Override
-	public float readFloat() {
+	public float readFloat() throws IOException {
 		return in.readFloat();
 	}
 
 	@Override
-	public double readDouble() {
+	public double readDouble() throws IOException {
 		return in.readDouble();
 	}
 
 	@Deprecated
 	@Override
-	public String readLine() {
+	public String readLine() throws IOException {
 		return in.readLine();
 	}
 
 	@NotNull
 	@Override
-	public String readUTF() {
+	public String readUTF() throws IOException {
 		return in.readUTF();
 	}
 }

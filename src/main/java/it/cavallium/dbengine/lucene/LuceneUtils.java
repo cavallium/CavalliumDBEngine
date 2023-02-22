@@ -543,7 +543,12 @@ public class LuceneUtils {
 		}
 
 		// Get the reference docId and apply it to MoreLikeThis, to generate the query
-		Query mltQuery = mlt.like(mltDocumentFields);
+		Query mltQuery = null;
+		try {
+			mltQuery = mlt.like(mltDocumentFields);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 		Query luceneQuery;
 		if (!(luceneAdditionalQuery instanceof MatchAllDocsQuery)) {
 			luceneQuery = new Builder()

@@ -60,7 +60,11 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 		this.similarity = similarity;
 		this.queryRefreshDebounceTime = queryRefreshDebounceTime;
 
-		this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
+		try {
+			this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);
+		} catch (IOException e) {
+			throw new DBException(e);
+		}
 
 		refreshSubscription = luceneHeavyTasksScheduler.scheduleAtFixedRate(() -> {
 			try {
@@ -83,6 +87,8 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 			searcherManager.maybeRefreshBlocking();
 		} catch (AlreadyClosedException ignored) {
 
+		} catch (IOException e) {
+			throw new DBException(e);
 		} finally {
 			activeRefreshes.decrementAndGet();
 		}
@@ -95,6 +101,8 @@ public class SimpleIndexSearcherManager extends SimpleResource implements IndexS
 			searcherManager.maybeRefresh();
 		} catch (AlreadyClosedException ignored) {
 
+		} catch (IOException e) {
+			throw new DBException(e);
 		} finally {
 			activeRefreshes.decrementAndGet();
 		}

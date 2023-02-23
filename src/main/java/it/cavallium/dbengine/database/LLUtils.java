@@ -86,6 +86,8 @@ public class LLUtils {
 
 	private static final MethodHandle IS_IN_NON_BLOCKING_THREAD_MH;
 	private static final Consumer<Object> NULL_CONSUMER = ignored -> {};
+	private static final Buf BUF_TRUE = Buf.wrap(new byte[] {(byte) 1});
+	private static final Buf BUF_FALSE = Buf.wrap(new byte[] {(byte) 0});
 
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
@@ -124,6 +126,8 @@ public class LLUtils {
 	}
 
 	public static boolean responseToBoolean(Buf response) {
+		if (response == BUF_FALSE) return false;
+		if (response == BUF_TRUE) return true;
 		assert response.size() == 1;
 		return response.getBoolean(0);
 	}
@@ -133,7 +137,7 @@ public class LLUtils {
 	}
 
 	public static Buf booleanToResponseByteBuffer(boolean bool) {
-		return Buf.wrap(new byte[] {bool ? (byte) 1 : 0});
+		return bool ? BUF_TRUE : BUF_FALSE;
 	}
 
 	@Nullable

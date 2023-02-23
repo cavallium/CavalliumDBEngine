@@ -77,12 +77,14 @@ import org.rocksdb.InfoLogLevel;
 import org.rocksdb.IngestExternalFileOptions;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
+import org.rocksdb.PlainTableConfig;
 import org.rocksdb.PrepopulateBlobCache;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Snapshot;
 import org.rocksdb.Statistics;
 import org.rocksdb.StatsLevel;
+import org.rocksdb.TableFormatConfig;
 import org.rocksdb.TickerType;
 import org.rocksdb.TransactionDB;
 import org.rocksdb.TransactionDBOptions;
@@ -303,7 +305,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					columnFamilyOptions.setCompressionPerLevel(compressionTypes);
 				}
 
-				final BlockBasedTableConfig tableOptions = new BlockBasedTableConfig();
+				final TableFormatConfig tableOptions = inMemory ? new PlainTableConfig() : new BlockBasedTableConfig();
 				if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
 					if (!databaseOptions.lowMemory()) {
 						// tableOptions.setOptimizeFiltersForMemory(true);
@@ -313,7 +315,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				if (columnOptions.writeBufferSize().isPresent()) {
 					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
 				}
-				tableOptions.setVerifyCompression(false);
+				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
+					blockBasedTableConfig.setVerifyCompression(false);
+				}
 				if (columnOptions.filter().isPresent()) {
 					var filterOptions = columnOptions.filter().get();
 
@@ -322,9 +326,13 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						// If OptimizeFiltersForHits == false: memory size = bitsPerKey * totalKeys
 						final BloomFilter bloomFilter = new BloomFilter(bloomFilterOptions.bitsPerKey());
 						refs.track(bloomFilter);
-						tableOptions.setFilterPolicy(bloomFilter);
+						if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
+							blockBasedTableConfig.setFilterPolicy(bloomFilter);
+						}
 					} else if (filterOptions instanceof NoFilter) {
-						tableOptions.setFilterPolicy(null);
+						if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
+							blockBasedTableConfig.setFilterPolicy(null);
+						}
 					}
 				}
 				boolean cacheIndexAndFilterBlocks = columnOptions.cacheIndexAndFilterBlocks()
@@ -340,39 +348,44 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						columnFamilyOptions.setMaxWriteBufferNumber(4);
 					}
 				}
-				tableOptions
-						// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
-						.setDataBlockIndexType(DataBlockIndexType.kDataBlockBinaryAndHash)
-						// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
-						.setDataBlockHashTableUtilRatio(0.75)
-						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.setPinTopLevelIndexAndFilter(true)
-						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.setPinL0FilterAndIndexBlocksInCache(true)
-						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.setCacheIndexAndFilterBlocksWithHighPriority(true)
-						.setCacheIndexAndFilterBlocks(cacheIndexAndFilterBlocks)
-						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						// Enabling partition filters increase the reads by 2x
-						.setPartitionFilters(columnOptions.partitionFilters().orElse(false))
-						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.setIndexType(columnOptions.partitionFilters().orElse(false) ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
-						.setChecksumType(ChecksumType.kXXH3)
-						// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
-						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-						.setBlockSize(columnOptions.blockSize().orElse((databaseOptions.spinning() ? 128 : 16) * 1024))
-						.setBlockCacheCompressed(optionsWithCache.compressedCache())
-						.setBlockCache(optionsWithCache.standardCache())
-						.setPersistentCache(resolvePersistentCache(persistentCaches,
-								rocksdbOptions,
-								databaseOptions.persistentCaches(),
-								columnOptions.persistentCacheId(),
-								refs,
-								rocksLogger
-						));
+				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
+					blockBasedTableConfig
+							// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
+							.setDataBlockIndexType(DataBlockIndexType.kDataBlockBinaryAndHash)
+							// http://rocksdb.org/blog/2018/08/23/data-block-hash-index.html
+							.setDataBlockHashTableUtilRatio(0.75)
+							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+							.setPinTopLevelIndexAndFilter(true)
+							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+							.setPinL0FilterAndIndexBlocksInCache(true)
+							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+							.setCacheIndexAndFilterBlocksWithHighPriority(true)
+							.setCacheIndexAndFilterBlocks(cacheIndexAndFilterBlocks)
+							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+							// Enabling partition filters increase the reads by 2x
+							.setPartitionFilters(columnOptions.partitionFilters().orElse(false))
+							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
+							.setIndexType(columnOptions.partitionFilters().orElse(false) ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
+							.setChecksumType(ChecksumType.kXXH3)
+							// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
+							// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+							// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+							.setBlockSize(columnOptions.blockSize().orElse((databaseOptions.spinning() ? 128 : 16) * 1024))
+							.setBlockCacheCompressed(optionsWithCache.compressedCache())
+							.setBlockCache(optionsWithCache.standardCache())
+							.setPersistentCache(resolvePersistentCache(persistentCaches,
+									rocksdbOptions,
+									databaseOptions.persistentCaches(),
+									columnOptions.persistentCacheId(),
+									refs,
+									rocksLogger
+							));
+				}
 
 				columnFamilyOptions.setTableFormatConfig(tableOptions);
+				if (inMemory) {
+					columnFamilyOptions.useFixedLengthPrefixExtractor(3);
+				}
 				columnFamilyOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
 				if (columnOptions.filter().isPresent()) {
 					var filterOptions = columnOptions.filter().get();

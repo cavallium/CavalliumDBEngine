@@ -3,15 +3,22 @@ package it.cavallium.dbengine.tests;
 import static it.cavallium.dbengine.tests.DbTestUtils.BIG_STRING;
 import static it.cavallium.dbengine.tests.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.tests.DbTestUtils.isCIMode;
+import static it.cavallium.dbengine.tests.DbTestUtils.run;
+import static it.cavallium.dbengine.tests.DbTestUtils.tempDatabaseMapDictionaryDeepMapHashMap;
+import static it.cavallium.dbengine.tests.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.tests.DbTestUtils.tempDictionary;
 
 import com.google.common.collect.Streams;
 import it.cavallium.dbengine.database.UpdateMode;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 public abstract class TestDictionaryMapDeepHashMap {
 	private boolean checkLeaks = true;
@@ -90,32 +97,24 @@ public abstract class TestDictionaryMapDeepHashMap {
 		}
 	}
 
-	/*
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueGetAllValues(UpdateMode updateMode, String key1, String key2, String value, boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMapHashMap(dict, 5))
-						.flatMapMany(map -> map
-								.at(null, key1).flatMap(v -> v.putValue(key2, value).doFinally(s -> v.close()))
-								.thenMany(map
-										.getAllValues(null, false)
-										.map(Entry::getValue)
-										.flatMap(maps -> Flux.fromIterable(maps.entrySet()))
-										.map(Entry::getValue)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+					var map = tempDatabaseMapDictionaryDeepMapHashMap(tempDictionary(db, updateMode), 5);
+					map.at(null, key1).putValue(key2, value);
+					return map
+							.getAllValues(null, false)
+							.map(Entry::getValue)
+							.flatMap(maps -> maps.entrySet().stream())
+							.map(Entry::getValue)
+							.toList();
+				}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(value).verifyComplete();
+			Assertions.assertEquals(List.of(value), stpVer);
 		}
 	}
-
-	 */
 
 }

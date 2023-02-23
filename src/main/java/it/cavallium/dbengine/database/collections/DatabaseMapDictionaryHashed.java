@@ -110,7 +110,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	@Override
 	public Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
 		var v = subDictionary.get(snapshot);
-		return v != null ? deserializeMap(v) : null;
+		var result = v != null ? deserializeMap(v) : null;
+		return result != null && result.isEmpty() ? null : result;
 	}
 
 	@Override
@@ -203,7 +204,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	@Override
 	public Object2ObjectSortedMap<T, U> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		var v = subDictionary.setAndGetPrevious(this.serializeMap(value));
-		return v != null ? deserializeMap(v) : null;
+		var result = v != null ? deserializeMap(v) : null;
+		return result != null && result.isEmpty() ? null : result;
 	}
 
 	@Override

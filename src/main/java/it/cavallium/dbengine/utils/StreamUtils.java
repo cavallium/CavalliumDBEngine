@@ -2,6 +2,8 @@ package it.cavallium.dbengine.utils;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Streams;
+import it.cavallium.dbengine.database.SubStageEntry;
+import it.cavallium.dbengine.database.collections.DatabaseStage;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
@@ -85,6 +87,12 @@ public class StreamUtils {
 	public static <T, R, A> R collectClose(Stream<T> stream, Collector<? super T, A, R> collector) {
 		try (stream) {
 			return stream.collect(collector);
+		}
+	}
+
+	public static <X> long countClose(Stream<X> stream) {
+		try (stream) {
+			return stream.count();
 		}
 	}
 

@@ -194,7 +194,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		} else {
 			dictionary.setRange(range, value.entrySet().stream().map(this::serializeEntry), true);
 		}
-		return prev;
+		return prev != null && prev.isEmpty() ? null : prev;
 	}
 
 	@Override
@@ -227,7 +227,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public U getValue(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		var keySuffixBuf = serializeKeySuffixToKey(keySuffix);
 		Buf value = dictionary.get(resolveSnapshot(snapshot), keySuffixBuf);
-		return deserializeValue(keySuffix, BufDataInput.create(value));
+		return value != null ? deserializeValue(keySuffix, BufDataInput.create(value)) : null;
 	}
 
 	@Override
@@ -307,7 +307,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = serializeKeySuffixToKey(keySuffix);
 		var valueMono = serializeValue(value);
 		var oldValueBuf = dictionary.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE);
-		var oldValue = deserializeValue(keySuffix, BufDataInput.create(oldValueBuf));
+		var oldValue = oldValueBuf != null ? deserializeValue(keySuffix, BufDataInput.create(oldValueBuf)) : null;
 		if (oldValue == null) {
 			return value != null;
 		} else {
@@ -325,7 +325,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public U removeAndGetPrevious(T keySuffix) {
 		var keyMono = serializeKeySuffixToKey(keySuffix);
 		var valueBuf = dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE);
-		return deserializeValue(keySuffix, BufDataInput.create(valueBuf));
+		return valueBuf != null ? deserializeValue(keySuffix, BufDataInput.create(valueBuf)) : null;
 	}
 
 	@Override

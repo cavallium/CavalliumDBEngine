@@ -6,6 +6,7 @@ import static it.cavallium.dbengine.tests.DbTestUtils.isCIMode;
 import static it.cavallium.dbengine.tests.DbTestUtils.run;
 import static it.cavallium.dbengine.tests.DbTestUtils.runVoid;
 import static it.cavallium.dbengine.tests.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
+import static it.cavallium.dbengine.tests.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.tests.DbTestUtils.tempDictionary;
 
 import com.google.common.collect.Streams;
@@ -13,10 +14,16 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -204,25 +211,22 @@ public abstract class TestDictionaryMapDeep {
 
 		gen.closeTempDb(db);
 	}
-/*
+
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSet")
 	public void testSetValueGetAllValues(UpdateMode updateMode, String key, Object2ObjectSortedMap<String, String> value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> map
-								.putValue(key, value)
-								.thenMany(map.getAllValues(null, false))
-								.doFinally(s -> map.close())
-						)
-				));
+		var result = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			map.putValue(key, value);
+			try (var stream = map.getAllValues(null, false)) {
+				return stream.toList();
+			}
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(Map.entry(key, value)).verifyComplete();
+			Assertions.assertEquals(List.of(Map.entry(key, value)), result);
 		}
 	}
 
@@ -233,49 +237,29 @@ public abstract class TestDictionaryMapDeep {
 			Object2ObjectSortedMap<String, String> value,
 			boolean shouldFail) {
 		var remainingEntries = new ConcurrentHashMap<Tuple3<String, String, String>, Boolean>().keySet(true);
-		Step<Tuple3<String, String, String>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map_ -> Flux.using(
-								() -> map_,
-								map -> map
-								.at(null, key)
-								.flatMap(v_ -> Mono.using(
-										() -> v_,
-										v -> v.set(value),
-										SimpleResource::close
-								))
-								.then(map
-										.at(null, "capra")
-										.flatMap(v_ -> Mono.using(
-												() -> v_,
-												v -> v.set(new Object2ObjectLinkedOpenHashMap<>(Map.of("normal", "123", "ormaln", "456"))),
-												SimpleResource::close
-										))
-								)
-								.thenMany(map
-										.getAllStages(null, false)
-										.flatMap(v -> v.getValue()
-												.getAllValues(null, false)
-												.map(result -> new Tuple2<>(v.getKey(), result.getKey(), result.getValue()))
-												.doFinally(s -> v.getValue().close())
-										)
-								),
-								SimpleResource::close
-						))
-				));
+		List<Tuple3<String, String, String>> result = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var dict = tempDictionary(db, updateMode);
+			var map = tempDatabaseMapDictionaryDeepMap(dict, 5, 6);
+			var v = map.at(null, key);
+			v.set(value);
+			var v2 = map.at(null, "capra");
+			v2.set(new Object2ObjectLinkedOpenHashMap<>(Map.of("normal", "123", "ormaln", "456")));
+			try (var stages = map.getAllStages(null, false)) {
+				return stages
+						.flatMap(stage -> stage
+								.getValue()
+								.getAllValues(null, false)
+								.map(r -> new Tuple3<>(stage.getKey(), r.getKey(), r.getValue())))
+						.toList();
+			}
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			value.forEach((k, v) -> remainingEntries.add(new Tuple2<>(key, k, v)));
-			remainingEntries.add(new Tuple2<>("capra", "normal", "123"));
-			remainingEntries.add(new Tuple2<>("capra", "ormaln", "456"));
-			for (Tuple3<String, String, String> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
-			assert remainingEntries.isEmpty();
+			value.forEach((k, v) -> remainingEntries.add(new Tuple3<>(key, k, v)));
+			remainingEntries.add(new Tuple3<>("capra", "normal", "123"));
+			remainingEntries.add(new Tuple3<>("capra", "ormaln", "456"));
+			Assertions.assertEquals(remainingEntries, new HashSet<>(result));
 		}
 	}
 
@@ -283,30 +267,17 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource({"provideArgumentsPut"})
 	public void testAtPutValueAtGetValue(UpdateMode updateMode, String key1, String key2, String value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMap(map -> map
-								.at(null, key1)
-								.flatMap(v -> v
-										.putValue(key2, value)
-										.doFinally(s -> v.close())
-								)
-								.then(map
-										.at(null, key1)
-										.flatMap(v -> v
-												.getValue(null, key2)
-												.doFinally(s -> v.close())
-										)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var result = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var v = map.at(null, key1);
+			v.putValue(key2, value);
+			var v2 = map.at(null, key1);
+			return v2.getValue(null, key2);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(value).verifyComplete();
+			Assertions.assertEquals(result, value);
 		}
 	}
 
@@ -316,69 +287,40 @@ public abstract class TestDictionaryMapDeep {
 			String key,
 			Object2ObjectSortedMap<String, String> value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat
-										(map
-												.putValueAndGetPrevious(key, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")))
-												.defaultIfEmpty(new Object2ObjectLinkedOpenHashMap<>(Map.of("nothing", "nothing"))),
-										map.putValueAndGetPrevious(key, value),
-										map.putValueAndGetPrevious(key, value)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var result = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+					var dict = tempDictionary(db, updateMode);
+					var map = tempDatabaseMapDictionaryDeepMap(dict, 5, 6);
+					var x1 = Objects.requireNonNullElse(
+							map.putValueAndGetPrevious(key, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."))),
+							new Object2ObjectLinkedOpenHashMap<>(Map.of("nothing", "nothing"))
+					);
+					var x2 = Objects.requireNonNull(map.putValueAndGetPrevious(key, value));
+					var x3 = Objects.requireNonNull(map.putValueAndGetPrevious(key, value));
+					return List.of(x1, x2, x3);
+				}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer
-					.expectNext(new Object2ObjectLinkedOpenHashMap<>(Map.of("nothing", "nothing")),
-							new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."))
-					)
-					.expectNext(value)
-					.verifyComplete();
+			Assertions.assertEquals(List.of(new Object2ObjectLinkedOpenHashMap<>(Map.of("nothing", "nothing")),
+					new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")), value), result);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueAndGetPrevious(UpdateMode updateMode, String key1, String key2, String value,
-			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValueAndGetPrevious(key2, "error?")
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValueAndGetPrevious(key2, value)
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValueAndGetPrevious(key2, value)
-														.doFinally(s -> v.close())
-												)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+			boolean shouldFail) throws IOException {
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var x1 = map.at(null, key1).putValueAndGetPrevious(key2, "error?");
+			var x2 = map.at(null, key1).putValueAndGetPrevious(key2, value);
+			var x3 = map.at(null, key1).putValueAndGetPrevious(key2, value);
+			return Stream.of(x1, x2, x3).filter(Objects::nonNull).toList();
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext("error?", value).verifyComplete();
+			Assertions.assertEquals(List.of("error?", value), stpVer);
 		}
 	}
 
@@ -388,23 +330,18 @@ public abstract class TestDictionaryMapDeep {
 			String key,
 			Object2ObjectSortedMap<String, String> value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.removeAndGetPrevious(key),
-										map.putValue(key, value).then(map.removeAndGetPrevious(key)),
-										map.removeAndGetPrevious(key)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+					var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+					var x1 = map.removeAndGetPrevious(key);
+					map.putValue(key, value);
+					var x2 = map.removeAndGetPrevious(key);
+					var x3 = map.removeAndGetPrevious(key);
+					return Stream.of(x1, x2, x3).filter(Objects::nonNull).toList();
+				}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(value).verifyComplete();
+			Assertions.assertEquals(List.of(value), stpVer);
 		}
 	}
 
@@ -412,39 +349,22 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueRemoveAndGetPrevious(UpdateMode updateMode, String key1, String key2, String value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValue(key2, "error?")
-														.then(v.removeAndGetPrevious(key2))
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValue(key2, value)
-														.then(v.removeAndGetPrevious(key2))
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v.removeAndGetPrevious(key2)
-														.doFinally(s -> v.close())
-												)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var stage1 = map.at(null, key1);
+			stage1.putValue(key2, "error?");
+			var x1 = stage1.removeAndGetPrevious(key2);
+			var stage2 = map.at(null, key1);
+			stage2.putValue(key2, value);
+			var x2 = stage2.removeAndGetPrevious(key2);
+			var stage3 = map.at(null, key1);
+			var x3 = stage3.removeAndGetPrevious(key2);
+			return Stream.of(x1, x2, x3).filter(Objects::nonNull).toList();
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext("error?", value).verifyComplete();
+			Assertions.assertEquals(List.of("error?", value), stpVer);
 		}
 	}
 
@@ -454,23 +374,18 @@ public abstract class TestDictionaryMapDeep {
 			String key,
 			Object2ObjectSortedMap<String, String> value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.removeAndGetStatus(key),
-										map.putValue(key, value).then(map.removeAndGetStatus(key)),
-										map.removeAndGetStatus(key)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var x1 = map.removeAndGetStatus(key);
+			map.putValue(key, value);
+			var x2 = map.removeAndGetStatus(key);
+			var x3 = map.removeAndGetStatus(key);
+			return Stream.of(x1, x2, x3).toList();
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(false, true, false).verifyComplete();
+			Assertions.assertEquals(List.of(false, true, false), stpVer);
 		}
 	}
 
@@ -478,39 +393,22 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsPut")
 	public void testAtPutValueRemoveAndGetStatus(UpdateMode updateMode, String key1, String key2, String value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValue(key2, "error?")
-														.then(v.removeAndGetStatus(key2))
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.putValue(key2, value)
-														.then(v.removeAndGetStatus(key2))
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v.removeAndGetStatus(key2)
-														.doFinally(s -> v.close())
-												)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+					var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+					var step1 = map.at(null, key1);
+					step1.putValue(key2, "error?");
+					var x1 = step1.removeAndGetStatus(key2);
+					var step2 = map.at(null, key1);
+					step2.putValue(key2, value);
+					var x2 = step2.removeAndGetStatus(key2);
+					var step3 = map.at(null, key1);
+					var x3 = step3.removeAndGetStatus(key2);
+					return Stream.of(x1, x2, x3).toList();
+				}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(true, true, false).verifyComplete();
+			Assertions.assertEquals(List.of(true, true, false), stpVer);
 		}
 	}
 
@@ -523,39 +421,27 @@ public abstract class TestDictionaryMapDeep {
 		if (updateMode != UpdateMode.ALLOW_UNSAFE && !isTestBadKeysEnabled()) {
 			return;
 		}
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.updateValue(key, old -> {
-											assert old == null;
-											return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
-										}),
-										map.updateValue(key, old -> {
-											assert Objects.equals(old, Map.of("error?", "error."));
-											return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
-										}),
-										map.updateValue(key, old -> {
-											assert Objects.equals(old, Map.of("error?", "error."));
-											return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
-										}),
-										map.updateValue(key, old -> {
-											assert Objects.equals(old, Map.of("error?", "error."));
-											return value;
-										}),
-										map.updateValue(key, old -> {
-											assert Objects.equals(old, value);
-											return value;
-										})
-								)
-								.doFinally(s -> map.close())
-						)
-				));
-		if (updateMode != UpdateMode.ALLOW_UNSAFE || shouldFail) {
-			stpVer.verifyError();
-		} else {
-			stpVer.expectNext(true, false, false, true, false).verifyComplete();
+		var stpVer = run(shouldFail || updateMode != UpdateMode.ALLOW_UNSAFE, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			return Stream.of(map.updateValue(key, old -> {
+				assert old == null;
+				return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
+			}), map.updateValue(key, old -> {
+				assert Objects.equals(old, Map.of("error?", "error."));
+				return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
+			}), map.updateValue(key, old -> {
+				assert Objects.equals(old, Map.of("error?", "error."));
+				return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
+			}), map.updateValue(key, old -> {
+				assert Objects.equals(old, Map.of("error?", "error."));
+				return value;
+			}), map.updateValue(key, old -> {
+				assert Objects.equals(old, value);
+				return value;
+			})).toList();
+		}));
+		if (updateMode == UpdateMode.ALLOW_UNSAFE && !shouldFail) {
+			Assertions.assertEquals(List.of(true, false, false, true, false), stpVer);
 		}
 	}
 
@@ -565,43 +451,16 @@ public abstract class TestDictionaryMapDeep {
 		if (updateMode == UpdateMode.DISALLOW && !isTestBadKeysEnabled()) {
 			return;
 		}
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> prev)
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> value)
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> value)
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> null)
-														.doFinally(s -> v.close())
-												)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
-		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
-			stpVer.verifyError();
-		} else {
-			stpVer.expectNext(false, true, false, true).verifyComplete();
+		var stpVer = run(shouldFail || updateMode == UpdateMode.DISALLOW, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+					var x1 = map.at(null, key1).updateValue(key2, prev -> prev);
+					var x2 = map.at(null, key1).updateValue(key2, prev -> value);
+					var x3 = map.at(null, key1).updateValue(key2, prev -> value);
+					var x4 = map.at(null, key1).updateValue(key2, prev -> null);
+					return Stream.of(x1, x2, x3, x4).toList();
+				}));
+		if (updateMode != UpdateMode.DISALLOW && !shouldFail) {
+			Assertions.assertEquals(List.of(false, true, false, true), stpVer);
 		}
 	}
 
@@ -614,42 +473,43 @@ public abstract class TestDictionaryMapDeep {
 		if (updateMode != UpdateMode.ALLOW_UNSAFE && !isTestBadKeysEnabled()) {
 			return;
 		}
-		var stpVer = StepVerifier.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-				.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-				.flatMapMany(map -> Flux.concat(
-						map.updateValue(key, old -> {
-							assert old == null;
-							return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
-						}).then(map.getValue(null, key)),
-						map.updateValue(key, old -> {
-							assert Objects.equals(old, Map.of("error?", "error."));
-							return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
-						}).then(map.getValue(null, key)),
-						map.updateValue(key, old -> {
-							assert Objects.equals(old, Map.of("error?", "error."));
-							return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
-						}).then(map.getValue(null, key)),
-						map.updateValue(key, old -> {
-							assert Objects.equals(old, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")));
-							return value;
-						}).then(map.getValue(null, key)),
-						map.updateValue(key, old -> {
-							assert Objects.equals(old, value);
-							return value;
-						}).then(map.getValue(null, key))
-				).doFinally(s -> map.close()))
-		));
-		if (updateMode != UpdateMode.ALLOW_UNSAFE || shouldFail) {
-			stpVer.verifyError();
-		} else {
-			stpVer
-					.expectNext(new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")),
-							new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")),
-							new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")),
-							value,
-							value
-					)
-					.verifyComplete();
+		var stpVer = run(shouldFail || updateMode != UpdateMode.ALLOW_UNSAFE, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			map.updateValue(key, old -> {
+				assert old == null;
+				return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
+			});
+			var x1 = map.getValue(null, key);
+			map.updateValue(key, old -> {
+				assert Objects.equals(old, Map.of("error?", "error."));
+				return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
+			});
+			var x2 = map.getValue(null, key);
+
+			map.updateValue(key, old -> {
+				assert Objects.equals(old, Map.of("error?", "error."));
+				return new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."));
+			});
+			var x3 = map.getValue(null, key);
+			map.updateValue(key, old -> {
+				assert Objects.equals(old, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")));
+				return value;
+			});
+			var x4 = map.getValue(null, key);
+			map.updateValue(key, old -> {
+				assert Objects.equals(old, value);
+				return value;
+			});
+			var x5 = map.getValue(null, key);
+			return Stream.of(x1, x2, x3, x4, x5).toList();
+		}));
+		if (updateMode == UpdateMode.ALLOW_UNSAFE && !shouldFail) {
+			Assertions.assertEquals(List.of(new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")),
+					new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")),
+					new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")),
+					value,
+					value
+			), stpVer);
 		}
 	}
 
@@ -659,51 +519,24 @@ public abstract class TestDictionaryMapDeep {
 		if (updateMode == UpdateMode.DISALLOW && !isTestBadKeysEnabled()) {
 			return;
 		}
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> prev)
-														.then(v.getValue(null, key2))
-														.defaultIfEmpty("empty")
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> value)
-														.then(v.getValue(null, key2))
-														.defaultIfEmpty("empty")
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> value)
-														.then(v.getValue(null, key2))
-														.defaultIfEmpty("empty")
-														.doFinally(s -> v.close())
-												),
-										map
-												.at(null, key1)
-												.flatMap(v -> v
-														.updateValue(key2, prev -> null)
-														.then(v.getValue(null, key2))
-														.defaultIfEmpty("empty")
-														.doFinally(s -> v.close())
-												)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
-		if (updateMode == UpdateMode.DISALLOW || shouldFail) {
-			stpVer.verifyError();
-		} else {
-			stpVer.expectNext("empty", value, value, "empty").verifyComplete();
+		var stpVer = run(shouldFail || updateMode == UpdateMode.DISALLOW, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var stage1 = map.at(null, key1);
+			stage1.updateValue(key2, prev -> prev);
+			var x1 = Objects.requireNonNullElse(stage1.getValue(null, key2), "empty");
+			var stage2 = map.at(null, key1);
+			stage2.updateValue(key2, prev -> value);
+			var x2 = Objects.requireNonNullElse(stage2.getValue(null, key2), "empty");
+			var stage3 = map.at(null, key1);
+			stage3.updateValue(key2, prev -> value);
+			var x3 = Objects.requireNonNullElse(stage3.getValue(null, key2), "empty");
+			var stage4 = map.at(null, key1);
+			stage4.updateValue(key2, prev -> null);
+			var x4 = Objects.requireNonNullElse(stage4.getValue(null, key2), "empty");
+			return Stream.of(x1, x2, x3, x4).toList();
+		}));
+		if (updateMode != UpdateMode.DISALLOW && !shouldFail) {
+			Assertions.assertEquals(List.of("empty", value, value, "empty"), stpVer);
 		}
 	}
 
@@ -713,25 +546,19 @@ public abstract class TestDictionaryMapDeep {
 			String key,
 			Object2ObjectSortedMap<String, String> value,
 			boolean shouldFail) {
-		var stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.putValueAndGetChanged(key, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."))).single(),
-										map.putValueAndGetChanged(key, value).single(),
-										map.putValueAndGetChanged(key, value).single(),
-										map.remove(key),
-										map.putValueAndGetChanged(key, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error."))).single()
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var x1 = map.putValueAndGetChanged(key, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")));
+			var x2 = map.putValueAndGetChanged(key, value);
+			var x3 = map.putValueAndGetChanged(key, value);
+			map.remove(key);
+			var x4 = map.putValueAndGetChanged(key, new Object2ObjectLinkedOpenHashMap<>(Map.of("error?", "error.")));
+			return List.of(x1, x2, x3, x4);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(true, true, false, true).verifyComplete();
+			Assertions.assertEquals(List.of(true, true, false, true), stpVer);
 		}
 	}
 
@@ -753,15 +580,14 @@ public abstract class TestDictionaryMapDeep {
 
 		return keys
 				.stream()
-				.map(keyTuple -> keyTuple.mapT1(ks -> Flux
-						.zip(Flux.fromIterable(ks), Flux.fromIterable(values))
-						.collectMap(Tuple2::getT1, Tuple2::getT2, Object2ObjectLinkedOpenHashMap::new)
-						.block()
+				.map(keyTuple -> new Tuple2<>(Streams
+						.zip(keyTuple.getT1().stream(), values.stream(), Tuple2::new)
+						.collect(Collectors.toMap(Tuple2::getT1, Tuple2::getT2, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new)),
+						keyTuple.getT2()
 				))
-				.flatMap(entryTuple -> Arrays.stream(UpdateMode.values()).map(updateMode -> new Tuple2<>(updateMode,
-						entryTuple.getT1(),
-						entryTuple.getT2()
-				)))
+				.flatMap(entryTuple -> Arrays
+						.stream(UpdateMode.values())
+						.map(updateMode -> new Tuple3<>(updateMode, entryTuple.getT1(), entryTuple.getT2())))
 				.map(fullTuple -> Arguments.of(fullTuple.getT1(), fullTuple.getT2(), fullTuple.getT3()));
 	}
 
@@ -770,27 +596,22 @@ public abstract class TestDictionaryMapDeep {
 	public void testSetMultiGetMulti(UpdateMode updateMode,
 			Map<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var flux = tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> {
-							var entriesFlux = Flux.fromIterable(entries.entrySet());
-							var keysFlux = entriesFlux.map(Entry::getKey);
-							var resultsFlux = Flux
-											.concat(
-													map.putMulti(entriesFlux).then(Mono.empty()),
-													map.getMulti(null, keysFlux)
-											);
-							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
-						})
-						.filter(k -> k.getValue().isPresent())
-						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-				);
+		var flux = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var entriesFlux = entries.entrySet();
+			var keysFlux = entriesFlux.stream().map(Entry::getKey).toList();
+			map.putMulti(entriesFlux.stream());
+			var resultsFlux = map.getMulti(null, keysFlux.stream());
+			return Streams
+					.zip(keysFlux.stream(), resultsFlux, Map::entry)
+					.filter(k -> k.getValue().isPresent())
+					.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
+					.toList();
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			StepVerifier.create(flux).verifyError();
 		} else {
-			var elements = flux.collect(Collectors.toList()).block();
-			assertThat(elements).containsExactlyInAnyOrderElementsOf(entries.entrySet());
+			Assertions.assertEquals(entries.entrySet().stream().toList(), flux);
 		}
 	}
 
@@ -799,122 +620,103 @@ public abstract class TestDictionaryMapDeep {
 	public void testSetAllValuesGetMulti(UpdateMode updateMode,
 			Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Map<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Map<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> {
-							var entriesFlux = Flux.fromIterable(entries.entrySet());
-							var keysFlux = entriesFlux.map(Entry::getKey);
-							var resultsFlux = map
-											.setAllValues(Flux.fromIterable(entries.entrySet()))
-											.thenMany(map.getMulti(null, Flux.fromIterable(entries.keySet())));
-							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
-						})
+		var remainingEntries = new ArrayList<Entry<String, Map<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var entriesFlux = entries.entrySet();
+			var keysFlux = entriesFlux.stream().map(Entry::getKey).toList();
+			map.setAllValues(entries.entrySet().stream());
+			try (var resultsFlux = map.getMulti(null, entries.keySet().stream())) {
+				return Streams
+						.zip(keysFlux.stream(), resultsFlux, Map::entry)
 						.filter(k -> k.getValue().isPresent())
 						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-				));
+						.toList();
+			}
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Map<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(remainingEntries, stpVer);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSetMulti")
-	public void testSetAllValuesAndGetPrevious(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
+	public void testSetAllValuesAndGetPrevious(UpdateMode updateMode,
+			Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet())),
-										map.setAllValuesAndGetPrevious(Flux.fromIterable(entries.entrySet()))
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			List<Entry<String, Object2ObjectSortedMap<String, String>>> a1;
+			try (var stream1 = map.setAllValuesAndGetPrevious(entries.entrySet().stream())) {
+				a1 = stream1.toList();
+			}
+			List<Entry<String, Object2ObjectSortedMap<String, String>>> a2;
+			try (var stream2 = map.setAllValuesAndGetPrevious(entries.entrySet().stream())) {
+				a2 = stream2.toList();
+			}
+			return List.of(a1, a2);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(
+					List.of(List.of(), remainingEntries),
+					stpVer
+			);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetGetMulti(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries, boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> {
-							var entriesFlux = Flux.fromIterable(entries.entrySet());
-							var keysFlux = entriesFlux.map(Entry::getKey);
-							var resultsFlux = Flux
-											.concat(
-													map.set(entries).then(Mono.empty()),
-													map.getMulti(null, Flux.fromIterable(entries.keySet()))
-											);
-							return Flux.zip(keysFlux, resultsFlux, Map::entry).doFinally(s -> map.close());
-						})
-						.filter(k -> k.getValue().isPresent())
-						.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var entriesFlux = entries.entrySet();
+			var keysFlux = entriesFlux.stream().map(Entry::getKey).toList();
+			map.set(entries);
+			List<Optional<Object2ObjectSortedMap<String, String>>> results;
+			try (var stream = map.getMulti(null, entries.keySet().stream())) {
+				results = stream.toList();
+			}
+			return Streams
+					.zip(keysFlux.stream(), results.stream(), Map::entry)
+					.filter(k -> k.getValue().isPresent())
+					.map(k -> Map.entry(k.getKey(), k.getValue().orElseThrow()))
+					.toList();
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(remainingEntries, stpVer);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSetMulti")
-	public void testSetAndGetStatus(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
+	public void testSetAndGetStatus(UpdateMode updateMode,
+			Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> {
-							Mono<Void> removalMono;
-							if (entries.isEmpty()) {
-								removalMono = Mono.empty();
-							} else {
-								removalMono = map.remove(entries.keySet().stream().findAny().orElseThrow());
-							}
-							return Flux
-									.concat(
-											map.setAndGetChanged(entries).single(),
-											map.setAndGetChanged(entries).single(),
-											removalMono.then(Mono.empty()),
-											map.setAndGetChanged(entries).single()
-									)
-									.doFinally(s -> map.close());
-						})
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var x1 = map.setAndGetChanged(entries);
+			var x2 = map.setAndGetChanged(entries);
+			if (!entries.isEmpty()) {
+				map.remove(entries.keySet().stream().findAny().orElseThrow());
+			}
+			var x3 = map.setAndGetChanged(entries);
+			return List.of(x1, x2, x3);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
-			stpVer.expectNext(!entries.isEmpty(), false, !entries.isEmpty()).verifyComplete();
+			Assertions.assertEquals(List.of(!entries.isEmpty(), false, !entries.isEmpty()), stpVer);
 		}
 	}
 
@@ -922,29 +724,18 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetAndGetPrevious(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.setAndGetPrevious(entries),
-										map.setAndGetPrevious(entries)
-								)
-								.map(Map::entrySet)
-								.concatMapIterable(list -> list)
-								.doFinally(s -> map.close())
-						)
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var x1 = map.setAndGetPrevious(entries);
+			var x2 = map.setAndGetPrevious(entries);
+			return Stream.of(x1, x2).map(x -> x != null ? x.entrySet().stream().toList() : null).toList();
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(Arrays.asList(null, remainingEntries.isEmpty() ? null : remainingEntries), stpVer);
 		}
 	}
 
@@ -952,83 +743,57 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetClearAndGetPreviousGet(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(map.set(entries).then(Mono.empty()), map.clearAndGetPrevious(), map.get(null))
-								.map(Map::entrySet)
-								.concatMapIterable(list -> list)
-								.doFinally(s -> map.close())
-						)
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+					var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+					map.set(entries);
+			var prev = map.clearAndGetPrevious();
+			var curr = map.get(null);
+			return Stream.of(prev, curr).map(x -> x != null ? x.entrySet().stream().toList() : null).toList();
+				}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(Arrays.asList(remainingEntries.isEmpty() ? null : remainingEntries, null), stpVer);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSetMulti")
-	public void testSetMultiGetAllValues(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
+	public void testSetMultiGetAllValues(UpdateMode updateMode,
+			Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.getAllValues(null, false)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			map.putMulti(entries.entrySet().stream());
+			try (var values = map.getAllValues(null, false)) {
+				return values.toList();
+			}
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(remainingEntries, stpVer);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiGet(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries, boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.get(null)
-										.map(Map::entrySet)
-										.flatMapIterable(list -> list)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			map.putMulti(entries.entrySet().stream());
+			return map.get(null);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(remainingEntries.isEmpty() ? null : remainingEntries, stpVer == null ? null : stpVer.entrySet().stream().toList());
 		}
 	}
 
@@ -1036,34 +801,21 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiGetAllStagesGet(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		var remainingEntries = new ConcurrentHashMap<Entry<String, Object2ObjectSortedMap<String, String>>, Boolean>().keySet(true);
-		Step<Entry<String, Object2ObjectSortedMap<String, String>>> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map
-												.getAllStages(null, false)
-												.flatMap(stage -> stage
-														.getValue()
-														.get(null)
-														.map(val -> Map.entry(stage.getKey(), val))
-														.doFinally(s -> stage.getValue().close())
-												)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var remainingEntries = new ArrayList<Entry<String, Object2ObjectSortedMap<String, String>>>();
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+					var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+					map.putMulti(entries.entrySet().stream());
+					return map.getAllStages(null, false).map(stage -> {
+						var v = stage.getValue().get(null);
+						if (v == null) return null;
+						return Map.entry(stage.getKey(), v);
+					}).filter(Objects::nonNull).toList();
+				}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.verifyError();
 		} else {
 			entries.forEach((k, v) -> remainingEntries.add(Map.entry(k, v)));
-			for (Entry<String, Object2ObjectSortedMap<String, String>> ignored : remainingEntries) {
-				stpVer = stpVer.expectNextMatches(remainingEntries::remove);
-			}
-			stpVer.verifyComplete();
+			Assertions.assertEquals(remainingEntries, stpVer);
 		}
 	}
 
@@ -1071,50 +823,37 @@ public abstract class TestDictionaryMapDeep {
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiIsEmpty(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries,
 			boolean shouldFail) {
-		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.isEmpty(null),
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.isEmpty(null)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+			var x1 = map.isEmpty(null);
+			map.putMulti(entries.entrySet().stream());
+			var x2 = map.isEmpty(null);
+			return List.of(x1, x2);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.expectNext(true).verifyError();
 		} else {
-			stpVer.expectNext(true, entries.isEmpty()).verifyComplete();
+			Assertions.assertEquals(List.of(true, entries.isEmpty()), stpVer);
 		}
 	}
 
 	@ParameterizedTest
 	@MethodSource("provideArgumentsSetMulti")
 	public void testSetMultiClear(UpdateMode updateMode, Object2ObjectSortedMap<String, Object2ObjectSortedMap<String, String>> entries, boolean shouldFail) {
-		Step<Boolean> stpVer = StepVerifier
-				.create(tempDb(getTempDbGenerator(), allocator, db -> tempDictionary(db, updateMode)
-						.map(dict -> tempDatabaseMapDictionaryDeepMap(dict, 5, 6))
-						.flatMapMany(map -> Flux
-								.concat(
-										map.isEmpty(null),
-										map.putMulti(Flux.fromIterable(entries.entrySet())).then(Mono.empty()),
-										map.isEmpty(null),
-										map.clear().then(Mono.empty()),
-										map.isEmpty(null)
-								)
-								.doFinally(s -> map.close())
-						)
-				));
+		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
+			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
+
+			var x1 = map.isEmpty(null);
+			map.putMulti(entries.entrySet().stream());
+			var x2 = map.isEmpty(null);
+			map.clear();
+			var x3 = map.isEmpty(null);
+			return List.of(x1, x2, x3);
+		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
-			stpVer.expectNext(true).verifyError();
 		} else {
-			stpVer.expectNext(true, entries.isEmpty(), true).verifyComplete();
+			Assertions.assertEquals(List.of(true, entries.isEmpty(), true), stpVer);
 		}
 	}
-
- */
 }

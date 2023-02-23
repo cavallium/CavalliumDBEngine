@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
@@ -131,15 +132,20 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 			Function<Entry<T, U>, @NotNull Entry<T, U>> entriesReplacer,
 			boolean smallRange) {
 		if (canKeysChange) {
-			this.setAllValues(this.getAllValues(null, smallRange).map(entriesReplacer));
+			try (var values = this.getAllValues(null, smallRange)) {
+				this.setAllValues(values.map(entriesReplacer));
+			}
 		} else {
-			this.getAllValues(null, smallRange).map(entriesReplacer)
-					.forEach(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()));
+			try (var values = this.getAllValues(null, smallRange).map(entriesReplacer)) {
+				values.forEach(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()));
+			}
 		}
 	}
 
 	default void replaceAll(Consumer<Entry<T, US>> entriesReplacer) {
-		this.getAllStages(null, false).forEach(entriesReplacer);
+		try (var stream = this.getAllStages(null, false)) {
+			stream.forEach(entriesReplacer);
+		}
 	}
 
 	@Override
@@ -148,11 +154,15 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		if (value == null) {
 			map = this.clearAndGetPrevious();
 		} else {
-			map = this
-					.setAllValuesAndGetPrevious(value.entrySet().stream())
-					.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+			try (var stream = this.setAllValuesAndGetPrevious(value.entrySet().stream())) {
+				map = stream.collect(Collectors.toMap(Entry::getKey,
+						Entry::getValue,
+						(a, b) -> a,
+						Object2ObjectLinkedOpenHashMap::new
+				));
+			}
 		}
-		return map;
+		return map != null && map.isEmpty() ? null : map;
 	}
 
 	@Override
@@ -173,9 +183,12 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 			SerializationFunction<@Nullable Object2ObjectSortedMap<T, U>, @Nullable Object2ObjectSortedMap<T, U>> updater) {
 		var updateMode = this.getUpdateMode();
 		if (updateMode == UpdateMode.ALLOW_UNSAFE) {
-			Object2ObjectSortedMap<T, U> v = this
-					.getAllValues(null, true)
-					.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+			Object2ObjectSortedMap<T, U> v;
+
+			try (var stream = this.getAllValues(null, true)) {
+				v = stream
+						.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+			}
 
 			if (v.isEmpty()) {
 				v = null;
@@ -212,7 +225,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	@Override
 	default long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return this.getAllStages(snapshot, false).count();
+		return StreamUtils.countClose(this.getAllStages(snapshot, false));
 	}
 
 	/**

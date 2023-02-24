@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.client;
 
+import static it.cavallium.dbengine.utils.StreamUtils.toListClose;
+
 import it.cavallium.dbengine.client.Hits.CloseableHits;
 import it.cavallium.dbengine.client.Hits.LuceneHits;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
@@ -90,13 +92,12 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		var mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 
-		var results = luceneIndex
+		var results = toListClose(luceneIndex
 				.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName(),
 						mltDocumentFields
-				)
-				.toList();
+				));
 		LLSearchResultShard mergedResults = mergeResults(queryParams, results);
 		if (mergedResults != null) {
 			return mapResults(mergedResults);
@@ -107,12 +108,11 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Hits<HitKey<T>> search(ClientQueryParams queryParams) {
-		var results = luceneIndex
+		var results = toListClose(luceneIndex
 				.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()
-				)
-				.toList();
+				));
 
 		var mergedResults = mergeResults(queryParams, results);
 		if (mergedResults != null) {

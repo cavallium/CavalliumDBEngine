@@ -10,6 +10,9 @@ import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Spliterator;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.stream.Collector;
@@ -93,6 +96,14 @@ public class StreamUtils {
 	public static <X> long countClose(Stream<X> stream) {
 		try (stream) {
 			return stream.count();
+		}
+	}
+
+	public static <X> X scheduleOnPool(ForkJoinPool pool, Callable<X> supplier) {
+		try {
+			return pool.submit(supplier).get();
+		} catch (InterruptedException | ExecutionException e) {
+			throw new RuntimeException(e);
 		}
 	}
 

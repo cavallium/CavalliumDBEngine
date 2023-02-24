@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.iterating;
 import static java.lang.Boolean.parseBoolean;
 import static java.util.Objects.requireNonNull;
 import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET;
@@ -663,7 +665,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			logger.warn("Column {} doesn't exist", column);
 			return;
 		}
-		files.forEachOrdered(sst -> {
+		collect(files, iterating(sst -> {
 			try (var opts = new IngestExternalFileOptions()) {
 				opts.setIngestBehind(!replaceExisting);
 				opts.setSnapshotConsistency(false);
@@ -673,7 +675,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			} catch (RocksDBException ex) {
 				throw new DBException(new DBException("Failed to ingest SST file " + sst, ex));
 			}
-		});
+		}));
 	}
 
 	private record RocksLevelOptions(CompressionType compressionType, CompressionOptions compressionOptions) {}
@@ -1264,7 +1266,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	public void ingestSSTS(Stream<Path> sstsFlux) {
-		sstsFlux.map(path -> path.toAbsolutePath().toString()).forEachOrdered(sst -> {
+		collect(sstsFlux.map(path -> path.toAbsolutePath().toString()), iterating(sst -> {
 			var closeReadLock = closeLock.readLock();
 			try (var opts = new IngestExternalFileOptions()) {
 				try {
@@ -1277,7 +1279,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			} finally {
 				closeLock.unlockRead(closeReadLock);
 			}
-		});
+		}));
 	}
 
 	@Override
@@ -1576,67 +1578,64 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		}
 		Path basePath = dbPath;
 		try {
-			Files
-					.walk(basePath, 1)
-					.filter(p -> !p.equals(basePath))
-					.filter(p -> {
-						var fileName = p.getFileName().toString();
-						if (fileName.startsWith("LOG.old.")) {
-							var parts = fileName.split("\\.");
-							if (parts.length == 3) {
-								try {
-									long nameSuffix = Long.parseUnsignedLong(parts[2]);
-									return true;
-								} catch (NumberFormatException ex) {
-									return false;
-								}
+			try (var f = Files.walk(basePath, 1)) {
+				f.filter(p -> !p.equals(basePath)).filter(p -> {
+					var fileName = p.getFileName().toString();
+					if (fileName.startsWith("LOG.old.")) {
+						var parts = fileName.split("\\.");
+						if (parts.length == 3) {
+							try {
+								long nameSuffix = Long.parseUnsignedLong(parts[2]);
+								return true;
+							} catch (NumberFormatException ex) {
+								return false;
 							}
 						}
-						if (fileName.endsWith(".log")) {
-							var parts = fileName.split("\\.");
-							if (parts.length == 2) {
-								try {
-									int name = Integer.parseUnsignedInt(parts[0]);
-									return true;
-								} catch (NumberFormatException ex) {
-									return false;
-								}
+					}
+					if (fileName.endsWith(".log")) {
+						var parts = fileName.split("\\.");
+						if (parts.length == 2) {
+							try {
+								int name = Integer.parseUnsignedInt(parts[0]);
+								return true;
+							} catch (NumberFormatException ex) {
+								return false;
 							}
 						}
+					}
+					return false;
+				}).filter(p -> {
+					try {
+						BasicFileAttributes attrs = Files.readAttributes(p, BasicFileAttributes.class);
+						if (attrs.isRegularFile() && !attrs.isSymbolicLink() && !attrs.isDirectory()) {
+							long ctime = attrs.creationTime().toMillis();
+							long atime = attrs.lastAccessTime().toMillis();
+							long mtime = attrs.lastModifiedTime().toMillis();
+							long lastTime = Math.max(Math.max(ctime, atime), mtime);
+							long safeTime;
+							if (p.getFileName().toString().startsWith("LOG.old.")) {
+								safeTime = System.currentTimeMillis() - Duration.ofHours(24).toMillis();
+							} else {
+								safeTime = System.currentTimeMillis() - Duration.ofHours(12).toMillis();
+							}
+							if (lastTime < safeTime) {
+								return true;
+							}
+						}
+					} catch (IOException ex) {
+						logger.error("Error when deleting unused log files", ex);
 						return false;
-					})
-					.filter(p -> {
-						try {
-							BasicFileAttributes attrs = Files.readAttributes(p, BasicFileAttributes.class);
-							if (attrs.isRegularFile() && !attrs.isSymbolicLink() && !attrs.isDirectory()) {
-								long ctime = attrs.creationTime().toMillis();
-								long atime = attrs.lastAccessTime().toMillis();
-								long mtime = attrs.lastModifiedTime().toMillis();
-								long lastTime = Math.max(Math.max(ctime, atime), mtime);
-								long safeTime;
-								if (p.getFileName().toString().startsWith("LOG.old.")) {
-									safeTime = System.currentTimeMillis() - Duration.ofHours(24).toMillis();
-								} else {
-									safeTime = System.currentTimeMillis() - Duration.ofHours(12).toMillis();
-								}
-								if (lastTime < safeTime) {
-									return true;
-								}
-							}
-						} catch (IOException ex) {
-							logger.error("Error when deleting unused log files", ex);
-							return false;
-						}
-						return false;
-					})
-					.forEach(path -> {
-						try {
-							Files.deleteIfExists(path);
-							System.out.println("Deleted log file \"" + path + "\"");
-						} catch (IOException e) {
-							logger.error(MARKER_ROCKSDB, "Failed to delete log file \"" + path + "\"", e);
-						}
-					});
+					}
+					return false;
+				}).forEach(path -> {
+					try {
+						Files.deleteIfExists(path);
+						System.out.println("Deleted log file \"" + path + "\"");
+					} catch (IOException e) {
+						logger.error(MARKER_ROCKSDB, "Failed to delete log file \"" + path + "\"", e);
+					}
+				});
+			}
 		} catch (IOException ex) {
 			logger.error(MARKER_ROCKSDB, "Failed to delete unused log files", ex);
 		}

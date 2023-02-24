@@ -1,5 +1,9 @@
 package it.cavallium.dbengine.database;
 
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.executing;
+
 import com.google.common.collect.Multimap;
 import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.dbengine.client.ConnectionSettings.ConnectionPart;
@@ -85,14 +89,13 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public LLDatabaseConnection connect() {
-		// todo: parallelize?
-		for (LLDatabaseConnection connection : allConnections) {
+		collectOn(ROCKSDB_SCHEDULER, allConnections.stream(), executing(connection -> {
 			try {
 				connection.connect();
 			} catch (Exception ex) {
 				LOG.error("Failed to open connection", ex);
 			}
-		}
+		}));
 		return this;
 	}
 
@@ -142,18 +145,15 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 					);
 		} else {
 			record ShardToIndex(int shard, LLLuceneIndex connIndex) {}
-			var indices = connectionToShardMap.entrySet().stream().flatMap(entry -> {
+			var luceneIndices = new LLLuceneIndex[indexStructure.totalShards()];
+			connectionToShardMap.entrySet().stream().flatMap(entry -> {
 				var connectionIndexStructure = indexStructure.setActiveShards(new IntArrayList(entry.getValue()));
 
 				LLLuceneIndex connIndex = entry.getKey().getLuceneIndex(clusterName, connectionIndexStructure,
 						indicizerAnalyzers, indicizerSimilarities, luceneOptions, luceneHacks);
 
 				return entry.getValue().intStream().mapToObj(shard -> new ShardToIndex(shard, connIndex));
-			}).toList();
-			var luceneIndices = new LLLuceneIndex[indexStructure.totalShards()];
-			for (var index : indices) {
-				luceneIndices[index.shard] = index.connIndex;
-			}
+			}).forEach(index -> luceneIndices[index.shard] = index.connIndex);
 			return new LLMultiLuceneIndex(clusterName,
 					indexStructure,
 					indicizerAnalyzers,
@@ -167,13 +167,12 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public void disconnect() {
-		// todo: parallelize?
-		for (LLDatabaseConnection connection : allConnections) {
+		collectOn(ROCKSDB_SCHEDULER, allConnections.stream(), executing(connection -> {
 			try {
 				connection.disconnect();
 			} catch (Exception ex) {
 				LOG.error("Failed to close connection", ex);
 			}
-		}
+		}));
 	}
 }

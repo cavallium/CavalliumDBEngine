@@ -206,7 +206,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 									&& !Modifier.isTransient(modifiers)
 									&& !shouldIgnoreField(field.getName());
 						})
-						.collect(Collectors.toList());
+						.toList();
 				String[] fieldNames = new String[this.declaredFields.size()];
 				//noinspection unchecked
 				this.fieldGetters = new Function[this.declaredFields.size()];
@@ -215,7 +215,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 					fieldNames[i] = declaredField.getName();
 
 					switch (getterStyle) {
-						case STANDARD_GETTERS:
+						case STANDARD_GETTERS -> {
 							var getterMethod = declaredField
 									.getDeclaringClass()
 									.getMethod("get" + StringUtils.capitalize(declaredField.getName()));
@@ -226,11 +226,9 @@ public abstract class MoshiPolymorphic<OBJ> {
 									throw new RuntimeException(e);
 								}
 							};
-							break;
-						case RECORDS_GETTERS:
-							var getterMethod2 = declaredField
-									.getDeclaringClass()
-									.getMethod(declaredField.getName());
+						}
+						case RECORDS_GETTERS -> {
+							var getterMethod2 = declaredField.getDeclaringClass().getMethod(declaredField.getName());
 							fieldGetters[i] = obj -> {
 								try {
 									return getterMethod2.invoke(obj);
@@ -238,16 +236,14 @@ public abstract class MoshiPolymorphic<OBJ> {
 									throw new RuntimeException(e);
 								}
 							};
-							break;
-						case FIELDS:
-							fieldGetters[i] = t -> {
-								try {
-									return declaredField.get(t);
-								} catch (IllegalAccessException e) {
-									throw new RuntimeException(e);
-								}
-							};
-							break;
+						}
+						case FIELDS -> fieldGetters[i] = t -> {
+							try {
+								return declaredField.get(t);
+							} catch (IllegalAccessException e) {
+								throw new RuntimeException(e);
+							}
+						};
 					}
 
 					i++;

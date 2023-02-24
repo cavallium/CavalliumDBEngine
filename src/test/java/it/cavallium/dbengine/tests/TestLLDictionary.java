@@ -2,7 +2,7 @@ package it.cavallium.dbengine.tests;
 
 import static it.cavallium.dbengine.tests.DbTestUtils.ensureNoLeaks;
 import static it.cavallium.dbengine.tests.DbTestUtils.runVoid;
-import static it.cavallium.dbengine.utils.StreamUtils.toListClose;
+import static it.cavallium.dbengine.utils.StreamUtils.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import it.cavallium.dbengine.tests.DbTestUtils.TempDb;
@@ -13,7 +13,6 @@ import it.cavallium.dbengine.database.LLKeyValueDatabase;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -165,8 +164,8 @@ public abstract class TestLLDictionary {
 		var afterSize = dict.sizeRange(null, LLRange.all(), false);
 		Assertions.assertEquals(1, afterSize - beforeSize);
 
-		Assertions.assertTrue(toListClose(dict.getRangeKeys(null, RANGE_ALL, false, false).map(this::toString)).contains("test-nonexistent"));
-		Assertions.assertTrue(toListClose(dict.getRangeKeys(null, RANGE_ALL, true, false).map(this::toString)).contains("test-nonexistent"));
+		Assertions.assertTrue(toList(dict.getRangeKeys(null, RANGE_ALL, false, false).map(this::toString)).contains("test-nonexistent"));
+		Assertions.assertTrue(toList(dict.getRangeKeys(null, RANGE_ALL, true, false).map(this::toString)).contains("test-nonexistent"));
 	}
 
 	@ParameterizedTest
@@ -213,11 +212,11 @@ public abstract class TestLLDictionary {
 		assertEquals(expected, afterSize - beforeSize);
 
 		if (updateMode != UpdateMode.DISALLOW) {
-			Assertions.assertTrue(toListClose(dict
+			Assertions.assertTrue(toList(dict
 					.getRangeKeys(null, RANGE_ALL, false, false)
 					.map(this::toString))
 					.contains("test-nonexistent"));
-			Assertions.assertTrue(toListClose(dict
+			Assertions.assertTrue(toList(dict
 					.getRangeKeys(null, RANGE_ALL, true, false)
 					.map(this::toString))
 					.contains("test-nonexistent"));

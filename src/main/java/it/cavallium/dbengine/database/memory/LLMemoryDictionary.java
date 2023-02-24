@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.memory;
 
+import static it.cavallium.dbengine.utils.StreamUtils.count;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.mapping;
 
@@ -13,6 +14,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.OptionalBuf;
+import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
@@ -242,8 +244,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public <K> Stream<Boolean> updateMulti(Stream<K> keys,
-			Stream<Buf> serializedKeys,
+	public <K> Stream<Boolean> updateMulti(Stream<SerializedKey<K>> keys,
 			KVSerializationFunction<K, @Nullable Buf, @Nullable Buf> updateFunction) {
 		throw new UnsupportedOperationException("Not implemented");
 	}
@@ -405,7 +406,7 @@ public class LLMemoryDictionary implements LLDictionary {
 
 	@Override
 	public boolean isRangeEmpty(@Nullable LLSnapshot snapshot, LLRange range, boolean fillCache) {
-		return getRangeKeys(snapshot, range, false, false).count() == 0;
+		return count(getRangeKeys(snapshot, range, false, false)) == 0;
 	}
 
 	@Override

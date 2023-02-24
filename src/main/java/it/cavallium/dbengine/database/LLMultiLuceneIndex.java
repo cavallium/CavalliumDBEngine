@@ -1,6 +1,14 @@
 package it.cavallium.dbengine.database;
 
 import static it.cavallium.dbengine.lucene.LuceneUtils.getLuceneIndexId;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.executing;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
+import static it.cavallium.dbengine.utils.StreamUtils.fastReducing;
+import static it.cavallium.dbengine.utils.StreamUtils.fastSummingLong;
+import static it.cavallium.dbengine.utils.StreamUtils.partitionByInt;
 import static java.util.stream.Collectors.groupingBy;
 
 import com.google.common.collect.Multimap;
@@ -14,6 +22,7 @@ import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
 import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
 import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
+import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.doubles.DoubleArrayList;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import java.util.ArrayList;
@@ -83,17 +92,11 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public long addDocuments(boolean atomic, Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
-		var groupedRequests = documents
-				.collect(groupingBy(term -> getLuceneIndexId(term.getKey(), totalShards),
-						Int2ObjectOpenHashMap::new,
-						Collectors.toList()
-				));
-
-		return groupedRequests
-				.int2ObjectEntrySet()
-				.stream()
-				.map(entry -> luceneIndicesById[entry.getIntKey()].addDocuments(atomic, entry.getValue().stream()))
-				.reduce(0L, Long::sum);
+		return collectOn(LUCENE_SCHEDULER,
+				partitionByInt(term -> getLuceneIndexId(term.getKey(), totalShards), documents)
+						.map(entry -> luceneIndicesById[entry.key()].addDocuments(atomic, entry.values().stream())),
+				fastSummingLong()
+		);
 	}
 
 	@Override
@@ -108,17 +111,11 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public long updateDocuments(Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
-		var groupedRequests = documents
-				.collect(groupingBy(term -> getLuceneIndexId(term.getKey(), totalShards),
-						Int2ObjectOpenHashMap::new,
-						Collectors.toList()
-				));
-
-		return groupedRequests
-				.int2ObjectEntrySet()
-				.stream()
-				.map(entry -> luceneIndicesById[entry.getIntKey()].updateDocuments(entry.getValue().stream()))
-				.reduce(0L, Long::sum);
+		return collectOn(LUCENE_SCHEDULER,
+				partitionByInt(term -> getLuceneIndexId(term.getKey(), totalShards), documents)
+						.map(entry -> luceneIndicesById[entry.key()].updateDocuments(entry.values().stream())),
+				fastSummingLong()
+		);
 	}
 
 	@Override
@@ -131,7 +128,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 			QueryParams queryParams,
 			@Nullable String keyFieldName,
 			Multimap<String, String> mltDocumentFields) {
-		return luceneIndicesSet.parallelStream().flatMap(luceneIndex -> luceneIndex.moreLikeThis(snapshot,
+		return luceneIndicesSet.stream().flatMap(luceneIndex -> luceneIndex.moreLikeThis(snapshot,
 				queryParams,
 				keyFieldName,
 				mltDocumentFields
@@ -166,7 +163,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 	public Stream<LLSearchResultShard> search(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName) {
-		return luceneIndicesSet.parallelStream().flatMap(luceneIndex -> luceneIndex.search(snapshot,
+		return luceneIndicesSet.stream().flatMap(luceneIndex -> luceneIndex.search(snapshot,
 				queryParams,
 				keyFieldName
 		));
@@ -177,7 +174,7 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
-		return mergeShards(luceneIndicesSet.parallelStream().map(luceneIndex -> luceneIndex.computeBuckets(snapshot,
+		return mergeShards(luceneIndicesSet.stream().map(luceneIndex -> luceneIndex.computeBuckets(snapshot,
 				queries,
 				normalizationQuery,
 				bucketParams
@@ -191,34 +188,34 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public void close() {
-		luceneIndicesSet.parallelStream().forEach(SafeCloseable::close);
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::close));
 	}
 
 	@Override
 	public void flush() {
-		luceneIndicesSet.parallelStream().forEach(LLLuceneIndex::flush);
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::flush));
 	}
 
 	@Override
 	public void waitForMerges() {
-		luceneIndicesSet.parallelStream().forEach(LLLuceneIndex::waitForMerges);
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::waitForMerges));
 	}
 
 	@Override
 	public void waitForLastMerges() {
-		luceneIndicesSet.parallelStream().forEach(LLLuceneIndex::waitForLastMerges);
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::waitForLastMerges));
 	}
 
 	@Override
 	public void refresh(boolean force) {
-		luceneIndicesSet.parallelStream().forEach(index -> index.refresh(force));
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(index -> index.refresh(force)));
 	}
 
 	@Override
 	public LLSnapshot takeSnapshot() {
 		// Generate next snapshot index
 		var snapshotIndex = nextSnapshotNumber.getAndIncrement();
-		var snapshot = luceneIndicesSet.parallelStream().map(LLSnapshottable::takeSnapshot).toList();
+		var snapshot = collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream().map(LLSnapshottable::takeSnapshot), fastListing());
 		registeredSnapshots.put(snapshotIndex, snapshot);
 		return new LLSnapshot(snapshotIndex);
 	}
@@ -235,12 +232,12 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 
 	@Override
 	public void pauseForBackup() {
-		this.luceneIndicesSet.forEach(IBackuppable::pauseForBackup);
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::pauseForBackup));
 	}
 
 	@Override
 	public void resumeAfterBackup() {
-		this.luceneIndicesSet.forEach(IBackuppable::resumeAfterBackup);
+		collectOn(LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::resumeAfterBackup));
 	}
 
 	@Override

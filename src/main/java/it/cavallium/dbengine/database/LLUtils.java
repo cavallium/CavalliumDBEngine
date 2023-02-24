@@ -689,10 +689,4 @@ public class LLUtils {
 			return term.getValueBytesRef();
 		}
 	}
-
-	public static <X> void consume(Stream<X> stream) {
-		try (stream) {
-			stream.forEach(NULL_CONSUMER);
-		}
-	}
 }

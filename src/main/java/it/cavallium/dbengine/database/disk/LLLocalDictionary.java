@@ -5,6 +5,13 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.executing;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
+import static it.cavallium.dbengine.utils.StreamUtils.fastSummingLong;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
@@ -24,15 +31,18 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.OptionalBuf;
+import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.Callable;
@@ -40,6 +50,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.tuple.Pair;
@@ -484,47 +495,48 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public void putMulti(Stream<LLEntry> entries) {
-		batches(entries, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP)).parallel().forEach(entriesWindow -> {
-			try (var writeOptions = new WriteOptions()) {
-				assert !LLUtils.isInNonBlockingThread() : "Called putMulti in a nonblocking thread";
-				if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
-					try (var batch = new CappedWriteBatch(db,
-							CAPPED_WRITE_BATCH_CAP,
-							RESERVED_WRITE_BATCH_SIZE,
-							MAX_WRITE_BATCH_SIZE,
-							writeOptions
-					)) {
-						for (LLEntry entry : entriesWindow) {
-							batch.put(cfh, entry.getKey(), entry.getValue());
+		collectOn(ROCKSDB_SCHEDULER,
+				batches(entries, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP)),
+				executing(entriesWindow -> {
+					try (var writeOptions = new WriteOptions()) {
+						assert !LLUtils.isInNonBlockingThread() : "Called putMulti in a nonblocking thread";
+						if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
+							try (var batch = new CappedWriteBatch(db,
+									CAPPED_WRITE_BATCH_CAP,
+									RESERVED_WRITE_BATCH_SIZE,
+									MAX_WRITE_BATCH_SIZE,
+									writeOptions
+							)) {
+								for (LLEntry entry : entriesWindow) {
+									batch.put(cfh, entry.getKey(), entry.getValue());
+								}
+								batch.flush();
+							}
+						} else {
+							for (LLEntry entry : entriesWindow) {
+								db.put(writeOptions, entry.getKey(), entry.getValue());
+							}
 						}
-						batch.flush();
+					} catch (RocksDBException ex) {
+						throw new CompletionException(new DBException("Failed to write: " + ex.getMessage()));
 					}
-				} else {
-					for (LLEntry entry : entriesWindow) {
-						db.put(writeOptions, entry.getKey(), entry.getValue());
-					}
-				}
-			} catch (RocksDBException ex) {
-				throw new CompletionException(new DBException("Failed to write: " + ex.getMessage()));
-			}
-		});
+				})
+		);
 	}
 
 	@Override
-	public <K> Stream<Boolean> updateMulti(Stream<K> keys, Stream<Buf> serializedKeys,
+	public <K> Stream<Boolean> updateMulti(Stream<SerializedKey<K>> keys,
 			KVSerializationFunction<K, @Nullable Buf, @Nullable Buf> updateFunction) {
-		record Key<K>(K key, Buf serializedKey) {}
 		record MappedInput<K>(K key, Buf serializedKey, OptionalBuf mapped) {}
-		return batches(Streams.zip(keys, serializedKeys, Key<K>::new), Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
-				.parallel()
+		return batches(keys, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.flatMap(entriesWindow -> {
 					try (var writeOptions = new WriteOptions()) {
 						if (LLUtils.isInNonBlockingThread()) {
 							throw new UnsupportedOperationException("Called updateMulti in a nonblocking thread");
 						}
 						List<Buf> keyBufsWindow = new ArrayList<>(entriesWindow.size());
-						for (Key<K> objects : entriesWindow) {
-							keyBufsWindow.add(objects.serializedKey());
+						for (var objects : entriesWindow) {
+							keyBufsWindow.add(objects.serialized());
 						}
 						ArrayList<MappedInput<K>> mappedInputs;
 						{
@@ -572,12 +584,12 @@ public class LLLocalDictionary implements LLDictionary {
 									writeOptions
 							)) {
 								int i = 0;
-								for (Key<K> entry : entriesWindow) {
+								for (var entry : entriesWindow) {
 									var valueToWrite = updatedValuesToWrite.get(i);
 									if (valueToWrite == null) {
-										batch.delete(cfh, entry.serializedKey());
+										batch.delete(cfh, entry.serialized());
 									} else {
-										batch.put(cfh, entry.serializedKey(), valueToWrite);
+										batch.put(cfh, entry.serialized(), valueToWrite);
 									}
 									i++;
 								}
@@ -585,8 +597,8 @@ public class LLLocalDictionary implements LLDictionary {
 							}
 						} else {
 							int i = 0;
-							for (Key<K> entry : entriesWindow) {
-								db.put(writeOptions, entry.serializedKey(), updatedValuesToWrite.get(i));
+							for (var entry : entriesWindow) {
+								db.put(writeOptions, entry.serialized(), updatedValuesToWrite.get(i));
 								i++;
 							}
 						}
@@ -618,7 +630,7 @@ public class LLLocalDictionary implements LLDictionary {
 		if (range.isSingle()) {
 			var rangeSingle = range.getSingle();
 
-			return Stream.of(getRangeSingle(snapshot, rangeSingle).toList());
+			return getRangeSingle(snapshot, rangeSingle).map(Collections::singletonList);
 		} else {
 			return getRangeMultiGrouped(snapshot, range, prefixLength, smallRange);
 		}
@@ -803,56 +815,55 @@ public class LLLocalDictionary implements LLDictionary {
 				throw new DBException("Failed to set a range: " + ex.getMessage());
 			}
 
-			batches(entries, MULTI_GET_WINDOW)
-					.forEach(entriesList -> {
-						try (var writeOptions = new WriteOptions()) {
-							if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
-								for (LLEntry entry : entriesList) {
-									db.put(writeOptions, entry.getKey(), entry.getValue());
-								}
-							} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
-
-								try (var batch = new CappedWriteBatch(db,
-										CAPPED_WRITE_BATCH_CAP,
-										RESERVED_WRITE_BATCH_SIZE,
-										MAX_WRITE_BATCH_SIZE,
-										writeOptions
-								)) {
-									for (LLEntry entry : entriesList) {
-										batch.put(cfh, entry.getKey(), entry.getValue());
-									}
-									batch.flush();
-								}
-							} else {
-								try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
-									for (LLEntry entry : entriesList) {
-										batch.put(cfh, LLUtils.asArray(entry.getKey()), LLUtils.asArray(entry.getValue()));
-									}
-									db.write(writeOptions, batch);
-									batch.clear();
-								}
-							}
-						} catch (RocksDBException ex) {
-							throw new CompletionException(new DBException("Failed to write range", ex));
+			collectOn(ROCKSDB_SCHEDULER, batches(entries, MULTI_GET_WINDOW), executing(entriesList -> {
+				try (var writeOptions = new WriteOptions()) {
+					if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
+						for (LLEntry entry : entriesList) {
+							db.put(writeOptions, entry.getKey(), entry.getValue());
 						}
-					});
+					} else if (USE_CAPPED_WRITE_BATCH_IN_SET_RANGE) {
+
+						try (var batch = new CappedWriteBatch(db,
+								CAPPED_WRITE_BATCH_CAP,
+								RESERVED_WRITE_BATCH_SIZE,
+								MAX_WRITE_BATCH_SIZE,
+								writeOptions
+						)) {
+							for (LLEntry entry : entriesList) {
+								batch.put(cfh, entry.getKey(), entry.getValue());
+							}
+							batch.flush();
+						}
+					} else {
+						try (var batch = new WriteBatch(RESERVED_WRITE_BATCH_SIZE)) {
+							for (LLEntry entry : entriesList) {
+								batch.put(cfh, LLUtils.asArray(entry.getKey()), LLUtils.asArray(entry.getValue()));
+							}
+							db.write(writeOptions, batch);
+							batch.clear();
+						}
+					}
+				} catch (RocksDBException ex) {
+					throw new CompletionException(new DBException("Failed to write range", ex));
+				}
+			}));
 		} else {
 			if (USE_WRITE_BATCHES_IN_SET_RANGE) {
 				throw new UnsupportedOperationException("Can't use write batches in setRange without window. Please fix the parameters");
 			}
-			this.getRange(null, range, false, smallRange).forEach(oldValue -> {
+			collectOn(ROCKSDB_SCHEDULER, this.getRange(null, range, false, smallRange), executing(oldValue -> {
 				try (var writeOptions = new WriteOptions()) {
 					db.delete(writeOptions, oldValue.getKey());
 				} catch (RocksDBException ex) {
 					throw new CompletionException(new DBException("Failed to write range", ex));
 				}
-			});
+			}));
 
-			entries.forEach(entry -> {
+			collectOn(ROCKSDB_SCHEDULER, entries, executing(entry -> {
 				if (entry.getKey() != null && entry.getValue() != null) {
 					this.putInternal(entry.getKey(), entry.getValue());
 				}
-			});
+			}));
 		}
 	}
 
@@ -1079,14 +1090,12 @@ public class LLLocalDictionary implements LLDictionary {
 			readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 			if (PARALLEL_EXACT_SIZE) {
-				var commonPool = ForkJoinPool.commonPool();
-				var futures = IntStream
+				return collectOn(ROCKSDB_SCHEDULER, IntStream
 						.range(-1, LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length)
 						.mapToObj(idx -> Pair.of(idx == -1 ? new byte[0] : LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx],
 								idx + 1 >= LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length ? null
 										: LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx + 1]
-						))
-						.map(range -> (Callable<Long>) () -> {
+						)).map(range -> {
 							long partialCount = 0;
 							try (var rangeReadOpts = new ReadOptions(readOpts)) {
 								Slice sliceBegin;
@@ -1116,6 +1125,8 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										return partialCount;
 									}
+								} catch (RocksDBException ex) {
+									throw new CompletionException(new IOException("Failed to get size", ex));
 								} finally {
 									if (sliceBegin != null) {
 										sliceBegin.close();
@@ -1125,14 +1136,7 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								}
 							}
-						})
-						.map(task -> commonPool.submit(task))
-						.toList();
-				long count = 0;
-				for (ForkJoinTask<Long> future : futures) {
-					count += future.join();
-				}
-				return count;
+						}), fastSummingLong());
 			} else {
 				long count = 0;
 				try (var rocksIterator = db.newIterator(readOpts, null, null)) {

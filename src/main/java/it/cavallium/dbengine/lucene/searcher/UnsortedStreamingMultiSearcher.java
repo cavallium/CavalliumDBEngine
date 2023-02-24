@@ -50,7 +50,6 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	private Stream<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {
 		return mapWithIndex(shards.stream(),
 				(shard, shardIndex) -> LuceneGenerator.reactive(shard, localQueryParams, (int) shardIndex))
-				.parallel()
 				.flatMap(Function.identity());
 	}
 

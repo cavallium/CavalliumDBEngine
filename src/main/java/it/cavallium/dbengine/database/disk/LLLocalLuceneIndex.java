@@ -4,6 +4,8 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
+import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static java.util.Objects.requireNonNull;
 
 import com.google.common.collect.Multimap;
@@ -365,7 +367,8 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 				});
 				return count.sum();
 			} else {
-				var documentsList = documents.toList();
+				var documentsList = collect(documents, fastListing());
+				assert documentsList != null;
 				var count = documentsList.size();
 				StopWatch stopWatch = StopWatch.createStarted();
 				try {

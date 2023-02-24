@@ -1,12 +1,10 @@
 package it.cavallium.dbengine.tests;
 
 import static it.cavallium.dbengine.tests.DbTestUtils.*;
-import static it.cavallium.dbengine.utils.StreamUtils.toListClose;
+import static it.cavallium.dbengine.utils.StreamUtils.toList;
 
 import com.google.common.collect.Streams;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
 import java.io.IOException;
@@ -19,16 +17,13 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -401,8 +396,8 @@ public abstract class TestDictionaryMap {
 		var remainingEntries = new ArrayList<Entry<String, String>>();
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryMap(tempDictionary(db, updateMode), mapType, 5);
-			return Arrays.asList(toListClose(map.setAllValuesAndGetPrevious(entries.entrySet().stream())),
-					toListClose(map.setAllValuesAndGetPrevious(entries.entrySet().stream()))
+			return Arrays.asList(toList(map.setAllValuesAndGetPrevious(entries.entrySet().stream())),
+					toList(map.setAllValuesAndGetPrevious(entries.entrySet().stream()))
 			);
 		}));
 		if (shouldFail) {
@@ -425,7 +420,7 @@ public abstract class TestDictionaryMap {
 			var entriesFlux = entries.entrySet();
 			var keysFlux = entriesFlux.stream().map(Entry::getKey).toList();
 			map.set(entries);
-			var resultsFlux = toListClose(map.getMulti(null, entries.keySet().stream()));
+			var resultsFlux = toList(map.getMulti(null, entries.keySet().stream()));
 			return Streams
 					.zip(keysFlux.stream(), resultsFlux.stream(), Map::entry)
 					.filter(k -> k.getValue().isPresent())
@@ -504,7 +499,7 @@ public abstract class TestDictionaryMap {
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryMap(tempDictionary(db, updateMode), mapType, 5);
 			map.putMulti(entries.entrySet().stream());
-			return toListClose(map.getAllValues(null, false));
+			return toList(map.getAllValues(null, false));
 		}));
 		if (shouldFail) {
 			this.checkLeaks = false;
@@ -535,7 +530,7 @@ public abstract class TestDictionaryMap {
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryMap(tempDictionary(db, updateMode), mapType, 5);
 			map.putMulti(entries.entrySet().stream());
-			return toListClose(map.getAllStages(null, false).map(stage -> {
+			return toList(map.getAllStages(null, false).map(stage -> {
 				var v = stage.getValue().get(null);
 				if (v == null) {
 					return null;

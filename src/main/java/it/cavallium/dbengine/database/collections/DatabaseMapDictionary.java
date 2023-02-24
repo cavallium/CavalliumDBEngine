@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import static it.cavallium.dbengine.utils.StreamUtils.collectClose;
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.buffers.BufDataInput;
@@ -13,6 +15,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLEntry;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -22,6 +25,7 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
@@ -166,7 +170,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
-		var map = collectClose(dictionary
+		Stream<Entry<T, U>> stream = dictionary
 				.getRange(resolveSnapshot(snapshot), range, false, true)
 				.map(entry -> {
 					Entry<T, U> deserializedEntry;
@@ -182,7 +186,12 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					U value = valueSerializer.deserialize(serializedValue);
 					deserializedEntry = Map.entry(key, value);
 					return deserializedEntry;
-				}), Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
+				});
+		// serializedKey
+		// after this, it becomes serializedSuffixAndExt
+		var map = StreamUtils.collect(stream,
+				Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new)
+		);
 		return map.isEmpty() ? null : map;
 	}
 
@@ -368,10 +377,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	@Override
 	public Stream<Boolean> updateMulti(Stream<T> keys,
 			KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
-		List<T> sharedKeys = keys.toList();
-		var serializedKeys = sharedKeys.stream().map(keySuffix -> serializeKeySuffixToKey(keySuffix));
+		var serializedKeys = keys.map(keySuffix -> new SerializedKey<>(keySuffix, serializeKeySuffixToKey(keySuffix)));
 		var serializedUpdater = getSerializedUpdater(updater);
-		return dictionary.updateMulti(sharedKeys.stream(), serializedKeys, serializedUpdater);
+		return dictionary.updateMulti(serializedKeys, serializedUpdater);
 	}
 
 	@Override
@@ -487,9 +495,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries) {
-		var previous = this.getAllValues(null, false);
-		dictionary.setRange(range, entries.map(entry -> serializeEntry(entry)), false);
-		return previous;
+		return getAllValues(null, false)
+				.onClose(() -> dictionary.setRange(range, entries.map(entry -> serializeEntry(entry)), false));
 	}
 
 	@Override

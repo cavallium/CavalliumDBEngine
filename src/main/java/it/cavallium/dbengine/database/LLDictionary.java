@@ -38,7 +38,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	void putMulti(Stream<LLEntry> entries);
 
-	<K> Stream<Boolean> updateMulti(Stream<K> keys, Stream<Buf> serializedKeys,
+	<K> Stream<Boolean> updateMulti(Stream<SerializedKey<K>> keys,
 			KVSerializationFunction<K, @Nullable Buf, @Nullable Buf> updateFunction);
 
 	Stream<LLEntry> getRange(@Nullable LLSnapshot snapshot,

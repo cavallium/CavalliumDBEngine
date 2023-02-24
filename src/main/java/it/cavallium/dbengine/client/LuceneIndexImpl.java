@@ -1,6 +1,10 @@
 package it.cavallium.dbengine.client;
 
-import static it.cavallium.dbengine.utils.StreamUtils.toListClose;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
+import static java.util.stream.Collectors.collectingAndThen;
+import static java.util.stream.Collectors.toList;
 
 import it.cavallium.dbengine.client.Hits.CloseableHits;
 import it.cavallium.dbengine.client.Hits.LuceneHits;
@@ -92,34 +96,19 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		var mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 
-		var results = toListClose(luceneIndex
-				.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
+		return collectOn(LUCENE_SCHEDULER, luceneIndex.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName(),
-						mltDocumentFields
-				));
-		LLSearchResultShard mergedResults = mergeResults(queryParams, results);
-		if (mergedResults != null) {
-			return mapResults(mergedResults);
-		} else {
-			return Hits.empty();
-		}
+						mltDocumentFields),
+				collectingAndThen(toList(), toHitsCollector(queryParams)));
 	}
 
 	@Override
 	public Hits<HitKey<T>> search(ClientQueryParams queryParams) {
-		var results = toListClose(luceneIndex
-				.search(resolveSnapshot(queryParams.snapshot()),
+		return collectOn(LUCENE_SCHEDULER, luceneIndex.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
-						indicizer.getKeyFieldName()
-				));
-
-		var mergedResults = mergeResults(queryParams, results);
-		if (mergedResults != null) {
-			return mapResults(mergedResults);
-		} else {
-			return Hits.empty();
-		}
+						indicizer.getKeyFieldName()),
+				collectingAndThen(toList(), toHitsCollector(queryParams)));
 	}
 
 	@Override
@@ -192,6 +181,18 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		luceneIndex.releaseSnapshot(snapshot);
 	}
 
+	private Function<List<LLSearchResultShard>, Hits<HitKey<T>>> toHitsCollector(ClientQueryParams queryParams) {
+		return (List<LLSearchResultShard> results) -> resultsToHits(mergeResults(queryParams, results));
+	}
+
+	private Hits<HitKey<T>> resultsToHits(LLSearchResultShard resultShard) {
+		if (resultShard != null) {
+			return mapResults(resultShard);
+		} else {
+			return Hits.empty();
+		}
+	}
+
 	@SuppressWarnings({"unchecked", "rawtypes"})
 	@Nullable
 	private static LLSearchResultShard mergeResults(ClientQueryParams queryParams, List<LLSearchResultShard> shards) {
@@ -224,7 +225,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		} else if (results.size() == 1) {
 			resultsFlux = results.get(0);
 		} else {
-			resultsFlux = results.parallelStream().flatMap(Function.identity());
+			resultsFlux = results.stream().flatMap(Function.identity());
 		}
 		if (luceneResources) {
 			return new LuceneLLSearchResultShard(resultsFlux, count, (List<LuceneCloseable>) resources);

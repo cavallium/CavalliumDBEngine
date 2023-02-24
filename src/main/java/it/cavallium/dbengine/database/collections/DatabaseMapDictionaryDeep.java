@@ -276,7 +276,6 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	public Stream<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return dictionary
 				.getRangeKeyPrefixes(resolveSnapshot(snapshot), range, keyPrefixLength + keySuffixLength, smallRange)
-				.parallel()
 				.map(groupKeyWithoutExt -> {
 					T deserializedSuffix;
 					var splittedGroupSuffix = suffixSubList(groupKeyWithoutExt);

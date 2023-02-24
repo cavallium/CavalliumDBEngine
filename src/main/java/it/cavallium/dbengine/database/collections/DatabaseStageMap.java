@@ -1,9 +1,14 @@
 package it.cavallium.dbengine.database.collections;
 
-import static it.cavallium.dbengine.database.LLUtils.consume;
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.count;
+import static it.cavallium.dbengine.utils.StreamUtils.executing;
+import static it.cavallium.dbengine.utils.StreamUtils.iterating;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
+import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
@@ -60,7 +65,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default Stream<Boolean> updateMulti(Stream<T> keys, KVSerializationFunction<T, @Nullable U, @Nullable U> updater) {
-		return keys.parallel().map(key -> this.updateValue(key, prevValue -> updater.apply(key, prevValue)));
+		return keys.map(key -> this.updateValue(key, prevValue -> updater.apply(key, prevValue)));
 	}
 
 	default boolean updateValue(T key, SerializationFunction<@Nullable U, @Nullable U> updater) {
@@ -98,28 +103,24 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	 * GetMulti must return the elements in sequence!
 	 */
 	default Stream<Optional<U>> getMulti(@Nullable CompositeSnapshot snapshot, Stream<T> keys) {
-		return keys.parallel().map(key -> Optional.ofNullable(this.getValue(snapshot, key)));
+		return keys.map(key -> Optional.ofNullable(this.getValue(snapshot, key)));
 	}
 
 	default void putMulti(Stream<Entry<T, U>> entries) {
-		try (var stream = entries.parallel()) {
-			stream.forEach(entry -> this.putValue(entry.getKey(), entry.getValue()));
-		}
+		collectOn(ROCKSDB_SCHEDULER, entries, executing(entry -> this.putValue(entry.getKey(), entry.getValue())));
 	}
 
 	Stream<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
 
 	default Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
-		return this.getAllStages(snapshot, smallRange).parallel().mapMulti((stage, mapper) -> {
+		return this.getAllStages(snapshot, smallRange).map(stage -> {
 			var val = stage.getValue().get(snapshot);
-			if (val != null) {
-				mapper.accept(Map.entry(stage.getKey(), val));
-			}
-		});
+			return val != null ? Map.entry(stage.getKey(), val) : null;
+		}).filter(Objects::nonNull);
 	}
 
 	default void setAllValues(Stream<Entry<T, U>> entries) {
-		consume(setAllValuesAndGetPrevious(entries));
+		setAllValuesAndGetPrevious(entries).close();
 	}
 
 	Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries);
@@ -136,16 +137,15 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				this.setAllValues(values.map(entriesReplacer));
 			}
 		} else {
-			try (var values = this.getAllValues(null, smallRange).map(entriesReplacer)) {
-				values.forEach(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()));
-			}
+			collectOn(ROCKSDB_SCHEDULER,
+					this.getAllValues(null, smallRange).map(entriesReplacer),
+					executing(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()))
+			);
 		}
 	}
 
 	default void replaceAll(Consumer<Entry<T, US>> entriesReplacer) {
-		try (var stream = this.getAllStages(null, false)) {
-			stream.forEach(entriesReplacer);
-		}
+		collectOn(ROCKSDB_SCHEDULER, this.getAllStages(null, false), executing(entriesReplacer));
 	}
 
 	@Override
@@ -225,7 +225,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	@Override
 	default long leavesCount(@Nullable CompositeSnapshot snapshot, boolean fast) {
-		return StreamUtils.countClose(this.getAllStages(snapshot, false));
+		return count(this.getAllStages(snapshot, false));
 	}
 
 	/**

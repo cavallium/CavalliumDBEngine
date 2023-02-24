@@ -1,11 +1,16 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
+
 import com.google.common.collect.Streams;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.collector.DecimalBucketMultiCollectorManager;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
+import java.util.Collection;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -30,7 +35,7 @@ public class DecimalBucketMultiSearcher {
 		}
 	}
 
-	private Buckets search(Iterable<IndexSearcher> indexSearchers,
+	private Buckets search(Collection<IndexSearcher> indexSearchers,
 			BucketParams bucketParams,
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery) {
@@ -44,12 +49,12 @@ public class DecimalBucketMultiSearcher {
 				bucketParams.collectionRate(),
 				bucketParams.sampleSize()
 		);
-		return cmm.reduce(Streams.stream(indexSearchers).parallel().map(indexSearcher -> {
+		return cmm.reduce(collectOn(LUCENE_SCHEDULER, indexSearchers.stream().map(indexSearcher -> {
 			try {
 				return cmm.search(indexSearcher);
 			} catch (IOException e) {
 				throw new DBException(e);
 			}
-		}).toList());
+		}), fastListing()));
 	}
 }

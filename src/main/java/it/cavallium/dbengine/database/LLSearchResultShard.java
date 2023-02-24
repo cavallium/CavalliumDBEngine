@@ -63,6 +63,7 @@ public class LLSearchResultShard extends SimpleResource implements DiscardingClo
 
 	@Override
 	public void onClose() {
+		results.close();
 	}
 
 	public static class ResourcesLLSearchResultShard extends LLSearchResultShard {

@@ -385,7 +385,7 @@ public class LuceneUtils {
 	public static Stream<LLKeyScore> convertHits(Stream<ScoreDoc> hitsFlux,
 			List<IndexSearcher> indexSearchers,
 			@Nullable String keyFieldName) {
-		return hitsFlux.parallel().mapMulti((hit, sink) -> {
+		return hitsFlux.mapMulti((hit, sink) -> {
 			var mapped = mapHitBlocking(hit, indexSearchers, keyFieldName);
 			if (mapped != null) {
 				sink.accept(mapped);

@@ -1,5 +1,8 @@
 package it.cavallium.dbengine.database;
 
+import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.fastReducing;
+
 import com.google.common.collect.Multimap;
 import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.client.query.current.data.NoSort;
@@ -8,10 +11,12 @@ import it.cavallium.dbengine.client.query.current.data.QueryParams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map.Entry;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -69,11 +74,12 @@ public interface LLLuceneIndex extends LLSnapshottable, IBackuppable, SafeClosea
 				false,
 				timeout == null ? Long.MAX_VALUE : timeout.toMillis()
 		);
-		try (var stream = this.search(snapshot, params, null)) {
-			return stream.parallel().map(LLSearchResultShard::totalHitsCount).reduce(TotalHitsCount.of(0, true),
-					(a, b) -> TotalHitsCount.of(a.value() + b.value(), a.exact() && b.exact())
-			);
-		}
+		return collectOn(StreamUtils.LUCENE_SCHEDULER,
+				this.search(snapshot, params, null).map(LLSearchResultShard::totalHitsCount),
+				fastReducing(TotalHitsCount.of(0, true),
+						(a, b) -> TotalHitsCount.of(a.value() + b.value(), a.exact() && b.exact())
+				)
+		);
 	}
 
 	boolean isLowMemoryMode();

@@ -1,7 +1,9 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
+import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
 
 import com.google.common.collect.Streams;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
@@ -178,9 +180,8 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 			return null;
 		};
 		record IndexedShard(IndexSearcher indexSearcher, long shardIndex) {}
-		List<TopDocs> shardResults = Streams
-				.mapWithIndex(indexSearchers.stream(), IndexedShard::new)
-				.map(shardWithIndex -> {
+		List<TopDocs> shardResults = toListOn(LUCENE_SCHEDULER,
+				Streams.mapWithIndex(indexSearchers.stream(), IndexedShard::new).map(shardWithIndex -> {
 					var index = (int) shardWithIndex.shardIndex();
 					var shard = shardWithIndex.indexSearcher();
 
@@ -192,7 +193,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						throw new DBException(e);
 					}
 				})
-				.toList();
+		);
 
 		var pageTopDocs = cmm.reduce(shardResults);
 

@@ -1,17 +1,19 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.utils.StreamUtils.toList;
 import static java.util.Objects.requireNonNull;
 
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.util.Collection;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -36,14 +38,15 @@ public class StandardSearcher implements MultiSearcher {
 	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		}
 		// Search results
 		var fullDocs = this.search(indexSearchers.shards(), queryParams);
 		// Compute the results
-		return this.computeResults(fullDocs, indexSearchers, keyFieldName, queryParams);
+		return this.computeResults(fullDocs, indexSearchers, keyFieldName, queryParams, filterer);
 	}
 
 	/**
@@ -55,10 +58,12 @@ public class StandardSearcher implements MultiSearcher {
 		CollectorManager<? extends TopDocsCollector<?>, ? extends TopDocs> sharedManager;
 		if (queryParams.isSorted() && !queryParams.isSortedByScore()) {
 			sharedManager = TopFieldCollector.createSharedManager(queryParams.sort(),
-					queryParams.limitInt(), null, totalHitsThreshold);
+					queryParams.limitInt(), null, totalHitsThreshold
+			);
 		} else {
 			sharedManager = TopScoreDocCollector.createSharedManager(queryParams.limitInt(), null, totalHitsThreshold);
-		};
+		}
+		;
 		var collectors = indexSearchers.stream().map(shard -> {
 			try {
 				TopDocsCollector<?> collector;
@@ -112,43 +117,20 @@ public class StandardSearcher implements MultiSearcher {
 	private LuceneSearchResult computeResults(TopDocs data,
 			LLIndexSearchers indexSearchers,
 			String keyFieldName,
-			LocalQueryParams queryParams) {
+			LocalQueryParams queryParams,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		var totalHitsCount = LuceneUtils.convertTotalHitsCount(data.totalHits);
 
 		Stream<LLKeyScore> hitsStream = LuceneUtils
-				.convertHits(Stream.of(data.scoreDocs),
-						indexSearchers.shards(), keyFieldName
-				)
+				.convertHits(Stream.of(data.scoreDocs), indexSearchers.shards(), keyFieldName)
 				.skip(queryParams.offsetLong())
 				.limit(queryParams.limitLong());
 
-		return new MyLuceneSearchResult(totalHitsCount, hitsStream, indexSearchers);
+		return new LuceneSearchResult(totalHitsCount, toList(filterer.apply(hitsStream)));
 	}
 
 	@Override
 	public String getName() {
 		return "standard";
-	}
-
-	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
-
-		private final LLIndexSearchers indexSearchers;
-
-		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
-				Stream<LLKeyScore> hitsStream,
-				LLIndexSearchers indexSearchers) {
-			super(totalHitsCount, hitsStream);
-			this.indexSearchers = indexSearchers;
-		}
-
-		@Override
-		protected void onClose() {
-			try {
-				indexSearchers.close();
-			} catch (Throwable e) {
-				LOG.error("Can't close index searchers", e);
-			}
-			super.onClose();
-		}
 	}
 }

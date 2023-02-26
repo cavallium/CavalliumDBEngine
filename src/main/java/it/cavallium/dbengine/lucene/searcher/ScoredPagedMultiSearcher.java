@@ -2,6 +2,7 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
 import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
 
@@ -15,12 +16,14 @@ import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
 import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorMultiManager;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -42,9 +45,10 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		}
 
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
@@ -57,7 +61,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 						indexSearchers.shards(),
 						queryParams,
 						keyFieldName,
-						() -> indexSearchers.close()
+						filterer
 				);
 	}
 
@@ -119,7 +123,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			Runnable onClose) {
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		var totalHitsCount = firstResult.totalHitsCount();
 		var firstPageHitsStream = firstResult.firstPageHitsStream();
 		var secondPageInfo = firstResult.nextPageInfo();
@@ -127,7 +131,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 		Stream<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 		Stream<LLKeyScore> combinedStream = Stream.concat(firstPageHitsStream, nextHitsFlux);
-		return new MyLuceneSearchResult(totalHitsCount, combinedStream, onClose);
+		return new LuceneSearchResult(totalHitsCount, StreamUtils.collect(filterer.apply(combinedStream), fastListing()));
 	}
 
 	/**
@@ -214,24 +218,4 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 		return "scored paged multi";
 	}
 
-
-	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
-
-		private final Runnable onClose;
-
-		public MyLuceneSearchResult(TotalHitsCount totalHitsCount, Stream<LLKeyScore> combinedFlux, Runnable onClose) {
-			super(totalHitsCount, combinedFlux);
-			this.onClose = onClose;
-		}
-
-		@Override
-		protected void onClose() {
-			try {
-				onClose.run();
-			} catch (Throwable ex) {
-				LOG.error("Failed to close the search result", ex);
-			}
-			super.onClose();
-		}
-	}
 }

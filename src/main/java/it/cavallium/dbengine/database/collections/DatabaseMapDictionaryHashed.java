@@ -13,6 +13,7 @@ import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.ObjectArraySet;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -188,12 +189,15 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 
 	@Override
 	public Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries) {
-		return entries.mapMulti((entry, sink) -> {
+		List<Entry<T, U>> prevList = entries.map(entry -> {
 			var prev = this.at(null, entry.getKey()).setAndGetPrevious(entry.getValue());
 			if (prev != null) {
-				sink.accept(Map.entry(entry.getKey(), prev));
+				return Map.entry(entry.getKey(), prev);
+			} else {
+				return null;
 			}
-		});
+		}).filter(Objects::nonNull).toList();
+		return prevList.stream();
 	}
 
 	@Override

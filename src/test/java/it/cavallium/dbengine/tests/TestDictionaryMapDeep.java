@@ -8,6 +8,7 @@ import static it.cavallium.dbengine.tests.DbTestUtils.runVoid;
 import static it.cavallium.dbengine.tests.DbTestUtils.tempDatabaseMapDictionaryDeepMap;
 import static it.cavallium.dbengine.tests.DbTestUtils.tempDb;
 import static it.cavallium.dbengine.tests.DbTestUtils.tempDictionary;
+import static it.cavallium.dbengine.utils.StreamUtils.toList;
 
 import com.google.common.collect.Streams;
 import it.cavallium.dbengine.database.UpdateMode;
@@ -805,11 +806,11 @@ public abstract class TestDictionaryMapDeep {
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 					var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
 					map.putMulti(entries.entrySet().stream());
-					return map.getAllStages(null, false).map(stage -> {
+					return toList(map.getAllStages(null, false).map(stage -> {
 						var v = stage.getValue().get(null);
 						if (v == null) return null;
 						return Map.entry(stage.getKey(), v);
-					}).filter(Objects::nonNull).toList();
+					}).filter(Objects::nonNull));
 				}));
 		if (shouldFail) {
 			this.checkLeaks = false;

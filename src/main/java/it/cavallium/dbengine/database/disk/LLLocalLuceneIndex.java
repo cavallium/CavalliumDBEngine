@@ -4,6 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_LUCENE;
 import static it.cavallium.dbengine.database.LLUtils.toDocument;
 import static it.cavallium.dbengine.database.LLUtils.toFields;
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
+import static it.cavallium.dbengine.lucene.searcher.LuceneSearchResult.EMPTY_COUNT;
 import static it.cavallium.dbengine.utils.StreamUtils.collect;
 import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static java.util.Objects.requireNonNull;
@@ -60,6 +61,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.stream.Stream;
@@ -494,33 +496,38 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 		var searcher = this.searcherManager.retrieveSearcher(snapshot);
 		var transformer = new MoreLikeThisTransformer(mltDocumentFieldsFlux, luceneAnalyzer, luceneSimilarity);
 
-		var result = localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer);
-		return Stream.of(LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result));
+		var result = localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer, Function.identity());
+		return Stream.of(new LLSearchResultShard(result.results(), result.totalHitsCount()));
 	}
 
 	@Override
 	public Stream<LLSearchResultShard> search(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		var result = searchInternal(snapshot, queryParams, keyFieldName);
-		var shard = LLSearchResultShard.withResource(result.results(), result.totalHitsCount(), result);
-		return Stream.of(shard).onClose(shard::close);
+		var shard = new LLSearchResultShard(result.results(), result.totalHitsCount());
+		return Stream.of(shard);
 	}
 
 	public LuceneSearchResult searchInternal(@Nullable LLSnapshot snapshot, QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
 		try (var searcher = searcherManager.retrieveSearcher(snapshot)) {
-
-			return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE);
+			if (searcher != null) {
+				return localSearcher.collect(searcher, localQueryParams, keyFieldName, NO_REWRITE, Function.identity());
+			} else {
+				return LuceneSearchResult.EMPTY;
+			}
 		}
 	}
 
 	@Override
 	public TotalHitsCount count(@Nullable LLSnapshot snapshot, Query query, @Nullable Duration timeout) {
 		var params = LuceneUtils.getCountQueryParams(query);
-		try (var result = this.searchInternal(snapshot, params, null)) {
-			if (result == null) return TotalHitsCount.of(0, true);
+		var result = this.searchInternal(snapshot, params, null);
+		if (result != null) {
 			return result.totalHitsCount();
+		} else {
+			return EMPTY_COUNT;
 		}
 	}
 
@@ -534,9 +541,10 @@ public class LLLocalLuceneIndex extends SimpleResource implements IBackuppable, 
 			localQueries.add(QueryParser.toQuery(query, luceneAnalyzer));
 		}
 		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
-		LLIndexSearchers searchers = LLIndexSearchers.unsharded(searcherManager.retrieveSearcher(snapshot));
+		try (LLIndexSearchers searchers = LLIndexSearchers.unsharded(searcherManager.retrieveSearcher(snapshot))) {
 
-		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
+			return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
+		}
 	}
 
 	public LLIndexSearcher retrieveSearcher(@Nullable LLSnapshot snapshot) {

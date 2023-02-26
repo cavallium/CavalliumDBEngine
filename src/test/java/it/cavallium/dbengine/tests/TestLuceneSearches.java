@@ -237,9 +237,9 @@ public class TestLuceneSearches {
 			ExpectedQueryType expectedQueryType) throws Throwable {
 
 		runSearchers(expectedQueryType, searcher -> {
-			var luceneIndex = getLuceneIndex(expectedQueryType.shard(), searcher);
-			var query = queryParamsBuilder.build();
-			try (var results = luceneIndex.search(query)) {
+			try (var luceneIndex1 = getLuceneIndex(expectedQueryType.shard(), searcher)) {
+				var query = queryParamsBuilder.build();
+				var results = luceneIndex1.search(query);
 				var hits = results.totalHitsCount();
 				var keys = getResults(results);
 				if (hits.exact()) {
@@ -249,9 +249,9 @@ public class TestLuceneSearches {
 				}
 
 				var standardSearcher = new StandardSearcher();
-				luceneIndex = getLuceneIndex(expectedQueryType.shard(), standardSearcher);
-				var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
-				try (var officialResults = luceneIndex.search(officialQuery)) {
+				try (var luceneIndex2 = getLuceneIndex(expectedQueryType.shard(), standardSearcher)) {
+					var officialQuery = queryParamsBuilder.limit(ELEMENTS.size() * 2L).build();
+					var officialResults = luceneIndex2.search(officialQuery);
 					var officialHits = officialResults.totalHitsCount();
 					var officialKeys = getResults(officialResults);
 					if (officialHits.exact()) {
@@ -343,10 +343,7 @@ public class TestLuceneSearches {
 	}
 
 	private List<Scored> getResults(Hits<HitKey<String>> results) {
-		return results
-				.results()
-				.map(key -> new Scored(key.key(), key.score()))
-				.toList();
+		return results.results().stream().map(key -> new Scored(key.key(), key.score())).toList();
 	}
 
 }

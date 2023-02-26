@@ -7,6 +7,7 @@ import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import org.apache.lucene.search.IndexSearcher;
 
 public interface LLIndexSearchers extends DiscardingCloseable {
@@ -27,11 +28,12 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 
 	LLIndexSearcher llShard(int shardIndex);
 
-	class UnshardedIndexSearchers extends SimpleResource implements LLIndexSearchers, LuceneCloseable {
+	class UnshardedIndexSearchers implements LLIndexSearchers, LuceneCloseable {
 
 		private final LLIndexSearcher indexSearcher;
 
 		public UnshardedIndexSearchers(LLIndexSearcher indexSearcher) {
+			Objects.requireNonNull(indexSearcher);
 			this.indexSearcher = indexSearcher;
 		}
 
@@ -70,12 +72,12 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 		}
 
 		@Override
-		protected void onClose() {
+		public void close() {
 			indexSearcher.close();
 		}
 	}
 
-	class ShardedIndexSearchers extends SimpleResource implements LLIndexSearchers, LuceneCloseable {
+	class ShardedIndexSearchers implements LLIndexSearchers, LuceneCloseable {
 
 		private final List<LLIndexSearcher> indexSearchers;
 		private final List<IndexSearcher> indexSearchersVals;
@@ -117,7 +119,7 @@ public interface LLIndexSearchers extends DiscardingCloseable {
 		}
 
 		@Override
-		protected void onClose() {
+		public void close() {
 			for (LLIndexSearcher indexSearcher : indexSearchers) {
 				indexSearcher.close();
 			}

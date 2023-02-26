@@ -9,35 +9,23 @@ import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class LLSearchResultShard extends SimpleResource implements DiscardingCloseable {
+public class LLSearchResultShard {
 
 	private static final Logger LOG = LogManager.getLogger(LLSearchResultShard.class);
 
-	private final Stream<LLKeyScore> results;
+	private final List<LLKeyScore> results;
 	private final TotalHitsCount totalHitsCount;
 
-	public LLSearchResultShard(Stream<LLKeyScore> results, TotalHitsCount totalHitsCount) {
+	public LLSearchResultShard(List<LLKeyScore> results, TotalHitsCount totalHitsCount) {
 		this.results = results;
 		this.totalHitsCount = totalHitsCount;
 	}
 
-	public static LLSearchResultShard withResource(Stream<LLKeyScore> results,
-			TotalHitsCount totalHitsCount,
-			SafeCloseable closeableResource) {
-		if (closeableResource instanceof LuceneCloseable luceneCloseable) {
-			return new LuceneLLSearchResultShard(results, totalHitsCount, List.of(luceneCloseable));
-		} else {
-			return new ResourcesLLSearchResultShard(results, totalHitsCount, List.of(closeableResource));
-		}
-	}
-
-	public Stream<LLKeyScore> results() {
-		ensureOpen();
+	public List<LLKeyScore> results() {
 		return results;
 	}
 
 	public TotalHitsCount totalHitsCount() {
-		ensureOpen();
 		return totalHitsCount;
 	}
 
@@ -59,66 +47,5 @@ public class LLSearchResultShard extends SimpleResource implements DiscardingClo
 	@Override
 	public String toString() {
 		return "LLSearchResultShard[" + "results=" + results + ", " + "totalHitsCount=" + totalHitsCount + ']';
-	}
-
-	@Override
-	public void onClose() {
-		results.close();
-	}
-
-	public static class ResourcesLLSearchResultShard extends LLSearchResultShard {
-
-		private final List<SafeCloseable> resources;
-
-		public ResourcesLLSearchResultShard(Stream<LLKeyScore> resultsFlux,
-				TotalHitsCount count,
-				List<SafeCloseable> resources) {
-			super(resultsFlux, count);
-			this.resources = resources;
-		}
-
-		@Override
-		public void onClose() {
-			try {
-				for (SafeCloseable resource : resources) {
-					try {
-						resource.close();
-					} catch (Throwable ex) {
-						LOG.error("Failed to close resource", ex);
-					}
-				}
-			} catch (Throwable ex) {
-				LOG.error("Failed to close resources", ex);
-			}
-			super.onClose();
-		}
-	}
-
-	public static class LuceneLLSearchResultShard extends LLSearchResultShard implements LuceneCloseable {
-
-		private final List<LuceneCloseable> resources;
-
-		public LuceneLLSearchResultShard(Stream<LLKeyScore> resultsFlux,
-				TotalHitsCount count,
-				List<LuceneCloseable> resources) {
-			super(resultsFlux, count);
-			this.resources = resources;
-		}
-
-		@Override
-		public void onClose() {
-			try {
-				for (LuceneCloseable resource : resources) {
-					try {
-						resource.close();
-					} catch (Throwable ex) {
-						LOG.error("Failed to close resource", ex);
-					}
-				}
-			} catch (Throwable ex) {
-				LOG.error("Failed to close resources", ex);
-			}
-			super.onClose();
-		}
 	}
 }

@@ -2,9 +2,11 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRITE;
 
+import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.LuceneUtils;
-import java.io.IOException;
+import java.util.function.Function;
+import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 
 public class AdaptiveMultiSearcher implements MultiSearcher {
@@ -30,46 +32,48 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		if (transformer != NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		}
-		return transformedCollectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+		return transformedCollectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 	}
 
 	// Remember to change also AdaptiveLocalSearcher
 	public LuceneSearchResult transformedCollectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		// offset + limit
 		long realLimit = queryParams.offsetLong() + queryParams.limitLong();
 		long maxAllowedInMemoryLimit
 				= Math.max(maxInMemoryResultEntries, (long) queryParams.pageLimits().getPageLimit(0));
 
 		if (queryParams.limitLong() == 0) {
-			return count.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+			return count.collectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		} else if (realLimit <= maxInMemoryResultEntries) {
-			return standardSearcher.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+			return standardSearcher.collectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		} else if (queryParams.isSorted()) {
 			if (realLimit <= maxAllowedInMemoryLimit) {
-				return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+				return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 			} else {
 				if (queryParams.isSortedByScore()) {
 					if (queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
-					return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+					return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 				} else {
 					if (queryParams.limitLong() < maxInMemoryResultEntries) {
 						throw new UnsupportedOperationException("Allowed limit is " + maxInMemoryResultEntries + " or greater");
 					}
-					return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+					return scoredPaged.collectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 				}
 			}
 		} else {
 			// Run large/unbounded searches using the continuous multi searcher
-			return unsortedUnscoredContinuous.collectMulti(indexSearchers, queryParams, keyFieldName, transformer);
+			return unsortedUnscoredContinuous.collectMulti(indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		}
 	}
 

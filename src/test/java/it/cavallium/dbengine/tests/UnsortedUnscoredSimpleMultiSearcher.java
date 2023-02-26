@@ -17,9 +17,11 @@ import it.cavallium.dbengine.utils.SimpleResource;
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 
 public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 
@@ -34,10 +36,11 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 	@Override
 	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
-			String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			@Nullable String keyFieldName,
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		if (transformer != NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		}
 		if (queryParams.isSorted() && queryParams.limitLong() > 0) {
 			throw new UnsupportedOperationException(
@@ -50,15 +53,13 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 
 		var localQueryParams = getLocalQueryParams(queryParams);
 		var results = indexSearchers.llShards().stream()
-				.map(searcher -> localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer))
+				.map(searcher -> localSearcher.collect(searcher, localQueryParams, keyFieldName, transformer, filterer))
 				.toList();
-		List<LuceneSearchResult> resultsToDrop = new ArrayList<>(results.size());
 		List<Stream<LLKeyScore>> resultsFluxes = new ArrayList<>(results.size());
 		boolean exactTotalHitsCount = true;
 		long totalHitsCountValue = 0;
 		for (LuceneSearchResult result : results) {
-			resultsToDrop.add(result);
-			resultsFluxes.add(result.results());
+			resultsFluxes.add(result.results().stream());
 			exactTotalHitsCount &= result.totalHitsCount().exact();
 			totalHitsCountValue += result.totalHitsCount().value();
 		}
@@ -69,7 +70,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 				.skip(queryParams.offsetLong())
 				.limit(queryParams.limitLong());
 
-		return new MyLuceneSearchResult(totalHitsCount, mergedFluxes, resultsToDrop, indexSearchers);
+		return new LuceneSearchResult(totalHitsCount, mergedFluxes.toList());
 	}
 
 	private LocalQueryParams getLocalQueryParams(LocalQueryParams queryParams) {
@@ -86,31 +87,5 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 	@Override
 	public String getName() {
 		return "unsorted unscored simple multi";
-	}
-
-	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
-
-		private final List<LuceneSearchResult> resultsToDrop;
-		private final LLIndexSearchers indexSearchers;
-
-		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
-				Stream<LLKeyScore> mergedFluxes,
-				List<LuceneSearchResult> resultsToDrop,
-				LLIndexSearchers indexSearchers) {
-			super(totalHitsCount, mergedFluxes);
-			this.resultsToDrop = resultsToDrop;
-			this.indexSearchers = indexSearchers;
-		}
-
-		@Override
-		protected void onClose() {
-			resultsToDrop.forEach(SimpleResource::close);
-			try {
-				indexSearchers.close();
-			} catch (UncheckedIOException e) {
-				LOG.error("Can't close index searchers", e);
-			}
-			super.onClose();
-		}
 	}
 }

@@ -2,21 +2,21 @@ package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.CurrentPageInfo.EMPTY_STATUS;
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
-import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.TopDocsCollectorMultiManager;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -35,9 +35,10 @@ public class PagedLocalSearcher implements LocalSearcher {
 	public LuceneSearchResult collect(LLIndexSearcher indexSearcher,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
-			return LuceneUtils.rewrite(this, indexSearcher, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewrite(this, indexSearcher, queryParams, keyFieldName, transformer, filterer);
 		}
 		PaginationInfo paginationInfo = getPaginationInfo(queryParams);
 
@@ -51,12 +52,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 				keyFieldName,
 				queryParams
 		);
-		return this.computeOtherResults(firstResult,
-				indexSearchers.shards(),
-				queryParams,
-				keyFieldName,
-				() -> indexSearchers.close()
-		);
+		return this.computeOtherResults(firstResult, indexSearchers.shards(), queryParams, keyFieldName, filterer);
 	}
 
 	@Override
@@ -113,7 +109,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 			List<IndexSearcher> indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			Runnable onClose) {
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		var totalHitsCount = firstResult.totalHitsCount();
 		var firstPageHitsStream = firstResult.firstPageHitsStream();
 		var secondPageInfo = firstResult.nextPageInfo();
@@ -121,7 +117,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 		Stream<LLKeyScore> nextHitsFlux = searchOtherPages(indexSearchers, queryParams, keyFieldName, secondPageInfo);
 
 		Stream<LLKeyScore> combinedFlux = Stream.concat(firstPageHitsStream, nextHitsFlux);
-		return new MyLuceneSearchResult(totalHitsCount, combinedFlux, onClose);
+		return new LuceneSearchResult(totalHitsCount, StreamUtils.collect(filterer.apply(combinedFlux), fastListing()));
 	}
 
 	/**
@@ -191,26 +187,6 @@ public class PagedLocalSearcher implements LocalSearcher {
 			return new PageIterationStepResult(nextPageInfo, new PageData(pageTopDocs, nextPageInfo));
 		} else {
 			return new PageIterationStepResult(EMPTY_STATUS, null);
-		}
-	}
-
-	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
-
-		private final Runnable onClose;
-
-		public MyLuceneSearchResult(TotalHitsCount totalHitsCount, Stream<LLKeyScore> combinedStream, Runnable onClose) {
-			super(totalHitsCount, combinedStream);
-			this.onClose = onClose;
-		}
-
-		@Override
-		protected void onClose() {
-			try {
-				onClose.run();
-			} catch (Throwable ex) {
-				LOG.error("Failed to close the search result", ex);
-			}
-			super.onClose();
 		}
 	}
 }

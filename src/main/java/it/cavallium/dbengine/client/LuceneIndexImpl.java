@@ -1,28 +1,28 @@
 package it.cavallium.dbengine.client;
 
 import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.collect;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
+import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
 import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.toList;
 
-import it.cavallium.dbengine.client.Hits.CloseableHits;
-import it.cavallium.dbengine.client.Hits.LuceneHits;
 import it.cavallium.dbengine.client.query.ClientQueryParams;
 import it.cavallium.dbengine.client.query.current.data.Query;
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLSearchResultShard;
-import it.cavallium.dbengine.database.LLSearchResultShard.LuceneLLSearchResultShard;
-import it.cavallium.dbengine.database.LLSearchResultShard.ResourcesLLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
+import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
+import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 import java.time.Duration;
 import java.util.List;
@@ -39,7 +39,6 @@ import org.jetbrains.annotations.Nullable;
 public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	private static final Duration MAX_COUNT_TIME = Duration.ofSeconds(30);
-	private static final Logger LOG = LogManager.getLogger(LuceneIndex.class);
 	private final LLLuceneIndex luceneIndex;
 	private final Indicizer<T,U> indicizer;
 
@@ -120,14 +119,10 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 	}
 
 	private Hits<HitKey<T>> mapResults(LLSearchResultShard llSearchResult) {
-		Stream<HitKey<T>> scoresWithKeysFlux = llSearchResult.results()
-				.map(hit -> new HitKey<>(indicizer.getKey(hit.key()), hit.score()));
-
-		if (llSearchResult instanceof LuceneCloseable luceneCloseable) {
-			return new LuceneHits<>(scoresWithKeysFlux, llSearchResult.totalHitsCount(), luceneCloseable);
-		} else {
-			return new CloseableHits<>(scoresWithKeysFlux, llSearchResult.totalHitsCount(), llSearchResult);
-		}
+		List<HitKey<T>> scoresWithKeys = LLUtils.mapList(llSearchResult.results(),
+				hit -> new HitKey<>(indicizer.getKey(hit.key()), hit.score())
+		);
+		return new Hits<>(scoresWithKeys, llSearchResult.totalHitsCount());
 	}
 
 	@Override
@@ -203,20 +198,14 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		}
 		TotalHitsCount count = null;
 		ObjectArrayList<Stream<LLKeyScore>> results = new ObjectArrayList<>(shards.size());
-		ObjectArrayList resources = new ObjectArrayList(shards.size());
-		boolean luceneResources = false;
+		var maxLimit = queryParams.offset() + queryParams.limit();
 		for (LLSearchResultShard shard : shards) {
-			if (!luceneResources && shard instanceof LuceneCloseable) {
-				luceneResources = true;
-			}
 			if (count == null) {
 				count = shard.totalHitsCount();
 			} else {
 				count = LuceneUtils.sum(count, shard.totalHitsCount());
 			}
-			var maxLimit = queryParams.offset() + queryParams.limit();
-			results.add(shard.results().limit(maxLimit));
-			resources.add(shard);
+			results.add(shard.results().stream().limit(maxLimit));
 		}
 		Objects.requireNonNull(count);
 		Stream<LLKeyScore> resultsFlux;
@@ -225,13 +214,9 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		} else if (results.size() == 1) {
 			resultsFlux = results.get(0);
 		} else {
-			resultsFlux = results.stream().flatMap(Function.identity());
+			resultsFlux = results.stream().flatMap(Function.identity()).limit(maxLimit);
 		}
-		if (luceneResources) {
-			return new LuceneLLSearchResultShard(resultsFlux, count, (List<LuceneCloseable>) resources);
-		} else {
-			return new ResourcesLLSearchResultShard(resultsFlux, count, (List<SafeCloseable>) resources);
-		}
+		return new LLSearchResultShard(StreamUtils.toList(resultsFlux), count);
 	}
 
 }

@@ -64,6 +64,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.NoSuchElementException;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -722,10 +723,11 @@ public class LuceneUtils {
 			LLIndexSearcher indexSearcher,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		var indexSearchers = LLIndexSearchers.unsharded(indexSearcher);
 		var queryParams2 = transformer.rewrite(indexSearchers, queryParams);
-		return localSearcher.collect(indexSearcher, queryParams2, keyFieldName, NO_REWRITE);
+		return localSearcher.collect(indexSearcher, queryParams2, keyFieldName, NO_REWRITE, filterer);
 	}
 
 	/**
@@ -735,9 +737,10 @@ public class LuceneUtils {
 			LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		var queryParams2 = transformer.rewrite(indexSearchers, queryParams);
-		return multiSearcher.collectMulti(indexSearchers, queryParams2, keyFieldName, NO_REWRITE);
+		return multiSearcher.collectMulti(indexSearchers, queryParams2, keyFieldName, NO_REWRITE, filterer);
 	}
 
 	public static void checkLuceneThread() {

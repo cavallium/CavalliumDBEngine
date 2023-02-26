@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static com.google.common.collect.Streams.mapWithIndex;
+import static it.cavallium.dbengine.utils.StreamUtils.toList;
 
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
@@ -26,9 +27,10 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	public LuceneSearchResult collectMulti(LLIndexSearchers indexSearchers,
 			LocalQueryParams queryParams,
 			@Nullable String keyFieldName,
-			GlobalQueryRewrite transformer) {
+			GlobalQueryRewrite transformer,
+			Function<Stream<LLKeyScore>, Stream<LLKeyScore>> filterer) {
 		if (transformer != GlobalQueryRewrite.NO_REWRITE) {
-			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer);
+			return LuceneUtils.rewriteMulti(this, indexSearchers, queryParams, keyFieldName, transformer, filterer);
 		}
 		if (queryParams.isSorted() && queryParams.limitLong() > 0) {
 			throw new UnsupportedOperationException("Sorted queries are not supported" + " by UnsortedContinuousLuceneMultiSearcher");
@@ -44,7 +46,7 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 		var totalHitsCount = new TotalHitsCount(0, false);
 		Stream<LLKeyScore> mergedFluxes = resultsFlux.skip(queryParams.offsetLong()).limit(queryParams.limitLong());
 
-		return new MyLuceneSearchResult(totalHitsCount, mergedFluxes, indexSearchers);
+		return new LuceneSearchResult(totalHitsCount, toList(filterer.apply(mergedFluxes)));
 	}
 
 	private Stream<ScoreDoc> getScoreDocs(LocalQueryParams localQueryParams, List<IndexSearcher> shards) {
@@ -67,27 +69,5 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	@Override
 	public String getName() {
 		return "unsorted streaming multi";
-	}
-
-	private static class MyLuceneSearchResult extends LuceneSearchResult implements LuceneCloseable {
-
-		private final LLIndexSearchers indexSearchers;
-
-		public MyLuceneSearchResult(TotalHitsCount totalHitsCount,
-				Stream<LLKeyScore> hitsFlux,
-				LLIndexSearchers indexSearchers) {
-			super(totalHitsCount, hitsFlux);
-			this.indexSearchers = indexSearchers;
-		}
-
-		@Override
-		protected void onClose() {
-			try {
-				indexSearchers.close();
-			} catch (Throwable e) {
-				LOG.error("Can't close index searchers", e);
-			}
-			super.onClose();
-		}
 	}
 }

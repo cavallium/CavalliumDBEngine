@@ -6,6 +6,8 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import io.netty.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.dbengine.client.HitEntry;
+import it.cavallium.dbengine.client.HitKey;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -24,6 +26,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -674,6 +677,11 @@ public class LLUtils {
 				}
 			});
 		}
+	}
+
+	public static <T, U> List<U> mapList(List<T> input, Function<T, U> mapper) {
+		//todo: optimize hits mapping
+		return input.stream().map(mapper).toList();
 	}
 
 	private static class FakeBytesRefBuilder extends BytesRefBuilder {

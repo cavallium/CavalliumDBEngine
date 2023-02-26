@@ -58,6 +58,7 @@ import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -210,14 +211,20 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			String keyFieldName,
 			Multimap<String, String> mltDocumentFields) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
-		var searchers = this.getIndexSearchers(snapshot);
-		var transformer = new MoreLikeThisTransformer(mltDocumentFields, luceneAnalyzer, luceneSimilarity);
+		try (var searchers = this.getIndexSearchers(snapshot)) {
+			var transformer = new MoreLikeThisTransformer(mltDocumentFields, luceneAnalyzer, luceneSimilarity);
 
-		// Collect all the shards results into a single global result
-		LuceneSearchResult result = multiSearcher.collectMulti(searchers, localQueryParams, keyFieldName, transformer);
+			// Collect all the shards results into a single global result
+			LuceneSearchResult result = multiSearcher.collectMulti(searchers,
+					localQueryParams,
+					keyFieldName,
+					transformer,
+					Function.identity()
+			);
 
-		// Transform the result type
-		return Stream.of(new LLSearchResultShard(result.results(), result.totalHitsCount()));
+			// Transform the result type
+			return Stream.of(new LLSearchResultShard(result.results(), result.totalHitsCount()));
+		}
 	}
 
 	@Override
@@ -227,17 +234,23 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 		LuceneSearchResult result = searchInternal(snapshot, queryParams, keyFieldName);
 		// Transform the result type
 		var shard = new LLSearchResultShard(result.results(), result.totalHitsCount());
-		return Stream.of(shard).onClose(shard::close);
+		return Stream.of(shard);
 	}
 
 	private LuceneSearchResult searchInternal(@Nullable LLSnapshot snapshot,
 			QueryParams queryParams,
 			@Nullable String keyFieldName) {
 		LocalQueryParams localQueryParams = LuceneUtils.toLocalQueryParams(queryParams, luceneAnalyzer);
-		var searchers = getIndexSearchers(snapshot);
+		try (var searchers = getIndexSearchers(snapshot)) {
 
-		// Collect all the shards results into a single global result
-		return multiSearcher.collectMulti(searchers, localQueryParams, keyFieldName, GlobalQueryRewrite.NO_REWRITE);
+			// Collect all the shards results into a single global result
+			return multiSearcher.collectMulti(searchers,
+					localQueryParams,
+					keyFieldName,
+					GlobalQueryRewrite.NO_REWRITE,
+					Function.identity()
+			);
+		}
 	}
 
 	@Override
@@ -257,10 +270,11 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 			localQueries.add(QueryParser.toQuery(query, luceneAnalyzer));
 		}
 		var localNormalizationQuery = QueryParser.toQuery(normalizationQuery, luceneAnalyzer);
-		var searchers = getIndexSearchers(snapshot);
+		try (var searchers = getIndexSearchers(snapshot)) {
 
-		// Collect all the shards results into a single global result
-		return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
+			// Collect all the shards results into a single global result
+			return decimalBucketMultiSearcher.collectMulti(searchers, bucketParams, localQueries, localNormalizationQuery);
+		}
 	}
 
 	@Override

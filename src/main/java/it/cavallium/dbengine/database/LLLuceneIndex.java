@@ -37,6 +37,7 @@ public interface LLLuceneIndex extends LLSnapshottable, IBackuppable, SafeClosea
 
 	void deleteAll();
 
+	// todo: add a filterer parameter?
 	/**
 	 * @param queryParams the limit is valid for each lucene instance. If you have 15 instances, the number of elements
 	 *                    returned can be at most <code>limit * 15</code>.
@@ -49,6 +50,7 @@ public interface LLLuceneIndex extends LLSnapshottable, IBackuppable, SafeClosea
 			@Nullable String keyFieldName,
 			Multimap<String, String> mltDocumentFields);
 
+	// todo: add a filterer parameter?
 	/**
 	 * @param queryParams the limit is valid for each lucene instance. If you have 15 instances, the number of elements
 	 *                    returned can be at most <code>limit * 15</code>

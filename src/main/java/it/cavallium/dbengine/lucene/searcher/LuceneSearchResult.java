@@ -4,19 +4,23 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.utils.SimpleResource;
+import java.util.List;
 import java.util.Objects;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-public class LuceneSearchResult extends SimpleResource implements DiscardingCloseable {
+public class LuceneSearchResult {
 
+	public static final TotalHitsCount EMPTY_COUNT = new TotalHitsCount(0, true);
+
+	public static final LuceneSearchResult EMPTY = new LuceneSearchResult(EMPTY_COUNT, List.of());
 	private static final Logger logger = LogManager.getLogger(LuceneSearchResult.class);
 
 	private final TotalHitsCount totalHitsCount;
-	private final Stream<LLKeyScore> results;
+	private final List<LLKeyScore> results;
 
-	public LuceneSearchResult(TotalHitsCount totalHitsCount, Stream<LLKeyScore> results) {
+	public LuceneSearchResult(TotalHitsCount totalHitsCount, List<LLKeyScore> results) {
 		this.totalHitsCount = totalHitsCount;
 		this.results = results;
 	}
@@ -25,7 +29,7 @@ public class LuceneSearchResult extends SimpleResource implements DiscardingClos
 		return totalHitsCount;
 	}
 
-	public Stream<LLKeyScore> results() {
+	public List<LLKeyScore> results() {
 		return results;
 	}
 
@@ -49,8 +53,4 @@ public class LuceneSearchResult extends SimpleResource implements DiscardingClos
 		return "LuceneSearchResult[" + "totalHitsCount=" + totalHitsCount + ", " + "results=" + results + ']';
 	}
 
-	@Override
-	protected void onClose() {
-		results.close();
-	}
 }

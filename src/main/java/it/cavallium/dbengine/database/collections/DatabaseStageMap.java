@@ -4,18 +4,15 @@ import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.count;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
-import static it.cavallium.dbengine.utils.StreamUtils.iterating;
 
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
@@ -23,6 +20,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -112,33 +110,48 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	Stream<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
 
-	default Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+	default Stream<Entry<T, U>> getAllEntries(@Nullable CompositeSnapshot snapshot,
+			boolean smallRange) {
 		return this.getAllStages(snapshot, smallRange).map(stage -> {
 			var val = stage.getValue().get(snapshot);
 			return val != null ? Map.entry(stage.getKey(), val) : null;
 		}).filter(Objects::nonNull);
 	}
 
-	default void setAllValues(Stream<Entry<T, U>> entries) {
-		setAllValuesAndGetPrevious(entries).close();
+	default Stream<T> getAllKeys(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return this
+				.getAllStages(snapshot, smallRange)
+				.map(SubStageEntry::getKey)
+				.filter(Objects::nonNull);
 	}
 
-	Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries);
+	default Stream<U> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return this
+				.getAllEntries(snapshot, smallRange)
+				.map(Entry::getValue)
+				.filter(Objects::nonNull);
+	}
+
+	default void setAllEntries(Stream<Entry<T, U>> entries) {
+		setAllEntriesAndGetPrevious(entries).close();
+	}
+
+	Stream<Entry<T, U>> setAllEntriesAndGetPrevious(Stream<Entry<T, U>> entries);
 
 	default void clear() {
-		setAllValues(Stream.empty());
+		setAllEntries(Stream.empty());
 	}
 
-	default void replaceAllValues(boolean canKeysChange,
+	default void replaceAllEntries(boolean canKeysChange,
 			Function<Entry<T, U>, @NotNull Entry<T, U>> entriesReplacer,
 			boolean smallRange) {
 		if (canKeysChange) {
-			try (var values = this.getAllValues(null, smallRange)) {
-				this.setAllValues(values.map(entriesReplacer));
+			try (var entries = this.getAllEntries(null, smallRange)) {
+				this.setAllEntries(entries.map(entriesReplacer));
 			}
 		} else {
 			collectOn(ROCKSDB_SCHEDULER,
-					this.getAllValues(null, smallRange).map(entriesReplacer),
+					this.getAllEntries(null, smallRange).map(entriesReplacer),
 					executing(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()))
 			);
 		}
@@ -154,7 +167,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		if (value == null) {
 			map = this.clearAndGetPrevious();
 		} else {
-			try (var stream = this.setAllValuesAndGetPrevious(value.entrySet().stream())) {
+			try (var stream = this.setAllEntriesAndGetPrevious(value.entrySet().stream())) {
 				map = stream.collect(Collectors.toMap(Entry::getKey,
 						Entry::getValue,
 						(a, b) -> a,
@@ -185,7 +198,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 		if (updateMode == UpdateMode.ALLOW_UNSAFE) {
 			Object2ObjectSortedMap<T, U> v;
 
-			try (var stream = this.getAllValues(null, true)) {
+			try (var stream = this.getAllEntries(null, true)) {
 				v = stream
 						.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
 			}
@@ -198,7 +211,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 			if (result != null && result.isEmpty()) {
 				result = null;
 			}
-			this.setAllValues(result != null ? result.entrySet().stream() : null);
+			this.setAllEntries(result != null ? result.entrySet().stream() : null);
 			return new Delta<>(v, result);
 		} else if (updateMode == UpdateMode.ALLOW) {
 			throw new UnsupportedOperationException("Maps can't be updated atomically");
@@ -216,7 +229,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 
 	@Override
 	default Object2ObjectSortedMap<T, U> get(@Nullable CompositeSnapshot snapshot) {
-		try (var stream = this.getAllValues(snapshot, true)) {
+		try (var stream = this.getAllEntries(snapshot, true)) {
 			Object2ObjectSortedMap<T, U> map = stream
 					.collect(Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new));
 			return map.isEmpty() ? null : map;

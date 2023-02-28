@@ -52,7 +52,7 @@ public class TestLuceneIndex {
 
 	@BeforeEach
 	public void beforeEach() throws IOException {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 		tempDb = Objects.requireNonNull(getTempDbGenerator().openTempDb(), "TempDB");
 		luceneSingle = tempDb.luceneSingle();
 		luceneMulti = tempDb.luceneMulti();
@@ -123,7 +123,7 @@ public class TestLuceneIndex {
 	@AfterEach
 	public void afterEach() throws IOException {
 		getTempDbGenerator().closeTempDb(tempDb);
-		ensureNoLeaks(true, false);
+		ensureNoLeaks();
 	}
 
 	@AfterAll

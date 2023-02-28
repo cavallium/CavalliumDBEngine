@@ -2,8 +2,6 @@ package it.cavallium.dbengine.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import io.netty.util.ResourceLeakDetector;
-import io.netty.util.ResourceLeakDetector.Level;
 import it.cavallium.dbengine.buffers.BufDataInput;
 import it.cavallium.dbengine.buffers.BufDataOutput;
 import it.cavallium.dbengine.client.LuceneIndex;
@@ -79,8 +77,7 @@ public class DbTestUtils {
 											 SwappableLuceneSearcher swappableLuceneSearcher,
 											 Path path) {}
 
-	public static void ensureNoLeaks(boolean printStats, boolean useClassicException) {
-		ResourceLeakDetector.setLevel(Level.PARANOID);
+	public static void ensureNoLeaks() {
 		System.gc();
 	}
 

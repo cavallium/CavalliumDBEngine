@@ -17,9 +17,6 @@ public sealed interface ConnectionSettings {
 
 	record LocalConnectionSettings(Path dataPath) implements PrimaryConnectionSettings, SubConnectionSettings {}
 
-	record QuicConnectionSettings(SocketAddress bindAddress, SocketAddress remoteAddress) implements
-			PrimaryConnectionSettings, SubConnectionSettings {}
-
 	record MultiConnectionSettings(Map<ConnectionPart, SubConnectionSettings> parts) implements
 			PrimaryConnectionSettings {
 

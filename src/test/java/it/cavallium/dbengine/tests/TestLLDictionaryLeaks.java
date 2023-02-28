@@ -34,7 +34,7 @@ public abstract class TestLLDictionaryLeaks {
 
 	@BeforeEach
 	public void beforeEach() throws IOException {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 		tempDb = Objects.requireNonNull(getTempDbGenerator().openTempDb(), "TempDB");
 		db = tempDb.db();
 	}
@@ -42,7 +42,7 @@ public abstract class TestLLDictionaryLeaks {
 	@AfterEach
 	public void afterEach() throws IOException {
 		getTempDbGenerator().closeTempDb(tempDb);
-		ensureNoLeaks(true, false);
+		ensureNoLeaks();
 	}
 
 	public static Stream<Arguments> provideArguments() {

@@ -10,7 +10,6 @@ import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTAB
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import io.netty.util.internal.PlatformDependent;
 import it.cavallium.data.generator.nativedata.NullableString;
 import it.cavallium.dbengine.client.Backuppable;
 import it.cavallium.dbengine.client.MemoryStats;
@@ -152,12 +151,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				.publishPercentileHistogram()
 				.tags("db.name", name)
 				.register(meterRegistry);
-
-		if (!PlatformDependent.hasUnsafe()) {
-			throw new UnsupportedOperationException("Please enable unsafe support or disable netty direct buffers",
-					PlatformDependent.getUnsafeUnavailabilityCause()
-			);
-		}
 
 		this.enableColumnsBug = "true".equals(databaseOptions.extraFlags().getOrDefault("enableColumnBug", "false"));
 
@@ -607,7 +600,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		}
 	}
 
-	public void forceCompaction(int volumeId) throws RocksDBException {
+	public void forceCompaction(int volumeId) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -615,6 +608,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				ensureOwned(cfh);
 				RocksDBUtils.forceCompaction(db, name, cfh, volumeId, logger);
 			}
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to force compaction", e);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -1472,7 +1467,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	@Override
-	public void compact() throws RocksDBException {
+	public void compact() {
 		this.forceCompaction(getLastVolumeId());
 	}
 

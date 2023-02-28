@@ -5,7 +5,6 @@ import static it.cavallium.dbengine.tests.DbTestUtils.ensureNoLeaks;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
-import io.netty.buffer.PooledByteBufAllocator;
 import it.cavallium.dbengine.tests.DbTestUtils.TempDb;
 import it.cavallium.dbengine.tests.TestLuceneIndex.Tuple2;
 import it.cavallium.dbengine.client.HitKey;
@@ -71,9 +70,6 @@ public class TestLuceneSearches {
 
 	private static final Map<String, String> ELEMENTS;
 	static {
-		// Start the pool by creating and deleting a direct buffer
-		PooledByteBufAllocator.DEFAULT.directBuffer().release();
-
 		var modifiableElements = new LinkedHashMap<String, String>();
 		modifiableElements.put("test-key-1", "0123456789");
 		modifiableElements.put("test-key-2", "test 0123456789 test word");
@@ -96,7 +92,7 @@ public class TestLuceneSearches {
 
 	@BeforeAll
 	public static void beforeAll() throws IOException {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 		tempDb = Objects.requireNonNull(TEMP_DB_GENERATOR.openTempDb(), "TempDB");
 		luceneSingle = tempDb.luceneSingle();
 		luceneMulti = tempDb.luceneMulti();
@@ -190,7 +186,7 @@ public class TestLuceneSearches {
 	@AfterAll
 	public static void afterAll() throws IOException {
 		TEMP_DB_GENERATOR.closeTempDb(tempDb);
-		ensureNoLeaks(true, false);
+		ensureNoLeaks();
 	}
 
 	private LuceneIndex<String, String> getLuceneIndex(boolean shards, @Nullable LocalSearcher customSearcher) {

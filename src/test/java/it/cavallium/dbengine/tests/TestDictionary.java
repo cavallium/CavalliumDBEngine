@@ -25,13 +25,13 @@ public abstract class TestDictionary {
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 	}
 
 	@AfterEach
 	public void afterEach() {
 		if (!isCIMode()) {
-			ensureNoLeaks(true, false);
+			ensureNoLeaks();
 		}
 	}
 

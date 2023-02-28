@@ -88,13 +88,13 @@ public abstract class TestDictionaryMap {
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 	}
 
 	@AfterEach
 	public void afterEach() {
 		if (!isCIMode() && checkLeaks) {
-			ensureNoLeaks(true, false);
+			ensureNoLeaks();
 		}
 	}
 
@@ -368,7 +368,7 @@ public abstract class TestDictionaryMap {
 
 			var entriesFlux = entries.entrySet();
 			var keysFlux = entriesFlux.stream().map(Entry::getKey).toList();
-			map.setAllValues(entriesFlux.stream());
+			map.setAllEntries(entriesFlux.stream());
 			List<Optional<String>> resultsFlux;
 			try (var stream = map.getMulti(null, keysFlux.stream())) {
 				resultsFlux = stream.toList();
@@ -396,8 +396,8 @@ public abstract class TestDictionaryMap {
 		var remainingEntries = new ArrayList<Entry<String, String>>();
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryMap(tempDictionary(db, updateMode), mapType, 5);
-			return Arrays.asList(toList(map.setAllValuesAndGetPrevious(entries.entrySet().stream())),
-					toList(map.setAllValuesAndGetPrevious(entries.entrySet().stream()))
+			return Arrays.asList(toList(map.setAllEntriesAndGetPrevious(entries.entrySet().stream())),
+					toList(map.setAllEntriesAndGetPrevious(entries.entrySet().stream()))
 			);
 		}));
 		if (shouldFail) {
@@ -499,7 +499,7 @@ public abstract class TestDictionaryMap {
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryMap(tempDictionary(db, updateMode), mapType, 5);
 			map.putMulti(entries.entrySet().stream());
-			return toList(map.getAllValues(null, false));
+			return toList(map.getAllEntries(null, false));
 		}));
 		if (shouldFail) {
 			this.checkLeaks = false;

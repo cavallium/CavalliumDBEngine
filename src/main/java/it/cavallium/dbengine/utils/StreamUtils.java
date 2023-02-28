@@ -12,6 +12,8 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.Spliterator;
 import java.util.concurrent.ExecutionException;
@@ -22,6 +24,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -30,6 +33,7 @@ import java.util.function.ToIntFunction;
 import java.util.function.ToLongFunction;
 import java.util.stream.Collector;
 import java.util.stream.Collector.Characteristics;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.jetbrains.annotations.NotNull;
@@ -43,6 +47,8 @@ public class StreamUtils {
 
 	private static final Collector<?, ?, ?> TO_LIST_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> COUNT_FAKE_COLLECTOR = new FakeCollector();
+	private static final Collector<?, ?, ?> FIRST_FAKE_COLLECTOR = new FakeCollector();
+	private static final Collector<?, ?, ?> ANY_FAKE_COLLECTOR = new FakeCollector();
 
 	private static final Set<Collector.Characteristics> CH_NOID = Collections.emptySet();
 	private static final Set<Characteristics> CH_CONCURRENT_NOID = Collections.unmodifiableSet(EnumSet.of(
@@ -68,12 +74,22 @@ public class StreamUtils {
 
 	public static <T> Collector<T, ?, @NotNull List<T>> fastListing() {
 		//noinspection unchecked
-		return (Collector<T, ?, List<T>>) TO_LIST_FAKE_COLLECTOR;
+		return (Collector<T, ?, @NotNull List<T>>) TO_LIST_FAKE_COLLECTOR;
 	}
 
 	public static <T> Collector<T, ?, @NotNull Long> fastCounting() {
 		//noinspection unchecked
-		return (Collector<T, ?, Long>) COUNT_FAKE_COLLECTOR;
+		return (Collector<T, ?, @NotNull Long>) COUNT_FAKE_COLLECTOR;
+	}
+
+	public static <T> Collector<T, ?, @NotNull Optional<T>> fastFirst() {
+		//noinspection unchecked
+		return (Collector<T, ?, @NotNull Optional<T>>) FIRST_FAKE_COLLECTOR;
+	}
+
+	public static <T> Collector<T, ?, @NotNull Optional<T>> fastAny() {
+		//noinspection unchecked
+		return (Collector<T, ?, @NotNull Optional<T>>) ANY_FAKE_COLLECTOR;
 	}
 
 	@SafeVarargs
@@ -141,8 +157,22 @@ public class StreamUtils {
 		return Streams.stream(it);
 	}
 
+	@SuppressWarnings("DataFlowIssue")
+	@NotNull
 	public static <X> List<X> toList(Stream<X> stream) {
-		return collect(stream, fastListing());
+		return StreamUtils.collect(stream, fastListing());
+	}
+
+	@SuppressWarnings("DataFlowIssue")
+	@NotNull
+	public static <X> Optional<X> toFirst(Stream<X> stream) {
+		return StreamUtils.collect(stream, fastFirst());
+	}
+
+	@SuppressWarnings("DataFlowIssue")
+	@NotNull
+	public static <X> Optional<X> toAny(Stream<X> stream) {
+		return StreamUtils.collect(stream, fastAny());
 	}
 
 	@SuppressWarnings("DataFlowIssue")
@@ -156,6 +186,16 @@ public class StreamUtils {
 
 	public static <X> long countOn(ForkJoinPool forkJoinPool, Stream<X> stream) {
 		return collectOn(forkJoinPool, stream, fastCounting());
+	}
+
+	@NotNull
+	public static <X> Optional<X> toFirstOn(ForkJoinPool forkJoinPool, Stream<X> stream) {
+		return collectOn(forkJoinPool, stream, fastFirst());
+	}
+
+	@NotNull
+	public static <X> Optional<X> toAnyOn(ForkJoinPool forkJoinPool, Stream<X> stream) {
+		return collectOn(forkJoinPool, stream, fastAny());
 	}
 
 	/**
@@ -195,6 +235,18 @@ public class StreamUtils {
 					return (R) (Long) stream.count();
 				} else {
 					return (R) (Long) 0L;
+				}
+			} else if (collector == FIRST_FAKE_COLLECTOR) {
+				if (stream != null) {
+					return (R) stream.findFirst();
+				} else {
+					return (R) Optional.empty();
+				}
+			} else if (collector == ANY_FAKE_COLLECTOR) {
+				if (stream != null) {
+					return (R) stream.findAny();
+				} else {
+					return (R) Optional.empty();
 				}
 			} else if (stream == null) {
 				throw new NullPointerException("Stream is null");
@@ -251,6 +303,10 @@ public class StreamUtils {
 
 	public static Collector<Long, ?, Long> fastSummingLong() {
 		return SUMMING_LONG_COLLECTOR;
+	}
+
+	public static <X, Y> Stream<Y> indexed(Stream<X> stream, BiFunction<X, Long, Y> mapper) {
+		return Streams.mapWithIndex(stream, mapper::apply);
 	}
 
 	private record BatchSpliterator<E>(Spliterator<E> base, int batchSize) implements Spliterator<List<E>> {

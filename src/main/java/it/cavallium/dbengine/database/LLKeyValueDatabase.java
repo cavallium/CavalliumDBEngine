@@ -56,7 +56,7 @@ public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseS
 
 	void verifyChecksum();
 
-	void compact() throws RocksDBException;
+	void compact();
 
 	void flush();
 

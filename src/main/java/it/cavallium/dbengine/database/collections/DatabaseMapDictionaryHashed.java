@@ -170,7 +170,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	public Stream<SubStageEntry<T, DatabaseStageEntry<U>>> getAllStages(@Nullable CompositeSnapshot snapshot,
 			boolean smallRange) {
 		return subDictionary
-				.getAllValues(snapshot, smallRange)
+				.getAllEntries(snapshot, smallRange)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
 				.flatMap(bucket -> bucket.stream()
@@ -179,16 +179,26 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+	public Stream<Entry<T, U>> getAllEntries(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
 		return subDictionary
-				.getAllValues(snapshot, smallRange)
+				.getAllEntries(snapshot, smallRange)
 				.map(Entry::getValue)
 				.map(Collections::unmodifiableSet)
 				.flatMap(Collection::stream);
 	}
 
 	@Override
-	public Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries) {
+	public Stream<T> getAllKeys(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllEntries(snapshot, smallRange).map(Entry::getKey);
+	}
+
+	@Override
+	public Stream<U> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllEntries(snapshot, smallRange).map(Entry::getValue);
+	}
+
+	@Override
+	public Stream<Entry<T, U>> setAllEntriesAndGetPrevious(Stream<Entry<T, U>> entries) {
 		List<Entry<T, U>> prevList = entries.map(entry -> {
 			var prev = this.at(null, entry.getKey()).setAndGetPrevious(entry.getValue());
 			if (prev != null) {

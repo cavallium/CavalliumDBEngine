@@ -88,13 +88,13 @@ public abstract class TestDictionaryMapDeepHashMap {
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 	}
 
 	@AfterEach
 	public void afterEach() {
 		if (!isCIMode() && checkLeaks) {
-			ensureNoLeaks(true, false);
+			ensureNoLeaks();
 		}
 	}
 
@@ -105,7 +105,7 @@ public abstract class TestDictionaryMapDeepHashMap {
 					var map = tempDatabaseMapDictionaryDeepMapHashMap(tempDictionary(db, updateMode), 5);
 					map.at(null, key1).putValue(key2, value);
 					return toList(map
-							.getAllValues(null, false)
+							.getAllEntries(null, false)
 							.map(Entry::getValue)
 							.flatMap(maps -> maps.entrySet().stream())
 							.map(Entry::getValue));

@@ -37,15 +37,10 @@ module dbengine {
 	requires org.apache.lucene.codecs;
 	requires org.apache.lucene.backward_codecs;
 	requires lucene.relevance;
-	requires io.netty.buffer;
-	requires io.netty.transport;
-	requires io.netty.codec;
 	requires org.apache.lucene.facet;
 	requires java.management;
 	requires com.ibm.icu;
 	requires org.apache.lucene.analysis.icu;
-	requires io.netty.handler;
-	requires io.netty.common;
 	requires org.apache.lucene.queryparser;
 	requires okio;
 	requires moshi.records.reflect;

@@ -18,7 +18,6 @@ import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
@@ -298,14 +297,14 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	@Override
-	public void setAllValues(Stream<Entry<T, U>> entries) {
+	public void setAllEntries(Stream<Entry<T, U>> entries) {
 		this.clear();
 		this.putMulti(entries);
 	}
 
 	@Override
-	public Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries) {
-		return this.getAllValues(null, false).onClose(() -> setAllValues(entries));
+	public Stream<Entry<T, U>> setAllEntriesAndGetPrevious(Stream<Entry<T, U>> entries) {
+		return this.getAllEntries(null, false).onClose(() -> setAllEntries(entries));
 	}
 
 	@Override

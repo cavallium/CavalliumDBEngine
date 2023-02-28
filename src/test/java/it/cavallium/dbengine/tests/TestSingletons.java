@@ -43,12 +43,12 @@ public abstract class TestSingletons {
 	
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 	}
 
 	@AfterEach
 	public void afterEach() {
-		ensureNoLeaks(true, false);
+		ensureNoLeaks();
 	}
 
 	@Test

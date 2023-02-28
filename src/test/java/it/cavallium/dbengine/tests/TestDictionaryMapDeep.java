@@ -158,13 +158,13 @@ public abstract class TestDictionaryMapDeep {
 
 	@BeforeEach
 	public void beforeEach() {
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 	}
 
 	@AfterEach
 	public void afterEach() {
 		if (!isCIMode() && checkLeaks) {
-			ensureNoLeaks(true, false);
+			ensureNoLeaks();
 		}
 	}
 
@@ -220,7 +220,7 @@ public abstract class TestDictionaryMapDeep {
 		var result = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
 			map.putValue(key, value);
-			try (var stream = map.getAllValues(null, false)) {
+			try (var stream = map.getAllEntries(null, false)) {
 				return stream.toList();
 			}
 		}));
@@ -249,7 +249,7 @@ public abstract class TestDictionaryMapDeep {
 				return stages
 						.flatMap(stage -> stage
 								.getValue()
-								.getAllValues(null, false)
+								.getAllEntries(null, false)
 								.map(r -> new Tuple3<>(stage.getKey(), r.getKey(), r.getValue())))
 						.toList();
 			}
@@ -626,7 +626,7 @@ public abstract class TestDictionaryMapDeep {
 			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
 			var entriesFlux = entries.entrySet();
 			var keysFlux = entriesFlux.stream().map(Entry::getKey).toList();
-			map.setAllValues(entries.entrySet().stream());
+			map.setAllEntries(entries.entrySet().stream());
 			try (var resultsFlux = map.getMulti(null, entries.keySet().stream())) {
 				return Streams
 						.zip(keysFlux.stream(), resultsFlux, Map::entry)
@@ -652,11 +652,11 @@ public abstract class TestDictionaryMapDeep {
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
 			List<Entry<String, Object2ObjectSortedMap<String, String>>> a1;
-			try (var stream1 = map.setAllValuesAndGetPrevious(entries.entrySet().stream())) {
+			try (var stream1 = map.setAllEntriesAndGetPrevious(entries.entrySet().stream())) {
 				a1 = stream1.toList();
 			}
 			List<Entry<String, Object2ObjectSortedMap<String, String>>> a2;
-			try (var stream2 = map.setAllValuesAndGetPrevious(entries.entrySet().stream())) {
+			try (var stream2 = map.setAllEntriesAndGetPrevious(entries.entrySet().stream())) {
 				a2 = stream2.toList();
 			}
 			return List.of(a1, a2);
@@ -769,7 +769,7 @@ public abstract class TestDictionaryMapDeep {
 		var stpVer = run(shouldFail, () -> tempDb(getTempDbGenerator(), db -> {
 			var map = tempDatabaseMapDictionaryDeepMap(tempDictionary(db, updateMode), 5, 6);
 			map.putMulti(entries.entrySet().stream());
-			try (var values = map.getAllValues(null, false)) {
+			try (var values = map.getAllEntries(null, false)) {
 				return values.toList();
 			}
 		}));

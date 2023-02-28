@@ -4,7 +4,6 @@ import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import io.netty.util.IllegalReferenceCountException;
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.client.HitEntry;
 import it.cavallium.dbengine.client.HitKey;
@@ -288,37 +287,25 @@ public class LLUtils {
 	}
 
 	public static String toStringSafe(byte @Nullable[] key) {
-		try {
-			if (key == null) {
-				return toString(key);
-			} else {
-				return "(released)";
-			}
-		} catch (IllegalReferenceCountException ex) {
+		if (key == null) {
+			return toString(key);
+		} else {
 			return "(released)";
 		}
 	}
 
 	public static String toStringSafe(@Nullable Buf key) {
-		try {
-			if (key == null) {
-				return toString(key);
-			} else {
-				return "(released)";
-			}
-		} catch (IllegalReferenceCountException ex) {
+		if (key == null) {
+			return toString(key);
+		} else {
 			return "(released)";
 		}
 	}
 
 	public static String toStringSafe(@Nullable LLRange range) {
-		try {
-			if (range == null) {
-				return toString(range);
-			} else {
-				return "(released)";
-			}
-		} catch (IllegalReferenceCountException ex) {
+		if (range == null) {
+			return toString(range);
+		} else {
 			return "(released)";
 		}
 	}

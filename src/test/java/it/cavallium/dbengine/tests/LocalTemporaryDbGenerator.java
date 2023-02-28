@@ -102,7 +102,7 @@ public class LocalTemporaryDbGenerator implements TemporaryDbGenerator {
 		tempDb.swappableLuceneSearcher().close();
 		tempDb.luceneMulti().close();
 		tempDb.luceneSingle().close();
-		ensureNoLeaks(false, false);
+		ensureNoLeaks();
 		if (Files.exists(tempDb.path())) {
 			try (var walk = Files.walk(tempDb.path())) {
 				walk.sorted(Comparator.reverseOrder()).forEach(file -> {

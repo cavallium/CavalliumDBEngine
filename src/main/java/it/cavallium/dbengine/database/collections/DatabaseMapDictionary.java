@@ -1,9 +1,5 @@
 package it.cavallium.dbengine.database.collections;
 
-import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
-import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
-import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
-
 import it.cavallium.dbengine.buffers.Buf;
 import it.cavallium.dbengine.buffers.BufDataInput;
 import it.cavallium.dbengine.buffers.BufDataOutput;
@@ -29,12 +25,13 @@ import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -82,14 +79,15 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			boolean smallRange) {
 
 		if (keyMin != null || keyMax != null) {
-			return databaseMapDictionary.getAllValues(snapshot,
+			return databaseMapDictionary.getAllEntries(snapshot,
 					keyMin,
 					keyMax,
 					reverse,
-					smallRange
+					smallRange,
+					Map::entry
 			);
 		} else {
-			return databaseMapDictionary.getAllValues(snapshot, smallRange);
+			return databaseMapDictionary.getAllEntries(snapshot, smallRange, Map::entry);
 		}
 	}
 
@@ -192,7 +190,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var map = StreamUtils.collect(stream,
 				Collectors.toMap(Entry::getKey, Entry::getValue, (a, b) -> a, Object2ObjectLinkedOpenHashMap::new)
 		);
-		return map.isEmpty() ? null : map;
+		return map == null || map.isEmpty() ? null : map;
 	}
 
 	@Override
@@ -446,35 +444,79 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				});
 	}
 
+	private Stream<T> getAllKeys(@Nullable CompositeSnapshot snapshot,
+			LLRange sliceRange, boolean reverse, boolean smallRange) {
+		return dictionary
+				.getRangeKeys(resolveSnapshot(snapshot), sliceRange, reverse, smallRange)
+				.map(keyBuf -> {
+					assert keyBuf.size() == keyPrefixLength + keySuffixLength + keyExtLength;
+					// Remove prefix. Keep only the suffix and the ext
+					var suffixAndExtIn = BufDataInput.create(keyBuf);
+					suffixAndExtIn.skipBytes(keyPrefixLength);
+
+					suffixKeyLengthConsistency(suffixAndExtIn.available());
+					return deserializeSuffix(suffixAndExtIn);
+				});
+	}
+
 	@Override
-	public Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
-		return getAllValues(snapshot, range, false, smallRange);
+	public Stream<Entry<T, U>> getAllEntries(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllEntries(snapshot, smallRange, Map::entry);
+	}
+
+	@Override
+	public Stream<U> getAllValues(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllEntries(snapshot, range, false, smallRange, (k, v) -> v);
+	}
+
+	@Override
+	public Stream<T> getAllKeys(@Nullable CompositeSnapshot snapshot, boolean smallRange) {
+		return getAllKeys(snapshot, range, false, smallRange);
 	}
 
 	/**
 	 * Get all values
 	 * @param reverse if true, the results will go backwards from the specified key (inclusive)
 	 */
-	public Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot,
+	public Stream<Entry<T, U>> getAllEntries(@Nullable CompositeSnapshot snapshot,
 			@Nullable T keyMin,
 			@Nullable T keyMax,
 			boolean reverse,
 			boolean smallRange) {
+		return getAllEntries(snapshot, keyMin, keyMax, reverse, smallRange, Map::entry);
+	}
+
+	/**
+	 * Get all values
+	 * @param reverse if true, the results will go backwards from the specified key (inclusive)
+	 */
+	public <X> Stream<X> getAllEntries(@Nullable CompositeSnapshot snapshot,
+			@Nullable T keyMin,
+			@Nullable T keyMax,
+			boolean reverse,
+			boolean smallRange,
+			BiFunction<T, U, X> mapper) {
 		if (keyMin == null && keyMax == null) {
-			return getAllValues(snapshot, smallRange);
+			return getAllEntries(snapshot, smallRange, mapper);
 		} else {
 			LLRange boundedRange = getPatchedRange(range, keyMin, keyMax);
-			return getAllValues(snapshot, boundedRange, reverse, smallRange);
+			return getAllEntries(snapshot, boundedRange, reverse, smallRange, mapper);
 		}
 	}
 
-	private Stream<Entry<T, U>> getAllValues(@Nullable CompositeSnapshot snapshot,
+	private <X> Stream<X> getAllEntries(@Nullable CompositeSnapshot snapshot, boolean smallRange, BiFunction<T, U, X> mapper) {
+		return getAllEntries(snapshot, range, false, smallRange, mapper);
+	}
+
+	private <X> Stream<X> getAllEntries(@Nullable CompositeSnapshot snapshot,
 			LLRange sliceRangeMono,
-			boolean reverse, boolean smallRange) {
+			boolean reverse,
+			boolean smallRange,
+			BiFunction<T, U, X> mapper) {
 		return dictionary
 				.getRange(resolveSnapshot(snapshot), sliceRangeMono, reverse, smallRange)
 				.map((serializedEntry) -> {
-					Entry<T, U> entry;
+					X entry;
 					var keyBuf = serializedEntry.getKey();
 					assert keyBuf != null;
 					assert keyBuf.size() == keyPrefixLength + keySuffixLength + keyExtLength;
@@ -488,14 +530,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 					assert serializedEntry.getValue() != null;
 					U value = valueSerializer.deserialize(BufDataInput.create(serializedEntry.getValue()));
-					entry = Map.entry(keySuffix, value);
+					entry = mapper.apply(keySuffix, value);
 					return entry;
 				});
 	}
 
 	@Override
-	public Stream<Entry<T, U>> setAllValuesAndGetPrevious(Stream<Entry<T, U>> entries) {
-		return getAllValues(null, false)
+	public Stream<Entry<T, U>> setAllEntriesAndGetPrevious(Stream<Entry<T, U>> entries) {
+		return getAllEntries(null, false)
 				.onClose(() -> dictionary.setRange(range, entries.map(entry -> serializeEntry(entry)), false));
 	}
 

@@ -62,7 +62,6 @@ public class IndicizationExample {
 						.then(index.close())
 				)
 				.subscribeOn(Schedulers.parallel())
-				.transform(LLUtils::handleDiscard)
 				.block();
 		tempIndex(true)
 				.flatMap(index ->
@@ -139,7 +138,6 @@ public class IndicizationExample {
 						.then(index.close())
 				)
 				.subscribeOn(Schedulers.parallel())
-				.transform(LLUtils::handleDiscard)
 				.block();
 	}
 

@@ -100,7 +100,7 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 	 * @param      len   the number of bytes to write.
 	 * @see        SafeFilterOutputStream#out
 	 */
-	public void write(byte b[], int off, int len)
+	public void write(byte[] b, int off, int len)
 	{
 		out.write(b, off, len);
 		incCount(len);
@@ -159,7 +159,7 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 	 */
 	public final void writeShort(int v) {
 		out.write((v >>> 8) & 0xFF);
-		out.write((v >>> 0) & 0xFF);
+		out.write((v) & 0xFF);
 		incCount(2);
 	}
 
@@ -173,7 +173,7 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 	 */
 	public final void writeChar(int v) {
 		out.write((v >>> 8) & 0xFF);
-		out.write((v >>> 0) & 0xFF);
+		out.write((v) & 0xFF);
 		incCount(2);
 	}
 
@@ -189,11 +189,11 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 		out.write((v >>> 24) & 0xFF);
 		out.write((v >>> 16) & 0xFF);
 		out.write((v >>>  8) & 0xFF);
-		out.write((v >>>  0) & 0xFF);
+		out.write((v) & 0xFF);
 		incCount(4);
 	}
 
-	private byte writeBuffer[] = new byte[8];
+	private final byte[] writeBuffer = new byte[8];
 
 	/**
 	 * Writes a {@code long} to the underlying output stream as eight
@@ -211,7 +211,7 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 		writeBuffer[4] = (byte)(v >>> 24);
 		writeBuffer[5] = (byte)(v >>> 16);
 		writeBuffer[6] = (byte)(v >>>  8);
-		writeBuffer[7] = (byte)(v >>>  0);
+		writeBuffer[7] = (byte)(v);
 		out.write(writeBuffer, 0, 8);
 		incCount(8);
 	}
@@ -282,7 +282,7 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 		for (int i = 0 ; i < len ; i++) {
 			int v = s.charAt(i);
 			out.write((v >>> 8) & 0xFF);
-			out.write((v >>> 0) & 0xFF);
+			out.write((v) & 0xFF);
 		}
 		incCount(len * 2);
 	}
@@ -359,8 +359,7 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 
 	static int writeUTF(int strlen, int utflen, String str, SafeDataOutput out) {
 		final byte[] bytearr;
-		if (out instanceof SafeDataOutputStream) {
-			SafeDataOutputStream dos = (SafeDataOutputStream)out;
+		if (out instanceof SafeDataOutputStream dos) {
 			if (dos.bytearr == null || (dos.bytearr.length < (utflen + 2)))
 				dos.bytearr = new byte[(utflen*2) + 2];
 			bytearr = dos.bytearr;
@@ -370,9 +369,9 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 
 		int count = 0;
 		bytearr[count++] = (byte) ((utflen >>> 8) & 0xFF);
-		bytearr[count++] = (byte) ((utflen >>> 0) & 0xFF);
+		bytearr[count++] = (byte) ((utflen) & 0xFF);
 
-		int i = 0;
+		int i;
 		for (i = 0; i < strlen; i++) { // optimized for initial run of ASCII
 			int c = str.charAt(i);
 			if (c >= 0x80 || c == 0) break;
@@ -386,10 +385,10 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 			} else if (c >= 0x800) {
 				bytearr[count++] = (byte) (0xE0 | ((c >> 12) & 0x0F));
 				bytearr[count++] = (byte) (0x80 | ((c >>  6) & 0x3F));
-				bytearr[count++] = (byte) (0x80 | ((c >>  0) & 0x3F));
+				bytearr[count++] = (byte) (0x80 | ((c) & 0x3F));
 			} else {
 				bytearr[count++] = (byte) (0xC0 | ((c >>  6) & 0x1F));
-				bytearr[count++] = (byte) (0x80 | ((c >>  0) & 0x3F));
+				bytearr[count++] = (byte) (0x80 | ((c) & 0x3F));
 			}
 		}
 		out.write(bytearr, 0, utflen + 2);

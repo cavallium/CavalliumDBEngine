@@ -1,5 +1,8 @@
 package it.cavallium.dbengine.buffers;
 
+import static org.warp.commonutils.stream.SafeDataOutputStream.strLen;
+import static org.warp.commonutils.stream.SafeDataOutputStream.utfLen;
+
 import it.unimi.dsi.fastutil.Arrays;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -178,9 +181,23 @@ public class BufDataOutput implements DataOutput {
 		dOut.writeChars(s);
 	}
 
+	private static String tooLongMsg(String s, int bits32) {
+		int slen = s.length();
+		String head = s.substring(0, 8);
+		String tail = s.substring(slen - 8, slen);
+		// handle int overflow with max 3x expansion
+		long actualLength = (long)slen + Integer.toUnsignedLong(bits32 - slen);
+		return "encoded string (" + head + "..." + tail + ") too long: "
+				+ actualLength + " bytes";
+	}
+
 	@Override
-	public void writeUTF(@NotNull String s) {
-		throw new UnsupportedOperationException();
+	public void writeUTF(@NotNull String str) {
+		var strlen = strLen(str);
+		var utflen = utfLen(str, strlen);
+		var bytes = Short.BYTES + utflen;
+		checkOutOfBounds(bytes);
+		dOut.writeUTF(strlen, utflen, str);
 	}
 
 	public Buf asList() {

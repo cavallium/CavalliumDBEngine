@@ -310,6 +310,10 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 		writeUTF(str, this);
 	}
 
+	public final void writeUTF(int strlen, int utflen, String str) {
+		writeUTF(strlen, utflen, str, this);
+	}
+
 	/**
 	 * Writes a string to the specified DataOutput using
 	 * <a href="DataInput.html#modified-utf-8">modified UTF-8</a>
@@ -330,18 +334,30 @@ public class SafeDataOutputStream extends SafeFilterOutputStream implements Safe
 	 * @return     The number of bytes written out.
 	 */
 	static int writeUTF(String str, SafeDataOutput out) {
-		final int strlen = str.length();
-		int utflen = strlen; // optimized for ASCII
+		int strlen = strLen(str);
+		int utflen = utfLen(str, strlen);
+		return writeUTF(strlen, utflen, str, out);
+	}
 
-		for (int i = 0; i < strlen; i++) {
+	public static int strLen(String str) {
+		return str.length();
+	}
+
+	public static int utfLen(String str, int strLen) {
+		int utflen = strLen; // optimized for ASCII
+
+		for (int i = 0; i < strLen; i++) {
 			int c = str.charAt(i);
 			if (c >= 0x80 || c == 0)
 				utflen += (c >= 0x800) ? 2 : 1;
 		}
 
-		if (utflen > 65535 || /* overflow */ utflen < strlen)
+		if (utflen > 65535 || /* overflow */ utflen < strLen)
 			throw new IllegalArgumentException(tooLongMsg(str, utflen));
+		return utflen;
+	}
 
+	static int writeUTF(int strlen, int utflen, String str, SafeDataOutput out) {
 		final byte[] bytearr;
 		if (out instanceof SafeDataOutputStream) {
 			SafeDataOutputStream dos = (SafeDataOutputStream)out;

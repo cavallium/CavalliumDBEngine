@@ -287,7 +287,7 @@ public class LLUtils {
 	}
 
 	public static String toStringSafe(byte @Nullable[] key) {
-		if (key == null) {
+		if (key != null) {
 			return toString(key);
 		} else {
 			return "(released)";
@@ -295,7 +295,7 @@ public class LLUtils {
 	}
 
 	public static String toStringSafe(@Nullable Buf key) {
-		if (key == null) {
+		if (key != null) {
 			return toString(key);
 		} else {
 			return "(released)";
@@ -303,7 +303,7 @@ public class LLUtils {
 	}
 
 	public static String toStringSafe(@Nullable LLRange range) {
-		if (range == null) {
+		if (range != null) {
 			return toString(range);
 		} else {
 			return "(released)";
@@ -327,10 +327,10 @@ public class LLUtils {
 	}
 
 	public static String toString(@Nullable Buf key) {
-		if (key == null) {
-			return "null";
-		} else {
+		if (key != null) {
 			return toString(key.asArray());
+		} else {
+			return "null";
 		}
 	}
 

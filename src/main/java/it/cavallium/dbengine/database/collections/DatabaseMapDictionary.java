@@ -21,6 +21,7 @@ import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
@@ -138,7 +139,13 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var valSizeHint = valueSerializer.getSerializedSizeHint();
 		if (valSizeHint == -1) valSizeHint = 128;
 		var valBuf = BufDataOutput.create(valSizeHint);
-		valueSerializer.serialize(value, valBuf);
+		try {
+			valueSerializer.serialize(value, valBuf);
+		} catch (SerializationException ex) {
+			throw ex;
+		} catch (Exception ex) {
+			throw new SerializationException("Failed to serialize value");
+		}
 		return valBuf.asList();
 	}
 

@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.memory;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 
 public class BLRange {
 

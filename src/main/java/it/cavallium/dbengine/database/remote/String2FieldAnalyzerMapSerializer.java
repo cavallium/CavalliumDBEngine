@@ -2,6 +2,8 @@ package it.cavallium.dbengine.database.remote;
 
 import it.cavallium.data.generator.DataSerializer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer;
+import it.cavallium.stream.SafeDataInput;
+import it.cavallium.stream.SafeDataOutput;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -16,8 +18,7 @@ public class String2FieldAnalyzerMapSerializer implements DataSerializer<Map<Str
 	private static final TextFieldsAnalyzerSerializer TEXT_FIELDS_ANALYZER_SERIALIZER = new TextFieldsAnalyzerSerializer();
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Map<String, TextFieldsAnalyzer> stringTextFieldsAnalyzerMap)
-			throws IOException {
+	public void serialize(SafeDataOutput dataOutput, @NotNull Map<String, TextFieldsAnalyzer> stringTextFieldsAnalyzerMap) {
 		dataOutput.writeInt(stringTextFieldsAnalyzerMap.size());
 		for (Entry<String, TextFieldsAnalyzer> entry : stringTextFieldsAnalyzerMap.entrySet()) {
 			dataOutput.writeUTF(entry.getKey());
@@ -26,7 +27,7 @@ public class String2FieldAnalyzerMapSerializer implements DataSerializer<Map<Str
 	}
 
 	@Override
-	public @NotNull Map<String, TextFieldsAnalyzer> deserialize(DataInput dataInput) throws IOException {
+	public @NotNull Map<String, TextFieldsAnalyzer> deserialize(SafeDataInput dataInput) {
 		var size = dataInput.readInt();
 		var result = new HashMap<String, TextFieldsAnalyzer>(size);
 		for (int i = 0; i < size; i++) {

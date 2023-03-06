@@ -2,6 +2,8 @@ package it.cavallium.dbengine.database.remote;
 
 import it.cavallium.data.generator.DataSerializer;
 import it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity;
+import it.cavallium.stream.SafeDataInput;
+import it.cavallium.stream.SafeDataOutput;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -16,8 +18,7 @@ public class String2FieldSimilarityMapSerializer implements DataSerializer<Map<S
 	private static final TextFieldsSimilaritySerializer TEXT_FIELDS_SIMILARITY_SERIALIZER = new TextFieldsSimilaritySerializer();
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Map<String, TextFieldsSimilarity> stringTextFieldsSimilarityMap)
-			throws IOException {
+	public void serialize(SafeDataOutput dataOutput, @NotNull Map<String, TextFieldsSimilarity> stringTextFieldsSimilarityMap) {
 		dataOutput.writeInt(stringTextFieldsSimilarityMap.size());
 		for (Entry<String, TextFieldsSimilarity> entry : stringTextFieldsSimilarityMap.entrySet()) {
 			dataOutput.writeUTF(entry.getKey());
@@ -26,7 +27,7 @@ public class String2FieldSimilarityMapSerializer implements DataSerializer<Map<S
 	}
 
 	@Override
-	public @NotNull Map<String, TextFieldsSimilarity> deserialize(DataInput dataInput) throws IOException {
+	public @NotNull Map<String, TextFieldsSimilarity> deserialize(SafeDataInput dataInput) {
 		var size = dataInput.readInt();
 		var result = new HashMap<String, TextFieldsSimilarity>(size);
 		for (int i = 0; i < size; i++) {

@@ -4,7 +4,7 @@ import static java.lang.Boolean.parseBoolean;
 import static java.lang.System.getProperty;
 import static java.util.Objects.requireNonNull;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLUtils;
 import java.nio.ByteBuffer;
 import org.apache.logging.log4j.LogManager;

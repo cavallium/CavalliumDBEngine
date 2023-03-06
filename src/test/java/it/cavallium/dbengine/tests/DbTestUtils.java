@@ -2,8 +2,8 @@ package it.cavallium.dbengine.tests;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
-import it.cavallium.dbengine.buffers.BufDataInput;
-import it.cavallium.dbengine.buffers.BufDataOutput;
+import it.cavallium.buffer.BufDataInput;
+import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.database.LLDatabaseConnection;

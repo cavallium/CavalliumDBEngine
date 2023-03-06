@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.asArray;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import java.nio.ByteBuffer;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.RocksDBException;

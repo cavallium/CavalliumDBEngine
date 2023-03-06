@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;

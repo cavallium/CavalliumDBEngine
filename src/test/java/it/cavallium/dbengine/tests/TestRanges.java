@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.tests;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
 import java.util.Arrays;

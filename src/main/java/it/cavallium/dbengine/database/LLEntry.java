@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import java.util.Objects;
 import java.util.StringJoiner;
 import org.apache.logging.log4j.LogManager;

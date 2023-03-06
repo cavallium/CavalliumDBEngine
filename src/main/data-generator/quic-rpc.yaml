@@ -131,7 +131,7 @@ customTypesData:
     serializer: it.cavallium.dbengine.database.remote.LLSnapshotSerializer
 
   Bytes:
-    javaClass: it.cavallium.dbengine.buffers.Buf
+    javaClass: it.cavallium.buffer.Buf
     serializer: it.cavallium.dbengine.database.remote.BufSerializer
   StringMap:
     javaClass: java.util.Map<java.lang.String, java.lang.String>

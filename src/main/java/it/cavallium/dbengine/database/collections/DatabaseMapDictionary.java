@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.buffers.Buf;
-import it.cavallium.dbengine.buffers.BufDataInput;
-import it.cavallium.dbengine.buffers.BufDataOutput;
+import it.cavallium.buffer.Buf;
+import it.cavallium.buffer.BufDataInput;
+import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDelta;

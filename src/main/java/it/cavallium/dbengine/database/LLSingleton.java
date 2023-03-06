@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import java.io.IOException;
 import org.jetbrains.annotations.Nullable;

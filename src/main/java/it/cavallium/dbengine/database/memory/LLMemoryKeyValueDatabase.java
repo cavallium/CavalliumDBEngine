@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.memory;
 
 import io.micrometer.core.instrument.MeterRegistry;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.ColumnProperty;
 import it.cavallium.dbengine.database.LLDictionary;

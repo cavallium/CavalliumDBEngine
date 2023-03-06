@@ -4,7 +4,7 @@ import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.HitEntry;
 import it.cavallium.dbengine.client.HitKey;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;

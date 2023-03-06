@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.client.query;
 
 import com.squareup.moshi.JsonAdapter;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.IntOpenHashSetJsonAdapter;
 import it.cavallium.dbengine.client.query.current.CurrentVersion;
 import it.cavallium.dbengine.client.query.current.IBaseType;

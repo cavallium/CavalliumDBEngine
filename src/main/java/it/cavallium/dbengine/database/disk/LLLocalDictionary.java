@@ -20,7 +20,7 @@ import com.google.common.collect.Lists;
 import com.google.common.collect.Streams;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;

@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.buffers.BufDataInput;
-import it.cavallium.dbengine.buffers.BufDataOutput;
+import it.cavallium.buffer.BufDataInput;
+import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import java.util.Map;

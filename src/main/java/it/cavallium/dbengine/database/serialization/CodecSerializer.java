@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.serialization;
 
-import it.cavallium.dbengine.buffers.BufDataInput;
-import it.cavallium.dbengine.buffers.BufDataOutput;
+import it.cavallium.buffer.BufDataInput;
+import it.cavallium.buffer.BufDataOutput;
 import java.io.IOError;
 import java.io.IOException;
 import org.jetbrains.annotations.NotNull;

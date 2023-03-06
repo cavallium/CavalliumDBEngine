@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.database.serialization;
 
-import it.cavallium.dbengine.buffers.Buf;
-import it.cavallium.dbengine.buffers.BufDataInput;
-import it.cavallium.dbengine.buffers.BufDataOutput;
+import it.cavallium.buffer.Buf;
+import it.cavallium.buffer.BufDataInput;
+import it.cavallium.buffer.BufDataOutput;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.NotNull;
 

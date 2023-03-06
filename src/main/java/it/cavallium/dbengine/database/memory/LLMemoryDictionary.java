@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.utils.StreamUtils.count;
 import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.mapping;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;

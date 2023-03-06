@@ -2,7 +2,7 @@ package it.cavallium.dbengine.database.disk.rocksdb;
 
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;

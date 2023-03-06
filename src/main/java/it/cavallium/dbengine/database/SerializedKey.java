@@ -1,5 +1,5 @@
 package it.cavallium.dbengine.database;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 
 public record SerializedKey<T>(T key, Buf serialized) {}

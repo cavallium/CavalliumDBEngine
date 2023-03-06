@@ -7,7 +7,7 @@ import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Streams;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.utils.DBException;

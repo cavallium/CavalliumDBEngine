@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;

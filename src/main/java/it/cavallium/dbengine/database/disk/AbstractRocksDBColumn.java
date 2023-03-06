@@ -6,7 +6,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;

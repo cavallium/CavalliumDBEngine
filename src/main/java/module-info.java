@@ -1,5 +1,4 @@
 module dbengine {
-	exports org.warp.commonutils.stream;
 	exports it.cavallium.dbengine.lucene;
 	exports it.cavallium.dbengine.database;
 	exports it.cavallium.dbengine.rpc.current.data;
@@ -18,7 +17,6 @@ module dbengine {
 	opens it.cavallium.dbengine.database.remote;
 	exports it.cavallium.dbengine.utils;
 	exports it.cavallium.dbengine.database.disk.rocksdb;
-	exports it.cavallium.dbengine.buffers;
 	exports it.cavallium.dbengine.lucene.hugepq.search;
 	requires org.jetbrains.annotations;
 	requires com.google.common;

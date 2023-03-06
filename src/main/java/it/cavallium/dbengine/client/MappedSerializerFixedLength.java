@@ -1,8 +1,8 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.dbengine.buffers.Buf;
-import it.cavallium.dbengine.buffers.BufDataInput;
-import it.cavallium.dbengine.buffers.BufDataOutput;
+import it.cavallium.buffer.Buf;
+import it.cavallium.buffer.BufDataInput;
+import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.NotNull;

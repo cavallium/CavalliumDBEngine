@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.database.remote;
 
 import it.cavallium.data.generator.DataSerializer;
+import it.cavallium.stream.SafeDataInput;
+import it.cavallium.stream.SafeDataOutput;
 import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
@@ -10,12 +12,12 @@ import org.jetbrains.annotations.NotNull;
 public class PathSerializer implements DataSerializer<Path> {
 
 	@Override
-	public void serialize(DataOutput dataOutput, @NotNull Path path) throws IOException {
+	public void serialize(SafeDataOutput dataOutput, @NotNull Path path) {
 		dataOutput.writeUTF(path.toString());
 	}
 
 	@Override
-	public @NotNull Path deserialize(DataInput dataInput) throws IOException {
+	public @NotNull Path deserialize(SafeDataInput dataInput) {
 		return Path.of(dataInput.readUTF());
 	}
 }

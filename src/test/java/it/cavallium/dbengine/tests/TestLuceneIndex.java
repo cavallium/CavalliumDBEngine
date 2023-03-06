@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import it.cavallium.dbengine.tests.DbTestUtils.TempDb;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.LuceneIndex;
 import it.cavallium.dbengine.client.Sort;
 import it.cavallium.dbengine.client.query.current.data.MatchAllDocsQuery;

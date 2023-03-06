@@ -4,7 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;

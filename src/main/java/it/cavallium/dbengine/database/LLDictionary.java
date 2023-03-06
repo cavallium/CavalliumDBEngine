@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;

@@ -3,7 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 
 import com.google.common.util.concurrent.AbstractScheduledService.Scheduler;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;

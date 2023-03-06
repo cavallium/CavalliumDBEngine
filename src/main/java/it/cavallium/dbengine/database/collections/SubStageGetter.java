@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import org.jetbrains.annotations.Nullable;

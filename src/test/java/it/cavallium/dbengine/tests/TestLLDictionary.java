@@ -6,7 +6,7 @@ import static it.cavallium.dbengine.utils.StreamUtils.toList;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import it.cavallium.dbengine.tests.DbTestUtils.TempDb;
-import it.cavallium.dbengine.buffers.Buf;
+import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;

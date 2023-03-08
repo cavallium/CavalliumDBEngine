@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.collector;
 
+import static it.cavallium.dbengine.database.LLUtils.mapList;
+
 import it.cavallium.dbengine.lucene.IntSmear;
 import it.unimi.dsi.fastutil.ints.IntHash;
 import java.io.IOException;
@@ -31,10 +33,9 @@ public class FastFacetsCollectorManager implements CollectorManager<FacetsCollec
 
 	@Override
 	public FacetsCollector reduce(Collection<FacetsCollector> collectors) throws IOException {
-		return FacetsCollector.wrap(facetsCollectorManager.reduce(collectors
-				.stream()
-				.map(facetsCollector -> facetsCollector.getLuceneFacetsCollector())
-				.toList()));
+		return FacetsCollector.wrap(facetsCollectorManager.reduce(mapList(collectors,
+				facetsCollector -> facetsCollector.getLuceneFacetsCollector()
+		)));
 	}
 
 	private static class FastFacetsCollector implements FacetsCollector {

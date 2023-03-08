@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.database.LLUtils.mapList;
+
 import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
@@ -39,16 +41,9 @@ public class CountMultiSearcher implements MultiSearcher {
 					"Scored queries are not supported by SimpleUnsortedUnscoredLuceneMultiSearcher");
 		}
 
-		var results = indexSearchers
-				.llShards()
-				.stream()
-				.map(searcher -> this.collect(searcher,
-						queryParams,
-						keyFieldName,
-						transformer,
-						f -> filterer.apply(f).limit(0)
-				))
-				.toList();
+		var results = mapList(indexSearchers.llShards(),
+				searcher -> this.collect(searcher, queryParams, keyFieldName, transformer, f -> filterer.apply(f).limit(0))
+		);
 		boolean exactTotalHitsCount = true;
 		long totalHitsCountValue = 0;
 		for (LuceneSearchResult result : results) {

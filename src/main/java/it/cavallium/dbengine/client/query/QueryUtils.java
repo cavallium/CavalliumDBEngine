@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.client.query;
 
+import static it.cavallium.dbengine.database.LLUtils.mapList;
+
 import it.cavallium.dbengine.client.query.current.data.BooleanQuery;
 import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
 import it.cavallium.dbengine.client.query.current.data.Occur;
@@ -86,11 +88,7 @@ public class QueryUtils {
 		}
 		org.apache.lucene.search.SynonymQuery synonymQuery = (org.apache.lucene.search.SynonymQuery) luceneQuery;
 		return SynonymQuery.of(field,
-				synonymQuery
-						.getTerms()
-						.stream()
-						.map(term -> TermAndBoost.of(QueryParser.toQueryTerm(term), 1))
-						.toList()
+				mapList(synonymQuery.getTerms(), term -> TermAndBoost.of(QueryParser.toQueryTerm(term), 1))
 		);
 	}
 }

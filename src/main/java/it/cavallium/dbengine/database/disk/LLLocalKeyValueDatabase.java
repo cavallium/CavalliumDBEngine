@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
+import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.utils.StreamUtils.collect;
 import static it.cavallium.dbengine.utils.StreamUtils.iterating;
 import static java.lang.Boolean.parseBoolean;
@@ -276,11 +277,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					columnFamilyOptions.setBottommostCompressionType(lastLevelOptions.compressionType);
 					columnFamilyOptions.setBottommostCompressionOptions(lastLevelOptions.compressionOptions);
 
-					columnFamilyOptions.setCompressionPerLevel(columnOptions
-							.levels()
-							.stream()
-							.map(v -> v.compression().getType())
-							.toList());
+					columnFamilyOptions.setCompressionPerLevel(mapList(columnOptions.levels(), v -> v.compression().getType()));
 				} else {
 					columnFamilyOptions.setNumLevels(7);
 					List<CompressionType> compressionTypes = new ArrayList<>(7);
@@ -932,10 +929,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 			requireNonNull(databasesDirPath);
 			requireNonNull(path.getFileName());
-			List<DbPath> paths = convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes())
-					.stream()
-					.map(p -> new DbPath(p.path, p.targetSize))
-					.toList();
+			List<DbPath> paths = mapList(convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes()),
+					p -> new DbPath(p.path, p.targetSize)
+			);
 			options.setDbPaths(paths);
 			options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
 			if (databaseOptions.spinning()) {

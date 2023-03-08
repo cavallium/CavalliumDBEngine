@@ -513,30 +513,6 @@ public class LLUtils {
 		return Buf.copyOf(array);
 	}
 
-
-	public static Buf compositeBuffer(Buf buffer) {
-		return buffer;
-	}
-
-	@NotNull
-	public static Buf compositeBuffer(Buf buffer1, Buf buffer2) {
-		// todo: create a composite buffer without allocating a new array
-		var out = Buf.create(buffer1.size() + buffer2.size());
-		out.addAll(buffer1);
-		out.addAll(buffer2);
-		return out;
-	}
-
-	@NotNull
-	public static Buf compositeBuffer(Buf buffer1, Buf buffer2, Buf buffer3) {
-		// todo: create a composite buffer without allocating a new array
-		var out = Buf.create(buffer1.size() + buffer2.size());
-		out.addAll(buffer1);
-		out.addAll(buffer2);
-		out.addAll(buffer3);
-		return out;
-	}
-
 	public static <T> T resolveDelta(Delta<T> delta, UpdateReturnMode updateReturnMode) {
 		return switch (updateReturnMode) {
 			case GET_NEW_VALUE -> delta.current();
@@ -666,9 +642,10 @@ public class LLUtils {
 		}
 	}
 
-	public static <T, U> List<U> mapList(List<T> input, Function<T, U> mapper) {
-		//todo: optimize hits mapping
-		return input.stream().map(mapper).toList();
+	public static <T, U> List<U> mapList(Collection<T> input, Function<T, U> mapper) {
+		var result = new ArrayList<U>(input.size());
+		input.forEach(t -> result.add(mapper.apply(t)));
+		return result;
 	}
 
 	private static class FakeBytesRefBuilder extends BytesRefBuilder {

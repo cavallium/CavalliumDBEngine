@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.lucene.searcher;
 
+import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.utils.StreamUtils.toList;
 import static java.util.Objects.requireNonNull;
 
@@ -64,7 +65,7 @@ public class StandardSearcher implements MultiSearcher {
 			sharedManager = TopScoreDocCollector.createSharedManager(queryParams.limitInt(), null, totalHitsThreshold);
 		}
 		;
-		var collectors = indexSearchers.stream().map(shard -> {
+		var collectors = mapList(indexSearchers, shard -> {
 			try {
 				TopDocsCollector<?> collector;
 				collector = sharedManager.newCollector();
@@ -77,7 +78,7 @@ public class StandardSearcher implements MultiSearcher {
 			} catch (IOException e) {
 				throw new DBException(e);
 			}
-		}).toList();
+		});
 
 		try {
 			if (collectors.size() <= 1) {

@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.ALLOW_STATIC_OPTIONS;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
+import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
@@ -542,7 +543,7 @@ public class LLLocalDictionary implements LLDictionary {
 						{
 							var readOptions = generateReadOptionsOrStatic(null);
 							try {
-								var inputs = db.multiGetAsList(readOptions, Lists.transform(keyBufsWindow, Buf::asArray));
+								var inputs = db.multiGetAsList(readOptions, mapList(keyBufsWindow, Buf::asArray));
 								mappedInputs = new ArrayList<>(inputs.size());
 								for (int i = 0; i < inputs.size(); i++) {
 									var val = inputs.get(i);

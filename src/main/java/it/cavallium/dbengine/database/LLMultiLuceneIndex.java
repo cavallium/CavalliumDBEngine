@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database;
 
+import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.lucene.LuceneUtils.getLuceneIndexId;
 import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
 import static it.cavallium.dbengine.utils.StreamUtils.collect;
@@ -174,11 +175,11 @@ public class LLMultiLuceneIndex implements LLLuceneIndex {
 			@NotNull List<Query> queries,
 			@Nullable Query normalizationQuery,
 			BucketParams bucketParams) {
-		return mergeShards(luceneIndicesSet.stream().map(luceneIndex -> luceneIndex.computeBuckets(snapshot,
+		return mergeShards(mapList(luceneIndicesSet, luceneIndex -> luceneIndex.computeBuckets(snapshot,
 				queries,
 				normalizationQuery,
 				bucketParams
-		)).toList());
+		)));
 	}
 
 	@Override

@@ -102,8 +102,6 @@ public class LLLocalSingleton implements LLSingleton {
 		UpdateAtomicResult result;
 		try (var readOptions = new ReadOptions(); var writeOptions = new WriteOptions()) {
 			result = db.updateAtomic(readOptions, writeOptions, name, updater, returnMode);
-		} catch (RocksDBException e) {
-			throw new DBException("Failed to read or write", e);
 		}
 		return switch (updateReturnMode) {
 			case NOTHING -> null;
@@ -120,8 +118,6 @@ public class LLLocalSingleton implements LLSingleton {
 		UpdateAtomicResult result;
 		try (var readOptions = new ReadOptions(); var writeOptions = new WriteOptions()) {
 			result = db.updateAtomic(readOptions, writeOptions, name, updater, DELTA);
-		} catch (RocksDBException e) {
-			throw new DBException("Failed to read or write", e);
 		}
 		return ((UpdateAtomicResultDelta) result).delta();
 	}

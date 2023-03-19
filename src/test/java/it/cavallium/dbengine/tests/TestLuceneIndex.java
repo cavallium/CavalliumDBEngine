@@ -157,7 +157,7 @@ public class TestLuceneIndex {
 				if (customSearcher instanceof MultiSearcher multiSearcher) {
 					tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
 				} else {
-					throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
+					throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.toString());
 				}
 			}
 		} else {

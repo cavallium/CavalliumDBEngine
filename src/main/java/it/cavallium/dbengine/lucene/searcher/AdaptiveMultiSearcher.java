@@ -78,7 +78,7 @@ public class AdaptiveMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "adaptive local";
 	}
 }

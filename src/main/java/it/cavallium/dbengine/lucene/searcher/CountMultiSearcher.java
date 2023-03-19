@@ -76,7 +76,7 @@ public class CountMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "count";
 	}
 }

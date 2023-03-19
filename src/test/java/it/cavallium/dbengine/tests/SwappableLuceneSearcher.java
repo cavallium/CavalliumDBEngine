@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.tests;
 
 import static java.util.Objects.requireNonNull;
-import static java.util.Objects.requireNonNullElseGet;
 
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.disk.LLIndexSearcher;
@@ -42,17 +41,17 @@ public class SwappableLuceneSearcher implements LocalSearcher, MultiSearcher, Cl
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		var single = this.single.get();
 		var multi = this.multi.get();
 		if (single == multi) {
 			if (single == null) {
 				return "swappable";
 			} else {
-				return single.getName();
+				return single.toString();
 			}
 		} else {
-			return "swappable[single=" + single.getName() + ",multi=" + multi.getName() + "]";
+			return "swappable[single=" + single.toString() + ",multi=" + multi.toString() + "]";
 		}
 	}
 

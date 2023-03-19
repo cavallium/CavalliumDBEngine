@@ -749,8 +749,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		return closeLock;
 	}
 
-	private void flushAndCloseDb(RocksDB db, Cache standardCache, Cache compressedCache, List<ColumnFamilyHandle> handles)
-			throws RocksDBException {
+	private void flushAndCloseDb(RocksDB db, Cache standardCache, Cache compressedCache, List<ColumnFamilyHandle> handles) {
 		var closeWriteLock = closeLock.writeLock();
 		try {
 			if (closed) {
@@ -1536,7 +1535,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			});
 			handles.clear();
 			deleteUnusedOldLogFiles();
-		} catch (RocksDBException e) {
+		} catch (Exception e) {
 			throw new DBException("Failed to close", e);
 		}
 	}

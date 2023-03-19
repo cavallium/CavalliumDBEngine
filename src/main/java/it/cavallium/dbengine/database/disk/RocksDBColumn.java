@@ -42,7 +42,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	boolean exists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
 
-	boolean mayExists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
+	boolean mayExists(@NotNull ReadOptions readOptions, Buf key);
 
 	void put(@NotNull WriteOptions writeOptions, Buf key, Buf value) throws RocksDBException;
 
@@ -56,7 +56,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 			@NotNull WriteOptions writeOptions,
 			Buf key,
 			BinarySerializationFunction updater,
-			UpdateAtomicResultMode returnMode) throws RocksDBException;
+			UpdateAtomicResultMode returnMode);
 
 	void delete(WriteOptions writeOptions, Buf key) throws RocksDBException;
 
@@ -84,5 +84,5 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	boolean supportsTransactions();
 
-	void forceCompaction(int volumeId) throws RocksDBException;
+	void forceCompaction(int volumeId);
 }

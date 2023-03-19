@@ -357,7 +357,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public boolean mayExists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
+	public boolean mayExists(@NotNull ReadOptions readOptions, Buf key) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -504,7 +504,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			@NotNull WriteOptions writeOptions,
 			Buf key,
 			BinarySerializationFunction updater,
-			UpdateAtomicResultMode returnMode) throws RocksDBException {
+			UpdateAtomicResultMode returnMode) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -543,7 +543,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			@NotNull WriteOptions writeOptions,
 			Buf key,
 			BinarySerializationFunction updater,
-			UpdateAtomicResultMode returnMode) throws RocksDBException;
+			UpdateAtomicResultMode returnMode);
 
 	@Override
 	@NotNull

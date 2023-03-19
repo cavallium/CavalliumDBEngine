@@ -25,8 +25,4 @@ public abstract class LLIndexSearcher extends SimpleResource implements Discardi
 	}
 
 	protected abstract IndexSearcher getIndexSearcherInternal();
-
-	public AtomicBoolean getClosed() {
-		return super.getClosed();
-	}
 }

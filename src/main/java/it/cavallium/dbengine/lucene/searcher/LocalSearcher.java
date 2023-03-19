@@ -25,5 +25,6 @@ public interface LocalSearcher {
 	 * Get the name of this searcher type
 	 * @return searcher type name
 	 */
-	String getName();
+	@Override
+	String toString();
 }

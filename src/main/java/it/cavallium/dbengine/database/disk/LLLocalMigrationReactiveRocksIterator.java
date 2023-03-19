@@ -21,8 +21,8 @@ import org.rocksdb.RocksDBException;
 public final class LLLocalMigrationReactiveRocksIterator {
 
 	private final RocksDBColumn db;
-	private LLRange range;
-	private Supplier<ReadOptions> readOptions;
+	private final LLRange range;
+	private final Supplier<ReadOptions> readOptions;
 
 	public LLLocalMigrationReactiveRocksIterator(RocksDBColumn db,
 			LLRange range,
@@ -41,17 +41,13 @@ public final class LLLocalMigrationReactiveRocksIterator {
 			throw new DBException("Failed to open iterator", e);
 		}
 		return streamWhileNonNull(() -> {
-			try {
-				if (rocksIterator.isValid()) {
-					var key = rocksIterator.keyBuf().copy();
-					var value = rocksIterator.valueBuf().copy();
-					rocksIterator.next(false);
-					return LLEntry.of(key, value);
-				} else {
-					return null;
-				}
-			} catch (RocksDBException ex) {
-				throw new CompletionException(new DBException("Failed to iterate", ex));
+			if (rocksIterator.isValid()) {
+				var key = rocksIterator.keyBuf().copy();
+				var value = rocksIterator.valueBuf().copy();
+				rocksIterator.next(false);
+				return LLEntry.of(key, value);
+			} else {
+				return null;
 			}
 		}).onClose(() -> {
 			rocksIterator.close();

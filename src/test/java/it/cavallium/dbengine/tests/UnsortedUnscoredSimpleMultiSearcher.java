@@ -85,7 +85,7 @@ public class UnsortedUnscoredSimpleMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "unsorted unscored simple multi";
 	}
 }

@@ -67,7 +67,7 @@ public class UnsortedStreamingMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "unsorted streaming multi";
 	}
 }

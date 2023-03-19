@@ -131,7 +131,7 @@ public class StandardSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "standard";
 	}
 }

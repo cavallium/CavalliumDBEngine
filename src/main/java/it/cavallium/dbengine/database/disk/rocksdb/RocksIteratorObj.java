@@ -201,7 +201,7 @@ public class RocksIteratorObj extends SimpleResource {
 		next(true);
 	}
 
-	public void next(boolean traceStats) throws RocksDBException {
+	public void next(boolean traceStats) {
 		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
@@ -217,7 +217,7 @@ public class RocksIteratorObj extends SimpleResource {
 		prev(true);
 	}
 
-	public void prev(boolean traceStats) throws RocksDBException {
+	public void prev(boolean traceStats) {
 		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();

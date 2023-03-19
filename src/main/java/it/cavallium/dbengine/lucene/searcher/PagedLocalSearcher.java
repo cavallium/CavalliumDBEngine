@@ -56,7 +56,7 @@ public class PagedLocalSearcher implements LocalSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "paged local";
 	}
 

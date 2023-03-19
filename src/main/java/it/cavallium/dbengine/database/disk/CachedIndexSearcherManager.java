@@ -40,10 +40,8 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 
 	@Nullable
 	private final SnapshotsManager snapshotsManager;
-	private final ScheduledExecutorService luceneHeavyTasksScheduler;
 	private final Similarity similarity;
 	private final SearcherManager searcherManager;
-	private final Duration queryRefreshDebounceTime;
 
 	private final AtomicLong activeSearchers = new AtomicLong(0);
 	private final AtomicLong activeRefreshes = new AtomicLong(0);
@@ -59,9 +57,7 @@ public class CachedIndexSearcherManager extends SimpleResource implements IndexS
 			boolean writeAllDeletes,
 			Duration queryRefreshDebounceTime) {
 		this.snapshotsManager = snapshotsManager;
-		this.luceneHeavyTasksScheduler = luceneHeavyTasksScheduler;
 		this.similarity = similarity;
-		this.queryRefreshDebounceTime = queryRefreshDebounceTime;
 
 		try {
 			this.searcherManager = new SearcherManager(indexWriter, applyAllDeletes, writeAllDeletes, SEARCHER_FACTORY);

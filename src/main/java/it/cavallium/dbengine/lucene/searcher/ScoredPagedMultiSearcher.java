@@ -214,7 +214,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "scored paged multi";
 	}
 

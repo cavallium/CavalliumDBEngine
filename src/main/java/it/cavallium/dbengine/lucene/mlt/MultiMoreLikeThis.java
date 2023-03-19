@@ -86,11 +86,11 @@ import org.apache.lucene.util.PriorityQueue;
  * <pre class="prettyprint">
  * IndexReader ir = ...
  * IndexSearcher is = ...
- *
+ * <p>
  * MoreLikeThis mlt = new MoreLikeThis(ir);
  * Reader target = ... // orig source of doc you want to find similarities to
  * Query query = mlt.like( target);
- *
+ * <p>
  * Hits hits = is.search(query);
  * // now the usual iteration thru 'hits' - the only thing to watch for is to make sure
  * //you ignore the doc if it matches your 'target' document, as it should be similar to itself

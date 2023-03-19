@@ -170,7 +170,7 @@ public class TestLuceneSearches {
 			throws Throwable {
 		var searchers = getSearchers(expectedQueryType);
 		for (LocalSearcher searcher : searchers) {
-			log.info("Using searcher \"{}\"", searcher.getName());
+			log.info("Using searcher \"{}\"", searcher.toString());
 			consumer.accept(searcher);
 		}
 	}
@@ -196,7 +196,7 @@ public class TestLuceneSearches {
 				if (customSearcher instanceof MultiSearcher multiSearcher) {
 					tempDb.swappableLuceneSearcher().setMulti(multiSearcher);
 				} else {
-					throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.getName());
+					throw new IllegalArgumentException("Expected a LuceneMultiSearcher, got a LuceneLocalSearcher: " + customSearcher.toString());
 				}
 			}
 		} else {

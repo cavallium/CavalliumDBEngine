@@ -24,8 +24,4 @@ public abstract class LLIndexSearcherImpl extends LLIndexSearcher {
 	public IndexSearcher getIndexSearcherInternal() {
 		return indexSearcher;
 	}
-
-	public AtomicBoolean getClosed() {
-		return super.getClosed();
-	}
 }

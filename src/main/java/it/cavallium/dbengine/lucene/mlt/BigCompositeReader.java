@@ -69,7 +69,7 @@ public class BigCompositeReader<R extends IndexReader> {
 	public static <T extends IndexReader> Collection<String> getIndexedFields(BigCompositeReader<T> readers) {
 		return readers.subReadersList
 				.stream()
-				.map(t -> t.getContext())
+				.map(IndexReader::getContext)
 				.flatMap(l -> l.leaves().stream())
 				.flatMap((l) -> StreamSupport
 						.stream(l.reader().getFieldInfos().spliterator(), false)

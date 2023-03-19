@@ -42,7 +42,7 @@ public class AdaptiveLocalSearcher implements LocalSearcher {
 	}
 
 	@Override
-	public String getName() {
+	public String toString() {
 		return "adaptivelocal";
 	}
 

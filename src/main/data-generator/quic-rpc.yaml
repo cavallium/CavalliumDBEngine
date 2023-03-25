@@ -248,7 +248,6 @@ baseTypesData:
       optimistic: boolean
       maxOpenFiles: -int
       blockCache: -long
-      compressedBlockCache: -long
       persistentCaches: PersistentCache[]
       writeBufferManager: -long
       spinning: boolean

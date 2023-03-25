@@ -60,7 +60,6 @@ public class DefaultDatabaseOptions {
 			true,
 			Nullableint.empty(),
 			Nullablelong.empty(),
-			Nullablelong.empty(),
 			Collections.emptyList(),
 			Nullablelong.empty(),
 			false,

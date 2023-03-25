@@ -125,7 +125,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	private RocksDB db;
 	private Statistics statistics;
 	private Cache standardCache;
-	private Cache compressedCache;
 	private final Map<Column, ColumnFamilyHandle> handles;
 
 	private final HashMap<String, PersistentCache> persistentCaches;
@@ -363,7 +362,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 							// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 							// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 							.setBlockSize(columnOptions.blockSize().orElse((databaseOptions.spinning() ? 128 : 16) * 1024))
-							.setBlockCacheCompressed(optionsWithCache.compressedCache())
 							.setBlockCache(optionsWithCache.standardCache())
 							.setPersistentCache(resolvePersistentCache(persistentCaches,
 									rocksdbOptions,
@@ -440,7 +438,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						);
 					}
 					this.standardCache = optionsWithCache.standardCache;
-					this.compressedCache = optionsWithCache.compressedCache;
 					break;
 				} catch (RocksDBException ex) {
 					switch (ex.getMessage()) {
@@ -749,7 +746,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		return closeLock;
 	}
 
-	private void flushAndCloseDb(RocksDB db, Cache standardCache, Cache compressedCache, List<ColumnFamilyHandle> handles) {
+	private void flushAndCloseDb(RocksDB db, Cache standardCache, List<ColumnFamilyHandle> handles) {
 		var closeWriteLock = closeLock.writeLock();
 		try {
 			if (closed) {
@@ -783,9 +780,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				} catch (Exception ex) {
 					logger.error("Can't close column family", ex);
 				}
-			}
-			if (compressedCache != null) {
-				compressedCache.close();
 			}
 			if (standardCache != null) {
 				standardCache.close();
@@ -855,16 +849,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 
-	record OptionsWithCache(DBOptions options, @Nullable Cache standardCache, @Nullable Cache compressedCache) {
-
-		/**
-		 * SecondaryCache will replace compressed cache
-		 */
-		@Deprecated(forRemoval = true)
-		@Override
-		public Cache compressedCache() {
-			return compressedCache;
-		}
+	record OptionsWithCache(DBOptions options, @Nullable Cache standardCache) {
 	}
 
 	private static OptionsWithCache openRocksDb(@Nullable Path path, DatabaseOptions databaseOptions, RocksDBRefs refs) {
@@ -956,8 +941,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			}
 
 			Cache blockCache;
-			//todo: compressed cache will be replaced with SecondaryCache in the future
-			Cache compressedCache;
 			final boolean useDirectIO = databaseOptions.useDirectIO();
 			final boolean allowMmapReads = !useDirectIO && databaseOptions.allowMemoryMapping();
 			final boolean allowMmapWrites = !useDirectIO && (databaseOptions.allowMemoryMapping()
@@ -974,12 +957,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				;
 				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse(8L * SizeUnit.MB));
 				refs.track(blockCache);
-				if (databaseOptions.compressedBlockCache().isPresent()) {
-					compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
-					refs.track(compressedCache);
-				} else {
-					compressedCache = null;
-				}
 
 				if (useDirectIO) {
 					options
@@ -1010,12 +987,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				;
 				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
 				refs.track(blockCache);
-				if (databaseOptions.compressedBlockCache().isPresent()) {
-					compressedCache = CACHE_FACTORY.newCache(databaseOptions.compressedBlockCache().get());
-					refs.track(compressedCache);
-				} else {
-					compressedCache = null;
-				}
 
 				if (useDirectIO) {
 					options
@@ -1058,7 +1029,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				options.setUseDirectIoForFlushAndCompaction(true);
 			}
 
-			return new OptionsWithCache(options, blockCache, compressedCache);
+			return new OptionsWithCache(options, blockCache);
 		} catch (IOException e) {
 			throw new DBException(e);
 		}
@@ -1525,7 +1496,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		try {
 			flushAndCloseDb(db,
 					standardCache,
-					compressedCache,
 					new ArrayList<>(handles.values())
 			);
 			handles.values().forEach(columnFamilyHandleRocksObj -> {

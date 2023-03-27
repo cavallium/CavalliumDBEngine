@@ -4,8 +4,8 @@ import it.cavallium.dbengine.client.BadBlock;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.Mapper;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.stream.Stream;
@@ -63,28 +63,16 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 
 	@Override
 	public A update(SerializationFunction<@Nullable A, @Nullable A> updater, UpdateReturnMode updateReturnMode) {
-		B prev = serializedSingle.update(oldValue -> {
-			var result = updater.apply(oldValue == null ? null : this.unMap(oldValue));
-			if (result == null) {
-				return null;
-			} else {
-				return this.map(result);
-			}
-		}, updateReturnMode);
-		return prev != null ? unMap(prev) : null;
+		var mappedUpdater = new CachedSerializationFunction<>(updater, this::map, this::unMap);
+		serializedSingle.update(mappedUpdater, UpdateReturnMode.NOTHING);
+		return mappedUpdater.getResult(updateReturnMode);
 	}
 
 	@Override
 	public Delta<A> updateAndGetDelta(SerializationFunction<@Nullable A, @Nullable A> updater) {
-		var delta = serializedSingle.updateAndGetDelta(oldValue -> {
-			var result = updater.apply(oldValue == null ? null : this.unMap(oldValue));
-			if (result == null) {
-				return null;
-			} else {
-				return this.map(result);
-			}
-		});
-		return LLUtils.mapDelta(delta, this::unMap);
+		var mappedUpdater = new CachedSerializationFunction<>(updater, this::map, this::unMap);
+		serializedSingle.update(mappedUpdater, UpdateReturnMode.NOTHING);
+		return mappedUpdater.getDelta();
 	}
 
 	@Override

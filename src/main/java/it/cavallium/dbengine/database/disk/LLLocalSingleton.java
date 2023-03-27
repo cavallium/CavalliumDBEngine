@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -89,7 +90,7 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	@Override
-	public Buf update(BinarySerializationFunction updater,
+	public Buf update(SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateReturnMode updateReturnMode) {
 		if (LLUtils.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called update in a nonblocking thread");
@@ -111,7 +112,7 @@ public class LLLocalSingleton implements LLSingleton {
 	}
 
 	@Override
-	public LLDelta updateAndGetDelta(BinarySerializationFunction updater) {
+	public LLDelta updateAndGetDelta(SerializationFunction<@Nullable Buf, @Nullable Buf> updater) {
 		if (LLUtils.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called update in a nonblocking thread");
 		}

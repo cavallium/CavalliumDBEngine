@@ -12,7 +12,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
+import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -89,31 +89,20 @@ public final class DatabaseMapSingle<U> implements DatabaseStageEntry<U> {
 
 	@Override
 	public U update(SerializationFunction<@Nullable U, @Nullable U> updater, UpdateReturnMode updateReturnMode) {
-		Buf resultBytes = dictionary.update(key, this.createUpdater(updater), updateReturnMode);
-		return resultBytes != null ? deserializeValue(resultBytes) : null;
+		var serializedUpdater = createUpdater(updater);
+		dictionary.update(key, serializedUpdater, UpdateReturnMode.NOTHING);
+		return serializedUpdater.getResult(updateReturnMode);
 	}
 
 	@Override
 	public Delta<U> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater) {
-		var delta = dictionary.updateAndGetDelta(key, this.createUpdater(updater));
-		return LLUtils.mapLLDelta(delta, bytes -> serializer.deserialize(BufDataInput.create(bytes)));
+		var serializedUpdater = createUpdater(updater);
+		dictionary.update(key, serializedUpdater, UpdateReturnMode.NOTHING);
+		return serializedUpdater.getDelta();
 	}
 
-	private BinarySerializationFunction createUpdater(SerializationFunction<U, U> updater) {
-		return oldBytes -> {
-			U result;
-			if (oldBytes == null) {
-				result = updater.apply(null);
-			} else {
-				U deserializedValue = serializer.deserialize(BufDataInput.create(oldBytes));
-				result = updater.apply(deserializedValue);
-			}
-			if (result == null) {
-				return null;
-			} else {
-				return serializeValue(result);
-			}
-		};
+	private CachedSerializationFunction<U, Buf, Buf> createUpdater(SerializationFunction<U, U> updater) {
+		return new CachedSerializationFunction<>(updater, this::serializeValue, this::deserializeValue);
 	}
 
 	@Override

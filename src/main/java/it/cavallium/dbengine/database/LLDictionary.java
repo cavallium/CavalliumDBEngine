@@ -2,8 +2,8 @@ package it.cavallium.dbengine.database;
 
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.BadBlock;
-import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import java.util.List;
 import java.util.function.Function;
@@ -23,12 +23,12 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 
 	UpdateMode getUpdateMode();
 
-	default Buf update(Buf key, BinarySerializationFunction updater, UpdateReturnMode updateReturnMode) {
+	default Buf update(Buf key, SerializationFunction<@Nullable Buf, @Nullable Buf> updater, UpdateReturnMode updateReturnMode) {
 		LLDelta prev = this.updateAndGetDelta(key, updater);
 		return LLUtils.resolveLLDelta(prev, updateReturnMode);
 	}
 
-	LLDelta updateAndGetDelta(Buf key, BinarySerializationFunction updater);
+	LLDelta updateAndGetDelta(Buf key, SerializationFunction<@Nullable Buf, @Nullable Buf> updater);
 
 	void clear();
 

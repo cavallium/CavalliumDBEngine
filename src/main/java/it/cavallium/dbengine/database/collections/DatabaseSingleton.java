@@ -8,8 +8,8 @@ import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
-import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -83,43 +83,17 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public U update(SerializationFunction<@Nullable U, @Nullable U> updater,
-			UpdateReturnMode updateReturnMode) {
-		Buf resultBuf = singleton
-			.update((oldValueSer) -> {
-				U result;
-				if (oldValueSer == null) {
-					result = updater.apply(null);
-				} else {
-					U deserializedValue = serializer.deserialize(BufDataInput.create(oldValueSer));
-					result = updater.apply(deserializedValue);
-				}
-				if (result == null) {
-					return null;
-				} else {
-					return serializeValue(result);
-				}
-			}, updateReturnMode);
-		return this.deserializeValue(resultBuf);
+	public U update(SerializationFunction<@Nullable U, @Nullable U> updater, UpdateReturnMode updateReturnMode) {
+		var serializedUpdater = new CachedSerializationFunction<>(updater, this::serializeValue, this::deserializeValue);
+		singleton.update(serializedUpdater, UpdateReturnMode.NOTHING);
+		return serializedUpdater.getResult(updateReturnMode);
 	}
 
 	@Override
 	public Delta<U> updateAndGetDelta(SerializationFunction<@Nullable U, @Nullable U> updater) {
-		var mono = singleton.updateAndGetDelta((oldValueSer) -> {
-			U result;
-			if (oldValueSer == null) {
-				result = updater.apply(null);
-			} else {
-				U deserializedValue = serializer.deserialize(BufDataInput.create(oldValueSer));
-				result = updater.apply(deserializedValue);
-			}
-			if (result == null) {
-				return null;
-			} else {
-				return serializeValue(result);
-			}
-		});
-		return LLUtils.mapLLDelta(mono, serialized -> serializer.deserialize(BufDataInput.create(serialized)));
+		var serializedUpdater = new CachedSerializationFunction<>(updater, this::serializeValue, this::deserializeValue);
+		singleton.update(serializedUpdater, UpdateReturnMode.NOTHING);
+		return serializedUpdater.getDelta();
 	}
 
 	@Override

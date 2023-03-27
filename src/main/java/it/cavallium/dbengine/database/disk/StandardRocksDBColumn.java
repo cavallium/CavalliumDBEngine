@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.util.concurrent.locks.StampedLock;
@@ -43,7 +44,7 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
 			Buf key,
-			BinarySerializationFunction updater,
+			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode) {
 		long initNanoTime = System.nanoTime();
 		try {

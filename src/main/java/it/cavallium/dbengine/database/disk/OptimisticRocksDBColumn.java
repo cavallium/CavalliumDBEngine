@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
@@ -14,6 +15,7 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.StampedLock;
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.ReadOptions;
@@ -75,7 +77,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
 			Buf key,
-			BinarySerializationFunction updater,
+			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode) {
 		long initNanoTime = System.nanoTime();
 		try {

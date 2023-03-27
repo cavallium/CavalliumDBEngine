@@ -6,7 +6,7 @@ import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.Nullable;
 
@@ -38,13 +38,13 @@ public class LLMemorySingleton implements LLSingleton {
 	}
 
 	@Override
-	public Buf update(BinarySerializationFunction updater,
+	public Buf update(SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateReturnMode updateReturnMode) {
 		return dict.update(singletonName, updater, updateReturnMode);
 	}
 
 	@Override
-	public LLDelta updateAndGetDelta(BinarySerializationFunction updater) {
+	public LLDelta updateAndGetDelta(SerializationFunction<@Nullable Buf, @Nullable Buf> updater) {
 		return dict.updateAndGetDelta(singletonName, updater);
 	}
 

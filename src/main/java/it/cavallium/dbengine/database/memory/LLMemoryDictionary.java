@@ -16,9 +16,9 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
-import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.util.List;
@@ -176,7 +176,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public LLDelta updateAndGetDelta(Buf key, BinarySerializationFunction updater) {
+	public LLDelta updateAndGetDelta(Buf key, SerializationFunction<@Nullable Buf, @Nullable Buf> updater) {
 		if (updateMode == UpdateMode.DISALLOW) {
 			throw new UnsupportedOperationException("update() is disallowed");
 		}

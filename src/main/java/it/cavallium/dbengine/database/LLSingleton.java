@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import org.jetbrains.annotations.Nullable;
 
@@ -11,12 +11,12 @@ public interface LLSingleton extends LLKeyValueDatabaseStructure {
 
 	void set(Buf value);
 
-	default Buf update(BinarySerializationFunction updater, UpdateReturnMode updateReturnMode) {
+	default Buf update(SerializationFunction<@Nullable Buf, @Nullable Buf> updater, UpdateReturnMode updateReturnMode) {
 		var prev = this.updateAndGetDelta(updater);
 		return LLUtils.resolveLLDelta(prev, updateReturnMode);
 	}
 
-	LLDelta updateAndGetDelta(BinarySerializationFunction updater);
+	LLDelta updateAndGetDelta(SerializationFunction<@Nullable Buf, @Nullable Buf> updater);
 
 	String getColumnName();
 

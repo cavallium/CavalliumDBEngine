@@ -16,6 +16,7 @@ import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.rpc.current.data.LuceneOptionsBuilder;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.jetbrains.annotations.Nullable;
@@ -73,5 +74,13 @@ public class LLMemoryDatabaseConnection implements LLDatabaseConnection {
 	@Override
 	public void disconnect() {
 		connected.compareAndSet(true, false);
+	}
+
+	@Override
+	public String toString() {
+		return new StringJoiner(", ", LLMemoryDatabaseConnection.class.getSimpleName() + "[", "]")
+				.add("connected=" + connected)
+				.add("meterRegistry=" + meterRegistry)
+				.toString();
 	}
 }

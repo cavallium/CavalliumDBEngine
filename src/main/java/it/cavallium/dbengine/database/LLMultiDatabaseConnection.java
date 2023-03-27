@@ -26,6 +26,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.StringJoiner;
 import java.util.concurrent.CompletionException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -174,5 +175,17 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 				LOG.error("Failed to close connection", ex);
 			}
 		}));
+	}
+
+	@Override
+	public String toString() {
+		return new StringJoiner(", ", LLMultiDatabaseConnection.class.getSimpleName() + "[", "]")
+				.add("databaseShardConnections=" + databaseShardConnections)
+				.add("luceneShardConnections=" + luceneShardConnections)
+				.add("allConnections=" + allConnections)
+				.add("defaultDatabaseConnection=" + defaultDatabaseConnection)
+				.add("defaultLuceneConnection=" + defaultLuceneConnection)
+				.add("anyConnection=" + anyConnection)
+				.toString();
 	}
 }

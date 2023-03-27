@@ -5,7 +5,6 @@ import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
-import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
 import it.cavallium.dbengine.database.LLEntry;
@@ -15,13 +14,12 @@ import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
-import it.cavallium.dbengine.database.disk.BinarySerializationFunction;
+import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
@@ -32,7 +30,6 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -106,6 +103,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			stagesFlux = databaseMapDictionary.getAllStages(snapshot, smallRange);
 		}
 		return stagesFlux.map(Entry::getKey);
+	}
+
+	private U deserializeValue(Buf value) {
+		return valueSerializer.deserialize(BufDataInput.create(value));
 	}
 
 	private @Nullable U deserializeValue(T keySuffix, BufDataInput value) {
@@ -261,31 +262,21 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			UpdateReturnMode updateReturnMode,
 			SerializationFunction<@Nullable U, @Nullable U> updater) {
 		var keyMono = serializeKeySuffixToKey(keySuffix);
-		var result = dictionary.update(keyMono, getSerializedUpdater(updater), updateReturnMode);
-		return deserializeValue(keySuffix, BufDataInput.create(result));
+		var serializedUpdater = getSerializedUpdater(updater);
+		dictionary.update(keyMono, serializedUpdater, UpdateReturnMode.NOTHING);
+		return serializedUpdater.getResult(updateReturnMode);
 	}
 
 	@Override
 	public Delta<U> updateValueAndGetDelta(T keySuffix, SerializationFunction<@Nullable U, @Nullable U> updater) {
 		var keyMono = serializeKeySuffixToKey(keySuffix);
-		LLDelta delta = dictionary.updateAndGetDelta(keyMono, getSerializedUpdater(updater));
-		return LLUtils.mapLLDelta(delta, in -> valueSerializer.deserialize(BufDataInput.create(in)));
+		var serializedUpdater = getSerializedUpdater(updater);
+		dictionary.update(keyMono, serializedUpdater, UpdateReturnMode.NOTHING);
+		return serializedUpdater.getDelta();
 	}
 
-	public BinarySerializationFunction getSerializedUpdater(SerializationFunction<@Nullable U, @Nullable U> updater) {
-		return oldSerialized -> {
-			U result;
-			if (oldSerialized == null) {
-				result = updater.apply(null);
-			} else {
-				result = updater.apply(valueSerializer.deserialize(BufDataInput.create(oldSerialized)));
-			}
-			if (result == null) {
-				return null;
-			} else {
-				return serializeValue(result);
-			}
-		};
+	public CachedSerializationFunction<U, Buf, Buf> getSerializedUpdater(SerializationFunction<@Nullable U, @Nullable U> updater) {
+		return new CachedSerializationFunction<>(updater, this::serializeValue, this::deserializeValue);
 	}
 
 	public KVSerializationFunction<@NotNull T, @Nullable Buf, @Nullable Buf> getSerializedUpdater(

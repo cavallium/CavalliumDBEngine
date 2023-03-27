@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -503,7 +504,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
 			Buf key,
-			BinarySerializationFunction updater,
+			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode) {
 		var closeReadLock = closeLock.readLock();
 		try {
@@ -542,7 +543,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
 			@NotNull WriteOptions writeOptions,
 			Buf key,
-			BinarySerializationFunction updater,
+			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode);
 
 	@Override

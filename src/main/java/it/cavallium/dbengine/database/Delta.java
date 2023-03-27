@@ -5,6 +5,7 @@ import org.jetbrains.annotations.Nullable;
 
 public class Delta<T> {
 
+	private static final Delta<?> EMPTY = new Delta<>(null, null);
 	private final @Nullable T previous;
 	private final @Nullable T current;
 
@@ -23,6 +24,11 @@ public class Delta<T> {
 
 	public @Nullable T current() {
 		return current;
+	}
+
+	public static <X> Delta<X> empty() {
+		//noinspection unchecked
+		return (Delta<X>) EMPTY;
 	}
 
 	@Override

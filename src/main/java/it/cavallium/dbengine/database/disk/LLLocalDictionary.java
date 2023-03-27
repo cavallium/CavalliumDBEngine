@@ -36,6 +36,7 @@ import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
+import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.StreamUtils;
@@ -371,7 +372,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@SuppressWarnings("DuplicatedCode")
 	@Override
 	public Buf update(Buf key,
-			BinarySerializationFunction updater,
+			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateReturnMode updateReturnMode) {
 		assert !LLUtils.isInNonBlockingThread() : "Called update in a nonblocking thread";
 		if (updateMode == UpdateMode.DISALLOW) {
@@ -409,7 +410,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@SuppressWarnings("DuplicatedCode")
 	@Override
-	public LLDelta updateAndGetDelta(Buf key, BinarySerializationFunction updater) {
+	public LLDelta updateAndGetDelta(Buf key, SerializationFunction<@Nullable Buf, @Nullable Buf> updater) {
 		assert !LLUtils.isInNonBlockingThread() : "Called update in a nonblocking thread";
 		if (updateMode == UpdateMode.DISALLOW) {
 			throw new UnsupportedOperationException("update() is disallowed");

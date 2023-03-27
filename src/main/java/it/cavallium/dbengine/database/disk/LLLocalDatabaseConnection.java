@@ -16,6 +16,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.jetbrains.annotations.Nullable;
 
@@ -102,5 +103,15 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	public void disconnect() {
 		if (connected.compareAndSet(true, false)) {
 		}
+	}
+
+	@Override
+	public String toString() {
+		return new StringJoiner(", ", LLLocalDatabaseConnection.class.getSimpleName() + "[", "]")
+				.add("connected=" + connected)
+				.add("meterRegistry=" + meterRegistry)
+				.add("basePath=" + basePath)
+				.add("inMemory=" + inMemory)
+				.toString();
 	}
 }

@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.utils;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 
-public class DBException extends RuntimeException {
+public class DBException extends IllegalStateException {
 
 	public DBException(String message) {
 		super(message);

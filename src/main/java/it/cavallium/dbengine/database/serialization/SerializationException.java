@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.serialization;
 
-public class SerializationException extends RuntimeException {
+public class SerializationException extends IllegalStateException {
 
 	public SerializationException() {
 		super();

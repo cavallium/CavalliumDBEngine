@@ -12,11 +12,9 @@ import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
 import it.cavallium.dbengine.utils.StreamUtils;
-import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map.Entry;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -76,7 +74,7 @@ public interface LLLuceneIndex extends LLSnapshottable, IBackuppable, SafeClosea
 				false,
 				timeout == null ? Long.MAX_VALUE : timeout.toMillis()
 		);
-		return collectOn(StreamUtils.LUCENE_SCHEDULER,
+		return collectOn(StreamUtils.LUCENE_POOL,
 				this.search(snapshot, params, null).map(LLSearchResultShard::totalHitsCount),
 				fastReducing(TotalHitsCount.of(0, true),
 						(a, b) -> TotalHitsCount.of(a.value() + b.value(), a.exact() && b.exact())

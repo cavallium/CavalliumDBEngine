@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
 
@@ -18,7 +18,6 @@ import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.unimi.dsi.fastutil.ints.IntArrayList;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
-import java.io.IOException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -27,7 +26,6 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.StringJoiner;
-import java.util.concurrent.CompletionException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -90,7 +88,7 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public LLDatabaseConnection connect() {
-		collectOn(ROCKSDB_SCHEDULER, allConnections.stream(), executing(connection -> {
+		collectOn(ROCKSDB_POOL, allConnections.stream(), executing(connection -> {
 			try {
 				connection.connect();
 			} catch (Exception ex) {
@@ -168,7 +166,7 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public void disconnect() {
-		collectOn(ROCKSDB_SCHEDULER, allConnections.stream(), executing(connection -> {
+		collectOn(ROCKSDB_POOL, allConnections.stream(), executing(connection -> {
 			try {
 				connection.disconnect();
 			} catch (Exception ex) {

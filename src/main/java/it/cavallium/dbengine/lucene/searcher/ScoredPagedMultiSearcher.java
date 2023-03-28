@@ -1,17 +1,15 @@
 package it.cavallium.dbengine.lucene.searcher;
 
 import static it.cavallium.dbengine.lucene.searcher.PaginationInfo.MAX_SINGLE_SEARCH_LIMIT;
-import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
 
 import com.google.common.collect.Streams;
-import it.cavallium.dbengine.client.query.current.data.TotalHitsCount;
 import it.cavallium.dbengine.database.LLKeyScore;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
-import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.PageLimits;
 import it.cavallium.dbengine.lucene.collector.ScoringShardsCollectorMultiManager;
@@ -21,7 +19,6 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -184,7 +181,7 @@ public class ScoredPagedMultiSearcher implements MultiSearcher {
 			return null;
 		};
 		record IndexedShard(IndexSearcher indexSearcher, long shardIndex) {}
-		List<TopDocs> shardResults = toListOn(LUCENE_SCHEDULER,
+		List<TopDocs> shardResults = toListOn(LUCENE_POOL,
 				Streams.mapWithIndex(indexSearchers.stream(), IndexedShard::new).map(shardWithIndex -> {
 					var index = (int) shardWithIndex.shardIndex();
 					var shard = shardWithIndex.indexSearcher();

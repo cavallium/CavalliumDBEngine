@@ -6,19 +6,14 @@ import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
-import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
-import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
-import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
-import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 import static it.cavallium.dbengine.utils.StreamUtils.fastSummingLong;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
 
-import com.google.common.collect.Lists;
-import com.google.common.collect.Streams;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
@@ -39,20 +34,14 @@ import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.utils.DBException;
-import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
-import java.util.concurrent.Callable;
 import java.util.concurrent.CompletionException;
-import java.util.concurrent.ForkJoinPool;
-import java.util.concurrent.ForkJoinTask;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.tuple.Pair;
@@ -497,7 +486,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public void putMulti(Stream<LLEntry> entries) {
-		collectOn(ROCKSDB_SCHEDULER,
+		collectOn(ROCKSDB_POOL,
 				batches(entries, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP)),
 				executing(entriesWindow -> {
 					try (var writeOptions = new WriteOptions()) {
@@ -817,7 +806,7 @@ public class LLLocalDictionary implements LLDictionary {
 				throw new DBException("Failed to set a range: " + ex.getMessage());
 			}
 
-			collectOn(ROCKSDB_SCHEDULER, batches(entries, MULTI_GET_WINDOW), executing(entriesList -> {
+			collectOn(ROCKSDB_POOL, batches(entries, MULTI_GET_WINDOW), executing(entriesList -> {
 				try (var writeOptions = new WriteOptions()) {
 					if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
 						for (LLEntry entry : entriesList) {
@@ -853,7 +842,7 @@ public class LLLocalDictionary implements LLDictionary {
 			if (USE_WRITE_BATCHES_IN_SET_RANGE) {
 				throw new UnsupportedOperationException("Can't use write batches in setRange without window. Please fix the parameters");
 			}
-			collectOn(ROCKSDB_SCHEDULER, this.getRange(null, range, false, smallRange), executing(oldValue -> {
+			collectOn(ROCKSDB_POOL, this.getRange(null, range, false, smallRange), executing(oldValue -> {
 				try (var writeOptions = new WriteOptions()) {
 					db.delete(writeOptions, oldValue.getKey());
 				} catch (RocksDBException ex) {
@@ -861,7 +850,7 @@ public class LLLocalDictionary implements LLDictionary {
 				}
 			}));
 
-			collectOn(ROCKSDB_SCHEDULER, entries, executing(entry -> {
+			collectOn(ROCKSDB_POOL, entries, executing(entry -> {
 				if (entry.getKey() != null && entry.getValue() != null) {
 					this.putInternal(entry.getKey(), entry.getValue());
 				}
@@ -1092,7 +1081,7 @@ public class LLLocalDictionary implements LLDictionary {
 			readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 			if (PARALLEL_EXACT_SIZE) {
-				return collectOn(ROCKSDB_SCHEDULER, IntStream
+				return collectOn(ROCKSDB_POOL, IntStream
 						.range(-1, LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length)
 						.mapToObj(idx -> Pair.of(idx == -1 ? new byte[0] : LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx],
 								idx + 1 >= LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length ? null

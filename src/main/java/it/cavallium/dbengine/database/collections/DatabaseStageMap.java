@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.count;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
@@ -20,7 +20,6 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
-import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -105,7 +104,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default void putMulti(Stream<Entry<T, U>> entries) {
-		collectOn(ROCKSDB_SCHEDULER, entries, executing(entry -> this.putValue(entry.getKey(), entry.getValue())));
+		collectOn(ROCKSDB_POOL, entries, executing(entry -> this.putValue(entry.getKey(), entry.getValue())));
 	}
 
 	Stream<SubStageEntry<T, US>> getAllStages(@Nullable CompositeSnapshot snapshot, boolean smallRange);
@@ -150,7 +149,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 				this.setAllEntries(entries.map(entriesReplacer));
 			}
 		} else {
-			collectOn(ROCKSDB_SCHEDULER,
+			collectOn(ROCKSDB_POOL,
 					this.getAllEntries(null, smallRange).map(entriesReplacer),
 					executing(replacedEntry -> this.at(null, replacedEntry.getKey()).set(replacedEntry.getValue()))
 			);
@@ -158,7 +157,7 @@ public interface DatabaseStageMap<T, U, US extends DatabaseStage<U>> extends Dat
 	}
 
 	default void replaceAll(Consumer<Entry<T, US>> entriesReplacer) {
-		collectOn(ROCKSDB_SCHEDULER, this.getAllStages(null, false), executing(entriesReplacer));
+		collectOn(ROCKSDB_POOL, this.getAllStages(null, false), executing(entriesReplacer));
 	}
 
 	@Override

@@ -1,10 +1,7 @@
 package it.cavallium.dbengine.client;
 
-import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
-import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
-import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
-import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
 import static java.util.stream.Collectors.collectingAndThen;
 import static java.util.stream.Collectors.toList;
 
@@ -17,8 +14,6 @@ import it.cavallium.dbengine.database.LLSearchResultShard;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLTerm;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.SafeCloseable;
-import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.searcher.BucketParams;
@@ -31,8 +26,6 @@ import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Stream;
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -95,7 +88,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 		var mltDocumentFields
 				= indicizer.getMoreLikeThisDocumentFields(key, mltDocumentValue);
 
-		return collectOn(LUCENE_SCHEDULER, luceneIndex.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
+		return collectOn(LUCENE_POOL, luceneIndex.moreLikeThis(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName(),
 						mltDocumentFields),
@@ -104,7 +97,7 @@ public class LuceneIndexImpl<T, U> implements LuceneIndex<T, U> {
 
 	@Override
 	public Hits<HitKey<T>> search(ClientQueryParams queryParams) {
-		return collectOn(LUCENE_SCHEDULER, luceneIndex.search(resolveSnapshot(queryParams.snapshot()),
+		return collectOn(LUCENE_POOL, luceneIndex.search(resolveSnapshot(queryParams.snapshot()),
 						queryParams.toQueryParams(),
 						indicizer.getKeyFieldName()),
 				collectingAndThen(toList(), toHitsCollector(queryParams)));

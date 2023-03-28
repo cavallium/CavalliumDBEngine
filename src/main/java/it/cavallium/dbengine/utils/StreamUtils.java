@@ -1,7 +1,5 @@
 package it.cavallium.dbengine.utils;
 
-import static java.util.concurrent.ForkJoinPool.defaultForkJoinWorkerThreadFactory;
-
 import com.google.common.collect.Iterators;
 import com.google.common.collect.Streams;
 import it.cavallium.dbengine.utils.PartitionByIntSpliterator.IntPartition;
@@ -12,7 +10,6 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.Spliterator;
@@ -31,10 +28,8 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
-import java.util.function.ToLongFunction;
 import java.util.stream.Collector;
 import java.util.stream.Collector.Characteristics;
-import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 import org.jetbrains.annotations.NotNull;
@@ -42,11 +37,11 @@ import org.jetbrains.annotations.Nullable;
 
 public class StreamUtils {
 
-	public static final ForkJoinPool LUCENE_SCHEDULER = newNamedForkJoinPool("Lucene");
+	public static final ForkJoinPool LUCENE_POOL = newNamedForkJoinPool("Lucene");
 
-	public static final ForkJoinPool GRAPH_SCHEDULER = newNamedForkJoinPool("Graph");
+	public static final ForkJoinPool GRAPH_POOL = newNamedForkJoinPool("Graph");
 
-	public static final ForkJoinPool ROCKSDB_SCHEDULER = newNamedForkJoinPool("RocksDB");
+	public static final ForkJoinPool ROCKSDB_POOL = newNamedForkJoinPool("RocksDB");
 
 	private static final Collector<?, ?, ?> TO_LIST_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> COUNT_FAKE_COLLECTOR = new FakeCollector();

@@ -1,8 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.lucene.LuceneUtils.getLuceneIndexId;
-import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
-import static it.cavallium.dbengine.utils.StreamUtils.collect;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
 import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
@@ -45,7 +44,6 @@ import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.SimpleResource;
 import it.cavallium.dbengine.utils.StreamUtils;
-import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntList;
 import java.io.Closeable;
 import java.io.IOException;
@@ -55,11 +53,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -151,7 +147,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	private LLIndexSearchers getIndexSearchers(LLSnapshot snapshot) {
 		// Resolve the snapshot of each shard
-		return LLIndexSearchers.of(StreamUtils.toListOn(StreamUtils.LUCENE_SCHEDULER,
+		return LLIndexSearchers.of(StreamUtils.toListOn(StreamUtils.LUCENE_POOL,
 				Streams.mapWithIndex(this.luceneIndicesSet.stream(), (luceneIndex, index) -> {
 					var subSnapshot = resolveSnapshot(snapshot, (int) index);
 					return luceneIndex.retrieveSearcher(subSnapshot);
@@ -166,7 +162,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	public long addDocuments(boolean atomic, Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return collectOn(LUCENE_SCHEDULER,
+		return collectOn(LUCENE_POOL,
 				partitionByInt(term -> getLuceneIndexId(term.getKey(), totalShards), documents)
 						.map(entry -> luceneIndicesById[entry.key()].addDocuments(atomic, entry.values().stream())),
 				fastSummingLong()
@@ -185,7 +181,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	public long updateDocuments(Stream<Entry<LLTerm, LLUpdateDocument>> documents) {
-		return collectOn(LUCENE_SCHEDULER,
+		return collectOn(LUCENE_POOL,
 				partitionByInt(term -> getLuceneIndexId(term.getKey(), totalShards), documents)
 						.map(entry -> luceneIndicesById[entry.key()].updateDocuments(entry.values().stream())),
 				fastSummingLong()
@@ -279,7 +275,7 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	protected void onClose() {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(SafeCloseable::close));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(SafeCloseable::close));
 		if (multiSearcher instanceof Closeable closeable) {
 			try {
 				closeable.close();
@@ -291,29 +287,29 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	public void flush() {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::flush));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(LLLuceneIndex::flush));
 	}
 
 	@Override
 	public void waitForMerges() {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::waitForMerges));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(LLLuceneIndex::waitForMerges));
 	}
 
 	@Override
 	public void waitForLastMerges() {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::waitForLastMerges));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(LLLuceneIndex::waitForLastMerges));
 	}
 
 	@Override
 	public void refresh(boolean force) {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(index -> index.refresh(force)));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(index -> index.refresh(force)));
 	}
 
 	@Override
 	public LLSnapshot takeSnapshot() {
 		// Generate next snapshot index
 		var snapshotIndex = nextSnapshotNumber.getAndIncrement();
-		var snapshot = collectOn(StreamUtils.LUCENE_SCHEDULER,
+		var snapshot = collectOn(StreamUtils.LUCENE_POOL,
 				luceneIndicesSet.stream().map(LLSnapshottable::takeSnapshot),
 				fastListing()
 		);
@@ -338,12 +334,12 @@ public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneI
 
 	@Override
 	public void pauseForBackup() {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::pauseForBackup));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(LLLuceneIndex::pauseForBackup));
 	}
 
 	@Override
 	public void resumeAfterBackup() {
-		collectOn(StreamUtils.LUCENE_SCHEDULER, luceneIndicesSet.stream(), executing(LLLuceneIndex::resumeAfterBackup));
+		collectOn(StreamUtils.LUCENE_POOL, luceneIndicesSet.stream(), executing(LLLuceneIndex::resumeAfterBackup));
 	}
 
 	@Override

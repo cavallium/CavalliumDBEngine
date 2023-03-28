@@ -1,10 +1,9 @@
 package it.cavallium.dbengine.lucene.searcher;
 
-import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_SCHEDULER;
+import static it.cavallium.dbengine.utils.StreamUtils.LUCENE_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.fastListing;
 
-import com.google.common.collect.Streams;
 import it.cavallium.dbengine.database.disk.LLIndexSearchers;
 import it.cavallium.dbengine.lucene.collector.Buckets;
 import it.cavallium.dbengine.lucene.collector.DecimalBucketMultiCollectorManager;
@@ -49,7 +48,7 @@ public class DecimalBucketMultiSearcher {
 				bucketParams.collectionRate(),
 				bucketParams.sampleSize()
 		);
-		return cmm.reduce(collectOn(LUCENE_SCHEDULER, indexSearchers.stream().map(indexSearcher -> {
+		return cmm.reduce(collectOn(LUCENE_POOL, indexSearchers.stream().map(indexSearcher -> {
 			try {
 				return cmm.search(indexSearcher);
 			} catch (IOException e) {

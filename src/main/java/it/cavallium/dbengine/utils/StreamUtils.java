@@ -59,13 +59,13 @@ public class StreamUtils {
 	private static final Function<Object, Void> FINISHER = x -> null;
 	private static final Collector<Long,?, Long> SUMMING_LONG_COLLECTOR = new SummingLongCollector();
 
-	public static ForkJoinPool newNamedForkJoinPool(String name, boolean fifo) {
+	public static ForkJoinPool newNamedForkJoinPool(String name, boolean async) {
 		final int MAX_CAP   = 0x7fff;           // max #workers - 1
 		return new ForkJoinPool(
 				Math.min(MAX_CAP, Runtime.getRuntime().availableProcessors()),
 				new NamedForkJoinWorkerThreadFactory(name),
 				null,
-				fifo,
+				async,
 				0,
 				MAX_CAP,
 				1,

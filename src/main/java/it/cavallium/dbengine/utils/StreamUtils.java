@@ -37,11 +37,11 @@ import org.jetbrains.annotations.Nullable;
 
 public class StreamUtils {
 
-	public static final ForkJoinPool LUCENE_POOL = newNamedForkJoinPool("Lucene");
+	public static final ForkJoinPool LUCENE_POOL = newNamedForkJoinPool("Lucene", false);
 
-	public static final ForkJoinPool GRAPH_POOL = newNamedForkJoinPool("Graph");
+	public static final ForkJoinPool GRAPH_POOL = newNamedForkJoinPool("Graph", false);
 
-	public static final ForkJoinPool ROCKSDB_POOL = newNamedForkJoinPool("RocksDB");
+	public static final ForkJoinPool ROCKSDB_POOL = newNamedForkJoinPool("RocksDB", false);
 
 	private static final Collector<?, ?, ?> TO_LIST_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> COUNT_FAKE_COLLECTOR = new FakeCollector();
@@ -59,13 +59,13 @@ public class StreamUtils {
 	private static final Function<Object, Void> FINISHER = x -> null;
 	private static final Collector<Long,?, Long> SUMMING_LONG_COLLECTOR = new SummingLongCollector();
 
-	public static ForkJoinPool newNamedForkJoinPool(String name) {
+	public static ForkJoinPool newNamedForkJoinPool(String name, boolean fifo) {
 		final int MAX_CAP   = 0x7fff;           // max #workers - 1
 		return new ForkJoinPool(
 				Math.min(MAX_CAP, Runtime.getRuntime().availableProcessors()),
 				new NamedForkJoinWorkerThreadFactory(name),
 				null,
-				true,
+				fifo,
 				0,
 				MAX_CAP,
 				1,

@@ -346,8 +346,8 @@
 		</dependency>
 		<dependency>
 			<groupId>io.soabase.record-builder</groupId>
-			<artifactId>record-builder-core</artifactId>
-			<version>34</version>
+			<artifactId>record-builder-processor</artifactId>
+			<version>36</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
@@ -386,18 +386,6 @@
 				<version>3.8.1</version>
 				<configuration>
 					<release>17</release>
-					<annotationProcessorPaths>
-						<annotationProcessorPath>
-							<groupId>io.soabase.record-builder</groupId>
-							<artifactId>record-builder-processor</artifactId>
-							<version>33</version>
-						</annotationProcessorPath>
-					</annotationProcessorPaths>
-					<annotationProcessors>
-						<annotationProcessor>io.soabase.recordbuilder.processor.RecordBuilderProcessor</annotationProcessor>
-					</annotationProcessors>
-					<source>17</source>
-					<target>17</target>
 				</configuration>
 			</plugin>
 			<plugin>

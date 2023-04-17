@@ -18,6 +18,7 @@ import java.lang.invoke.MethodType;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -90,6 +91,7 @@ public class LLUtils {
 	private static final Consumer<Object> NULL_CONSUMER = ignored -> {};
 	private static final Buf BUF_TRUE = Buf.wrap(new byte[] {(byte) 1});
 	private static final Buf BUF_FALSE = Buf.wrap(new byte[] {(byte) 0});
+	private static final HexFormat HEX_FORMAT = HexFormat.of().withUpperCase();
 
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
@@ -302,6 +304,14 @@ public class LLUtils {
 		}
 	}
 
+	public static String toStringSafe(@Nullable Buf key, int iLimit) {
+		if (key != null) {
+			return toString(key, iLimit);
+		} else {
+			return "(released)";
+		}
+	}
+
 	public static String toStringSafe(@Nullable LLRange range) {
 		if (range != null) {
 			return toString(range);
@@ -334,15 +344,26 @@ public class LLUtils {
 		}
 	}
 
+	public static String toString(@Nullable Buf key, int iLimit) {
+		if (key != null) {
+			return toString(key.asArray(), iLimit);
+		} else {
+			return "null";
+		}
+	}
+
 	public static String toString(byte @Nullable[] key) {
+		return toString(key, 1024);
+	}
+
+	public static String toString(byte @Nullable[] key, int iLimit) {
 		if (key == null) {
 			return "null";
 		} else {
 			int startIndex = 0;
 			int iMax = key.length - 1;
-			int iLimit = 128;
 			if (iMax <= -1) {
-				return "[]";
+				return "\"\"";
 			} else {
 				StringBuilder arraySB = new StringBuilder();
 				StringBuilder asciiSB = new StringBuilder();
@@ -370,7 +391,11 @@ public class LLUtils {
 						if (isAscii) {
 							return asciiSB.insert(0, "\"").append("\"").toString();
 						} else {
-							return arraySB.append(']').toString();
+							if (i >= iLimit) {
+								return arraySB.append(']').toString();
+							} else {
+								return HEX_FORMAT.formatHex(key);
+							}
 						}
 					}
 
@@ -379,6 +404,10 @@ public class LLUtils {
 				}
 			}
 		}
+	}
+
+	public static byte[] parseHex(String hex) {
+		return HEX_FORMAT.parseHex(hex);
 	}
 
 	public static boolean equals(Buf a, Buf b) {

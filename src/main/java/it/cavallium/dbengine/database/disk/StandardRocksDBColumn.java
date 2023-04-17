@@ -49,6 +49,7 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 		long initNanoTime = System.nanoTime();
 		try {
 			@Nullable Buf prevData = this.get(readOptions, key);
+			@Nullable Buf newData;
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB,
 						"Reading {}: {} (before update)",
@@ -57,15 +58,14 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 				);
 			}
 
-			Buf prevDataToSendToUpdater;
 			if (prevData != null) {
-				prevDataToSendToUpdater = prevData.copy();
-			} else {
-				prevDataToSendToUpdater = null;
+				prevData.freeze();
 			}
-
-			@Nullable Buf newData;
-			newData = updater.apply(prevDataToSendToUpdater);
+			try {
+				newData = updater.apply(prevData);
+			} catch (Exception ex) {
+				throw new DBException("Failed to update key " + LLUtils.toStringSafe(key) + ". The previous value was:\n" + LLUtils.toStringSafe(prevData, 8192), ex);
+			}
 			boolean changed;
 			if (logger.isTraceEnabled()) {
 				logger.trace(MARKER_ROCKSDB,

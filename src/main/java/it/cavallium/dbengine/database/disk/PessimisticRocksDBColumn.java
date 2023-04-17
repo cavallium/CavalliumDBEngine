@@ -80,14 +80,14 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 					} else {
 						readValueNotFoundWithoutBloomBufferSize.record(0);
 					}
-					Buf prevDataToSendToUpdater;
 					if (prevData != null) {
-						prevDataToSendToUpdater = prevData.copy();
-					} else {
-						prevDataToSendToUpdater = null;
+						prevData.freeze();
 					}
-
-					newData = updater.apply(prevDataToSendToUpdater);
+					try {
+						newData = updater.apply(prevData);
+					} catch (Exception ex) {
+						throw new DBException("Failed to update key " + LLUtils.toStringSafe(key) + ". The previous value was:\n" + LLUtils.toStringSafe(prevData, 8192), ex);
+					}
 					var newDataArray = newData == null ? null : LLUtils.asArray(newData);
 					if (logger.isTraceEnabled()) {
 						logger.trace(MARKER_ROCKSDB,

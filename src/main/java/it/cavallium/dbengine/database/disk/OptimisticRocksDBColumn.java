@@ -91,8 +91,8 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 				boolean committedSuccessfully;
 				int retries = 0;
 				ExponentialPageLimits retryTime = null;
-				Buf prevData = null;
-				Buf newData = null;
+				Buf prevData;
+				Buf newData;
 				boolean changed;
 				do {
 					var prevDataArray = tx.getForUpdate(readOptions, cfh, keyArray, true);

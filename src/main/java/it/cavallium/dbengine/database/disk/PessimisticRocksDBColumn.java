@@ -59,8 +59,8 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			}
 			try (var txOpts = new TransactionOptions();
 					var tx = beginTransaction(writeOptions, txOpts)) {
-				Buf prevData = null;
-				Buf newData = null;
+				Buf prevData;
+				Buf newData;
 				boolean changed;
 				if (logger.isTraceEnabled()) {
 					logger.trace(MARKER_ROCKSDB, "Reading {} (before update lock)", LLUtils.toStringSafe(key));
@@ -79,6 +79,7 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 						prevData = Buf.wrap(prevDataArray);
 					} else {
 						readValueNotFoundWithoutBloomBufferSize.record(0);
+						prevData = null;
 					}
 					if (prevData != null) {
 						prevData.freeze();

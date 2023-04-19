@@ -16,7 +16,7 @@
 		<lucene.version>9.5.0</lucene.version>
     <rocksdb.version>8.0.0</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
-    <data.generator.version>1.0.273</data.generator.version>
+    <data.generator.version>1.0.276</data.generator.version>
 	</properties>
 	<repositories>
 		<repository>

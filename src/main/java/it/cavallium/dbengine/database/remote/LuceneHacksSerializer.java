@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.remote;
 
-import it.cavallium.data.generator.DataSerializer;
+import it.cavallium.datagen.DataSerializer;
 import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.stream.SafeDataInput;
 import it.cavallium.stream.SafeDataOutput;

@@ -4,9 +4,9 @@ import static it.cavallium.dbengine.tests.DbTestUtils.MAX_IN_MEMORY_RESULT_ENTRI
 import static it.cavallium.dbengine.tests.DbTestUtils.ensureNoLeaks;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import it.cavallium.data.generator.nativedata.Nullableboolean;
-import it.cavallium.data.generator.nativedata.Nullabledouble;
-import it.cavallium.data.generator.nativedata.Nullableint;
+import it.cavallium.datagen.nativedata.Nullableboolean;
+import it.cavallium.datagen.nativedata.Nullabledouble;
+import it.cavallium.datagen.nativedata.Nullableint;
 import it.cavallium.dbengine.tests.DbTestUtils.TempDb;
 import it.cavallium.dbengine.client.DefaultDatabaseOptions;
 import it.cavallium.dbengine.client.IndicizerAnalyzers;

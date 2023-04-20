@@ -1,9 +1,9 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.data.generator.nativedata.NullableString;
-import it.cavallium.data.generator.nativedata.Nullableboolean;
-import it.cavallium.data.generator.nativedata.Nullableint;
-import it.cavallium.data.generator.nativedata.Nullablelong;
+import it.cavallium.datagen.nativedata.NullableString;
+import it.cavallium.datagen.nativedata.Nullableboolean;
+import it.cavallium.datagen.nativedata.Nullableint;
+import it.cavallium.datagen.nativedata.Nullablelong;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptionsBuilder;
 import it.cavallium.dbengine.rpc.current.data.DefaultColumnOptions;

@@ -4,9 +4,9 @@ import static it.cavallium.dbengine.lucene.searcher.GlobalQueryRewrite.NO_REWRIT
 
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.Multimap;
-import it.cavallium.data.generator.nativedata.Nullabledouble;
-import it.cavallium.data.generator.nativedata.Nullableint;
-import it.cavallium.data.generator.nativedata.Nullablelong;
+import it.cavallium.datagen.nativedata.Nullabledouble;
+import it.cavallium.datagen.nativedata.Nullableint;
+import it.cavallium.datagen.nativedata.Nullablelong;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.query.QueryParser;
 import it.cavallium.dbengine.client.query.current.data.NoSort;

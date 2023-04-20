@@ -11,7 +11,7 @@ import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTAB
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import it.cavallium.data.generator.nativedata.NullableString;
+import it.cavallium.datagen.nativedata.NullableString;
 import it.cavallium.dbengine.client.Backuppable;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.ColumnProperty;

@@ -1,7 +1,7 @@
 module dbengine.tests {
 	requires org.junit.jupiter.api;
 	requires dbengine;
-	requires data.generator.runtime;
+	requires it.cavallium.datagen;
 	requires org.assertj.core;
 	requires org.apache.lucene.core;
 	requires it.unimi.dsi.fastutil;

@@ -25,7 +25,7 @@ module dbengine {
 	requires org.apache.logging.log4j;
 	requires static io.soabase.recordbuilder.core;
 	requires it.unimi.dsi.fastutil;
-	requires data.generator.runtime;
+	requires it.cavallium.datagen;
 	requires java.logging;
 	requires org.apache.lucene.core;
 	requires org.apache.commons.lang3;

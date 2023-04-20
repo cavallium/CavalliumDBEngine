@@ -5,6 +5,7 @@ import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import org.jetbrains.annotations.NotNull;
 
 public class MappedSerializer<A, B> implements Serializer<B> {
@@ -16,6 +17,16 @@ public class MappedSerializer<A, B> implements Serializer<B> {
 			Mapper<A, B> keyMapper) {
 		this.serializer = serializer;
 		this.keyMapper = keyMapper;
+	}
+
+	public static <A, B> Serializer<B> of(Serializer<A> ser,
+			Mapper<A, B> keyMapper) {
+		if (keyMapper.getClass() == NoMapper.class) {
+			//noinspection unchecked
+			return (Serializer<B>) ser;
+		} else {
+			return new MappedSerializer<>(ser, keyMapper);
+		}
 	}
 
 	@Override

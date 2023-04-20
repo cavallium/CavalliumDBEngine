@@ -18,6 +18,16 @@ public class MappedSerializerFixedLength<A, B> implements SerializerFixedBinaryL
 		this.keyMapper = keyMapper;
 	}
 
+	public static <A, B> SerializerFixedBinaryLength<B> of(SerializerFixedBinaryLength<A> fixedLengthSerializer,
+			Mapper<A, B> keyMapper) {
+		if (keyMapper.getClass() == NoMapper.class) {
+			//noinspection unchecked
+			return (SerializerFixedBinaryLength<B>) fixedLengthSerializer;
+		} else {
+			return new MappedSerializerFixedLength<>(fixedLengthSerializer, keyMapper);
+		}
+	}
+
 	@Override
 	public @NotNull B deserialize(@NotNull BufDataInput in) throws SerializationException {
 		return keyMapper.map(fixedLengthSerializer.deserialize(in));

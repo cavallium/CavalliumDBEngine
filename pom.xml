@@ -12,7 +12,7 @@
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<revision>0-SNAPSHOT</revision>
 		<dbengine.ci>false</dbengine.ci>
-		<micrometer.version>1.9.5</micrometer.version>
+		<micrometer.version>1.10.4</micrometer.version>
 		<lucene.version>9.5.0</lucene.version>
     <rocksdb.version>8.0.0</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>

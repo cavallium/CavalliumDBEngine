@@ -1462,6 +1462,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 	@Override
 	public LLSnapshot takeSnapshot() {
+		if (!ALLOW_SNAPSHOTS) throw new UnsupportedOperationException("Snapshots are disabled!");
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();

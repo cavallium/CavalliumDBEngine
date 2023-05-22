@@ -140,4 +140,12 @@ public final class LLReadOptions extends SimpleResource {
 	public Snapshot snapshot() {
 		return val.snapshot();
 	}
+
+	public boolean hasIterateLowerBound() {
+		return val.iterateLowerBound() != null;
+	}
+
+	public boolean hasIterateUpperBound() {
+		return val.iterateUpperBound() != null;
+	}
 }

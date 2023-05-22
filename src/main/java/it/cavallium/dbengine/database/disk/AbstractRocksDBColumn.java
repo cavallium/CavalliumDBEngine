@@ -232,18 +232,6 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	/**
-	 * This method should not modify or move the writerIndex/readerIndex of the key
-	 */
-	static void setIterateBound(LLReadOptions readOpts, IterateBound boundType, Buf key) {
-		byte[] slice = key != null ? requireNonNull(LLUtils.asArray(key)) : null;
-		if (boundType == IterateBound.LOWER) {
-			readOpts.setIterateLowerBound(slice);
-		} else {
-			readOpts.setIterateUpperBound(slice);
-		}
-	}
-
-	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
 	@Override
@@ -557,8 +545,10 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
-			setIterateBound(readOptions, IterateBound.LOWER, min);
-			setIterateBound(readOptions, IterateBound.UPPER, max);
+			assert !readOptions.hasIterateLowerBound() : "ReadOptions has already a range!";
+			assert !readOptions.hasIterateUpperBound() : "ReadOptions has already a range!";
+			readOptions.setIterateLowerBound(min != null ? requireNonNull(LLUtils.asArray(min)) : null);
+			readOptions.setIterateUpperBound(max != null ? requireNonNull(LLUtils.asArray(max)) : null);
 			return readOptions.newIterator(db, cfh, iteratorMetrics);
 		} finally {
 			closeLock.unlockRead(closeReadLock);

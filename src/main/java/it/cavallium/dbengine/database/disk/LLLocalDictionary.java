@@ -279,8 +279,7 @@ public class LLLocalDictionary implements LLDictionary {
 					)) {
 						readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 						readOpts.setFillCache(fillCache);
-						var rocksIterator = db.newIterator(readOpts, range.getMin(), range.getMax());
-						try {
+						try (var rocksIterator = db.newIterator(readOpts, range.getMin(), range.getMax())) {
 							if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 								var seekArray = LLUtils.asArray(range.getMin());
 								rocksIterator.seek(seekArray);
@@ -288,8 +287,6 @@ public class LLLocalDictionary implements LLDictionary {
 								rocksIterator.seekToFirst();
 							}
 							return !rocksIterator.isValid();
-						} finally {
-							rocksIterator.close();
 						}
 					}
 				}

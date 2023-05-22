@@ -245,19 +245,17 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				}
 				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setLevel0FileNumCompactionTrigger(-1);
-				} else {
-					if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
-						// ArangoDB uses a value of 2: https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-						// Higher values speed up writes, but slow down reads
-						columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
-					}
+				} else if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
+					// ArangoDB uses a value of 2: https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
+					// Higher values speed up writes, but slow down reads
+					columnFamilyOptions.setLevel0FileNumCompactionTrigger(2);
 				}
 				if (isDisableSlowdown()) {
 					columnFamilyOptions.setLevel0SlowdownWritesTrigger(-1);
 					columnFamilyOptions.setLevel0StopWritesTrigger(Integer.MAX_VALUE);
 					columnFamilyOptions.setHardPendingCompactionBytesLimit(Long.MAX_VALUE);
 					columnFamilyOptions.setSoftPendingCompactionBytesLimit(Long.MAX_VALUE);
-				} else {
+				} {
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					columnFamilyOptions.setLevel0SlowdownWritesTrigger(20);
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
@@ -306,6 +304,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				if (columnOptions.writeBufferSize().isPresent()) {
 					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
 				}
+				columnFamilyOptions.setMaxWriteBufferNumberToMaintain(2);
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
 					blockBasedTableConfig.setVerifyCompression(false);
 				}
@@ -886,7 +885,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			refs.track(options);
 			options.setEnablePipelinedWrite(true);
 			var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
-			if (maxSubCompactions >= 0) {
+			if (maxSubCompactions > 0) {
 				options.setMaxSubcompactions(maxSubCompactions);
 			}
 			var customWriteRate = Long.parseLong(System.getProperty("it.cavallium.dbengine.write.delayedrate", "-1"));
@@ -945,13 +944,18 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			final boolean allowMmapReads = !useDirectIO && databaseOptions.allowMemoryMapping();
 			final boolean allowMmapWrites = !useDirectIO && (databaseOptions.allowMemoryMapping()
 					|| parseBoolean(System.getProperty("it.cavallium.dbengine.mmapwrites.enable", "false")));
+
+			// todo: replace with a real option called database-write-buffer-size
+			// 0 = default = disabled
+			long dbWriteBufferSize = Long.parseLong(System.getProperty("it.cavallium.dbengine.dbwritebuffer.size", "0"));
+
 			if (databaseOptions.lowMemory()) {
 				// LOW MEMORY
 				options
 						.setBytesPerSync(0) // default
 						.setWalBytesPerSync(0) // default
 						.setIncreaseParallelism(1)
-						.setDbWriteBufferSize(8 * SizeUnit.MB)
+						.setDbWriteBufferSize(Math.min(dbWriteBufferSize, 8 * SizeUnit.MB))
 						.setWalTtlSeconds(60)
 						.setMaxTotalWalSize(10 * SizeUnit.GB)
 				;
@@ -977,7 +981,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			} else {
 				// HIGH MEMORY
 				options
-						//.setDbWriteBufferSize(64 * SizeUnit.MB)
+						.setDbWriteBufferSize(dbWriteBufferSize)
 						.setBytesPerSync(64 * SizeUnit.MB)
 						.setWalBytesPerSync(64 * SizeUnit.MB)
 

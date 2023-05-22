@@ -74,7 +74,6 @@ public class LLUtils {
 	private static final byte[] RESPONSE_FALSE_BUF = new byte[]{0};
 	public static final byte[][] LEXICONOGRAPHIC_ITERATION_SEEKS = new byte[256][1];
 	public static final boolean MANUAL_READAHEAD = false;
-	public static final boolean ALLOW_STATIC_OPTIONS = false;
 
 	public static final boolean FORCE_DISABLE_CHECKSUM_VERIFICATION
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checksum.disable.force", "false"));

@@ -48,21 +48,12 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 	}
 
 	public final Stream<T> stream() {
-		var readOptions = generateCustomReadOptions(this.readOptions.get(), true, isBoundedRange(range), smallRange);
-		if (logger.isTraceEnabled()) {
-			logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-		}
-
-		RocksIteratorObj rocksIterator;
-		try {
-			rocksIterator = db.newRocksIterator(readOptions, range, reverse);
-		} catch (RocksDBException e) {
-			readOptions.close();
-			throw new DBException("Failed to iterate the range", e);
-		}
-
 		return streamWhileNonNull(() -> {
-			try {
+			try (var readOptions = generateCustomReadOptions(this.readOptions.get(), true, isBoundedRange(range), smallRange);
+					var rocksIterator = db.newRocksIterator(readOptions, range, reverse)) {
+				if (logger.isTraceEnabled()) {
+					logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+				}
 				if (rocksIterator.isValid()) {
 					// Note that the underlying array is subject to changes!
 					Buf key;
@@ -102,9 +93,6 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 				}
 				throw new CompletionException(ex);
 			}
-		}).onClose(() -> {
-			rocksIterator.close();
-			readOptions.close();
 		});
 	}
 

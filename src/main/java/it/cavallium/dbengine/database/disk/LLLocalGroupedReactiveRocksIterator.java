@@ -53,21 +53,12 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	}
 
 	public final Stream<List<T>> stream() {
-		var readOptions = generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange);
-		if (logger.isTraceEnabled()) {
-			logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-		}
-
-		RocksIteratorObj rocksIterator;
-		try {
-			rocksIterator = db.newRocksIterator(readOptions, range, false);
-		} catch (RocksDBException e) {
-			readOptions.close();
-			throw new DBException("Failed to iterate the range", e);
-		}
-
 		return StreamUtils.<List<T>>streamWhileNonNull(() -> {
-			try {
+			try (var readOptions = generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange);
+					var rocksIterator = db.newRocksIterator(readOptions, range, false)) {
+				if (logger.isTraceEnabled()) {
+					logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+				}
 				ObjectArrayList<T> values = new ObjectArrayList<>();
 				Buf firstGroupKey = null;
 				while (rocksIterator.isValid()) {
@@ -113,9 +104,6 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 				}
 				throw new CompletionException(new DBException("Range failed", ex));
 			}
-		}).onClose(() -> {
-			rocksIterator.close();
-			readOptions.close();
 		});
 	}
 

@@ -34,25 +34,20 @@ public final class LLLocalMigrationReactiveRocksIterator {
 	}
 
 	public Stream<LLEntry> stream() {
-		var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
-		RocksIteratorObj rocksIterator;
-		try {
-			rocksIterator = db.newRocksIterator(readOptions, range, false);
-		} catch (RocksDBException e) {
-			throw new DBException("Failed to open iterator", e);
-		}
 		return streamWhileNonNull(() -> {
-			if (rocksIterator.isValid()) {
-				var key = rocksIterator.keyBuf().copy();
-				var value = rocksIterator.valueBuf().copy();
-				rocksIterator.next(false);
-				return LLEntry.of(key, value);
-			} else {
-				return null;
+			try (var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
+					var rocksIterator = db.newRocksIterator(readOptions, range, false)) {
+				if (rocksIterator.isValid()) {
+					var key = rocksIterator.keyBuf().copy();
+					var value = rocksIterator.valueBuf().copy();
+					rocksIterator.next(false);
+					return LLEntry.of(key, value);
+				} else {
+					return null;
+				}
+			} catch (RocksDBException e) {
+				throw new DBException("Failed to open iterator", e);
 			}
-		}).onClose(() -> {
-			rocksIterator.close();
-			readOptions.close();
 		});
 	}
 }

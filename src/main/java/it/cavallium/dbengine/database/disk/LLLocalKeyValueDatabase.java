@@ -56,6 +56,7 @@ import java.util.stream.Stream;
 import org.apache.commons.lang3.time.StopWatch;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.BlockBasedTableConfig;
@@ -135,7 +136,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	private volatile boolean closed = false;
 
 	@SuppressWarnings("SwitchStatementWithTooFewBranches")
-	public LLLocalKeyValueDatabase(MeterRegistry meterRegistry,
+	public LLLocalKeyValueDatabase(@NotNull MeterRegistry meterRegistry,
 			String name,
 			boolean inMemory,
 			@Nullable Path path,
@@ -1263,7 +1264,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
 					db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
 					db.getAggregatedLongProperty("rocksdb.block-cache-usage") / this.handles.size(),
-					db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage") / this.handles.size()
+					db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage") / this.handles.size(),
+					db.getAggregatedLongProperty("rocksdb.num-live-versions") / this.handles.size()
 			);
 		} catch (RocksDBException e) {
 			throw new DBException("Failed to read memory stats", e);

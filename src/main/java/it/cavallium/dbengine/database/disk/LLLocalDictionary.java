@@ -5,6 +5,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
+import static it.cavallium.dbengine.database.LLUtils.wrapNullable;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
@@ -1092,26 +1093,11 @@ public class LLLocalDictionary implements LLDictionary {
 						)).map(range -> {
 							long partialCount = 0;
 							try (var rangeReadOpts = readOpts.copy()) {
-								LLSlice sliceBegin;
-								if (range.getKey() != null) {
-									sliceBegin = LLSlice.of(range.getKey());
-								} else {
-									sliceBegin = null;
-								}
-								LLSlice sliceEnd;
-								if (range.getValue() != null) {
-									sliceEnd = LLSlice.of(range.getValue());
-								} else {
-									sliceEnd = null;
-								}
 								try {
-									if (sliceBegin != null) {
-										rangeReadOpts.setIterateLowerBound(sliceBegin);
-									}
-									if (sliceEnd != null) {
-										rangeReadOpts.setIterateUpperBound(sliceEnd);
-									}
-									try (var rocksIterator = db.newIterator(rangeReadOpts, null, null)) {
+									try (var rocksIterator = db.newIterator(rangeReadOpts,
+											wrapNullable(range.getKey()),
+											wrapNullable(range.getValue())
+									)) {
 										rocksIterator.seekToFirst();
 										while (rocksIterator.isValid()) {
 											partialCount++;
@@ -1121,13 +1107,6 @@ public class LLLocalDictionary implements LLDictionary {
 									}
 								} catch (RocksDBException ex) {
 									throw new CompletionException(new IOException("Failed to get size", ex));
-								} finally {
-									if (sliceBegin != null) {
-										sliceBegin.close();
-									}
-									if (sliceEnd != null) {
-										sliceEnd.close();
-									}
 								}
 							}
 						}), fastSummingLong());

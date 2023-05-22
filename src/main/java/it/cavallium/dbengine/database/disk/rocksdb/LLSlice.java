@@ -13,7 +13,7 @@ public final class LLSlice extends SimpleResource {
 		this.val = val;
 	}
 
-	public static LLSlice of(byte[] data) {
+	public static LLSlice copyOf(byte[] data) {
 		return new LLSlice(new Slice(data));
 	}
 

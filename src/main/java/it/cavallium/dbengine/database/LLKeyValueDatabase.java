@@ -6,13 +6,14 @@ import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.dbengine.client.IBackuppable;
 import it.cavallium.dbengine.database.collections.DatabaseInt;
 import it.cavallium.dbengine.database.collections.DatabaseLong;
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.RocksDBException;
 
 public interface LLKeyValueDatabase extends LLSnapshottable, LLKeyValueDatabaseStructure, DatabaseProperties,
-		IBackuppable, DatabaseOperations {
+		IBackuppable, DatabaseOperations, Closeable {
 
 	LLSingleton getSingleton(byte[] singletonListColumnName, byte[] name, byte @Nullable [] defaultValue);
 

@@ -11,8 +11,33 @@ public final class LLReadOptions extends SimpleResource {
 
 	private final ReadOptions val;
 	private LLSlice itLowerBoundRef;
+	private boolean itLowerBoundRefOwned;
 	private LLSlice itUpperBoundRef;
+	private boolean itUpperBoundRefOwned;
 	private Snapshot snapshot;
+
+	public LLReadOptions copy() {
+
+		if (this.val.timestamp() != null) {
+			throw new IllegalStateException("Unsupported copy of timestamped read options");
+		}
+
+		if (this.val.iterStartTs() != null) {
+			throw new IllegalStateException("Unsupported copy of read options with non-null iterStartTs property");
+		}
+
+		ReadOptions newVal = new ReadOptions(this.val);
+
+		var ro = new LLReadOptions(newVal);
+		if (this.val.iterateLowerBound() != null) {
+			ro.setIterateLowerBound(this.val.iterateLowerBound().data());
+		}
+		if (this.val.iterateUpperBound() != null) {
+			ro.setIterateUpperBound(this.val.iterateUpperBound().data());
+		}
+		ro.snapshot = this.snapshot;
+		return ro;
+	}
 
 	public LLReadOptions(ReadOptions val) {
 		super(val::close);
@@ -23,30 +48,59 @@ public final class LLReadOptions extends SimpleResource {
 		this(new ReadOptions());
 	}
 
-	public LLReadOptions copy() {
-		var ro = new LLReadOptions(new ReadOptions(this.val));
-		ro.itUpperBoundRef = this.itUpperBoundRef;
-		ro.itLowerBoundRef = this.itLowerBoundRef;
-		ro.snapshot = this.snapshot;
-		return ro;
-	}
-
 	@Override
 	protected void onClose() {
 		val.close();
-		itLowerBoundRef = null;
-		itUpperBoundRef = null;
+
+		if (this.itUpperBoundRefOwned && this.itUpperBoundRef != null) {
+			this.itUpperBoundRef.close();
+		}
+		this.itUpperBoundRef = null;
+
+		if (this.itLowerBoundRefOwned && this.itLowerBoundRef != null) {
+			this.itLowerBoundRef.close();
+		}
+		this.itLowerBoundRef = null;
+
 		snapshot = null;
 	}
 
-	public void setIterateLowerBound(LLSlice slice) {
-		val.setIterateLowerBound(slice.getSliceUnsafe());
-		itLowerBoundRef = slice;
+
+	public void setIterateLowerBound(byte[] slice) {
+		setIterateLowerBound(slice != null ? LLSlice.copyOf(slice) : null, true);
+	}
+	/**
+	 * @param move if true, the read options will close the slice when they are closed
+	 */
+	public void setIterateLowerBound(LLSlice slice, boolean move) {
+		val.setIterateLowerBound(slice != null ? slice.getSliceUnsafe() : null);
+
+		// Close the previous owned value, if present
+		if (this.itLowerBoundRefOwned && this.itLowerBoundRef != null) {
+			this.itLowerBoundRef.close();
+		}
+
+		this.itLowerBoundRef = slice;
+		this.itLowerBoundRefOwned = move;
 	}
 
-	public void setIterateUpperBound(LLSlice slice) {
-		val.setIterateUpperBound(slice.getSliceUnsafe());
-		itUpperBoundRef = slice;
+	public void setIterateUpperBound(byte[] slice) {
+		setIterateUpperBound(slice != null ? LLSlice.copyOf(slice) : null, true);
+	}
+
+	/**
+	 * @param move if true, the read options will close the slice when they are closed
+	 */
+	public void setIterateUpperBound(LLSlice slice, boolean move) {
+		val.setIterateUpperBound(slice != null ? slice.getSliceUnsafe() : null);
+
+		// Close the previous owned value, if present
+		if (this.itUpperBoundRefOwned && this.itUpperBoundRef != null) {
+			this.itUpperBoundRef.close();
+		}
+
+		this.itUpperBoundRef = slice;
+		this.itUpperBoundRefOwned = move;
 	}
 
 	public long readaheadSize() {

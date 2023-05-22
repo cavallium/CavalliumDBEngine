@@ -678,6 +678,10 @@ public class LLUtils {
 		return result;
 	}
 
+	public static Buf wrapNullable(byte[] array) {
+		return array != null ? Buf.wrap(array) : null;
+	}
+
 	private static class FakeBytesRefBuilder extends BytesRefBuilder {
 
 		private final LLTerm term;

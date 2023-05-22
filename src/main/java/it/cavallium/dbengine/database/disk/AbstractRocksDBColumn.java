@@ -235,9 +235,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	 * This method should not modify or move the writerIndex/readerIndex of the key
 	 */
 	static void setIterateBound(LLReadOptions readOpts, IterateBound boundType, Buf key) {
-		requireNonNull(key);
-		LLSlice slice;
-		slice = LLSlice.of(requireNonNull(LLUtils.asArray(key)));
+		byte[] slice = key != null ? requireNonNull(LLUtils.asArray(key)) : null;
 		if (boundType == IterateBound.LOWER) {
 			readOpts.setIterateLowerBound(slice);
 		} else {

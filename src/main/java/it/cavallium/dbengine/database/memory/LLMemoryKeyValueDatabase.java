@@ -78,7 +78,7 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 
 	@Override
 	public MemoryStats getMemoryStats() {
-		return new MemoryStats(0, 0, 0, 0, 0, 0);
+		return new MemoryStats(0, 0, 0, 0, 0, 0, 1);
 	}
 
 	@Override

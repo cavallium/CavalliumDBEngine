@@ -99,11 +99,12 @@ import org.rocksdb.util.SizeUnit;
 public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDatabase {
 
 	private static final boolean DELETE_LOG_FILES = false;
-	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = false;
+	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = true;
 	private static final boolean USE_CLOCK_CACHE
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.clockcache.enable", "false"));
 
 	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
+	private static final boolean ALLOW_SNAPSHOTS = Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.snapshots.allow", "true"));
 
 	static {
 		RocksDB.loadLibrary();
@@ -305,7 +306,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				if (columnOptions.writeBufferSize().isPresent()) {
 					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
 				}
-				columnFamilyOptions.setMaxWriteBufferNumberToMaintain(2);
+				columnFamilyOptions.setMaxWriteBufferNumberToMaintain(1);
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
 					blockBasedTableConfig.setVerifyCompression(false);
 				}

@@ -65,7 +65,7 @@ public interface SerializerFixedBinaryLength<A> extends Serializer<A> {
 				var bytes = deserialized.getBytes(StandardCharsets.UTF_8);
 				out.ensureWritable(bytes.length);
 				out.write(bytes);
-				if (bytes.length < getSerializedBinaryLength()) {
+				if (bytes.length != getSerializedBinaryLength()) {
 					throw new SerializationException("Fixed serializer with " + getSerializedBinaryLength()
 							+ " bytes has tried to serialize an element with "
 							+ bytes.length + " bytes instead");

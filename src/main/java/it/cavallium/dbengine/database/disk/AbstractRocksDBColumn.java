@@ -10,9 +10,12 @@ import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
+import it.cavallium.dbengine.database.disk.rocksdb.LLSlice;
+import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import java.io.IOException;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -24,22 +27,18 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractImmutableNativeReference;
-import org.rocksdb.AbstractSlice;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist;
-import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksObject;
-import org.rocksdb.Slice;
 import org.rocksdb.TableProperties;
 import org.rocksdb.Transaction;
 import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
-import org.rocksdb.WriteOptions;
 
 public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements RocksDBColumn
 		permits StandardRocksDBColumn, OptimisticRocksDBColumn, PessimisticRocksDBColumn {
@@ -80,6 +79,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final Timer updateRemovedTime;
 	private final Timer updateUnchangedTime;
 	private final DBColumnKeyMayExistGetter keyMayExistGetter;
+	private final IteratorMetrics iteratorMetrics;
 
 	public AbstractRocksDBColumn(T db,
 			String databaseName,
@@ -222,28 +222,27 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				.publishPercentileHistogram()
 				.tags("db.name", databaseName, "db.column", columnName, "update.type", "unchanged")
 				.register(meterRegistry);
+		this.iteratorMetrics = new IteratorMetrics(this.startedIterSeek,
+				this.endedIterSeek,
+				this.iterSeekTime,
+				this.startedIterNext,
+				this.endedIterNext,
+				this.iterNextTime);
 		this.keyMayExistGetter = new DBColumnKeyMayExistGetter();
 	}
 
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the key
 	 */
-	static AbstractSlice<?> setIterateBound(ReadOptions readOpts, IterateBound boundType, Buf key) {
+	static void setIterateBound(LLReadOptions readOpts, IterateBound boundType, Buf key) {
 		requireNonNull(key);
-		AbstractSlice<?> slice;
-		slice = new Slice(requireNonNull(LLUtils.asArray(key)));
+		LLSlice slice;
+		slice = LLSlice.of(requireNonNull(LLUtils.asArray(key)));
 		if (boundType == IterateBound.LOWER) {
 			readOpts.setIterateLowerBound(slice);
 		} else {
 			readOpts.setIterateUpperBound(slice);
 		}
-		return slice;
-	}
-
-	static Slice newEmptyReleasableSlice() {
-		var arr = new byte[0];
-
-		return new Slice(arr);
 	}
 
 	/**
@@ -251,7 +250,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	 */
 	@Override
 	@NotNull
-	public RocksIteratorObj newRocksIterator(ReadOptions readOptions, LLRange range, boolean reverse)
+	public RocksIteratorObj newRocksIterator(LLReadOptions readOptions, LLRange range, boolean reverse)
 			throws RocksDBException {
 		assert !LLUtils.isInNonBlockingThread() : "Called getRocksIterator in a nonblocking thread";
 		var rocksIterator = this.newIterator(readOptions, range.getMin(), range.getMax());
@@ -297,8 +296,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		RocksDBUtils.ensureOwned(rocksObject);
 	}
 
+
+	protected void ensureOwned(SimpleResource simpleResource) {
+		RocksDBUtils.ensureOwned(simpleResource);
+	}
+
 	@Override
-	public @Nullable Buf get(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
+	public @Nullable Buf get(@NotNull LLReadOptions readOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -310,21 +314,21 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public void put(@NotNull WriteOptions writeOptions, Buf key, Buf value) throws RocksDBException {
+	public void put(@NotNull LLWriteOptions writeOptions, Buf key, Buf value) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
 			this.keyBufferSize.record(key.size());
 			this.writeValueBufferSize.record(value.size());
-			db.put(cfh, writeOptions, LLUtils.asArray(key), LLUtils.asArray(value));
+			db.put(cfh, writeOptions.getUnsafe(), LLUtils.asArray(key), LLUtils.asArray(value));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public boolean exists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
+	public boolean exists(@NotNull LLReadOptions readOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -333,12 +337,12 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			byte[] keyBytes = LLUtils.asArray(key);
 			Holder<byte[]> data = new Holder<>();
 			boolean mayExistHit = false;
-			if (db.keyMayExist(cfh, readOptions, keyBytes, data)) {
+			if (db.keyMayExist(cfh, readOptions.getUnsafe(), keyBytes, data)) {
 				mayExistHit = true;
 				if (data.getValue() != null) {
 					size = data.getValue().length;
 				} else {
-					size = db.get(cfh, readOptions, keyBytes, NO_DATA);
+					size = db.get(cfh, readOptions.getUnsafe(), keyBytes, NO_DATA);
 				}
 			}
 			boolean found = size != RocksDB.NOT_FOUND;
@@ -358,46 +362,46 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public boolean mayExists(@NotNull ReadOptions readOptions, Buf key) {
+	public boolean mayExists(@NotNull LLReadOptions readOptions, Buf key) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
 			byte[] keyBytes = LLUtils.asArray(key);
-			return db.keyMayExist(cfh, readOptions, keyBytes, null);
+			return db.keyMayExist(cfh, readOptions.getUnsafe(), keyBytes, null);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void delete(WriteOptions writeOptions, Buf key) throws RocksDBException {
+	public void delete(LLWriteOptions writeOptions, Buf key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
 			keyBufferSize.record(key.size());
-			db.delete(cfh, writeOptions, LLUtils.asArray(key));
+			db.delete(cfh, writeOptions.getUnsafe(), LLUtils.asArray(key));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException {
+	public void delete(LLWriteOptions writeOptions, byte[] key) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
 			keyBufferSize.record(key.length);
-			db.delete(cfh, writeOptions, key);
+			db.delete(cfh, writeOptions.getUnsafe(), key);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
 	}
 
 	@Override
-	public List<byte[]> multiGetAsList(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
+	public List<byte[]> multiGetAsList(LLReadOptions readOptions, List<byte[]> keys) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
@@ -406,7 +410,7 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 				keyBufferSize.record(key.length);
 			}
 			var columnFamilyHandles = new RepeatedElementList<>(cfh, keys.size());
-			return db.multiGetAsList(readOptions, columnFamilyHandles, keys);
+			return db.multiGetAsList(readOptions.getUnsafe(), columnFamilyHandles, keys);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -480,13 +484,13 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException {
+	public void write(LLWriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(writeOptions);
 			ensureOwned(writeBatch);
-			db.write(writeOptions, writeBatch);
+			db.write(writeOptions.getUnsafe(), writeBatch);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -497,12 +501,12 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	 */
 	protected abstract boolean commitOptimistically(Transaction tx) throws RocksDBException;
 
-	protected abstract Transaction beginTransaction(@NotNull WriteOptions writeOptions,
+	protected abstract Transaction beginTransaction(@NotNull LLWriteOptions writeOptions,
 			TransactionOptions txOpts);
 
 	@Override
-	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	public final @NotNull UpdateAtomicResult updateAtomic(@NotNull LLReadOptions readOptions,
+			@NotNull LLWriteOptions writeOptions,
 			Buf key,
 			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode) {
@@ -540,65 +544,24 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		timer.record(duration, TimeUnit.NANOSECONDS);
 	}
 
-	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	protected abstract @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull LLReadOptions readOptions,
+			@NotNull LLWriteOptions writeOptions,
 			Buf key,
 			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode);
 
 	@Override
 	@NotNull
-	public RocksIteratorObj newIterator(@NotNull ReadOptions readOptions,
+	public RocksIteratorObj newIterator(@NotNull LLReadOptions readOptions,
 			@Nullable Buf min,
 			@Nullable Buf max) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
-			AbstractSlice<?> sliceMin;
-			AbstractSlice<?> sliceMax;
-			if (min != null) {
-				sliceMin = setIterateBound(readOptions, IterateBound.LOWER, min);
-			} else {
-				sliceMin = null;
-			}
-			try {
-				if (max != null) {
-					sliceMax = setIterateBound(readOptions, IterateBound.UPPER, max);
-				} else {
-					sliceMax = null;
-				}
-				try {
-					var it = db.newIterator(cfh, readOptions);
-					try {
-						return new RocksIteratorObj(it,
-								sliceMin,
-								sliceMax,
-								min,
-								max,
-								this.startedIterSeek,
-								this.endedIterSeek,
-								this.iterSeekTime,
-								this.startedIterNext,
-								this.endedIterNext,
-								this.iterNextTime
-						);
-					} catch (Throwable ex) {
-						it.close();
-						throw ex;
-					}
-				} catch (Throwable ex) {
-					if (sliceMax != null) {
-						sliceMax.close();
-					}
-					throw ex;
-				}
-			} catch (Throwable ex) {
-				if (sliceMin != null) {
-					sliceMin.close();
-				}
-				throw ex;
-			}
+			setIterateBound(readOptions, IterateBound.LOWER, min);
+			setIterateBound(readOptions, IterateBound.UPPER, max);
+			return readOptions.newIterator(db, cfh, iteratorMetrics);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
@@ -651,23 +614,23 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private class DBColumnKeyMayExistGetter extends KeyMayExistGetter {
 
 		@Override
-		protected KeyMayExist keyMayExist(ReadOptions readOptions, ByteBuffer key, ByteBuffer value) {
-			return db.keyMayExist(cfh, readOptions, key, value);
+		protected KeyMayExist keyMayExist(LLReadOptions readOptions, ByteBuffer key, ByteBuffer value) {
+			return db.keyMayExist(cfh, readOptions.getUnsafe(), key, value);
 		}
 
 		@Override
-		protected boolean keyMayExist(ReadOptions readOptions, byte[] key, @Nullable Holder<byte[]> valueHolder) {
-			return db.keyMayExist(cfh, readOptions, key, valueHolder);
+		protected boolean keyMayExist(LLReadOptions readOptions, byte[] key, @Nullable Holder<byte[]> valueHolder) {
+			return db.keyMayExist(cfh, readOptions.getUnsafe(), key, valueHolder);
 		}
 
 		@Override
-		protected int get(ReadOptions readOptions, ByteBuffer key, ByteBuffer value) throws RocksDBException {
-			return db.get(cfh, readOptions, key, value);
+		protected int get(LLReadOptions readOptions, ByteBuffer key, ByteBuffer value) throws RocksDBException {
+			return db.get(cfh, readOptions.getUnsafe(), key, value);
 		}
 
 		@Override
-		protected byte[] get(ReadOptions readOptions, byte[] key) throws RocksDBException, IllegalArgumentException {
-			return db.get(cfh, readOptions, key);
+		protected byte[] get(LLReadOptions readOptions, byte[] key) throws RocksDBException, IllegalArgumentException {
+			return db.get(cfh, readOptions.getUnsafe(), key);
 		}
 
 		@Override

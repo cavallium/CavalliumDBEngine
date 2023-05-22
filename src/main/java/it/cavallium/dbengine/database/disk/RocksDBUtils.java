@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static com.google.common.collect.Lists.partition;
 
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -105,6 +106,12 @@ public class RocksDBUtils {
 	public static void ensureOwned(@Nullable AbstractImmutableNativeReference rocksObject) {
 		if (rocksObject != null && !rocksObject.isOwningHandle()) {
 			throw new IllegalStateException("Not owning handle");
+		}
+	}
+
+	public static void ensureOwned(@Nullable SimpleResource simpleResource) {
+		if (simpleResource != null && simpleResource.isClosed()) {
+			throw new IllegalStateException("Resource is closed");
 		}
 	}
 }

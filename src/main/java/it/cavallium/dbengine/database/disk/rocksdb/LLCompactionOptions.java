@@ -8,6 +8,7 @@ public final class LLCompactionOptions extends SimpleResource {
 	private final CompactionOptions val;
 
 	public LLCompactionOptions(CompactionOptions val) {
+		super(val::close);
 		this.val = val;
 	}
 

@@ -6,6 +6,7 @@ import static java.util.Objects.requireNonNull;
 
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import java.nio.ByteBuffer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -32,12 +33,12 @@ public abstract class KeyMayExistGetter {
 	public KeyMayExistGetter() {
 	}
 
-	public final @Nullable Buf get(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException {
+	public final @Nullable Buf get(@NotNull LLReadOptions readOptions, Buf key) throws RocksDBException {
 		recordKeyBufferSize(key.size());
 		return getHeap(readOptions, key);
 	}
 
-	private Buf getHeap(ReadOptions readOptions, Buf key) throws RocksDBException {
+	private Buf getHeap(LLReadOptions readOptions, Buf key) throws RocksDBException {
 		int readAttemptsCount = 0;
 		try {
 			byte[] keyArray = LLUtils.asArray(key);
@@ -73,15 +74,15 @@ public abstract class KeyMayExistGetter {
 		}
 	}
 
-	protected abstract KeyMayExist keyMayExist(final ReadOptions readOptions, final ByteBuffer key, final ByteBuffer value);
+	protected abstract KeyMayExist keyMayExist(final LLReadOptions readOptions, final ByteBuffer key, final ByteBuffer value);
 
-	protected abstract boolean keyMayExist(final ReadOptions readOptions,
+	protected abstract boolean keyMayExist(final LLReadOptions readOptions,
 			final byte[] key,
 			@Nullable final Holder<byte[]> valueHolder);
 
-	protected abstract int get(final ReadOptions opt, final ByteBuffer key, final ByteBuffer value) throws RocksDBException;
+	protected abstract int get(final LLReadOptions opt, final ByteBuffer key, final ByteBuffer value) throws RocksDBException;
 
-	protected abstract byte[] get(final ReadOptions opt, final byte[] key) throws RocksDBException, IllegalArgumentException;
+	protected abstract byte[] get(final LLReadOptions opt, final byte[] key) throws RocksDBException, IllegalArgumentException;
 
 	protected abstract void recordReadValueNotFoundWithMayExistBloomBufferSize(int value);
 

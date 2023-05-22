@@ -2,6 +2,7 @@ package it.cavallium.dbengine.database.disk;
 
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import java.util.function.Supplier;
 import org.rocksdb.ReadOptions;
 
@@ -10,7 +11,7 @@ public class LLLocalGroupedKeyReactiveRocksIterator extends LLLocalGroupedReacti
 	public LLLocalGroupedKeyReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			LLRange range,
-			Supplier<ReadOptions> readOptions,
+			Supplier<LLReadOptions> readOptions,
 			boolean smallRange) {
 		super(db, prefixLength, range, readOptions, true, false, smallRange);
 	}

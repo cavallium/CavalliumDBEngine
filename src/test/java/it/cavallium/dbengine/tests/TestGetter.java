@@ -3,6 +3,7 @@ package it.cavallium.dbengine.tests;
 import static java.util.Map.entry;
 
 import it.cavallium.dbengine.database.disk.KeyMayExistGetter;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.unimi.dsi.fastutil.bytes.ByteList;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
@@ -42,22 +43,22 @@ public class TestGetter {
 
 	public KeyMayExistGetter getter = new KeyMayExistGetter() {
 		@Override
-		protected KeyMayExist keyMayExist(ReadOptions readOptions, ByteBuffer key, ByteBuffer value) {
+		protected KeyMayExist keyMayExist(LLReadOptions readOptions, ByteBuffer key, ByteBuffer value) {
 			return null;
 		}
 
 		@Override
-		protected boolean keyMayExist(ReadOptions readOptions, byte[] key, @Nullable Holder<byte[]> valueHolder) {
+		protected boolean keyMayExist(LLReadOptions readOptions, byte[] key, @Nullable Holder<byte[]> valueHolder) {
 			throw new UnsupportedOperationException();
 		}
 
 		@Override
-		protected int get(ReadOptions opt, ByteBuffer key, ByteBuffer value) throws RocksDBException {
+		protected int get(LLReadOptions opt, ByteBuffer key, ByteBuffer value) throws RocksDBException {
 			return 0;
 		}
 
 		@Override
-		protected byte[] get(ReadOptions opt, byte[] key) throws RocksDBException, IllegalArgumentException {
+		protected byte[] get(LLReadOptions opt, byte[] key) throws RocksDBException, IllegalArgumentException {
 			throw new UnsupportedOperationException();
 		}
 

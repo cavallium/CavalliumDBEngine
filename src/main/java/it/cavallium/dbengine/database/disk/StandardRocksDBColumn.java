@@ -6,6 +6,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
+import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
@@ -35,14 +37,14 @@ public final class StandardRocksDBColumn extends AbstractRocksDBColumn<RocksDB> 
 	}
 
 	@Override
-	protected Transaction beginTransaction(@NotNull WriteOptions writeOptions,
+	protected Transaction beginTransaction(@NotNull LLWriteOptions writeOptions,
 			TransactionOptions txOpts) {
 		throw new UnsupportedOperationException("Transactions not supported");
 	}
 
 	@Override
-	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	public @NotNull UpdateAtomicResult updateAtomicImpl(@NotNull LLReadOptions readOptions,
+			@NotNull LLWriteOptions writeOptions,
 			Buf key,
 			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode) {

@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.asArray;
 
 import it.cavallium.buffer.Buf;
+import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import java.nio.ByteBuffer;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.RocksDBException;
@@ -13,7 +14,7 @@ public class CappedWriteBatch extends WriteBatch {
 
 	private final RocksDBColumn db;
 	private final int cap;
-	private final WriteOptions writeOptions;
+	private final LLWriteOptions writeOptions;
 
 	/**
 	 * @param db
@@ -23,7 +24,7 @@ public class CappedWriteBatch extends WriteBatch {
 			int cap,
 			int reservedWriteBatchSize,
 			long maxWriteBatchSize,
-			WriteOptions writeOptions) {
+			LLWriteOptions writeOptions) {
 		super(reservedWriteBatchSize);
 		this.db = db;
 		this.cap = cap;

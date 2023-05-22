@@ -4,6 +4,8 @@ import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
+import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
@@ -13,21 +15,19 @@ import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.FlushOptions;
-import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.WriteBatch;
-import org.rocksdb.WriteOptions;
 
 public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	/**
 	 * This method should not modify or move the writerIndex/readerIndex of the buffers inside the range
 	 */
-	@NotNull RocksIteratorObj newRocksIterator(ReadOptions readOptions,
+	@NotNull RocksIteratorObj newRocksIterator(LLReadOptions readOptions,
 			LLRange range,
 			boolean reverse) throws RocksDBException;
 
-	default byte @Nullable [] get(@NotNull ReadOptions readOptions,
+	default byte @Nullable [] get(@NotNull LLReadOptions readOptions,
 			byte[] key,
 			boolean existsAlmostCertainly)
 			throws RocksDBException {
@@ -39,33 +39,33 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	}
 
 	@Nullable
-	Buf get(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
+	Buf get(@NotNull LLReadOptions readOptions, Buf key) throws RocksDBException;
 
-	boolean exists(@NotNull ReadOptions readOptions, Buf key) throws RocksDBException;
+	boolean exists(@NotNull LLReadOptions readOptions, Buf key) throws RocksDBException;
 
-	boolean mayExists(@NotNull ReadOptions readOptions, Buf key);
+	boolean mayExists(@NotNull LLReadOptions readOptions, Buf key);
 
-	void put(@NotNull WriteOptions writeOptions, Buf key, Buf value) throws RocksDBException;
+	void put(@NotNull LLWriteOptions writeOptions, Buf key, Buf value) throws RocksDBException;
 
-	default void put(@NotNull WriteOptions writeOptions, byte[] key, byte[] value) throws RocksDBException {
+	default void put(@NotNull LLWriteOptions writeOptions, byte[] key, byte[] value) throws RocksDBException {
 		this.put(writeOptions, Buf.wrap(key), Buf.wrap(value));
 	}
 
-	@NotNull RocksIteratorObj newIterator(@NotNull ReadOptions readOptions, @Nullable Buf min, @Nullable Buf max);
+	@NotNull RocksIteratorObj newIterator(@NotNull LLReadOptions readOptions, @Nullable Buf min, @Nullable Buf max);
 
-	@NotNull UpdateAtomicResult updateAtomic(@NotNull ReadOptions readOptions,
-			@NotNull WriteOptions writeOptions,
+	@NotNull UpdateAtomicResult updateAtomic(@NotNull LLReadOptions readOptions,
+			@NotNull LLWriteOptions writeOptions,
 			Buf key,
 			SerializationFunction<@Nullable Buf, @Nullable Buf> updater,
 			UpdateAtomicResultMode returnMode);
 
-	void delete(WriteOptions writeOptions, Buf key) throws RocksDBException;
+	void delete(LLWriteOptions writeOptions, Buf key) throws RocksDBException;
 
-	void delete(WriteOptions writeOptions, byte[] key) throws RocksDBException;
+	void delete(LLWriteOptions writeOptions, byte[] key) throws RocksDBException;
 
-	List<byte[]> multiGetAsList(ReadOptions readOptions, List<byte[]> keys) throws RocksDBException;
+	List<byte[]> multiGetAsList(LLReadOptions readOptions, List<byte[]> keys) throws RocksDBException;
 
-	void write(WriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException;
+	void write(LLWriteOptions writeOptions, WriteBatch writeBatch) throws RocksDBException;
 
 	void suggestCompactRange() throws RocksDBException;
 

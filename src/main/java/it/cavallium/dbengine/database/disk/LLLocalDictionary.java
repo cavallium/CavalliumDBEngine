@@ -30,6 +30,9 @@ import it.cavallium.dbengine.database.OptionalBuf;
 import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
+import it.cavallium.dbengine.database.disk.rocksdb.LLSlice;
+import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
@@ -68,7 +71,7 @@ public class LLLocalDictionary implements LLDictionary {
 	static final long MAX_WRITE_BATCH_SIZE = 1024L * 1024L * 1024L; // 1GiB
 	static final int CAPPED_WRITE_BATCH_CAP = 50000; // 50K operations
 	static final int MULTI_GET_WINDOW = 16;
-	private static final ReadOptions EMPTY_READ_OPTIONS = LLUtils.ALLOW_STATIC_OPTIONS ? new ReadOptions() : null;
+	private static final LLReadOptions EMPTY_READ_OPTIONS = LLUtils.ALLOW_STATIC_OPTIONS ? new LLReadOptions() : null;
 	static final boolean PREFER_AUTO_SEEK_BOUND = false;
 	/**
 	 * It used to be false,
@@ -195,33 +198,33 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@NotNull
-	private ReadOptions generateReadOptionsOrStatic(LLSnapshot snapshot) {
+	private LLReadOptions generateReadOptionsOrStatic(LLSnapshot snapshot) {
 		var resolved = generateReadOptions(snapshot != null ? snapshotResolver.apply(snapshot) : null, true);
 		if (resolved != null) {
 			return resolved;
 		} else {
-			return new ReadOptions();
+			return new LLReadOptions();
 		}
 	}
 
 	@Nullable
-	private ReadOptions generateReadOptionsOrNull(LLSnapshot snapshot) {
+	private LLReadOptions generateReadOptionsOrNull(LLSnapshot snapshot) {
 		return generateReadOptions(snapshot != null ? snapshotResolver.apply(snapshot) : null, false);
 	}
 
 	@NotNull
-	private ReadOptions generateReadOptionsOrNew(LLSnapshot snapshot) {
+	private LLReadOptions generateReadOptionsOrNew(LLSnapshot snapshot) {
 		var result = generateReadOptions(snapshot != null ? snapshotResolver.apply(snapshot) : null, false);
 		if (result != null) {
 			return result;
 		} else {
-			return new ReadOptions();
+			return new LLReadOptions();
 		}
 	}
 
-	private ReadOptions generateReadOptions(Snapshot snapshot, boolean orStaticOpts) {
+	private LLReadOptions generateReadOptions(Snapshot snapshot, boolean orStaticOpts) {
 		if (snapshot != null) {
-			return new ReadOptions().setSnapshot(snapshot);
+			return new LLReadOptions().setSnapshot(snapshot);
 		} else if (ALLOW_STATIC_OPTIONS && orStaticOpts) {
 			return EMPTY_READ_OPTIONS;
 		} else {
@@ -337,7 +340,7 @@ public class LLLocalDictionary implements LLDictionary {
 			logger.trace(MARKER_ROCKSDB, "Writing {}: {}", varargs);
 		}
 		startedPut.increment();
-		try (var writeOptions = new WriteOptions()) {
+		try (var writeOptions = new LLWriteOptions()) {
 			putTime.recordCallable(() -> {
 				db.put(writeOptions, key, value);
 				return null;
@@ -376,7 +379,7 @@ public class LLLocalDictionary implements LLDictionary {
 		try {
 			var readOptions = generateReadOptionsOrStatic(null);
 			startedUpdates.increment();
-			try (var writeOptions = new WriteOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
 				result = updateTime.recordCallable(() -> db.updateAtomic(readOptions, writeOptions, key, updater, returnMode));
 			} finally {
 				endedUpdates.increment();
@@ -413,7 +416,7 @@ public class LLLocalDictionary implements LLDictionary {
 		try {
 			var readOptions = generateReadOptionsOrStatic(null);
 			startedUpdates.increment();
-			try (var writeOptions = new WriteOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
 				result = updateTime.recordCallable(() ->
 						(UpdateAtomicResultDelta) db.updateAtomic(readOptions, writeOptions, key, updater, DELTA));
 			} finally {
@@ -437,7 +440,7 @@ public class LLLocalDictionary implements LLDictionary {
 		try {
 			logger.trace(MARKER_ROCKSDB, "Deleting {}", () -> toStringSafe(key));
 			startedRemove.increment();
-			try (var writeOptions = new WriteOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
 				removeTime.recordCallable(() -> {
 					db.delete(writeOptions, key);
 					return null;
@@ -489,7 +492,7 @@ public class LLLocalDictionary implements LLDictionary {
 		collectOn(ROCKSDB_POOL,
 				batches(entries, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP)),
 				executing(entriesWindow -> {
-					try (var writeOptions = new WriteOptions()) {
+					try (var writeOptions = new LLWriteOptions()) {
 						assert !LLUtils.isInNonBlockingThread() : "Called putMulti in a nonblocking thread";
 						if (USE_WRITE_BATCHES_IN_PUT_MULTI) {
 							try (var batch = new CappedWriteBatch(db,
@@ -521,7 +524,7 @@ public class LLLocalDictionary implements LLDictionary {
 		record MappedInput<K>(K key, Buf serializedKey, OptionalBuf mapped) {}
 		return batches(keys, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP))
 				.flatMap(entriesWindow -> {
-					try (var writeOptions = new WriteOptions()) {
+					try (var writeOptions = new LLWriteOptions()) {
 						if (LLUtils.isInNonBlockingThread()) {
 							throw new UnsupportedOperationException("Called updateMulti in a nonblocking thread");
 						}
@@ -761,7 +764,7 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public void setRange(LLRange range, Stream<LLEntry> entries, boolean smallRange) {
 		if (USE_WINDOW_IN_SET_RANGE) {
-			try (var writeOptions = new WriteOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
 				assert !LLUtils.isInNonBlockingThread() : "Called setRange in a nonblocking thread";
 				if (!USE_WRITE_BATCH_IN_SET_RANGE_DELETE || !USE_WRITE_BATCHES_IN_SET_RANGE) {
 					try (var opts = LLUtils.generateCustomReadOptions(null, true, isBoundedRange(range), smallRange)) {
@@ -807,7 +810,7 @@ public class LLLocalDictionary implements LLDictionary {
 			}
 
 			collectOn(ROCKSDB_POOL, batches(entries, MULTI_GET_WINDOW), executing(entriesList -> {
-				try (var writeOptions = new WriteOptions()) {
+				try (var writeOptions = new LLWriteOptions()) {
 					if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
 						for (LLEntry entry : entriesList) {
 							db.put(writeOptions, entry.getKey(), entry.getValue());
@@ -843,7 +846,7 @@ public class LLLocalDictionary implements LLDictionary {
 				throw new UnsupportedOperationException("Can't use write batches in setRange without window. Please fix the parameters");
 			}
 			collectOn(ROCKSDB_POOL, this.getRange(null, range, false, smallRange), executing(oldValue -> {
-				try (var writeOptions = new WriteOptions()) {
+				try (var writeOptions = new LLWriteOptions()) {
 					db.delete(writeOptions, oldValue.getKey());
 				} catch (RocksDBException ex) {
 					throw new CompletionException(new DBException("Failed to write range", ex));
@@ -878,7 +881,7 @@ public class LLLocalDictionary implements LLDictionary {
 	public void clear() {
 		assert !LLUtils.isInNonBlockingThread() : "Called clear in a nonblocking thread";
 		boolean shouldCompactLater = false;
-		try (var writeOptions = new WriteOptions();
+		try (var writeOptions = new LLWriteOptions();
 				var readOpts = LLUtils.generateCustomReadOptions(null, false, false, false)) {
 			if (VERIFY_CHECKSUMS_WHEN_NOT_NEEDED) {
 				readOpts.setVerifyChecksums(true);
@@ -1088,16 +1091,16 @@ public class LLLocalDictionary implements LLDictionary {
 										: LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx + 1]
 						)).map(range -> {
 							long partialCount = 0;
-							try (var rangeReadOpts = new ReadOptions(readOpts)) {
-								Slice sliceBegin;
+							try (var rangeReadOpts = readOpts.copy()) {
+								LLSlice sliceBegin;
 								if (range.getKey() != null) {
-									sliceBegin = new Slice(range.getKey());
+									sliceBegin = LLSlice.of(range.getKey());
 								} else {
 									sliceBegin = null;
 								}
-								Slice sliceEnd;
+								LLSlice sliceEnd;
 								if (range.getValue() != null) {
-									sliceEnd = new Slice(range.getValue());
+									sliceEnd = LLSlice.of(range.getValue());
 								} else {
 									sliceEnd = null;
 								}
@@ -1147,8 +1150,8 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public LLEntry removeOne(LLRange range) {
 		assert !LLUtils.isInNonBlockingThread() : "Called removeOne in a nonblocking thread";
-		try (var readOpts = new ReadOptions();
-				var writeOpts = new WriteOptions()) {
+		try (var readOpts = new LLReadOptions();
+				var writeOpts = new LLWriteOptions()) {
 			try (var rocksIterator = db.newIterator(readOpts, range.getMin(), range.getMax())) {
 				if (!LLLocalDictionary.PREFER_AUTO_SEEK_BOUND && range.hasMin()) {
 					rocksIterator.seekTo(range.getMin());

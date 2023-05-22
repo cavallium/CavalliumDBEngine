@@ -8,6 +8,7 @@ public final class LLColumnFamilyHandle extends SimpleResource {
 	private final ColumnFamilyHandle val;
 
 	public LLColumnFamilyHandle(ColumnFamilyHandle val) {
+		super(val::close);
 		this.val = val;
 	}
 

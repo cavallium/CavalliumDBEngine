@@ -4,6 +4,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.IteratorMetrics;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
 import org.rocksdb.AbstractSlice;
@@ -12,73 +13,28 @@ import org.rocksdb.RocksIterator;
 
 public class RocksIteratorObj extends SimpleResource {
 
-	private RocksIterator rocksIterator;
-	private AbstractSlice<?> sliceMin;
-	private AbstractSlice<?> sliceMax;
-	private Buf min;
-	private Buf max;
+	private LLReadOptions readOptions;
+	private final RocksIterator rocksIterator;
 	private final Counter startedIterSeek;
 	private final Counter endedIterSeek;
 	private final Timer iterSeekTime;
 	private final Counter startedIterNext;
 	private final Counter endedIterNext;
 	private final Timer iterNextTime;
-	private Object seekingFrom;
-	private Object seekingTo;
+	private byte[] seekingFrom;
+	private byte[] seekingTo;
 
-	public RocksIteratorObj(RocksIterator rocksIterator,
-			AbstractSlice<?> sliceMin,
-			AbstractSlice<?> sliceMax,
-			Buf min,
-			Buf max,
-			Counter startedIterSeek,
-			Counter endedIterSeek,
-			Timer iterSeekTime,
-			Counter startedIterNext,
-			Counter endedIterNext,
-			Timer iterNextTime) {
-		this(rocksIterator,
-				sliceMin,
-				sliceMax,
-				min,
-				max,
-				startedIterSeek,
-				endedIterSeek,
-				iterSeekTime,
-				startedIterNext,
-				endedIterNext,
-				iterNextTime,
-				null,
-				null
-		);
-	}
-
-	private RocksIteratorObj(RocksIterator rocksIterator,
-			AbstractSlice<?> sliceMin,
-			AbstractSlice<?> sliceMax,
-			Buf min,
-			Buf max,
-			Counter startedIterSeek,
-			Counter endedIterSeek,
-			Timer iterSeekTime,
-			Counter startedIterNext,
-			Counter endedIterNext,
-			Timer iterNextTime,
-			Object seekingFrom,
-			Object seekingTo) {
-		this.sliceMin = sliceMin;
-		this.sliceMax = sliceMax;
-		this.min = min;
-		this.max = max;
+	RocksIteratorObj(RocksIterator rocksIterator,
+			LLReadOptions readOptions, IteratorMetrics iteratorMetrics) {
+		super(rocksIterator::close);
+		this.readOptions = readOptions;
 		this.rocksIterator = rocksIterator;
-		this.startedIterSeek = startedIterSeek;
-		this.endedIterSeek = endedIterSeek;
-		this.iterSeekTime = iterSeekTime;
-		this.startedIterNext = startedIterNext;
-		this.endedIterNext = endedIterNext;
-		this.iterNextTime = iterNextTime;
-		this.seekingFrom = seekingFrom;
-		this.seekingTo = seekingTo;
+		this.startedIterSeek = iteratorMetrics.startedIterSeek();
+		this.startedIterNext = iteratorMetrics.startedIterNext();
+		this.iterSeekTime = iteratorMetrics.iterSeekTime();
+		this.endedIterNext = iteratorMetrics.endedIterNext();
+		this.endedIterSeek = iteratorMetrics.endedIterSeek();
+		this.iterNextTime = iteratorMetrics.iterNextTime();
 	}
 
 	public void seek(ByteBuffer seekBuf) throws RocksDBException {
@@ -233,11 +189,8 @@ public class RocksIteratorObj extends SimpleResource {
 		if (rocksIterator != null) {
 			rocksIterator.close();
 		}
-		if (sliceMin != null) {
-			sliceMin.close();
-		}
-		if (sliceMax != null) {
-			sliceMax.close();
-		}
+		seekingFrom = null;
+		seekingTo = null;
+		readOptions = null;
 	}
 }

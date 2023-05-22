@@ -9,6 +9,8 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
+import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
@@ -43,19 +45,20 @@ public class LLLocalSingleton implements LLSingleton {
 		if (LLUtils.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Initialized in a nonblocking thread");
 		}
-		try (var readOptions = new ReadOptions();
-				var writeOptions = new WriteOptions()) {
-			if (defaultValue != null && db.get(readOptions, this.name.asArray(), true) == null) {
-				db.put(writeOptions, this.name.asArray(), defaultValue);
+		try (var readOptions = new LLReadOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
+				if (defaultValue != null && db.get(readOptions, this.name.asArray(), true) == null) {
+					db.put(writeOptions, this.name.asArray(), defaultValue);
+				}
 			}
 		}
 	}
 
-	private ReadOptions generateReadOptions(LLSnapshot snapshot) {
+	private LLReadOptions generateReadOptions(LLSnapshot snapshot) {
 		if (snapshot != null) {
-			return new ReadOptions().setSnapshot(snapshotResolver.apply(snapshot));
+			return new LLReadOptions().setSnapshot(snapshotResolver.apply(snapshot));
 		} else {
-			return new ReadOptions();
+			return new LLReadOptions();
 		}
 	}
 
@@ -74,7 +77,7 @@ public class LLLocalSingleton implements LLSingleton {
 
 	@Override
 	public void set(Buf value) {
-		try (var writeOptions = new WriteOptions()) {
+		try (var writeOptions = new LLWriteOptions()) {
 			if (value == null) {
 				db.delete(writeOptions, name);
 			} else {
@@ -101,8 +104,10 @@ public class LLLocalSingleton implements LLSingleton {
 			case GET_OLD_VALUE -> UpdateAtomicResultMode.PREVIOUS;
 		};
 		UpdateAtomicResult result;
-		try (var readOptions = new ReadOptions(); var writeOptions = new WriteOptions()) {
-			result = db.updateAtomic(readOptions, writeOptions, name, updater, returnMode);
+		try (var readOptions = new LLReadOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
+				result = db.updateAtomic(readOptions, writeOptions, name, updater, returnMode);
+			}
 		}
 		return switch (updateReturnMode) {
 			case NOTHING -> null;
@@ -117,8 +122,10 @@ public class LLLocalSingleton implements LLSingleton {
 			throw new UnsupportedOperationException("Called update in a nonblocking thread");
 		}
 		UpdateAtomicResult result;
-		try (var readOptions = new ReadOptions(); var writeOptions = new WriteOptions()) {
-			result = db.updateAtomic(readOptions, writeOptions, name, updater, DELTA);
+		try (var readOptions = new LLReadOptions()) {
+			try (var writeOptions = new LLWriteOptions()) {
+				result = db.updateAtomic(readOptions, writeOptions, name, updater, DELTA);
+			}
 		}
 		return ((UpdateAtomicResultDelta) result).delta();
 	}

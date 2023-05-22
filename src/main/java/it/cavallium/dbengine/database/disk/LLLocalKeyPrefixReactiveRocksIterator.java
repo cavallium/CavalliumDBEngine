@@ -10,6 +10,7 @@ import com.google.common.collect.Streams;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
@@ -29,20 +30,20 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 	private final RocksDBColumn db;
 	private final int prefixLength;
 	private final LLRange range;
-	private final Supplier<ReadOptions> readOptions;
+	private final Supplier<LLReadOptions> readOptions;
 	private final boolean canFillCache;
 	private final boolean smallRange;
 
 	public LLLocalKeyPrefixReactiveRocksIterator(RocksDBColumn db,
 			int prefixLength,
 			LLRange range,
-			Supplier<ReadOptions> readOptions,
+			Supplier<LLReadOptions> readOptions,
 			boolean canFillCache,
 			boolean smallRange) {
 		this.db = db;
 		this.prefixLength = prefixLength;
 		this.range = range;
-		this.readOptions = readOptions != null ? readOptions : ReadOptions::new;
+		this.readOptions = readOptions != null ? readOptions : LLReadOptions::new;
 		this.canFillCache = canFillCache;
 		this.smallRange = smallRange;
 	}

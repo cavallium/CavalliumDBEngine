@@ -7,6 +7,7 @@ import com.google.common.primitives.Longs;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.HitEntry;
 import it.cavallium.dbengine.client.HitKey;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.lucene.LuceneUtils;
@@ -472,13 +473,13 @@ public class LLUtils {
 	 * @param smallRange true if the range is small
 	 * @return the passed instance of ReadOptions, or a new one if the passed readOptions is null
 	 */
-	public static ReadOptions generateCustomReadOptions(@Nullable ReadOptions readOptions,
+	public static LLReadOptions generateCustomReadOptions(@Nullable LLReadOptions readOptions,
 			boolean canFillCache,
 			boolean boundedRange,
 			boolean smallRange) {
 		if (readOptions == null) {
 			//noinspection resource
-			readOptions = new ReadOptions();
+			readOptions = new LLReadOptions();
 		}
 		var hugeRange = !boundedRange && !smallRange;
 		if (hugeRange) {

@@ -8,6 +8,7 @@ import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
+import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
@@ -27,20 +28,20 @@ public abstract class LLLocalReactiveRocksIterator<T> {
 
 	private final RocksDBColumn db;
 	private final LLRange range;
-	private final Supplier<ReadOptions> readOptions;
+	private final Supplier<LLReadOptions> readOptions;
 	private final boolean readValues;
 	private final boolean reverse;
 	private final boolean smallRange;
 
 	public LLLocalReactiveRocksIterator(RocksDBColumn db,
 			LLRange range,
-			Supplier<ReadOptions> readOptions,
+			Supplier<LLReadOptions> readOptions,
 			boolean readValues,
 			boolean reverse,
 			boolean smallRange) {
 		this.db = db;
 		this.range = range;
-		this.readOptions = readOptions != null ? readOptions : ReadOptions::new;
+		this.readOptions = readOptions != null ? readOptions : LLReadOptions::new;
 		this.readValues = readValues;
 		this.reverse = reverse;
 		this.smallRange = smallRange;

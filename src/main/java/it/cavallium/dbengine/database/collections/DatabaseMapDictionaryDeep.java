@@ -326,6 +326,9 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	protected void serializeSuffixTo(T keySuffix, BufDataOutput output) throws SerializationException {
 		var beforeWriterOffset = output.size();
 		assert beforeWriterOffset == keyPrefixLength;
+		assert keySuffixSerializer.getSerializedBinaryLength() == keySuffixLength
+				: "Invalid key suffix serializer length: " +  keySuffixSerializer.getSerializedBinaryLength()
+				+ ". Expected: " + keySuffixLength;
 		keySuffixSerializer.serialize(keySuffix, output);
 		var afterWriterOffset = output.size();
 		assert suffixKeyLengthConsistency(afterWriterOffset - beforeWriterOffset)

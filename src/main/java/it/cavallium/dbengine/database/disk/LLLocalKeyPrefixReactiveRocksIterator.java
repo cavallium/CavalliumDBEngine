@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
+import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import com.google.common.collect.Iterators;
@@ -50,61 +51,74 @@ public class LLLocalKeyPrefixReactiveRocksIterator {
 
 
 	public Stream<Buf> stream() {
-		return streamWhileNonNull(() -> {
-			try (var readOptions = generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange);
-					var rocksIterator = db.newRocksIterator(readOptions, range, false)) {
-				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-				}
-				Buf firstGroupKey = null;
-				while (rocksIterator.isValid()) {
-					// Note that the underlying array is subject to changes!
-					Buf key = rocksIterator.keyBuf();
-					var keyLen = key.size();
-					if (keyLen >= prefixLength) {
-						if (firstGroupKey == null) {
-							firstGroupKey = key.copy();
-							assert firstGroupKey == null || firstGroupKey.size() >= prefixLength;
-						} else if (!LLUtils.equals(firstGroupKey,
-								0,
-								key,
-								0,
-								prefixLength
-						)) {
-							break;
-						}
-					} else {
-						logger.error("Skipped a key with length {}, the expected minimum prefix key length is {}!"
-								+ " This key will be dropped", key.size(), prefixLength);
-					}
-					rocksIterator.next();
-				}
+		try {
+			return resourceStream(
+					() -> generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange),
+					readOptions -> resourceStream(
+							() -> db.newRocksIterator(readOptions, range, false),
+							rocksIterator -> streamWhileNonNull(() -> {
+								try {
+									if (logger.isTraceEnabled()) {
+										logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+									}
+									Buf firstGroupKey = null;
+									while (rocksIterator.isValid()) {
+										// Note that the underlying array is subject to changes!
+										Buf key = rocksIterator.keyBuf();
+										var keyLen = key.size();
+										if (keyLen >= prefixLength) {
+											if (firstGroupKey == null) {
+												firstGroupKey = key.copy();
+												assert firstGroupKey == null || firstGroupKey.size() >= prefixLength;
+											} else if (!LLUtils.equals(firstGroupKey,
+													0,
+													key,
+													0,
+													prefixLength
+											)) {
+												break;
+											}
+										} else {
+											logger.error("Skipped a key with length {}, the expected minimum prefix key length is {}!"
+													+ " This key will be dropped", key.size(), prefixLength);
+										}
+										rocksIterator.next();
+									}
 
-				if (firstGroupKey != null) {
-					var groupKeyPrefix = firstGroupKey.subList(0, prefixLength);
+									if (firstGroupKey != null) {
+										var groupKeyPrefix = firstGroupKey.subList(0, prefixLength);
 
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB,
-								"Range {} is reading prefix {}",
-								LLUtils.toStringSafe(range),
-								LLUtils.toStringSafe(groupKeyPrefix)
-						);
-					}
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB,
+													"Range {} is reading prefix {}",
+													LLUtils.toStringSafe(range),
+													LLUtils.toStringSafe(groupKeyPrefix)
+											);
+										}
 
-					return groupKeyPrefix;
-				} else {
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
-					}
-					return null;
-				}
-			} catch (RocksDBException ex) {
-				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
-				}
-				throw new CompletionException(new DBException("Range failed", ex));
-			}
-		});
+										return groupKeyPrefix;
+									} else {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+										}
+										return null;
+									}
+								} catch (RocksDBException ex) {
+									throw new CompletionException(generateRangeFailedException(ex));
+								}
+							}
+					))
+			);
+		} catch (RocksDBException e) {
+			throw generateRangeFailedException(e);
+		}
+	}
+
+	private DBException generateRangeFailedException(RocksDBException ex) {
+		if (logger.isTraceEnabled()) {
+			logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+		}
+		throw new DBException("Range failed", ex);
 	}
 
 }

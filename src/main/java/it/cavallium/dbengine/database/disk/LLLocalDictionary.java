@@ -10,6 +10,7 @@ import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
 import static it.cavallium.dbengine.utils.StreamUtils.fastSummingLong;
+import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
@@ -629,39 +630,33 @@ public class LLLocalDictionary implements LLDictionary {
 	@Override
 	public Stream<BadBlock> badBlocks(LLRange range) {
 		try {
-			var ro = LLUtils.generateCustomReadOptions(null,
-					false,
-					isBoundedRange(range),
-					false
-			);
-			ro.setFillCache(false);
-			if (!range.isSingle()) {
-				if (LLUtils.MANUAL_READAHEAD) {
-					ro.setReadaheadSize(32 * 1024);
+			return resourceStream(
+					() -> LLUtils.generateCustomReadOptions(null, false, isBoundedRange(range), false),
+					ro -> {
+				ro.setFillCache(false);
+				if (!range.isSingle()) {
+					if (LLUtils.MANUAL_READAHEAD) {
+						ro.setReadaheadSize(32 * 1024);
+					}
 				}
-			}
-			ro.setVerifyChecksums(true);
-			var rocksIterator = db.newRocksIterator(ro, range, false);
-			try {
-				rocksIterator.seekToFirst();
-			} catch (Exception ex) {
-				rocksIterator.close();
-				ro.close();
-				throw new DBException("Failed to open rocksdb iterator", ex);
-			}
-			return streamWhileNonNull(() -> {
-				if (!rocksIterator.isValid()) return null;
-				Buf rawKey = null;
-				try {
-					rawKey = rocksIterator.keyBuf().copy();
-					rocksIterator.next();
-				} catch (RocksDBException ex) {
-					return new BadBlock(databaseName, ColumnUtils.special(columnName), rawKey, ex);
-				}
-				return null;
-			}).takeWhile(x -> rocksIterator.isValid()).onClose(() -> {
-				rocksIterator.close();
-				ro.close();
+				ro.setVerifyChecksums(true);
+				return resourceStream(() ->  db.newRocksIterator(ro, range, false), rocksIterator -> {
+					rocksIterator.seekToFirst();
+					return streamWhileNonNull(() -> {
+						if (!rocksIterator.isValid()) return null;
+						Buf rawKey = null;
+						try {
+							rawKey = rocksIterator.keyBuf().copy();
+							rocksIterator.next();
+						} catch (RocksDBException ex) {
+							return new BadBlock(databaseName, ColumnUtils.special(columnName), rawKey, ex);
+						}
+						return null;
+					}).takeWhile(x -> rocksIterator.isValid()).onClose(() -> {
+						rocksIterator.close();
+						ro.close();
+					});
+				});
 			});
 		} catch (RocksDBException e) {
 			throw new DBException("Failed to get bad blocks", e);

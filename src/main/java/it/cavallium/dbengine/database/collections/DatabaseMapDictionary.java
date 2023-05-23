@@ -1,5 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
+import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
+
 import it.cavallium.buffer.Buf;
 import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
@@ -535,8 +537,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	@Override
 	public Stream<Entry<T, U>> setAllEntriesAndGetPrevious(Stream<Entry<T, U>> entries) {
-		return getAllEntries(null, false)
-				.onClose(() -> dictionary.setRange(range, entries.map(entry -> serializeEntry(entry)), false));
+		return resourceStream(
+				() -> getAllEntries(null, false),
+				() -> dictionary.setRange(range, entries.map(entry -> serializeEntry(entry)), false)
+		);
 	}
 
 	@Override

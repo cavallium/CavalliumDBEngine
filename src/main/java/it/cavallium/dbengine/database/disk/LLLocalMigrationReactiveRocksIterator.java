@@ -1,6 +1,7 @@
 package it.cavallium.dbengine.database.disk;
 
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
+import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 
 import it.cavallium.buffer.Buf;
@@ -34,20 +35,26 @@ public final class LLLocalMigrationReactiveRocksIterator {
 	}
 
 	public Stream<LLEntry> stream() {
-		return streamWhileNonNull(() -> {
-			try (var readOptions = generateCustomReadOptions(this.readOptions.get(), false, false, false);
-					var rocksIterator = db.newRocksIterator(readOptions, range, false)) {
-				if (rocksIterator.isValid()) {
-					var key = rocksIterator.keyBuf().copy();
-					var value = rocksIterator.valueBuf().copy();
-					rocksIterator.next(false);
-					return LLEntry.of(key, value);
-				} else {
-					return null;
-				}
-			} catch (RocksDBException e) {
-				throw new DBException("Failed to open iterator", e);
-			}
-		});
+		try {
+			return resourceStream(
+					// Create the read options
+					() -> generateCustomReadOptions(this.readOptions.get(), false, false, false),
+					readOptions -> resourceStream(
+							// Create the iterator
+							() -> db.newRocksIterator(readOptions, range, false),
+							// Stream the iterator values until null is returned
+							iterator -> streamWhileNonNull(() -> {
+								if (iterator.isValid()) {
+									var key = iterator.keyBuf().copy();
+									var value = iterator.valueBuf().copy();
+									iterator.next(false);
+									return LLEntry.of(key, value);
+								} else {
+									return null;
+								}
+							})));
+		} catch (RocksDBException e) {
+			throw new DBException("Failed to open iterator", e);
+		}
 	}
 }

@@ -32,6 +32,8 @@ import java.util.stream.Collector;
 import java.util.stream.Collector.Characteristics;
 import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
+import org.apache.commons.lang3.function.FailableFunction;
+import org.apache.commons.lang3.function.FailableSupplier;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -324,6 +326,57 @@ public class StreamUtils {
 		return Streams.mapWithIndex(stream, mapper::apply);
 	}
 
+	/**
+	 * Checks if stream.onClose() will be called during the stream lifetime
+	 */
+	public static <T> Stream<T> resourceStream(Stream<T> stream) {
+		var sr = new StreamResource(null);
+		return stream.onClose(sr::close);
+	}
+
+	/**
+	 * Checks if stream.onClose() will be called during the stream lifetime
+	 */
+	public static <SR extends SimpleResource, T, EX extends Exception> Stream<T> resourceStream(
+			FailableSupplier<SR, ? extends EX> resourceInitializer,
+			FailableFunction<SR, ? extends Stream<T>, ? extends EX> streamInitializer) throws EX {
+		SR resource = resourceInitializer.get();
+		var sr = new StreamResource(resource::close);
+		try {
+			Stream<T> stream = streamInitializer.apply(resource);
+			return stream.onClose(sr::close);
+		} catch (Throwable ex) {
+			sr.close();
+			throw ex;
+		}
+	}
+
+	/**
+	 * Checks if stream.onClose() will be called during the stream lifetime
+	 */
+	public static <T> Stream<T> resourceStream(Stream<T> stream, Runnable finalization) {
+		var sr = new StreamResource(finalization);
+		try {
+			return stream.onClose(sr::close);
+		} catch (Throwable ex) {
+			sr.close();
+			throw ex;
+		}
+	}
+
+	/**
+	 * Checks if stream.onClose() will be called during the stream lifetime
+	 */
+	public static <T> Stream<T> resourceStream(Supplier<Stream<T>> stream, Runnable finalization) {
+		var sr = new StreamResource(finalization);
+		try {
+			return stream.get().onClose(sr::close);
+		} catch (Throwable ex) {
+			sr.close();
+			throw ex;
+		}
+	}
+
 	private record BatchSpliterator<E>(Spliterator<E> base, int batchSize) implements Spliterator<List<E>> {
 
 		@Override
@@ -554,6 +607,22 @@ public class StreamUtils {
 			final ForkJoinWorkerThread worker = ForkJoinPool.defaultForkJoinWorkerThreadFactory.newThread(pool);
 			worker.setName("ForkJoinPool-" + name + "-worker-" + nextWorkerId.getAndIncrement());
 			return worker;
+		}
+	}
+
+	private static class StreamResource extends SimpleResource {
+
+		private final Runnable finalization;
+
+		public StreamResource(Runnable finalization) {
+			this.finalization = finalization;
+		}
+
+		@Override
+		protected void onClose() {
+			if (finalization != null) {
+				finalization.run();
+			}
 		}
 	}
 }

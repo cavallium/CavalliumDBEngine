@@ -3,6 +3,7 @@ package it.cavallium.dbengine.database.disk;
 import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.generateCustomReadOptions;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
+import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.database.LLRange;
@@ -20,6 +21,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
@@ -53,58 +55,71 @@ public abstract class LLLocalGroupedReactiveRocksIterator<T> {
 	}
 
 	public final Stream<List<T>> stream() {
-		return StreamUtils.<List<T>>streamWhileNonNull(() -> {
-			try (var readOptions = generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange);
-					var rocksIterator = db.newRocksIterator(readOptions, range, false)) {
-				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
-				}
-				ObjectArrayList<T> values = new ObjectArrayList<>();
-				Buf firstGroupKey = null;
-				while (rocksIterator.isValid()) {
-					// Note that the underlying array is subject to changes!
-					Buf key = rocksIterator.keyBuf();
-					if (firstGroupKey == null) {
-						firstGroupKey = key.copy();
-					} else if (!LLUtils.equals(firstGroupKey, 0, key, 0, prefixLength)) {
-						break;
-					}
-					// Note that the underlying array is subject to changes!
-					@Nullable Buf value;
-					if (readValues) {
-						value = rocksIterator.valueBuf();
-					} else {
-						value = null;
-					}
+		try {
+			return resourceStream(
+					() -> generateCustomReadOptions(this.readOptions.get(), canFillCache, isBoundedRange(range), smallRange),
+					readOptions -> StreamUtils.resourceStream(
+							() -> db.newRocksIterator(readOptions, range, false),
+							rocksIterator -> StreamUtils.streamWhileNonNull(() -> {
+								try {
+									if (logger.isTraceEnabled()) {
+										logger.trace(MARKER_ROCKSDB, "Range {} started", LLUtils.toStringSafe(range));
+									}
+									ObjectArrayList<T> values = new ObjectArrayList<>();
+									Buf firstGroupKey = null;
+									while (rocksIterator.isValid()) {
+										// Note that the underlying array is subject to changes!
+										Buf key = rocksIterator.keyBuf();
+										if (firstGroupKey == null) {
+											firstGroupKey = key.copy();
+										} else if (!LLUtils.equals(firstGroupKey, 0, key, 0, prefixLength)) {
+											break;
+										}
+										// Note that the underlying array is subject to changes!
+										@Nullable Buf value;
+										if (readValues) {
+											value = rocksIterator.valueBuf();
+										} else {
+											value = null;
+										}
 
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB,
-								"Range {} is reading {}: {}",
-								LLUtils.toStringSafe(range),
-								LLUtils.toStringSafe(key),
-								LLUtils.toStringSafe(value)
-						);
-					}
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB,
+													"Range {} is reading {}: {}",
+													LLUtils.toStringSafe(range),
+													LLUtils.toStringSafe(key),
+													LLUtils.toStringSafe(value)
+											);
+										}
 
-					rocksIterator.next();
-					T entry = getEntry(key, value);
-					values.add(entry);
-				}
-				if (!values.isEmpty()) {
-					return values;
-				} else {
-					if (logger.isTraceEnabled()) {
-						logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
-					}
-					return null;
-				}
-			} catch (RocksDBException ex) {
-				if (logger.isTraceEnabled()) {
-					logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
-				}
-				throw new CompletionException(new DBException("Range failed", ex));
-			}
-		});
+										rocksIterator.next();
+										T entry = getEntry(key, value);
+										values.add(entry);
+									}
+									if (!values.isEmpty()) {
+										return values;
+									} else {
+										if (logger.isTraceEnabled()) {
+											logger.trace(MARKER_ROCKSDB, "Range {} ended", LLUtils.toStringSafe(range));
+										}
+										return null;
+									}
+								} catch (RocksDBException ex) {
+									throw new CompletionException(generateRangeFailedException(ex));
+								}
+							})
+					)
+			);
+		} catch (RocksDBException ex) {
+			throw generateRangeFailedException(ex);
+		}
+	}
+
+	private DBException generateRangeFailedException(RocksDBException ex) {
+		if (logger.isTraceEnabled()) {
+			logger.trace(MARKER_ROCKSDB, "Range {} failed", LLUtils.toStringSafe(range));
+		}
+		throw new DBException("Range failed", ex);
 	}
 
 	/**

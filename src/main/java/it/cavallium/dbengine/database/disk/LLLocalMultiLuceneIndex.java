@@ -67,10 +67,6 @@ import org.jetbrains.annotations.Nullable;
 public class LLLocalMultiLuceneIndex extends SimpleResource implements LLLuceneIndex, LuceneCloseable {
 
 	private static final Logger LOG = LogManager.getLogger(LLLuceneIndex.class);
-	private static final boolean BYPASS_GROUPBY_BUG = Boolean.parseBoolean(System.getProperty(
-			"it.cavallium.dbengine.bypassGroupByBug",
-			"false"
-	));
 
 	private final String clusterName;
 	private final boolean lowMemory;

@@ -1,6 +1,8 @@
 package it.cavallium.dbengine.client.query;
 
 import com.google.common.xml.XmlEscapers;
+import com.ibm.icu.text.BreakIterator;
+import com.ibm.icu.util.ULocale;
 import it.cavallium.dbengine.client.query.current.data.BooleanQuery;
 import it.cavallium.dbengine.client.query.current.data.BooleanQueryBuilder;
 import it.cavallium.dbengine.client.query.current.data.BooleanQueryPart;
@@ -38,6 +40,7 @@ import it.cavallium.dbengine.client.query.current.data.LongPointSetQuery;
 import it.cavallium.dbengine.client.query.current.data.LongTermQuery;
 import it.cavallium.dbengine.client.query.current.data.NumericSort;
 import it.cavallium.dbengine.client.query.current.data.OccurMust;
+import it.cavallium.dbengine.client.query.current.data.OccurMustNot;
 import it.cavallium.dbengine.client.query.current.data.OccurShould;
 import it.cavallium.dbengine.client.query.current.data.PhraseQuery;
 import it.cavallium.dbengine.client.query.current.data.PointConfig;
@@ -51,17 +54,23 @@ import it.cavallium.dbengine.client.query.current.data.TermPosition;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import it.cavallium.dbengine.lucene.RandomSortField;
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.lucene.analysis.Analyzer;
+import org.apache.lucene.analysis.icu.segmentation.DefaultICUTokenizerConfig;
+import org.apache.lucene.analysis.icu.segmentation.ICUTokenizer;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.DoublePoint;
 import org.apache.lucene.document.FloatPoint;
 import org.apache.lucene.document.IntPoint;
@@ -71,6 +80,8 @@ import org.apache.lucene.index.Term;
 import org.apache.lucene.queryparser.flexible.core.QueryNodeException;
 import org.apache.lucene.queryparser.flexible.standard.StandardQueryParser;
 import org.apache.lucene.queryparser.flexible.standard.config.PointsConfig;
+import org.apache.lucene.queryparser.xml.CoreParser;
+import org.apache.lucene.queryparser.xml.ParserException;
 import org.apache.lucene.queryparser.xml.builders.UserInputQueryBuilder;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery.Builder;
@@ -400,28 +411,32 @@ public class QueryParser {
 			}
 			case BooleanQuery -> {
 				var booleanQuery = (it.cavallium.dbengine.client.query.current.data.BooleanQuery) query;
-
-				out.append("<BooleanQuery");
-				if (boost != null) {
-					out.append(" boost=\"").append(boost).append("\"");
-				}
-				out.append(" minimumNumberShouldMatch=\"").append(booleanQuery.minShouldMatch()).append("\"");
-				out.append(">\n");
-
-				for (BooleanQueryPart part : booleanQuery.parts()) {
-					out.append("<Clause");
-					out.append(" occurs=\"").append(switch (part.occur().getBaseType$()) {
-						case OccurFilter -> "filter";
-						case OccurMust -> "must";
-						case OccurShould -> "should";
-						case OccurMustNot -> "mustNot";
-						default -> throw new IllegalStateException("Unexpected value: " + part.occur().getBaseType$());
-					}).append("\"");
+				if (booleanQuery.parts().size() == 1
+						&& booleanQuery.parts().get(0).occur().getBaseType$() == BaseType.OccurMust) {
+					toQueryXML(out, booleanQuery.parts().get(0).query(), boost);
+				} else {
+					out.append("<BooleanQuery");
+					if (boost != null) {
+						out.append(" boost=\"").append(boost).append("\"");
+					}
+					out.append(" minimumNumberShouldMatch=\"").append(booleanQuery.minShouldMatch()).append("\"");
 					out.append(">\n");
-					toQueryXML(out, part.query(), null);
-					out.append("</Clause>\n");
+
+					for (BooleanQueryPart part : booleanQuery.parts()) {
+						out.append("<Clause");
+						out.append(" occurs=\"").append(switch (part.occur().getBaseType$()) {
+							case OccurFilter -> "filter";
+							case OccurMust -> "must";
+							case OccurShould -> "should";
+							case OccurMustNot -> "mustNot";
+							default -> throw new IllegalStateException("Unexpected value: " + part.occur().getBaseType$());
+						}).append("\"");
+						out.append(">\n");
+						toQueryXML(out, part.query(), null);
+						out.append("</Clause>\n");
+					}
+					out.append("</BooleanQuery>\n");
 				}
-				out.append("</BooleanQuery>\n");
 			}
 			case IntPointExactQuery -> {
 				var intPointExactQuery = (IntPointExactQuery) query;
@@ -585,7 +600,7 @@ public class QueryParser {
 				out.append(solrTextQuery.field());
 				out.append(":");
 				out.append("\"").append(escapeQueryStringValue(solrTextQuery.phrase())).append("\"");
-				if (solrTextQuery.slop() > 0) {
+				if (solrTextQuery.slop() > 0 && hasMoreThanOneWord(solrTextQuery.phrase())) {
 					out.append("~").append(solrTextQuery.slop());
 				}
 				out.append("</UserQuery>\n");
@@ -733,6 +748,24 @@ public class QueryParser {
 			}
 			default -> throw new IllegalStateException("Unexpected value: " + query.getBaseType$());
 		}
+	}
+
+	private static boolean hasMoreThanOneWord(String sentence) {
+		BreakIterator iterator = BreakIterator.getWordInstance(ULocale.ENGLISH);
+		iterator.setText(sentence);
+
+		boolean firstWord = false;
+		iterator.first();
+		int end = iterator.next();
+		while (end != BreakIterator.DONE) {
+			if (!firstWord) {
+				firstWord = true;
+			} else {
+				return true;
+			}
+			end = iterator.next();
+		}
+		return false;
 	}
 
 	private static String escapeQueryStringValue(String text) {

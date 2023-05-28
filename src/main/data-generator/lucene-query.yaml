@@ -6,7 +6,7 @@ superTypesData:
   Query: [
     BoxedQuery, TermQuery, IntTermQuery, IntNDTermQuery, LongTermQuery, LongNDTermQuery, FloatTermQuery,
     FloatNDTermQuery, DoubleTermQuery, DoubleNDTermQuery,
-    PhraseQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery, MatchNoDocsQuery,
+    PhraseQuery, SolrTextQuery, WildcardQuery, SynonymQuery, FuzzyQuery, MatchAllDocsQuery, MatchNoDocsQuery,
     BooleanQuery, SortedNumericDocValuesFieldSlowRangeQuery, SortedDocFieldExistsQuery,
     ConstantScoreQuery, BoostQuery, IntPointRangeQuery, IntNDPointRangeQuery, LongPointRangeQuery,
     FloatPointRangeQuery, DoublePointRangeQuery, LongNDPointRangeQuery, FloatNDPointRangeQuery,
@@ -135,6 +135,14 @@ baseTypesData:
       # A phrase is a collection of positioned terms, with absolute positions,
       #   counted as characters from the beginning of the phrase.
       phrase: TermPosition[]
+      slop: int
+  # Query that matches a phrase. (Solr)
+  SolrTextQuery:
+    data:
+      # Field name
+      field: String
+      # Text query
+      phrase: String
       slop: int
   # Advanced query that matches text allowing asterisks in the query
   WildcardQuery:

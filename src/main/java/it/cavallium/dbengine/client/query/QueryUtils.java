@@ -38,12 +38,19 @@ public class QueryUtils {
 		return transformQuery(field, luceneQuery);
 	}
 
+	/**
+	 * Deprecated: use solr SolrTextQuery
+	 */
+	@Deprecated
 	public static Query phraseSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text, int slop) {
 		var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
 		var luceneQuery = qb.createPhraseQuery(field, text, slop);
 		return transformQuery(field, luceneQuery);
 	}
 
+	/**
+	 * Deprecated: use solr SolrTextQuery
+	 */
 	public static Query exactSearch(TextFieldsAnalyzer preferredAnalyzer, String field, String text) {
 		var qb = new QueryBuilder(LuceneUtils.getAnalyzer(preferredAnalyzer));
 		var luceneQuery = qb.createPhraseQuery(field, text);

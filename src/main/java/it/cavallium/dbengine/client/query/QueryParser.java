@@ -599,7 +599,7 @@ public class QueryParser {
 				ensureValidField(solrTextQuery.field());
 				out.append(solrTextQuery.field());
 				out.append(":");
-				out.append("\"").append(escapeQueryStringValue(solrTextQuery.phrase())).append("\"");
+				out.append("\"").append(XmlEscapers.xmlContentEscaper().escape(escapeQueryStringValue(solrTextQuery.phrase()))).append("\"");
 				if (solrTextQuery.slop() > 0 && hasMoreThanOneWord(solrTextQuery.phrase())) {
 					out.append("~").append(solrTextQuery.slop());
 				}

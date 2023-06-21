@@ -5,6 +5,7 @@ import com.google.common.collect.Streams;
 import it.cavallium.dbengine.utils.PartitionByIntSpliterator.IntPartition;
 import it.cavallium.dbengine.utils.PartitionBySpliterator.Partition;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.EnumSet;
@@ -26,6 +27,7 @@ import java.util.function.BiFunction;
 import java.util.function.BinaryOperator;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.function.ToIntFunction;
 import java.util.stream.Collector;
@@ -375,6 +377,32 @@ public class StreamUtils {
 			sr.close();
 			throw ex;
 		}
+	}
+
+	public static <T> Predicate<T> and(Collection<? extends Predicate<? super T>> predicateList) {
+		Predicate<T> result = null;
+		for (Predicate<? super T> predicate : predicateList) {
+			if (result == null) {
+				//noinspection unchecked
+				result = (Predicate<T>) predicate;
+			} else {
+				result = result.and(predicate);
+			}
+		}
+		return result;
+	}
+
+	public static <T> Predicate<T> or(Collection<? extends Predicate<? super T>> predicateList) {
+		Predicate<T> result = null;
+		for (Predicate<? super T> predicate : predicateList) {
+			if (result == null) {
+				//noinspection unchecked
+				result = (Predicate<T>) predicate;
+			} else {
+				result = result.and(predicate);
+			}
+		}
+		return result;
 	}
 
 	private record BatchSpliterator<E>(Spliterator<E> base, int batchSize) implements Spliterator<List<E>> {

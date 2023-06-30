@@ -28,6 +28,7 @@ import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.OptionalBuf;
+import it.cavallium.dbengine.database.RocksDBLongProperty;
 import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -976,7 +977,7 @@ public class LLLocalDictionary implements LLDictionary {
 					if (USE_NUM_ENTRIES_PRECISE_COUNTER) {
 						return getRocksDBNumEntries();
 					}
-					return db.getLongProperty("rocksdb.estimate-num-keys");
+					return db.getLongProperty(RocksDBLongProperty.ESTIMATE_NUM_KEYS.getName());
 				} catch (RocksDBException e) {
 					logger.error(MARKER_ROCKSDB, "Failed to get RocksDB estimated keys count property", e);
 					return 0;

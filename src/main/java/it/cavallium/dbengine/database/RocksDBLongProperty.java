@@ -60,7 +60,8 @@ public enum RocksDBLongProperty implements RocksDBProperty {
 	NUM_BLOB_FILES("num-blob-files"),
 	TOTAL_BLOB_FILE_SIZE("total-blob-file-size"),
 	LIVE_BLOB_FILE_SIZE("live-blob-file-size"),
-	LIVE_BLOB_FILE_GARBAGE_SIZE("live-blob-file-garbage-size")
+	LIVE_BLOB_FILE_GARBAGE_SIZE("live-blob-file-garbage-size"),
+	FILE_READ_DB_OPEN_MICROS("file.read.db.open.micros")
 	;
 
 	private final String name;

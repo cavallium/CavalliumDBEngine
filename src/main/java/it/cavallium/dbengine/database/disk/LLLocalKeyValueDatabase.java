@@ -1260,13 +1260,13 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		try {
 			if (closeRequested || closed || closeReadLock == 0) return null;
 			ensureOpen();
-			return new MemoryStats(db.getAggregatedLongProperty("rocksdb.estimate-table-readers-mem"),
-					db.getAggregatedLongProperty("rocksdb.size-all-mem-tables"),
-					db.getAggregatedLongProperty("rocksdb.cur-size-all-mem-tables"),
-					db.getAggregatedLongProperty("rocksdb.estimate-num-keys"),
-					db.getAggregatedLongProperty("rocksdb.block-cache-usage") / this.handles.size(),
-					db.getAggregatedLongProperty("rocksdb.block-cache-pinned-usage") / this.handles.size(),
-					db.getAggregatedLongProperty("rocksdb.num-live-versions") / this.handles.size()
+			return new MemoryStats(db.getAggregatedLongProperty(RocksDBLongProperty.ESTIMATE_TABLE_READERS_MEM.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.SIZE_ALL_MEM_TABLES.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.CUR_SIZE_ALL_MEM_TABLES.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.ESTIMATE_NUM_KEYS.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_USAGE.getName()) / this.handles.size(),
+					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_PINNED_USAGE.getName()) / this.handles.size(),
+					db.getAggregatedLongProperty(RocksDBLongProperty.NUM_LIVE_VERSIONS.getName()) / this.handles.size()
 			);
 		} catch (RocksDBException e) {
 			throw new DBException("Failed to read memory stats", e);

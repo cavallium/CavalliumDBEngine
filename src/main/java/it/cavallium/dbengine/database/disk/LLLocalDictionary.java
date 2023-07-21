@@ -128,8 +128,7 @@ public class LLLocalDictionary implements LLDictionary {
 			String databaseName,
 			String columnName,
 			Function<LLSnapshot, Snapshot> snapshotResolver,
-			UpdateMode updateMode,
-			DatabaseOptions databaseOptions) {
+			UpdateMode updateMode) {
 		requireNonNull(db);
 		this.db = db;
 		this.cfh = db.getColumnFamilyHandle();

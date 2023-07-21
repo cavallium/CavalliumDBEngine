@@ -1142,8 +1142,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					name,
 					ColumnUtils.toString(columnName),
 					this::getSnapshotLambda,
-					updateMode,
-					databaseOptions
+					updateMode
 			);
 		} catch (RocksDBException e) {
 			throw new DBException(e);

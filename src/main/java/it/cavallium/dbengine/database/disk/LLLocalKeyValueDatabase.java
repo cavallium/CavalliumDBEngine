@@ -904,6 +904,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			options.setSkipStatsUpdateOnDbOpen(true);
 			options.setCreateMissingColumnFamilies(true);
 			options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
+			// todo: automatically flush every x seconds?
+
+			options.setManualWalFlush(true);
+
 			options.setAvoidFlushDuringShutdown(false); // Flush all WALs during shutdown
 			options.setAvoidFlushDuringRecovery(true); // Flush all WALs during startup
 			options.setWalRecoveryMode(databaseOptions.absoluteConsistency()
@@ -987,9 +991,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						.setBytesPerSync(64 * SizeUnit.MB)
 						.setWalBytesPerSync(64 * SizeUnit.MB)
 
-						.setWalTtlSeconds(60) // Auto
+						.setWalTtlSeconds(80) // Auto
 						.setWalSizeLimitMB(0) // Auto
-						.setMaxTotalWalSize(10 * SizeUnit.GB)
+						.setMaxTotalWalSize(0) // AUto
 				;
 				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
 				refs.track(blockCache);

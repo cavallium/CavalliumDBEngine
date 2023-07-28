@@ -37,7 +37,7 @@ public class RocksIteratorObj extends SimpleResource {
 		this.iterNextTime = iteratorMetrics.iterNextTime();
 	}
 
-	public void seek(ByteBuffer seekBuf) throws RocksDBException {
+	public synchronized void seek(ByteBuffer seekBuf) throws RocksDBException {
 		ensureOpen();
 		startedIterSeek.increment();
 		try {
@@ -48,7 +48,7 @@ public class RocksIteratorObj extends SimpleResource {
 		rocksIterator.status();
 	}
 
-	public void seek(byte[] seekArray) throws RocksDBException {
+	public synchronized void seek(byte[] seekArray) throws RocksDBException {
 		ensureOpen();
 		startedIterSeek.increment();
 		try {
@@ -59,7 +59,7 @@ public class RocksIteratorObj extends SimpleResource {
 		rocksIterator.status();
 	}
 
-	public void seekToFirst() throws RocksDBException {
+	public synchronized void seekToFirst() throws RocksDBException {
 		ensureOpen();
 		startedIterSeek.increment();
 		try {
@@ -70,7 +70,7 @@ public class RocksIteratorObj extends SimpleResource {
 		rocksIterator.status();
 	}
 
-	public void seekToLast() throws RocksDBException {
+	public synchronized void seekToLast() throws RocksDBException {
 		ensureOpen();
 		startedIterSeek.increment();
 		try {
@@ -84,7 +84,7 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * Useful for reverse iterations
 	 */
-	public void seekFrom(Buf key) {
+	public synchronized void seekFrom(Buf key) {
 		ensureOpen();
 		var keyArray = LLUtils.asArray(key);
 		rocksIterator.seekForPrev(keyArray);
@@ -95,7 +95,7 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * Useful for forward iterations
 	 */
-	public void seekTo(Buf key) {
+	public synchronized void seekTo(Buf key) {
 		ensureOpen();
 		var keyArray = LLUtils.asArray(key);
 		startedIterSeek.increment();
@@ -105,19 +105,19 @@ public class RocksIteratorObj extends SimpleResource {
 		this.seekingTo = keyArray;
 	}
 
-	public boolean isValid() {
+	public synchronized boolean isValid() {
 		ensureOpen();
 		return rocksIterator.isValid();
 	}
 
 	@Deprecated(forRemoval = true)
-	public int key(ByteBuffer buffer) {
+	public synchronized int key(ByteBuffer buffer) {
 		ensureOpen();
 		return rocksIterator.key(buffer);
 	}
 
 	@Deprecated(forRemoval = true)
-	public int value(ByteBuffer buffer) {
+	public synchronized int value(ByteBuffer buffer) {
 		ensureOpen();
 		return rocksIterator.value(buffer);
 	}
@@ -125,7 +125,7 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
 	 */
-	public byte[] key() {
+	public synchronized byte[] key() {
 		ensureOpen();
 		return rocksIterator.key();
 	}
@@ -133,7 +133,7 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
 	 */
-	public byte[] value() {
+	public synchronized byte[] value() {
 		ensureOpen();
 		return rocksIterator.value();
 	}
@@ -153,11 +153,10 @@ public class RocksIteratorObj extends SimpleResource {
 	}
 
 	public void next() throws RocksDBException {
-		ensureOpen();
 		next(true);
 	}
 
-	public void next(boolean traceStats) {
+	public synchronized void next(boolean traceStats) {
 		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
@@ -169,11 +168,10 @@ public class RocksIteratorObj extends SimpleResource {
 	}
 
 	public void prev() throws RocksDBException {
-		ensureOpen();
 		prev(true);
 	}
 
-	public void prev(boolean traceStats) {
+	public synchronized void prev(boolean traceStats) {
 		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
@@ -185,7 +183,7 @@ public class RocksIteratorObj extends SimpleResource {
 	}
 
 	@Override
-	protected void onClose() {
+	protected synchronized void onClose() {
 		if (rocksIterator != null) {
 			rocksIterator.close();
 		}

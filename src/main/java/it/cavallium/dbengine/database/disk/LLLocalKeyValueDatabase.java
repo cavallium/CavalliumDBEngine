@@ -102,6 +102,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = true;
 	private static final boolean USE_CLOCK_CACHE
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.clockcache.enable", "false"));
+	private static final boolean PARANOID_CHECKS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.paranoid", "true"));
 
 	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
 	private static final boolean ALLOW_SNAPSHOTS = Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.snapshots.allow", "true"));
@@ -885,6 +887,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			// that determines the behaviour of the database.
 			var options = new DBOptions();
 			refs.track(options);
+			options.setParanoidChecks(PARANOID_CHECKS);
+			options.setSkipCheckingSstFileSizesOnDbOpen(true);
 			options.setEnablePipelinedWrite(true);
 			var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
 			if (maxSubCompactions > 0) {

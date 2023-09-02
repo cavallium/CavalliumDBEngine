@@ -923,6 +923,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			);
 			options.setDbPaths(paths);
 			options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
+			options.setMaxFileOpeningThreads(Runtime.getRuntime().availableProcessors());
 			if (databaseOptions.spinning()) {
 				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 				options.setUseFsync(false);

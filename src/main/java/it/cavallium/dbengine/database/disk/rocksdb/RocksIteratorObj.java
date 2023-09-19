@@ -50,6 +50,7 @@ public class RocksIteratorObj extends SimpleResource {
 
 	public synchronized void seek(byte[] seekArray) throws RocksDBException {
 		ensureOpen();
+		rocksIterator.status();
 		startedIterSeek.increment();
 		try {
 			iterSeekTime.record(() -> rocksIterator.seek(seekArray));
@@ -84,10 +85,14 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * Useful for reverse iterations
 	 */
-	public synchronized void seekFrom(Buf key) {
+	public synchronized void seekFrom(Buf key) throws RocksDBException {
 		ensureOpen();
 		var keyArray = LLUtils.asArray(key);
-		rocksIterator.seekForPrev(keyArray);
+		try {
+			rocksIterator.seekForPrev(keyArray);
+		} finally {
+		}
+		rocksIterator.status();
 		// This is useful to retain the key buffer in memory and avoid deallocations
 		this.seekingFrom = keyArray;
 	}
@@ -95,12 +100,17 @@ public class RocksIteratorObj extends SimpleResource {
 	/**
 	 * Useful for forward iterations
 	 */
-	public synchronized void seekTo(Buf key) {
+	public synchronized void seekTo(Buf key) throws RocksDBException {
 		ensureOpen();
+		rocksIterator.status();
 		var keyArray = LLUtils.asArray(key);
 		startedIterSeek.increment();
-		iterSeekTime.record(() -> rocksIterator.seek(keyArray));
-		endedIterSeek.increment();
+		try {
+			iterSeekTime.record(() -> rocksIterator.seek(keyArray));
+		} finally {
+			endedIterSeek.increment();
+		}
+		rocksIterator.status();
 		// This is useful to retain the key buffer in memory and avoid deallocations
 		this.seekingTo = keyArray;
 	}

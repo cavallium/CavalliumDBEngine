@@ -568,6 +568,8 @@
               <descriptorRefs>
                 <descriptorRef>jar-with-dependencies</descriptorRef>
               </descriptorRefs>
+              <appendAssemblyId>false</appendAssemblyId>
+              <finalName>dbengine-repair</finalName>
               <archive>
                 <manifest>
                   <mainClass>it.cavallium.dbengine.repair.Repair</mainClass>

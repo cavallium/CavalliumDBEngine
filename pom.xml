@@ -16,7 +16,7 @@
 		<lucene.version>9.7.0</lucene.version>
     <rocksdb.version>8.5.3</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
-    <data.generator.version>1.0.10</data.generator.version>
+    <data.generator.version>1.0.12</data.generator.version>
 	</properties>
 	<repositories>
 		<repository>
@@ -364,14 +364,6 @@
 	</dependencies>
 	<build>
 		<testSourceDirectory>src/test/java</testSourceDirectory>
-		<resources>
-			<resource>
-				<directory>../src/main/libs</directory>
-				<excludes>
-					<exclude>**/*.jar</exclude>
-				</excludes>
-			</resource>
-		</resources>
 		<extensions>
 			<extension>
 				<groupId>kr.motd.maven</groupId>
@@ -390,7 +382,7 @@
 				<artifactId>maven-compiler-plugin</artifactId>
 				<version>3.11.0</version>
 				<configuration>
-					<release>17</release>
+					<release>21</release>
           <annotationProcessorPaths>
             <annotationProcessorPath>
               <groupId>io.soabase.record-builder</groupId>
@@ -401,7 +393,9 @@
           <annotationProcessors>
             <annotationProcessor>io.soabase.recordbuilder.processor.RecordBuilderProcessor</annotationProcessor>
           </annotationProcessors>
-				</configuration>
+          <source>21</source>
+          <target>21</target>
+        </configuration>
 			</plugin>
 			<plugin>
 				<groupId>it.cavallium</groupId>
@@ -535,4 +529,80 @@
 			</plugins>
 		</pluginManagement>
 	</build>
+  <profiles>
+    <profile>
+      <id>repair</id>
+      <activation>
+        <activeByDefault>false</activeByDefault>
+        <property>
+          <name>dbengine.build</name>
+          <value>repair</value>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>build-helper-maven-plugin</artifactId>
+            <version>3.4.0</version>
+            <executions>
+              <execution>
+                <id>add-source</id>
+                <phase>generate-sources</phase>
+                <goals>
+                  <goal>add-source</goal>
+                </goals>
+                <configuration>
+                  <sources>
+                    <source>src/repair/java</source>
+                  </sources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-assembly-plugin</artifactId>
+            <version>3.6.0</version>
+            <configuration>
+              <descriptorRefs>
+                <descriptorRef>jar-with-dependencies</descriptorRef>
+              </descriptorRefs>
+              <archive>
+                <manifest>
+                  <mainClass>it.cavallium.dbengine.repair.Repair</mainClass>
+                </manifest>
+              </archive>
+            </configuration>
+            <executions>
+              <execution>
+                <id>make-assembly</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>single</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+        <resources>
+          <resource>
+            <directory>src/repair/resources</directory>
+          </resource>
+        </resources>
+      </build>
+      <dependencies>
+        <dependency>
+          <groupId>org.apache.logging.log4j</groupId>
+          <artifactId>log4j-slf4j2-impl</artifactId>
+          <version>2.20.0</version>
+        </dependency>
+        <dependency>
+          <groupId>com.lmax</groupId>
+          <artifactId>disruptor</artifactId>
+          <version>3.4.4</version>
+        </dependency>
+      </dependencies>
+    </profile>
+  </profiles>
 </project>

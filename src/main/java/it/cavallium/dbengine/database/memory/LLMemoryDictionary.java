@@ -5,7 +5,7 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.mapping;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -19,14 +19,11 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.utils.DBException;
-import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
-import java.util.SortedMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
@@ -361,7 +358,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Stream<BadBlock> badBlocks(LLRange range) {
+	public Stream<VerificationProgress> badBlocks(LLRange range) {
 		return Stream.empty();
 	}
 

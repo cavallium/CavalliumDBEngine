@@ -91,7 +91,7 @@ public class LLUtils {
 	private static final Consumer<Object> NULL_CONSUMER = ignored -> {};
 	private static final Buf BUF_TRUE = Buf.wrap(new byte[] {(byte) 1});
 	private static final Buf BUF_FALSE = Buf.wrap(new byte[] {(byte) 0});
-	private static final HexFormat HEX_FORMAT = HexFormat.of().withUpperCase();
+	public static final HexFormat HEX_FORMAT = HexFormat.of().withUpperCase();
 
 	static {
 		for (int i1 = 0; i1 < 256; i1++) {
@@ -487,7 +487,7 @@ public class LLUtils {
 			}
 		}
 		readOptions.setFillCache(canFillCache && !hugeRange);
-		readOptions.setVerifyChecksums(!FORCE_DISABLE_CHECKSUM_VERIFICATION && !hugeRange);
+		readOptions.setVerifyChecksums(!FORCE_DISABLE_CHECKSUM_VERIFICATION || !hugeRange);
 
 		return readOptions;
 	}

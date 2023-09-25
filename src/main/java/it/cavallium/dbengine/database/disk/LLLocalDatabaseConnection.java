@@ -60,11 +60,15 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 		return new LLLocalKeyValueDatabase(meterRegistry,
 				name,
 				inMemory,
-				basePath.resolve("database_" + name),
+				getDatabasePath(name),
 				columns,
 				new LinkedList<>(),
 				databaseOptions
 		);
+	}
+
+	public Path getDatabasePath(String databaseName) {
+		return basePath.resolve("database_" + databaseName);
 	}
 
 	@Override

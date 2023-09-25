@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.client.Mapper;
 import it.cavallium.dbengine.database.Delta;
@@ -107,7 +107,7 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	@Override
-	public Stream<BadBlock> badBlocks() {
+	public Stream<VerificationProgress> badBlocks() {
 		return this.serializedSingle.badBlocks();
 	}
 

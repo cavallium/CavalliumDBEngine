@@ -3,7 +3,7 @@ package it.cavallium.dbengine.database.collections;
 import it.cavallium.buffer.Buf;
 import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSingleton;
@@ -119,7 +119,7 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Stream<BadBlock> badBlocks() {
+	public Stream<VerificationProgress> badBlocks() {
 		return Stream.empty();
 	}
 }

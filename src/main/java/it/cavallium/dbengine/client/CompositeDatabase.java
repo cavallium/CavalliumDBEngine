@@ -26,7 +26,7 @@ public interface CompositeDatabase extends DatabaseProperties, DatabaseOperation
 	/**
 	 * Find corrupted items
 	 */
-	Stream<BadBlock> badBlocks();
+	Stream<VerificationProgress> verify();
 
 	void verifyChecksum();
 }

@@ -1,7 +1,7 @@
 package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.SubStageEntry;
@@ -148,7 +148,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Stream<BadBlock> badBlocks() {
+	public Stream<VerificationProgress> badBlocks() {
 		return this.subDictionary.badBlocks();
 	}
 

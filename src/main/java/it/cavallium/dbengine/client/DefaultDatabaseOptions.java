@@ -66,6 +66,8 @@ public class DefaultDatabaseOptions {
 			DEFAULT_DEFAULT_COLUMN_OPTIONS,
 			List.of(),
 			NullableString.empty(),
+			NullableString.empty(),
+			false,
 			NullableString.empty()
 	);
 

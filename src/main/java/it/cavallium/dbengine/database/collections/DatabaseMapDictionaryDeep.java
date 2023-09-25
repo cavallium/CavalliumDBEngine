@@ -5,7 +5,7 @@ import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import it.cavallium.buffer.Buf;
 import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -18,7 +18,6 @@ import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
-import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import java.util.Map.Entry;
 import java.util.Optional;
@@ -270,7 +269,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	@Override
-	public Stream<BadBlock> badBlocks() {
+	public Stream<VerificationProgress> badBlocks() {
 		return dictionary.badBlocks(range);
 	}
 

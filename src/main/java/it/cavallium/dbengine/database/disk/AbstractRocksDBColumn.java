@@ -7,6 +7,7 @@ import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
+import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
@@ -18,10 +19,12 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.StampedLock;
+import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
@@ -32,6 +35,7 @@ import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist;
+import org.rocksdb.LiveFileMetaData;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksObject;
@@ -553,6 +557,15 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}
+	}
+
+	@Override
+	public Stream<LiveFileMetadata> getAllLiveFiles() throws RocksDBException {
+		byte[] cfhName = cfh.getName();
+		return db.getLiveFilesMetaData().stream()
+				.filter(file -> Arrays.equals(cfhName, file.columnFamilyName()))
+				.map(file -> new LiveFileMetadata(file.path(), file.fileName(), file.level(), columnName,
+						file.numEntries(),file.size(), LLRange.of(Buf.wrap(file.smallestKey()), Buf.wrap(file.largestKey()))));
 	}
 
 	protected int getLevels() {

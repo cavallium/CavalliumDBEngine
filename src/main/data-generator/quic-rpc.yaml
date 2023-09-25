@@ -255,6 +255,8 @@ baseTypesData:
       columnOptions: NamedColumnOptions[]
       logPath: -String
       walPath: -String
+      openAsSecondary: boolean
+      secondaryDirectoryName: -String
   # Remember to update ColumnOptions common getters
   DefaultColumnOptions:
     data:

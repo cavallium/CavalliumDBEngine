@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Configuration shutdownHook="disable" packages="org.yotsuba.logs">
+  <Appenders>
+
+    <Console name="Console">
+      <PatternLayout
+        pattern="%highlight{${LOG_LEVEL_PATTERN:-%p}}{FATAL=red blink, ERROR=red, WARN=yellow bold, INFO=green, DEBUG=green bold, TRACE=blue}: %m%n"/>
+    </Console>
+
+    <Async name="Async">
+      <AppenderRef ref="Console"/>
+    </Async>
+
+  </Appenders>
+  <Loggers>
+    <AsyncRoot level="INFO">
+      <filters>
+        <MarkerFilter marker="NETWORK_PACKETS" onMatch="DENY" onMismatch="NEUTRAL"/>
+      </filters>
+      <AppenderRef ref="Async"/>
+    </AsyncRoot>
+  </Loggers>
+</Configuration>

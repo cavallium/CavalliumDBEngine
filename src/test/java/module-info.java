@@ -14,4 +14,5 @@ module dbengine.tests {
 	requires org.apache.commons.lang3;
 	requires rocksdbjni;
 	opens it.cavallium.dbengine.tests;
+	opens it.cavallium.dbengine.database.disk.test;
 }

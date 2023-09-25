@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
@@ -64,5 +64,5 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 		return leavesCount(snapshot, false) <= 0;
 	}
 
-	Stream<BadBlock> badBlocks();
+	Stream<VerificationProgress> badBlocks();
 }

@@ -4,7 +4,6 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
-import static it.cavallium.dbengine.database.LLUtils.wrapNullable;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
@@ -18,7 +17,10 @@ import static it.cavallium.dbengine.utils.StreamUtils.batches;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
+import it.cavallium.dbengine.client.VerificationProgress.BlockBad;
+import it.cavallium.dbengine.client.VerificationProgress.FileOk;
+import it.cavallium.dbengine.client.VerificationProgress.Progress;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -36,19 +38,26 @@ import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
+import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.utils.DBException;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
-import java.nio.ByteBuffer;
+import java.math.BigInteger;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
-import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.util.Supplier;
@@ -628,38 +637,95 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Stream<BadBlock> badBlocks(LLRange range) {
+	public Stream<VerificationProgress> badBlocks(LLRange rangeFull) {
+		Set<String> brokenFiles = new ConcurrentHashMap<String, Boolean>().keySet(true);
+		LongAdder totalScanned = new LongAdder();
+		AtomicLong totalEstimate = new AtomicLong();
+
 		try {
-			return resourceStream(
-					() -> LLUtils.generateCustomReadOptions(null, false, isBoundedRange(range), false),
-					ro -> {
-				ro.setFillCache(false);
-				if (!range.isSingle()) {
-					if (LLUtils.MANUAL_READAHEAD) {
-						ro.setReadaheadSize(32 * 1024);
-					}
-				}
-				ro.setVerifyChecksums(true);
-				return resourceStream(() ->  db.newRocksIterator(ro, range, false), rocksIterator -> {
-					rocksIterator.seekToFirst();
-					return streamWhileNonNull(() -> {
-						if (!rocksIterator.isValid()) return null;
-						Buf rawKey = null;
+			totalEstimate.set(db.getNumEntries());
+		} catch (Throwable ex) {
+			logger.warn("Failed to get total entries count", ex);
+		}
+
+		Column column = ColumnUtils.special(columnName);
+		try {
+			record FileRange(String path, @Nullable LLRange range, long countEstimate) {}
+
+			return db.getAllLiveFiles()
+					.map(metadata -> new FileRange(Path.of(metadata.path()).resolve("./" + metadata.fileName()).normalize().toString(),
+							LLRange.intersect(metadata.keysRange(), rangeFull),
+							metadata.numEntries()
+					))
+					.filter(fr -> fr.range != null)
+					.parallel()
+					.<VerificationProgress>flatMap(fr -> {
+						String path = fr.path;
+						LLRange rangePartial = fr.range;
+						AtomicLong fileScanned = new AtomicLong();
+						final long fileEstimate = fr.countEstimate;
+						AtomicBoolean streamEnded = new AtomicBoolean(false);
+						totalScanned.add(fileEstimate);
 						try {
-							rawKey = rocksIterator.keyBuf().copy();
-							rocksIterator.next();
-						} catch (RocksDBException ex) {
-							return new BadBlock(databaseName, ColumnUtils.special(columnName), rawKey, ex);
+							return resourceStream(
+									() -> LLUtils.generateCustomReadOptions(null, false, isBoundedRange(rangePartial), false),
+									ro -> {
+										ro.setFillCache(false);
+										if (!rangePartial.isSingle()) {
+											if (LLUtils.MANUAL_READAHEAD) {
+												ro.setReadaheadSize(32 * 1024);
+											}
+										}
+										ro.setVerifyChecksums(true);
+										return resourceStream(() -> db.newRocksIterator(ro, rangePartial, false), rocksIterator -> {
+											rocksIterator.seekToFirst();
+											return StreamUtils.<Optional<VerificationProgress>>streamWhileNonNull(() -> {
+												if (!rocksIterator.isValid()) {
+													if (streamEnded.compareAndSet(false, true)) {
+														totalScanned.add(fileScanned.get() - fileEstimate);
+														return Optional.of(new FileOk(databaseName, column, path));
+													} else {
+														//noinspection OptionalAssignedToNull
+														return null;
+													}
+												}
+												boolean shouldSendStatus;
+												Buf rawKey = null;
+												try {
+													rawKey = rocksIterator.keyBuf().copy();
+													shouldSendStatus = fileScanned.incrementAndGet() % 1_000_000 == 0;
+													rocksIterator.next();
+												} catch (RocksDBException ex) {
+													return Optional.of(new BlockBad(databaseName, column, rawKey, path, ex));
+												}
+												if (shouldSendStatus) {
+													long totalScannedValue = totalScanned.sum();
+													long fileScannedVal = fileScanned.get();
+													return Optional.of(new Progress(databaseName,
+															column,
+															path,
+															totalScannedValue,
+															Math.max(totalEstimate.get(), totalScannedValue),
+															fileScannedVal,
+															Math.max(fileEstimate, fileScannedVal)
+													));
+												} else {
+													return Optional.empty();
+												}
+											}).filter(Optional::isPresent).map(Optional::get).onClose(() -> {
+												rocksIterator.close();
+												ro.close();
+											});
+										});
+									}
+							);
+						} catch (RocksDBException e) {
+							return Stream.of(new BlockBad(databaseName, column, null, path, e));
 						}
-						return null;
-					}).takeWhile(x -> rocksIterator.isValid()).onClose(() -> {
-						rocksIterator.close();
-						ro.close();
-					});
-				});
-			});
+					})
+					.filter(err -> !(err instanceof BlockBad blockBad && blockBad.rawKey() == null && !brokenFiles.add(blockBad.file())));
 		} catch (RocksDBException e) {
-			throw new DBException("Failed to get bad blocks", e);
+			return Stream.of(new BlockBad(databaseName, column, null, null, e));
 		}
 	}
 
@@ -1011,6 +1077,95 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
+	private static BigInteger getRangePointAt(LLRange range,
+			BigInteger minBi,
+			BigInteger maxBi,
+			BigInteger rangeBi,
+			int pointsCount,
+			BigInteger pointsCountBi,
+			int i) {
+		if (i == 0) {
+			return range.hasMin() ? minBi : null;
+		} else if (i + 1 == pointsCount) {
+			return range.hasMax() ? maxBi : null;
+		} else {
+			return minBi.add(rangeBi.multiply(BigInteger.valueOf(i)).divide(pointsCountBi));
+		}
+	}
+
+	private static Buf getMinBufForParallelization(LLRange range) {
+		Buf min = range.getMin();
+		if (min != null) {
+			return min;
+		} else {
+			return Buf.wrap();
+		}
+	}
+
+	private static Buf getMaxBufForParallelization(LLRange range) {
+		Buf max = range.getMax();
+		if (max != null) {
+			return max;
+		} else {
+			max = range.getMin().copy();
+			max.add(Byte.MAX_VALUE);
+			return max.freeze();
+		}
+	}
+
+	public static Stream<LLRange> parallelizeRange(LLRange range) {
+		return parallelizeRange(range, Math.max(Runtime.getRuntime().availableProcessors() - 1, 1));
+	}
+
+	public static Stream<LLRange> parallelizeRange(LLRange range, int threads) {
+		if (threads < 1) {
+			throw new IllegalArgumentException();
+		}
+		if (range.isAll()) {
+			return IntStream
+					.range(-1, LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length)
+					.mapToObj(idx -> LLRange.of(
+							Buf.wrap(idx == -1 ? new byte[0] : LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx]),
+							idx + 1 >= LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length ? null : Buf.wrap(LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx + 1])));
+		} else if (range.isSingle()) {
+			return Stream.of(range);
+		} else {
+			Buf minBuf = getMinBufForParallelization(range);
+			Buf maxBuf = getMaxBufForParallelization(range);
+			byte[] minUnboundedArray = minBuf.asUnboundedArray();
+			byte[] maxUnboundedArray = maxBuf.asUnboundedArray();
+			var minBi = minBuf.isEmpty() ? BigInteger.ZERO : new BigInteger(minUnboundedArray, 0, minBuf.size());
+			var maxBi = new BigInteger(maxUnboundedArray, 0, maxBuf.size());
+			BigInteger rangeBi = maxBi.subtract(minBi);
+			int pointsCount = rangeBi.min(BigInteger.valueOf(threads).add(BigInteger.ONE)).intValueExact();
+			int segmentsCount = pointsCount - 1;
+			if (threads > 2 && segmentsCount <= 2) {
+				return Stream.of(range);
+			}
+			BigInteger pointsCountBi = BigInteger.valueOf(pointsCount);
+
+			byte[][] points = new byte[pointsCount][];
+			for (int i = 0; i < pointsCount; i++) {
+				BigInteger rangePoint = getRangePointAt(range, minBi, maxBi, rangeBi, pointsCount, pointsCountBi, i);
+				points[i] = rangePoint != null ? rangePoint.toByteArray() : null;
+			}
+
+			LLRange[] ranges = new LLRange[segmentsCount];
+			for (int i = 0; i < segmentsCount; i++) {
+				byte[] min = points[i];
+				byte[] max = points[i + 1];
+				if (min == null) {
+					ranges[i] = LLRange.to(Buf.wrap(max));
+				} else if (max == null) {
+					ranges[i] = LLRange.from(Buf.wrap(min));
+				} else {
+					ranges[i] = LLRange.of(Buf.wrap(min), Buf.wrap(max));
+				}
+			}
+			return Stream.of(ranges);
+		}
+	}
+
 	private long exactSizeAll(@Nullable LLSnapshot snapshot) {
 		if (LLUtils.isInNonBlockingThread()) {
 			throw new UnsupportedOperationException("Called exactSizeAll in a nonblocking thread");
@@ -1022,19 +1177,11 @@ public class LLLocalDictionary implements LLDictionary {
 			readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 			if (PARALLEL_EXACT_SIZE) {
-				return collectOn(ROCKSDB_POOL, IntStream
-						.range(-1, LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length)
-						.mapToObj(idx -> Pair.of(idx == -1 ? new byte[0] : LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx],
-								idx + 1 >= LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS.length ? null
-										: LLUtils.LEXICONOGRAPHIC_ITERATION_SEEKS[idx + 1]
-						)).map(range -> {
+				return collectOn(ROCKSDB_POOL, parallelizeRange(LLRange.all()).map(range -> {
 							long partialCount = 0;
 							try (var rangeReadOpts = readOpts.copy()) {
 								try {
-									try (var rocksIterator = db.newIterator(rangeReadOpts,
-											wrapNullable(range.getKey()),
-											wrapNullable(range.getValue())
-									)) {
+									try (var rocksIterator = db.newRocksIterator(rangeReadOpts, range, false)) {
 										rocksIterator.seekToFirst();
 										while (rocksIterator.isValid()) {
 											partialCount++;

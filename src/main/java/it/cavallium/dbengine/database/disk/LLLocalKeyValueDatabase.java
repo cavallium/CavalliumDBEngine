@@ -34,6 +34,7 @@ import it.cavallium.dbengine.rpc.current.data.NoFilter;
 import java.io.File;
 import java.io.IOException;
 import it.cavallium.dbengine.utils.DBException;
+import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,6 +46,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
@@ -425,7 +427,23 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			while (true) {
 				try {
 					// a factory method that returns a RocksDB instance
-					if (databaseOptions.optimistic()) {
+					if (databaseOptions.openAsSecondary()) {
+						var secondaryPath = dbPath
+								.resolve("secondary-log")
+								.resolve(databaseOptions.secondaryDirectoryName().orElse("unnamed-" + UUID.randomUUID()));
+						try {
+							Files.createDirectories(secondaryPath);
+						} catch (IOException e) {
+							throw new RocksDBException("Failed to create secondary exception: " + e);
+						}
+						this.db = RocksDB.openAsSecondary(rocksdbOptions,
+								dbPathString,
+								secondaryPath
+										.toString(),
+								descriptors,
+								handles
+						);
+					} else if (databaseOptions.optimistic()) {
 						this.db = OptimisticTransactionDB.open(rocksdbOptions, dbPathString, descriptors, handles);
 					} else {
 						var transactionOptions = new TransactionDBOptions()
@@ -475,7 +493,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			handles.forEach(refs::track);
 
 			// compactDb(db, handles);
-			flushDb(db, handles);
+			if (!databaseOptions.openAsSecondary()) {
+				logger.info("Flushing database at {}", dbPathString);
+				flushDb(db, handles);
+			}
 		} catch (RocksDBException ex) {
 			throw new DBException(ex);
 		}

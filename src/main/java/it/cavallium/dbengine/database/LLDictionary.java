@@ -1,16 +1,14 @@
 package it.cavallium.dbengine.database;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.BadBlock;
+import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import java.io.IOException;
 import java.util.List;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.rocksdb.RocksDBException;
 
 @SuppressWarnings("unused")
 public interface LLDictionary extends LLKeyValueDatabaseStructure {
@@ -66,7 +64,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 			int prefixLength,
 			boolean smallRange);
 
-	Stream<BadBlock> badBlocks(LLRange range);
+	Stream<VerificationProgress> badBlocks(LLRange range);
 
 	void setRange(LLRange range, Stream<LLEntry> entries, boolean smallRange);
 

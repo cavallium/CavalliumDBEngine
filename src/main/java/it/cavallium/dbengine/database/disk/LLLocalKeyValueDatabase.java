@@ -438,8 +438,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						}
 						this.db = RocksDB.openAsSecondary(rocksdbOptions,
 								dbPathString,
-								secondaryPath
-										.toString(),
+								secondaryPath.toString(),
 								descriptors,
 								handles
 						);

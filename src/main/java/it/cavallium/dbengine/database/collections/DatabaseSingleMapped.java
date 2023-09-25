@@ -107,8 +107,8 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks() {
-		return this.serializedSingle.badBlocks();
+	public Stream<VerificationProgress> verifyChecksum() {
+		return this.serializedSingle.verifyChecksum();
 	}
 
 	private A unMap(B bytes) throws SerializationException {

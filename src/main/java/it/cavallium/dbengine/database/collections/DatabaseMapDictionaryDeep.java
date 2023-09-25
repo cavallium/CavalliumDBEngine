@@ -269,8 +269,8 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks() {
-		return dictionary.badBlocks(range);
+	public Stream<VerificationProgress> verifyChecksum() {
+		return dictionary.verifyChecksum(range);
 	}
 
 	@Override

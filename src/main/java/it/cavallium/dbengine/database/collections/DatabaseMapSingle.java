@@ -121,8 +121,8 @@ public final class DatabaseMapSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks() {
-		return dictionary.badBlocks(LLRange.single(key));
+	public Stream<VerificationProgress> verifyChecksum() {
+		return dictionary.verifyChecksum(LLRange.single(key));
 	}
 
 }

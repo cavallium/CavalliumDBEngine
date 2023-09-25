@@ -358,7 +358,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks(LLRange range) {
+	public Stream<VerificationProgress> verifyChecksum(LLRange range) {
 		return Stream.empty();
 	}
 

@@ -119,7 +119,7 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks() {
+	public Stream<VerificationProgress> verifyChecksum() {
 		return Stream.empty();
 	}
 }

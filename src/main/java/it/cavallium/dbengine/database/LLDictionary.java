@@ -64,7 +64,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 			int prefixLength,
 			boolean smallRange);
 
-	Stream<VerificationProgress> badBlocks(LLRange range);
+	Stream<VerificationProgress> verifyChecksum(LLRange range);
 
 	void setRange(LLRange range, Stream<LLEntry> entries, boolean smallRange);
 

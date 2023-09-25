@@ -637,7 +637,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks(LLRange rangeFull) {
+	public Stream<VerificationProgress> verifyChecksum(LLRange rangeFull) {
 		Set<String> brokenFiles = new ConcurrentHashMap<String, Boolean>().keySet(true);
 		LongAdder totalScanned = new LongAdder();
 		AtomicLong totalEstimate = new AtomicLong();

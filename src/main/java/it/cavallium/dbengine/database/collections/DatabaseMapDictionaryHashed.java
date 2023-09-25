@@ -148,8 +148,8 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks() {
-		return this.subDictionary.badBlocks();
+	public Stream<VerificationProgress> verifyChecksum() {
+		return this.subDictionary.verifyChecksum();
 	}
 
 	@Override

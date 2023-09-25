@@ -76,7 +76,7 @@ public class Repair {
 				db.getAllColumnFamilyHandles().forEach((column, cfh) -> {
 					System.err.printf("Scanning column: %s%n", column.name());
 					LLLocalDictionary dict = db.getDictionary(column.name().getBytes(StandardCharsets.UTF_8), UpdateMode.DISALLOW);
-					StreamUtils.collectOn(StreamUtils.ROCKSDB_POOL, dict.badBlocks(LLRange.all()), StreamUtils.executing(block -> {
+					StreamUtils.collectOn(StreamUtils.ROCKSDB_POOL, dict.verifyChecksum(LLRange.all()), StreamUtils.executing(block -> {
 						synchronized (Repair.class) {
 							switch (block) {
 								case null -> {}

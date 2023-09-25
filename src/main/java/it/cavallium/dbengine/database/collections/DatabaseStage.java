@@ -64,5 +64,5 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 		return leavesCount(snapshot, false) <= 0;
 	}
 
-	Stream<VerificationProgress> badBlocks();
+	Stream<VerificationProgress> verifyChecksum();
 }

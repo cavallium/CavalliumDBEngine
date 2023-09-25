@@ -124,8 +124,8 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> badBlocks() {
-		return bucketStage.badBlocks();
+	public Stream<VerificationProgress> verifyChecksum() {
+		return bucketStage.verifyChecksum();
 	}
 
 	@Nullable

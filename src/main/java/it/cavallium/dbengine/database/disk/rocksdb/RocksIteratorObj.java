@@ -50,7 +50,6 @@ public class RocksIteratorObj extends SimpleResource {
 
 	public synchronized void seek(byte[] seekArray) throws RocksDBException {
 		ensureOpen();
-		rocksIterator.status();
 		startedIterSeek.increment();
 		try {
 			iterSeekTime.record(() -> rocksIterator.seek(seekArray));
@@ -102,7 +101,6 @@ public class RocksIteratorObj extends SimpleResource {
 	 */
 	public synchronized void seekTo(Buf key) throws RocksDBException {
 		ensureOpen();
-		rocksIterator.status();
 		var keyArray = LLUtils.asArray(key);
 		startedIterSeek.increment();
 		try {
@@ -166,7 +164,7 @@ public class RocksIteratorObj extends SimpleResource {
 		next(true);
 	}
 
-	public synchronized void next(boolean traceStats) {
+	public synchronized void next(boolean traceStats) throws RocksDBException {
 		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
@@ -175,13 +173,14 @@ public class RocksIteratorObj extends SimpleResource {
 		} else {
 			rocksIterator.next();
 		}
+		rocksIterator.status();
 	}
 
 	public void prev() throws RocksDBException {
 		prev(true);
 	}
 
-	public synchronized void prev(boolean traceStats) {
+	public synchronized void prev(boolean traceStats) throws RocksDBException {
 		ensureOpen();
 		if (traceStats) {
 			startedIterNext.increment();
@@ -190,6 +189,7 @@ public class RocksIteratorObj extends SimpleResource {
 		} else {
 			rocksIterator.prev();
 		}
+		rocksIterator.status();
 	}
 
 	@Override

@@ -47,7 +47,11 @@ public final class LLLocalMigrationReactiveRocksIterator {
 								if (iterator.isValid()) {
 									var key = iterator.keyBuf().copy();
 									var value = iterator.valueBuf().copy();
-									iterator.next(false);
+									try {
+										iterator.next(false);
+									} catch (RocksDBException e) {
+										throw new CompletionException(e);
+									}
 									return LLEntry.of(key, value);
 								} else {
 									return null;

@@ -106,6 +106,16 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.clockcache.enable", "false"));
 	private static final boolean PARANOID_CHECKS
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.paranoid", "true"));
+	private static final boolean VERIFY_COMPRESSION
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.compression", "false"));
+	private static final boolean VERIFY_FILE_SIZE
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.filesize", "false"));
+	private static final boolean PARANOID_FILE_CHECKS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.paranoidfilechecks", "false"));
+	private static final boolean FORCE_COLUMN_FAMILY_CONSISTENCY_CHECKS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.forcecolumnfamilyconsistencychecks", "true"));
+	static final boolean PRINT_ALL_CHECKSUM_VERIFICATION_STEPS
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.verification.print", "false"));
 
 	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
 	private static final boolean ALLOW_SNAPSHOTS = Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.snapshots.allow", "true"));
@@ -192,6 +202,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			for (Column column : columns) {
 				var columnFamilyOptions = new ColumnFamilyOptions();
 				refs.track(columnFamilyOptions);
+
+				columnFamilyOptions
+						.setForceConsistencyChecks(FORCE_COLUMN_FAMILY_CONSISTENCY_CHECKS)
+						.setParanoidFileChecks(PARANOID_FILE_CHECKS);
 
 				var columnOptions = databaseOptions
 						.columnOptions()
@@ -312,7 +326,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				}
 				columnFamilyOptions.setMaxWriteBufferNumberToMaintain(1);
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
-					blockBasedTableConfig.setVerifyCompression(false);
+					blockBasedTableConfig.setVerifyCompression(VERIFY_COMPRESSION);
 				}
 				if (columnOptions.filter().isPresent()) {
 					var filterOptions = columnOptions.filter().get();
@@ -363,6 +377,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 							.setIndexType(columnOptions.partitionFilters().orElse(false) ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
 							.setChecksumType(ChecksumType.kXXH3)
+							.setVerifyCompression(VERIFY_COMPRESSION)
 							// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 							// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 							// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
@@ -908,7 +923,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			var options = new DBOptions();
 			refs.track(options);
 			options.setParanoidChecks(PARANOID_CHECKS);
-			options.setSkipCheckingSstFileSizesOnDbOpen(true);
+			options.setSkipCheckingSstFileSizesOnDbOpen(!VERIFY_FILE_SIZE);
 			options.setEnablePipelinedWrite(true);
 			var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
 			if (maxSubCompactions > 0) {

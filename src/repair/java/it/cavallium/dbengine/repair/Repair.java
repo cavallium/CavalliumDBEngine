@@ -1,8 +1,11 @@
 package it.cavallium.dbengine.repair;
 
 import io.micrometer.core.instrument.Clock;
+import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.logging.LoggingMeterRegistry;
+import io.micrometer.core.instrument.noop.NoopMeter;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import it.cavallium.datagen.nativedata.NullableString;
 import it.cavallium.datagen.nativedata.Nullableboolean;
 import it.cavallium.datagen.nativedata.Nullableint;
@@ -40,13 +43,14 @@ import org.rocksdb.RocksDBException;
 
 public class Repair {
 
-	public static final MeterRegistry METER = LoggingMeterRegistry
-			.builder(key -> null)
-			.clock(Clock.SYSTEM)
-			.loggingSink(System.err::println)
-			.build();
+	public static final MeterRegistry METER = new SimpleMeterRegistry(); // LoggingMeterRegistry.builder(key -> null).clock(Clock.SYSTEM).loggingSink(System.err::println).build();
 
 	public static void main(String[] argsArray) throws RocksDBException {
+		System.setProperty("it.cavallium.dbengine.checks.compression", "true");
+		System.setProperty("it.cavallium.dbengine.checks.paranoid", "true");
+		System.setProperty("it.cavallium.dbengine.checks.filesize", "true");
+		System.setProperty("it.cavallium.dbengine.checks.paranoidfilechecks", "true");
+		System.setProperty("it.cavallium.dbengine.checks.forcecolumnfamilyconsistencychecks", "true");
 		ObjectList<String> initialArgs = ObjectArrayList.wrap(argsArray), args = initialArgs;
 		if (args.isEmpty() || args.contains("--help")) {
 			printHelp(initialArgs);

@@ -7,17 +7,13 @@
         pattern="%highlight{${LOG_LEVEL_PATTERN:-%p}}{FATAL=red blink, ERROR=red, WARN=yellow bold, INFO=green, DEBUG=green bold, TRACE=blue}: %m%n"/>
     </Console>
 
-    <Async name="Async">
-      <AppenderRef ref="Console"/>
-    </Async>
-
   </Appenders>
   <Loggers>
-    <AsyncRoot level="INFO">
+    <Root level="INFO">
       <filters>
         <MarkerFilter marker="NETWORK_PACKETS" onMatch="DENY" onMismatch="NEUTRAL"/>
       </filters>
-      <AppenderRef ref="Async"/>
-    </AsyncRoot>
+      <AppenderRef ref="Console"/>
+    </Root>
   </Loggers>
 </Configuration>

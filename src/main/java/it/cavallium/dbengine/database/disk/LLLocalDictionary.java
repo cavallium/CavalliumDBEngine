@@ -4,6 +4,7 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
+import static it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase.PRINT_ALL_CHECKSUM_VERIFICATION_STEPS;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
@@ -678,6 +679,9 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										ro.setVerifyChecksums(true);
 										return resourceStream(() -> db.newRocksIterator(ro, rangePartial, false), rocksIterator -> {
+											if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
+												logger.info("Seeking to {}->{}->first on file {}", databaseName, column.name(), path);
+											}
 											rocksIterator.seekToFirst();
 											return StreamUtils.<Optional<VerificationProgress>>streamWhileNonNull(() -> {
 												if (!rocksIterator.isValid()) {
@@ -694,6 +698,9 @@ public class LLLocalDictionary implements LLDictionary {
 												try {
 													rawKey = rocksIterator.keyBuf().copy();
 													shouldSendStatus = fileScanned.incrementAndGet() % 1_000_000 == 0;
+													if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
+														logger.info("Checking {}->{}->{} on file {}", databaseName, column.name(), rawKey, path);
+													}
 													rocksIterator.next();
 												} catch (RocksDBException ex) {
 													return Optional.of(new BlockBad(databaseName, column, rawKey, path, ex));

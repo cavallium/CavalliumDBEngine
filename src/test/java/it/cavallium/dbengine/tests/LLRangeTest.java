@@ -33,15 +33,15 @@ class LLRangeTest {
 
 	private String toStringRange(LLRange r) {
 		if (r.isSingle()) {
-			return LLUtils.HEX_FORMAT.formatHex(r.getSingle().toByteArray());
+			return r.getSingle().toString();
 		} else if (r.hasMin() && r.hasMax()) {
-			return LLUtils.HEX_FORMAT.formatHex(r.getMin().toByteArray())
+			return r.getMin().toString()
 					+ "-"
-					+ LLUtils.HEX_FORMAT.formatHex(r.getMax().toByteArray());
+					+ r.getMax().toString();
 		} else if (r.hasMin()) {
-			return LLUtils.HEX_FORMAT.formatHex(r.getMin().toByteArray()) + "-MAX";
+			return r.getMin().toString() + "-MAX";
 		} else if (r.hasMax()) {
-			return "MIN-" + LLUtils.HEX_FORMAT.formatHex(r.getMax().toByteArray());
+			return "MIN-" + r.getMax().toString();
 		} else {
 			return "MIN-MAX";
 		}

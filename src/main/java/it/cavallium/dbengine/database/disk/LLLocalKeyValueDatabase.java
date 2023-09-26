@@ -116,6 +116,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.forcecolumnfamilyconsistencychecks", "true"));
 	static final boolean PRINT_ALL_CHECKSUM_VERIFICATION_STEPS
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.verification.print", "false"));
+	private static final InfoLogLevel LOG_LEVEL = InfoLogLevel.getInfoLogLevel(Byte.parseByte(System.getProperty("it.cavallium.dbengine.log.levelcode", "" + InfoLogLevel.WARN_LEVEL.getValue())));
 
 	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
 	private static final boolean ALLOW_SNAPSHOTS = Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.snapshots.allow", "true"));
@@ -257,6 +258,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				if (dynamicLevelBytes) {
 					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(true);
 				} else {
+					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(false);
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 					columnFamilyOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
@@ -451,11 +453,11 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						} catch (IOException e) {
 							throw new RocksDBException("Failed to create secondary exception: " + e);
 						}
-						this.db = RocksDB.openAsSecondary(rocksdbOptions,
+						this.db = RocksDB.openReadOnly(rocksdbOptions,
 								dbPathString,
-								secondaryPath.toString(),
 								descriptors,
-								handles
+								handles,
+								false
 						);
 					} else if (databaseOptions.optimistic()) {
 						this.db = OptimisticTransactionDB.open(rocksdbOptions, dbPathString, descriptors, handles);
@@ -942,7 +944,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			options.setCreateIfMissing(true);
 			options.setSkipStatsUpdateOnDbOpen(true);
 			options.setCreateMissingColumnFamilies(true);
-			options.setInfoLogLevel(InfoLogLevel.WARN_LEVEL);
+			options.setInfoLogLevel(LOG_LEVEL);
 			// todo: automatically flush every x seconds?
 
 			options.setManualWalFlush(true);

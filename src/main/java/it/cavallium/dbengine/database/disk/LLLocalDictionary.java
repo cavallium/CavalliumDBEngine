@@ -44,6 +44,7 @@ import it.cavallium.dbengine.utils.DBException;
 import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -57,6 +58,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -642,6 +644,11 @@ public class LLLocalDictionary implements LLDictionary {
 		Set<String> brokenFiles = new ConcurrentHashMap<String, Boolean>().keySet(true);
 		LongAdder totalScanned = new LongAdder();
 		AtomicLong totalEstimate = new AtomicLong();
+		Set<String> filesToSkip = Stream
+				.of(System.getProperty("filenames.skip.list", "").split(","))
+				.filter(x -> !x.isBlank())
+				.map(String::trim)
+				.collect(Collectors.toUnmodifiableSet());
 
 		try {
 			totalEstimate.set(db.getNumEntries());
@@ -651,20 +658,26 @@ public class LLLocalDictionary implements LLDictionary {
 
 		Column column = ColumnUtils.special(columnName);
 		try {
-			record FileRange(String path, @Nullable LLRange range, long countEstimate) {}
+			record FileRange(String filePath, String filename, @Nullable LLRange range, long countEstimate) {}
 
 			return db.getAllLiveFiles()
 					.map(metadata -> new FileRange(Path.of(metadata.path()).resolve("./" + metadata.fileName()).normalize().toString(),
+							metadata.fileName().replace("/", ""),
 							LLRange.intersect(metadata.keysRange(), rangeFull),
 							metadata.numEntries()
 					))
 					.filter(fr -> fr.range != null)
+					// Skip some files
+					.filter(fr -> !filesToSkip.contains(fr.filename))
 					.parallel()
 					.<VerificationProgress>flatMap(fr -> {
-						String path = fr.path;
+						String filename = fr.filename;
+						String path = fr.filePath;
 						LLRange rangePartial = fr.range;
 						AtomicLong fileScanned = new AtomicLong();
 						final long fileEstimate = fr.countEstimate;
+						AtomicBoolean streamStarted = new AtomicBoolean(false);
+						AtomicBoolean streamStarted2 = new AtomicBoolean(false);
 						AtomicBoolean streamEnded = new AtomicBoolean(false);
 						totalScanned.add(fileEstimate);
 						try {
@@ -679,12 +692,10 @@ public class LLLocalDictionary implements LLDictionary {
 										}
 										ro.setVerifyChecksums(true);
 										return resourceStream(() -> db.newRocksIterator(ro, rangePartial, false), rocksIterator -> {
-											if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
-												logger.info("Seeking to {}->{}->first on file {}", databaseName, column.name(), path);
-											}
-											rocksIterator.seekToFirst();
 											return StreamUtils.<Optional<VerificationProgress>>streamWhileNonNull(() -> {
-												if (!rocksIterator.isValid()) {
+												boolean first = streamStarted.compareAndSet(false, true);
+												boolean second = !first && streamStarted.compareAndSet(false, true);
+												if (!first && !rocksIterator.isValid()) {
 													if (streamEnded.compareAndSet(false, true)) {
 														totalScanned.add(fileScanned.get() - fileEstimate);
 														return Optional.of(new FileOk(databaseName, column, path));
@@ -696,12 +707,22 @@ public class LLLocalDictionary implements LLDictionary {
 												boolean shouldSendStatus;
 												Buf rawKey = null;
 												try {
-													rawKey = rocksIterator.keyBuf().copy();
-													shouldSendStatus = fileScanned.incrementAndGet() % 1_000_000 == 0;
-													if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
-														logger.info("Checking {}->{}->{} on file {}", databaseName, column.name(), rawKey, path);
+													if (second) {
+														if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
+															logger.info("Seeking to {}->{}->first on file {}", databaseName, column.name(), filename);
+														}
+														rocksIterator.seekToFirst();
 													}
-													rocksIterator.next();
+													if (first) {
+														shouldSendStatus = true;
+													} else {
+														rawKey = rocksIterator.keyBuf().copy();
+														shouldSendStatus = fileScanned.incrementAndGet() % 1_000_000 == 0;
+														if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
+															logger.info("Checking {}->{}->{} on file {}", databaseName, column.name(), rawKey.toString(), filename);
+														}
+														rocksIterator.next();
+													}
 												} catch (RocksDBException ex) {
 													return Optional.of(new BlockBad(databaseName, column, rawKey, path, ex));
 												}

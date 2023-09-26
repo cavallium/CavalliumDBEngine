@@ -10,6 +10,7 @@ import it.cavallium.datagen.nativedata.NullableString;
 import it.cavallium.datagen.nativedata.Nullableboolean;
 import it.cavallium.datagen.nativedata.Nullableint;
 import it.cavallium.datagen.nativedata.Nullablelong;
+import it.cavallium.dbengine.client.Compression;
 import it.cavallium.dbengine.client.VerificationProgress.BlockBad;
 import it.cavallium.dbengine.client.VerificationProgress.FileOk;
 import it.cavallium.dbengine.client.VerificationProgress.Progress;
@@ -37,6 +38,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
+import org.rocksdb.InfoLogLevel;
 import org.rocksdb.Options;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
@@ -51,6 +53,7 @@ public class Repair {
 		System.setProperty("it.cavallium.dbengine.checks.filesize", "true");
 		System.setProperty("it.cavallium.dbengine.checks.paranoidfilechecks", "true");
 		System.setProperty("it.cavallium.dbengine.checks.forcecolumnfamilyconsistencychecks", "true");
+		System.setProperty("it.cavallium.dbengine.log.levelcode", String.valueOf(InfoLogLevel.DEBUG_LEVEL.getValue()));
 		ObjectList<String> initialArgs = ObjectArrayList.wrap(argsArray), args = initialArgs;
 		if (args.isEmpty() || args.contains("--help")) {
 			printHelp(initialArgs);
@@ -98,7 +101,7 @@ public class Repair {
 									System.err.println("File is ok: " + block.databaseName() + (block.column() != null ? "->" + block.column().name() : "") + "->" + block.file());
 								}
 								case Progress progress -> {
-									System.err.printf("Progress: [%d/%d] file: [%d/%d] %s->%s->%s%n",
+									System.err.printf("Progress: [%d/%d] file: [%d/%d] %s%s->%s%n",
 											progress.scanned(),
 											progress.total(),
 											progress.fileScanned(),
@@ -216,10 +219,10 @@ public class Repair {
 						Nullableint.empty(),
 						NullableString.empty(),
 						Nullablelong.empty(),
-						false,
+						true,
+						Nullablelong.of(8096 * 1024),
 						Nullablelong.empty(),
-						Nullablelong.empty(),
-						NullableCompression.empty()
+						NullableCompression.of(Compression.LZ4_HC)
 				))
 				.columnOptions(columnNames.stream()
 						.map(columnName -> NamedColumnOptions.of(columnName,
@@ -231,10 +234,10 @@ public class Repair {
 								Nullableint.empty(),
 								NullableString.empty(),
 								Nullablelong.empty(),
-								false,
+								true,
+								Nullablelong.of(8096 * 1024),
 								Nullablelong.empty(),
-								Nullablelong.empty(),
-								NullableCompression.empty()))
+								NullableCompression.of(Compression.LZ4_HC)))
 						.toList())
 				.writeBufferManager(Nullablelong.empty())
 				.build());

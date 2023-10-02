@@ -14,13 +14,16 @@ import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
+import static java.util.Objects.requireNonNullElse;
 
+import com.google.common.primitives.Longs;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.VerificationProgress.BlockBad;
 import it.cavallium.dbengine.client.VerificationProgress.FileOk;
+import it.cavallium.dbengine.client.VerificationProgress.FileStart;
 import it.cavallium.dbengine.client.VerificationProgress.Progress;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;
@@ -49,7 +52,9 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
@@ -643,113 +648,43 @@ public class LLLocalDictionary implements LLDictionary {
 	public Stream<VerificationProgress> verifyChecksum(LLRange rangeFull) {
 		Set<String> brokenFiles = new ConcurrentHashMap<String, Boolean>().keySet(true);
 		LongAdder totalScanned = new LongAdder();
-		AtomicLong totalEstimate = new AtomicLong();
-		Set<String> filesToSkip = Stream
-				.of(System.getProperty("filenames.skip.list", "").split(","))
-				.filter(x -> !x.isBlank())
-				.map(String::trim)
-				.collect(Collectors.toUnmodifiableSet());
+		long totalEstimate;
 
-		try {
-			totalEstimate.set(db.getNumEntries());
-		} catch (Throwable ex) {
-			logger.warn("Failed to get total entries count", ex);
+		{
+			long totalEstimateTmp = 0;
+			try {
+				totalEstimateTmp = db.getNumEntries();
+			} catch (Throwable ex) {
+				logger.warn("Failed to get total entries count", ex);
+			}
+			totalEstimate = totalEstimateTmp;
 		}
 
 		Column column = ColumnUtils.special(columnName);
 		try {
-			record FileRange(String filePath, String filename, @Nullable LLRange range, long countEstimate) {}
 
-			return db.getAllLiveFiles()
-					.map(metadata -> new FileRange(Path.of(metadata.path()).resolve("./" + metadata.fileName()).normalize().toString(),
-							metadata.fileName().replace("/", ""),
-							LLRange.intersect(metadata.keysRange(), rangeFull),
-							metadata.numEntries()
-					))
-					.filter(fr -> fr.range != null)
-					// Skip some files
-					.filter(fr -> !filesToSkip.contains(fr.filename))
-					.parallel()
-					.<VerificationProgress>flatMap(fr -> {
-						String filename = fr.filename;
-						String path = fr.filePath;
-						LLRange rangePartial = fr.range;
-						AtomicLong fileScanned = new AtomicLong();
-						final long fileEstimate = fr.countEstimate;
-						AtomicBoolean streamStarted = new AtomicBoolean(false);
-						AtomicBoolean streamStarted2 = new AtomicBoolean(false);
-						AtomicBoolean streamEnded = new AtomicBoolean(false);
-						totalScanned.add(fileEstimate);
-						try {
-							return resourceStream(
-									() -> LLUtils.generateCustomReadOptions(null, false, isBoundedRange(rangePartial), false),
-									ro -> {
-										ro.setFillCache(false);
-										if (!rangePartial.isSingle()) {
-											if (LLUtils.MANUAL_READAHEAD) {
-												ro.setReadaheadSize(32 * 1024);
-											}
-										}
-										ro.setVerifyChecksums(true);
-										return resourceStream(() -> db.newRocksIterator(ro, rangePartial, false), rocksIterator -> {
-											return StreamUtils.<Optional<VerificationProgress>>streamWhileNonNull(() -> {
-												boolean first = streamStarted.compareAndSet(false, true);
-												boolean second = !first && streamStarted.compareAndSet(false, true);
-												if (!first && !rocksIterator.isValid()) {
-													if (streamEnded.compareAndSet(false, true)) {
-														totalScanned.add(fileScanned.get() - fileEstimate);
-														return Optional.of(new FileOk(databaseName, column, path));
-													} else {
-														//noinspection OptionalAssignedToNull
-														return null;
-													}
-												}
-												boolean shouldSendStatus;
-												Buf rawKey = null;
-												try {
-													if (second) {
-														if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
-															logger.info("Seeking to {}->{}->first on file {}", databaseName, column.name(), filename);
-														}
-														rocksIterator.seekToFirst();
-													}
-													if (first) {
-														shouldSendStatus = true;
-													} else {
-														rawKey = rocksIterator.keyBuf().copy();
-														shouldSendStatus = fileScanned.incrementAndGet() % 1_000_000 == 0;
-														if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
-															logger.info("Checking {}->{}->{} on file {}", databaseName, column.name(), rawKey.toString(), filename);
-														}
-														rocksIterator.next();
-													}
-												} catch (RocksDBException ex) {
-													return Optional.of(new BlockBad(databaseName, column, rawKey, path, ex));
-												}
-												if (shouldSendStatus) {
-													long totalScannedValue = totalScanned.sum();
-													long fileScannedVal = fileScanned.get();
-													return Optional.of(new Progress(databaseName,
-															column,
-															path,
-															totalScannedValue,
-															Math.max(totalEstimate.get(), totalScannedValue),
-															fileScannedVal,
-															Math.max(fileEstimate, fileScannedVal)
-													));
-												} else {
-													return Optional.empty();
-												}
-											}).filter(Optional::isPresent).map(Optional::get).onClose(() -> {
-												rocksIterator.close();
-												ro.close();
-											});
-										});
-									}
-							);
-						} catch (RocksDBException e) {
-							return Stream.of(new BlockBad(databaseName, column, null, path, e));
+			var liveFiles = db.getAllLiveFiles().toList();
+			var liveFilesCount = liveFiles.size();
+			ConcurrentHashMap<String, Long> fileToInitialEstimate = new ConcurrentHashMap<>();
+
+			return liveFiles.stream()
+					.sorted(Comparator.reverseOrder())
+					.flatMap(fr -> fr.verify(databaseName, columnName, rangeFull))
+					.map(status -> switch (status) {
+						case FileStart fileStart -> {
+							Long numEntriesEstimate = Objects.requireNonNullElse(fileStart.numEntriesEstimate(), totalEstimate / liveFilesCount);
+							totalScanned.add(numEntriesEstimate);
+							fileToInitialEstimate.put(fileStart.file(), numEntriesEstimate);
+							yield status;
 						}
+						case FileOk fileEnd -> {
+							long initialNumEntriesEstimate = Objects.requireNonNullElse(fileToInitialEstimate.remove(fileEnd.file()), 0L);
+							long numEntriesScanned = fileEnd.scanned();
+							totalScanned.add(numEntriesScanned - initialNumEntriesEstimate);
+							yield status;
+						}
+						case Progress progress -> new Progress(progress.databaseName(), progress.column(), progress.file(), totalScanned.longValue(), totalEstimate, progress.fileScanned(), progress.fileTotal());
+						default -> status;
 					})
 					.filter(err -> !(err instanceof BlockBad blockBad && blockBad.rawKey() == null && !brokenFiles.add(blockBad.file())));
 		} catch (RocksDBException e) {

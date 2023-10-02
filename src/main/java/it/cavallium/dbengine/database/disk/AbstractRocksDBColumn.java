@@ -560,12 +560,18 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public Stream<LiveFileMetadata> getAllLiveFiles() throws RocksDBException {
-		byte[] cfhName = cfh.getName();
-		return db.getLiveFilesMetaData().stream()
-				.filter(file -> Arrays.equals(cfhName, file.columnFamilyName()))
-				.map(file -> new LiveFileMetadata(file.path(), file.fileName(), file.level(), columnName,
-						file.numEntries(),file.size(), LLRange.of(Buf.wrap(file.smallestKey()), Buf.wrap(file.largestKey()))));
+	public Stream<RocksDBFile> getAllLiveFiles() throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			db.getLiveFiles(); // flushes the memtable
+			byte[] cfhName = cfh.getName();
+			return db.getLiveFilesMetaData().stream()
+					.filter(file -> Arrays.equals(cfhName, file.columnFamilyName()))
+					.map(file -> new RocksDBFile(db, cfh, file));
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
 	}
 
 	protected int getLevels() {

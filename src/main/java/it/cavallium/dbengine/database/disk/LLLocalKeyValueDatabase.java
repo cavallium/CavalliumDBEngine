@@ -80,6 +80,7 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.IndexType;
 import org.rocksdb.InfoLogLevel;
 import org.rocksdb.IngestExternalFileOptions;
+import org.rocksdb.LiveFileMetaData;
 import org.rocksdb.OptimisticTransactionDB;
 import org.rocksdb.PersistentCache;
 import org.rocksdb.PlainTableConfig;
@@ -622,7 +623,23 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		}
 	}
 
-	public List<String> getColumnFiles(Column column, boolean excludeLastLevel) {
+	public Stream<RocksDBFile> getAllLiveFiles() throws RocksDBException {
+		var closeReadLock = closeLock.readLock();
+		try {
+			ensureOpen();
+			db.getLiveFiles(); // flushes the memtable
+			var liveFilesMetadata = db.getLiveFilesMetaData();
+			List<RocksDBFile> files = new ArrayList<>();
+			for (LiveFileMetaData file : liveFilesMetadata) {
+				files.add(new RocksDBFile(db, getCfh(file.columnFamilyName()), file));
+			}
+			return files.stream();
+		} finally {
+			closeLock.unlockRead(closeReadLock);
+		}
+	}
+
+	public List<RocksDBFile> getColumnFiles(Column column, boolean excludeLastLevel) {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();

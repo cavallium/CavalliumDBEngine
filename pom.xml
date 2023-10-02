@@ -574,6 +574,9 @@
                 <manifest>
                   <mainClass>it.cavallium.dbengine.repair.Repair</mainClass>
                 </manifest>
+                <manifestEntries>
+                  <Multi-Release>true</Multi-Release>
+                </manifestEntries>
               </archive>
             </configuration>
             <executions>

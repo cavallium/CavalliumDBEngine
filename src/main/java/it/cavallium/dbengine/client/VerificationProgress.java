@@ -7,7 +7,9 @@ import org.jetbrains.annotations.Nullable;
 public sealed interface VerificationProgress {
 	record BlockBad(String databaseName, Column column, Buf rawKey, String file, Throwable ex)
 			implements VerificationProgress {}
-	record FileOk(String databaseName, Column column, String file)
+	record FileStart(String databaseName, Column column, String file, @Nullable Long numEntriesEstimate)
+			implements VerificationProgress {}
+	record FileOk(String databaseName, Column column, String file, long scanned)
 			implements VerificationProgress {}
 	record Progress(String databaseName, Column column, String file,
 									long scanned, long total,

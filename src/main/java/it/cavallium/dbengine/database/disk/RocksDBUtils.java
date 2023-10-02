@@ -26,15 +26,15 @@ public class RocksDBUtils {
 		return db.numberLevels(cfh);
 	}
 
-	public static List<String> getColumnFiles(RocksDB db, ColumnFamilyHandle cfh, boolean excludeLastLevel) {
-		List<String> files = new ArrayList<>();
+	public static List<RocksDBFile> getColumnFiles(RocksDB db, ColumnFamilyHandle cfh, boolean excludeLastLevel) {
+		List<RocksDBFile> files = new ArrayList<>();
 		var meta = db.getColumnFamilyMetaData(cfh);
 		var lastLevelId = excludeLastLevel ? (getLevels(db, cfh) - 1) : -1;
 		for (LevelMetaData level : meta.levels()) {
 			if (!excludeLastLevel || level.level() < lastLevelId) {
 				for (SstFileMetaData file : level.files()) {
 					if (file.fileName().endsWith(".sst")) {
-						files.add(file.fileName());
+						files.add(new RocksDBFile(db, cfh, file, meta.name(), level.level()));
 					}
 				}
 			}
@@ -51,18 +51,18 @@ public class RocksDBUtils {
 				.setCompression(CompressionType.LZ4_COMPRESSION)
 				.setMaxSubcompactions(0)
 				.setOutputFileSizeLimit(2 * SizeUnit.GB)) {
-			List<String> filesToCompact = getColumnFiles(db, cfh, true);
+			var filesToCompact = getColumnFiles(db, cfh, true);
 
 			if (!filesToCompact.isEmpty()) {
 				var partitionSize = filesToCompact.size() / Runtime.getRuntime().availableProcessors();
-				List<List<String>> partitions;
+				List<List<RocksDBFile>> partitions;
 				if (partitionSize > 0) {
 					partitions = partition(filesToCompact, partitionSize);
 				} else {
 					partitions = List.of(filesToCompact);
 				}
 				int finalBottommostLevelId = getLevels(db, cfh) - 1;
-				for (List<String> partition : partitions) {
+				for (List<RocksDBFile> partition : partitions) {
 					logger.info("Compacting {} files in database {} in column family {} to level {}",
 							partition.size(),
 							logDbName,
@@ -72,7 +72,8 @@ public class RocksDBUtils {
 					if (!partition.isEmpty()) {
 						var coi = new CompactionJobInfo();
 						try {
-							db.compactFiles(co, cfh, partition, finalBottommostLevelId, volumeId, coi);
+							var partitionFileNames = partition.stream().map(x -> x.getMetadata().fileName()).toList();
+							db.compactFiles(co, cfh, partitionFileNames, finalBottommostLevelId, volumeId, coi);
 							logger.info("Compacted {} files in database {} in column family {} to level {}: {}",
 									partition.size(),
 									logDbName,

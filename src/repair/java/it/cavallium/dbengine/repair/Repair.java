@@ -39,6 +39,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.rocksdb.InfoLogLevel;
@@ -111,7 +112,8 @@ public class Repair {
 				}
 				Path path = Path.of(args.get(0)).toAbsolutePath();
 				String dbName = args.get(1);
-				List<String> fileNames = args.subList(2, args.size());
+				boolean skip = args.get(2).equals("--skip");
+				List<String> fileNames = args.subList(skip ? 3 : 2, args.size()).stream().map(f -> f.startsWith("/") ? f : ("/" + f)).toList();
 				List<String> columnNames = getColumnFamilyNames(path, dbName).toList();
 				System.err.printf("Scanning database \"%s\" at \"%s\", files:%n%s%n", dbName, path, String.join("\n", fileNames));
 				var conn = new LLLocalDatabaseConnection(METER, path, false);
@@ -132,16 +134,27 @@ public class Repair {
 						StandardOpenOption.TRUNCATE_EXISTING,
 						StandardOpenOption.DSYNC
 				)) {
-					consumeVerification(os, db.getAllLiveFiles()
+					AtomicLong ignoredFiles = new AtomicLong();
+					var fileList = db.getAllLiveFiles()
 							.filter(file -> {
-								if (fileNames.contains(file.getMetadata().fileName())) {
-									return true;
-								} else {
+								if (!skip && !fileNames.contains(file.getMetadata().fileName())) {
+									ignoredFiles.incrementAndGet();
 									System.err.printf("Ignoring file: \"%s\"%n", file.getMetadata().fileName());
 									return false;
+								} else if (skip && fileNames.contains(file.getMetadata().fileName())) {
+									ignoredFiles.incrementAndGet();
+									System.err.printf("Ignoring file: \"%s\"%n", file.getMetadata().fileName());
+									return false;
+								} else {
+									return true;
 								}
-							})
-							.flatMap(file -> file.verify(dbName, "any", LLRange.all())));
+							}).toList();
+					AtomicLong progress = new AtomicLong();
+					consumeVerification(os, fileList.stream()
+							.flatMap(file -> {
+								System.err.printf("Processing file [%d/%d (+%d ignored)]: %s%n", progress.incrementAndGet(), fileList.size(), ignoredFiles.get(), file.getMetadata().fileName());
+								return file.verify(dbName, "any", LLRange.all());
+							}));
 				}
 			}
 			case "list-files" -> {
@@ -295,11 +308,11 @@ public class Repair {
 				.openAsSecondary(true)
 				.absoluteConsistency(true)
 				.allowMemoryMapping(true)
-				.blockCache(Nullablelong.empty())
+				.blockCache(Nullablelong.of(3L * 1024 * 1024 * 1024))
 				.lowMemory(false)
 				.maxOpenFiles(Nullableint.of(-1))
 				.optimistic(false)
-				.spinning(false)
+				.spinning(true)
 				.useDirectIO(false)
 				.extraFlags(Map.of())
 				.logPath(NullableString.empty())
@@ -314,8 +327,8 @@ public class Repair {
 				).filter(x -> Files.exists(x.volumePath())).toList())
 				.defaultColumnOptions(DefaultColumnOptions.of(
 						List.of(),
-						Nullablelong.empty(),
-						Nullableboolean.empty(),
+						Nullablelong.of(512 * 1024 * 1024),
+						Nullableboolean.of(true),
 						Nullableboolean.empty(),
 						NullableFilter.empty(),
 						Nullableint.empty(),
@@ -329,8 +342,8 @@ public class Repair {
 				.columnOptions(columnNames.stream()
 						.map(columnName -> NamedColumnOptions.of(columnName,
 								List.of(),
-								Nullablelong.empty(),
-								Nullableboolean.empty(),
+								Nullablelong.of(512 * 1024 * 1024),
+								Nullableboolean.of(true),
 								Nullableboolean.empty(),
 								NullableFilter.empty(),
 								Nullableint.empty(),
@@ -351,7 +364,7 @@ public class Repair {
 		   or: repair dump-all DIRECTORY DB_NAME COLUMN_NAME...
 		   or: repair verify-checksum DIRECTORY DB_NAME
 		   or: repair list-column-families DIRECTORY DB_NAME
-		   or: repair scan-files DIRECTORY DB_NAME FILE-NAME...
+		   or: repair scan-files DIRECTORY DB_NAME [--skip] FILE-NAME...
 		   or: repair list-files DIRECTORY DB_NAME
 		""");
 		System.exit(1);

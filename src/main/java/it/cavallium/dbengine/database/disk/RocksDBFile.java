@@ -135,10 +135,9 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 					ro.setIterateLowerBound(rangePartial.getMin() != null ? requireNonNull(LLUtils.asArray(rangePartial.getMin())) : null);
 					ro.setIterateUpperBound(rangePartial.getMax() != null ? requireNonNull(LLUtils.asArray(rangePartial.getMax())) : null);
 					ro.setFillCache(false);
+					ro.setIgnoreRangeDeletions(true);
 					if (!rangePartial.isSingle()) {
-						if (LLUtils.MANUAL_READAHEAD) {
-							ro.setReadaheadSize(32 * 1024);
-						}
+						ro.setReadaheadSize(256 * 1024 * 1024);
 					}
 					ro.setVerifyChecksums(true);
 					return resourceStream(() -> ro.newIterator(db, cfh, IteratorMetrics.NO_OP), rocksIterator -> StreamUtils

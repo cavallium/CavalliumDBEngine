@@ -11,6 +11,7 @@ import java.util.Comparator;
 import java.util.EnumSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.Spliterator;
@@ -62,6 +63,7 @@ public class StreamUtils {
 	private static final BinaryOperator<Object> COMBINER = (a, b) -> NULL;
 	private static final Function<Object, Void> FINISHER = x -> null;
 	private static final Collector<Long,?, Long> SUMMING_LONG_COLLECTOR = new SummingLongCollector();
+	private static final Consumer<?> NOOP_CONSUMER = x -> {};
 
 	public static ForkJoinPool newNamedForkJoinPool(String name, boolean async) {
 		final int MAX_CAP   = 0x7fff;           // max #workers - 1
@@ -139,8 +141,12 @@ public class StreamUtils {
 		}
 	}
 
-	@SuppressWarnings("UnstableApiUsage")
 	public static <X> Stream<X> streamWhileNonNull(Supplier<? extends X> supplier) {
+		return streamWhile(supplier, Objects::nonNull);
+	}
+
+	@SuppressWarnings("UnstableApiUsage")
+	public static <X> Stream<X> streamWhile(Supplier<? extends X> supplier, Predicate<? super X> endPredicate) {
 		var it = new Iterator<X>() {
 
 			private boolean nextSet = false;
@@ -152,11 +158,45 @@ public class StreamUtils {
 					next = supplier.get();
 					nextSet = true;
 				}
-				return next != null;
+				return endPredicate.test(next);
 			}
 
 			@Override
 			public X next() {
+				nextSet = false;
+				return next;
+			}
+		};
+		return Streams.stream(it);
+	}
+
+	@SuppressWarnings("UnstableApiUsage")
+	public static <X> Stream<X> streamUntil(Supplier<? extends X> supplier, Predicate<? super X> endPredicate) {
+		var it = new Iterator<X>() {
+
+			private boolean nextSet = false;
+			private byte state = (byte) 0;
+			private X next;
+
+			@Override
+			public boolean hasNext() {
+				if (state == (byte) 2) {
+					return false;
+				} else {
+					if (!nextSet) {
+						next = supplier.get();
+						state = endPredicate.test(next) ? (byte) 1 : 0;
+						nextSet = true;
+					}
+					return true;
+				}
+			}
+
+			@Override
+			public X next() {
+				if (state == (byte) 1) {
+					state = (byte) 2;
+				}
 				nextSet = false;
 				return next;
 			}
@@ -283,6 +323,11 @@ public class StreamUtils {
 
 	public static <I> Collector<I, ?, Void> executing(Consumer<? super I> consumer) {
 		return new ExecutingCollector<>(consumer);
+	}
+
+	public static <I> Collector<I, ?, Void> executing() {
+		//noinspection unchecked
+		return new ExecutingCollector<>((Consumer<? super I>) NOOP_CONSUMER);
 	}
 
 	public static <I> Collector<I, ?, Long> countingExecuting(Consumer<? super I> consumer) {

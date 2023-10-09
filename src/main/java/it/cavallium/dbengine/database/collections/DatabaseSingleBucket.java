@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -124,7 +125,7 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum() {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum() {
 		return bucketStage.verifyChecksum();
 	}
 

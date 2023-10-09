@@ -7,25 +7,25 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.IteratorMetrics;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
-import org.rocksdb.AbstractSlice;
+import org.rocksdb.AbstractRocksIterator;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksIterator;
+import org.rocksdb.SstFileReaderIterator;
 
-public class RocksIteratorObj extends SimpleResource {
+public abstract class RocksIteratorObj extends SimpleResource {
 
-	private LLReadOptions readOptions;
-	private final RocksIterator rocksIterator;
-	private final Counter startedIterSeek;
-	private final Counter endedIterSeek;
-	private final Timer iterSeekTime;
-	private final Counter startedIterNext;
-	private final Counter endedIterNext;
-	private final Timer iterNextTime;
-	private byte[] seekingFrom;
+	protected LLReadOptions readOptions;
+	protected final AbstractRocksIterator<?> rocksIterator;
+	protected final Counter startedIterSeek;
+	protected final Counter endedIterSeek;
+	protected final Timer iterSeekTime;
+	protected final Counter startedIterNext;
+	protected final Counter endedIterNext;
+	protected final Timer iterNextTime;
+	protected byte[] seekingFrom;
 	private byte[] seekingTo;
 
-	RocksIteratorObj(RocksIterator rocksIterator,
-			LLReadOptions readOptions, IteratorMetrics iteratorMetrics) {
+	RocksIteratorObj(AbstractRocksIterator<?> rocksIterator, LLReadOptions readOptions, IteratorMetrics iteratorMetrics) {
 		super(rocksIterator::close);
 		this.readOptions = readOptions;
 		this.rocksIterator = rocksIterator;
@@ -35,6 +35,92 @@ public class RocksIteratorObj extends SimpleResource {
 		this.endedIterNext = iteratorMetrics.endedIterNext();
 		this.endedIterSeek = iteratorMetrics.endedIterSeek();
 		this.iterNextTime = iteratorMetrics.iterNextTime();
+	}
+
+	public static RocksIteratorObj create(AbstractRocksIterator<?> rocksIterator,
+			LLReadOptions readOptions,
+			IteratorMetrics iteratorMetrics) {
+		return switch (rocksIterator) {
+			case RocksIterator it -> new RocksIteratorObj1(it, readOptions, iteratorMetrics);
+			case SstFileReaderIterator it -> new RocksIteratorObj2(it, readOptions, iteratorMetrics);
+			default -> throw new IllegalStateException("Unsupported iterator type");
+		};
+	}
+
+	private static class RocksIteratorObj1 extends RocksIteratorObj {
+
+		private final RocksIterator rocksIterator;
+
+		private RocksIteratorObj1(RocksIterator rocksIterator, LLReadOptions readOptions, IteratorMetrics iteratorMetrics) {
+			super(rocksIterator, readOptions, iteratorMetrics);
+			this.rocksIterator = rocksIterator;
+		}
+
+		@Deprecated(forRemoval = true)
+		public synchronized int key(ByteBuffer buffer) {
+			ensureOpen();
+			return rocksIterator.key(buffer);
+		}
+
+		@Deprecated(forRemoval = true)
+		public synchronized int value(ByteBuffer buffer) {
+			ensureOpen();
+			return rocksIterator.value(buffer);
+		}
+
+		/**
+		 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+		 */
+		public synchronized byte[] key() {
+			ensureOpen();
+			return rocksIterator.key();
+		}
+
+		/**
+		 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+		 */
+		public synchronized byte[] value() {
+			ensureOpen();
+			return rocksIterator.value();
+		}
+	}
+
+	private static class RocksIteratorObj2 extends RocksIteratorObj {
+
+		private final SstFileReaderIterator rocksIterator;
+
+		private RocksIteratorObj2(SstFileReaderIterator rocksIterator, LLReadOptions readOptions, IteratorMetrics iteratorMetrics) {
+			super(rocksIterator, readOptions, iteratorMetrics);
+			this.rocksIterator = rocksIterator;
+		}
+
+		@Deprecated(forRemoval = true)
+		public synchronized int key(ByteBuffer buffer) {
+			ensureOpen();
+			return rocksIterator.key(buffer);
+		}
+
+		@Deprecated(forRemoval = true)
+		public synchronized int value(ByteBuffer buffer) {
+			ensureOpen();
+			return rocksIterator.value(buffer);
+		}
+
+		/**
+		 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+		 */
+		public synchronized byte[] key() {
+			ensureOpen();
+			return rocksIterator.key();
+		}
+
+		/**
+		 * The returned buffer may change when calling next() or when the iterator is not valid anymore
+		 */
+		public synchronized byte[] value() {
+			ensureOpen();
+			return rocksIterator.value();
+		}
 	}
 
 	public synchronized void seek(ByteBuffer seekBuf) throws RocksDBException {
@@ -68,6 +154,18 @@ public class RocksIteratorObj extends SimpleResource {
 			endedIterSeek.increment();
 		}
 		rocksIterator.status();
+	}
+
+	public synchronized void seekToFirstUnsafe() throws RocksDBException {
+		rocksIterator.seekToFirst();
+	}
+
+	public synchronized void seekToLastUnsafe() throws RocksDBException {
+		rocksIterator.seekToLast();
+	}
+
+	public synchronized void nextUnsafe() throws RocksDBException {
+		rocksIterator.next();
 	}
 
 	public synchronized void seekToLast() throws RocksDBException {
@@ -118,33 +216,25 @@ public class RocksIteratorObj extends SimpleResource {
 		return rocksIterator.isValid();
 	}
 
-	@Deprecated(forRemoval = true)
-	public synchronized int key(ByteBuffer buffer) {
-		ensureOpen();
-		return rocksIterator.key(buffer);
+	public synchronized boolean isValidUnsafe() {
+		return rocksIterator.isValid();
 	}
 
 	@Deprecated(forRemoval = true)
-	public synchronized int value(ByteBuffer buffer) {
-		ensureOpen();
-		return rocksIterator.value(buffer);
-	}
+	public abstract int key(ByteBuffer buffer);
+
+	@Deprecated(forRemoval = true)
+	public abstract int value(ByteBuffer buffer);
 
 	/**
 	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
 	 */
-	public synchronized byte[] key() {
-		ensureOpen();
-		return rocksIterator.key();
-	}
+	public abstract byte[] key();
 
 	/**
 	 * The returned buffer may change when calling next() or when the iterator is not valid anymore
 	 */
-	public synchronized byte[] value() {
-		ensureOpen();
-		return rocksIterator.value();
-	}
+	public abstract byte[] value();
 
 	/**
 	 * The returned buffer may change when calling next() or when the iterator is not valid anymore

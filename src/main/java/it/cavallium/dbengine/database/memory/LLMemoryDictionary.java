@@ -5,7 +5,8 @@ import static java.util.stream.Collectors.groupingBy;
 import static java.util.stream.Collectors.mapping;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.VerificationProgress;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -358,7 +359,7 @@ public class LLMemoryDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum(LLRange range) {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum(LLRange range) {
 		return Stream.empty();
 	}
 

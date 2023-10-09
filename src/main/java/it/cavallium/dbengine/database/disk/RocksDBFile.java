@@ -1,54 +1,56 @@
 package it.cavallium.dbengine.database.disk;
 
-import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
-import static it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase.PRINT_ALL_CHECKSUM_VERIFICATION_STEPS;
 import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import static java.util.Objects.requireNonNull;
 
 import com.google.common.primitives.Longs;
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.VerificationProgress;
-import it.cavallium.dbengine.client.VerificationProgress.BlockBad;
-import it.cavallium.dbengine.client.VerificationProgress.FileOk;
-import it.cavallium.dbengine.client.VerificationProgress.FileStart;
-import it.cavallium.dbengine.client.VerificationProgress.Progress;
+import it.cavallium.dbengine.client.SSTDumpProgress;
+import it.cavallium.dbengine.client.SSTDumpProgress.SSTBlockFail;
+import it.cavallium.dbengine.client.SSTDumpProgress.SSTBlockKeyValue;
+import it.cavallium.dbengine.client.SSTProgress.SSTOk;
+import it.cavallium.dbengine.client.SSTProgress.SSTProgressReport;
+import it.cavallium.dbengine.client.SSTProgress.SSTStart;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress.SSTBlockBad;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
-import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
-import it.cavallium.dbengine.rpc.current.data.Column;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationKeyState.RocksDBFileIterationStateKeyError;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationKeyState.RocksDBFileIterationStateKeyOk;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateBegin;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateEnd;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateKey;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTLLRange;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTRangeFull;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTRangeKey;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTRangeNone;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTRangeOffset;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTSingleKey;
+import it.cavallium.dbengine.database.disk.rocksdb.LLSstFileReader;
 import it.cavallium.dbengine.utils.StreamUtils;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
-import java.util.Objects;
-import java.util.Optional;
 import java.util.StringJoiner;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
-import org.rocksdb.ColumnFamilyHandle;
-import org.rocksdb.LiveFileMetaData;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
-import org.rocksdb.SstFileMetaData;
 
 public class RocksDBFile implements Comparable<RocksDBFile> {
 
 	protected static final Logger logger = LogManager.getLogger(RocksDBFile.class);
+	protected final RocksDBFileMetadata metadata;
+	protected final Long sstNumber;
 
-	private final RocksDB db;
-	private final ColumnFamilyHandle cfh;
-	private final RocksDBFileMetadata metadata;
-	private final Long sstNumber;
-
-	public RocksDBFile(RocksDB db, ColumnFamilyHandle cfh, RocksDBFileMetadata metadata) {
-		this.db = db;
-		this.cfh = cfh;
+	public RocksDBFile(RocksDBFileMetadata metadata) {
 		this.metadata = metadata;
-		String fileName = metadata.fileName().replace("/", "");
+		String fileName = metadata.fileName().startsWith("/") ? metadata.fileName().substring(1) : metadata.fileName();
 		int extensionIndex = fileName.indexOf(".");
 		Long sstNumber = null;
 		if (extensionIndex != -1) {
@@ -60,137 +62,194 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 		}
 	}
 
-	public <T extends RocksDB> RocksDBFile(T db, ColumnFamilyHandle cfh, LiveFileMetaData file) {
-		this(db,
-				cfh,
-				new RocksDBFileMetadata(file.path(),
-						file.fileName(),
-						file.level(),
-						new String(file.columnFamilyName(), StandardCharsets.UTF_8),
-						file.numEntries(),
-						file.size(),
-						decodeRange(file.smallestKey(), file.largestKey())
+	public <T extends RocksDB> RocksDBFile(Path dbBaseDir, String file) {
+		this(new RocksDBFileMetadata(dbBaseDir.resolve(file.startsWith("/") ? file.substring(1) : file),
+						StringUtils.substringAfter(file, '/'),
+						0,
+						"any",
+						0,
+						0,
+						LLRange.all()
 				)
 		);
 	}
 
-	public <T extends RocksDB> RocksDBFile(T db, ColumnFamilyHandle cfh, SstFileMetaData file, byte[] columnFamilyName, int level) {
-		this(db,
-				cfh,
-				new RocksDBFileMetadata(file.path(),
-						file.fileName(),
-						level,
-						new String(columnFamilyName, StandardCharsets.UTF_8),
-						file.numEntries(),
-						file.size(),
-						decodeRange(file.smallestKey(), file.largestKey())
-				)
-		);
-	}
-
-	private static LLRange decodeRange(byte[] smallestKey, byte[] largestKey) {
+	protected static LLRange decodeRange(byte[] smallestKey, byte[] largestKey) {
 		return LLRange.of(Buf.wrap(smallestKey), Buf.wrap(largestKey));
+	}
+
+	private static SSTRange intersectWithMetadata(LLRange metadataRange, SSTRange innerRange) {
+		return switch (innerRange) {
+			case SSTRangeFull ignored -> SSTRange.parse(metadataRange);
+			case SSTSingleKey singleKey -> SSTRange.parse(LLRange.intersect(metadataRange, singleKey.toLLRange()));
+			case SSTRangeKey rangeKey -> SSTRange.parse(LLRange.intersect(metadataRange, rangeKey.toLLRange()));
+			case SSTRangeNone none -> none;
+			case SSTRangeOffset offset -> offset;
+		};
 	}
 
 	public RocksDBFileMetadata getMetadata() {
 		return metadata;
 	}
 
-	public record VerificationFileRange(String filePath, String filename, @Nullable LLRange range, long countEstimate,
-																			@Nullable Long sstNumber) {}
-
-	public Stream<VerificationProgress> verify(String databaseDisplayName, String columnDisplayName, LLRange rangeFull) {
-		var intersectedRange = LLRange.intersect(metadata.keysRange(), rangeFull);
-		// Ignore the file if it's outside the requested range
-		if (intersectedRange == null) {
-			return Stream.of();
-		}
-
-		String filePath = Path.of(metadata.path()).resolve("./" + metadata.fileName()).normalize().toString();
-		var fr = new VerificationFileRange(filePath,
-				metadata.fileName().replace("/", ""),
-				intersectedRange,
-				metadata.numEntries(),
-				sstNumber
-		);
-		return verify(databaseDisplayName, columnDisplayName, rangeFull, fr);
+	public Stream<SSTVerificationProgress> verify(SSTRange range) {
+		AtomicLong fileScanned = new AtomicLong();
+		AtomicLong fileTotal = new AtomicLong();
+		return iterate(range).map(state -> switch (state) {
+			case RocksDBFileIterationStateBegin begin -> {
+				var countEstimate = begin.metadata().countEstimate();
+				if (countEstimate != null) {
+					fileTotal.set(countEstimate);
+				}
+				yield new SSTStart(begin.metadata());
+			}
+			case RocksDBFileIterationStateKey key -> {
+				var scanned = fileScanned.incrementAndGet();
+				yield switch (key.state()) {
+					case RocksDBFileIterationStateKeyOk ignored ->
+							new SSTProgressReport(scanned, Math.max(scanned, fileTotal.get()));
+					case RocksDBFileIterationStateKeyError keyError -> new SSTBlockBad(key.key, keyError.exception);
+				};
+			}
+			case RocksDBFileIterationStateEnd end -> new SSTOk(end.scannedCount());
+		});
 	}
 
-	private Stream<VerificationProgress> verify(String databaseDisplayName, String columnDisplayName, LLRange rangeFull, VerificationFileRange fr) {
-		var columnObj = Column.of(columnDisplayName);
-		Stream<VerificationProgress> streamInit = Stream.of(new FileStart(databaseDisplayName, columnObj, fr.filePath, fr.countEstimate > 0 ? fr.countEstimate : null));
-		Stream<VerificationProgress> streamContent;
-		Objects.requireNonNull(fr.range);
-
-		String filename = fr.filename;
-		String path = fr.filePath;
-		LLRange rangePartial = fr.range;
+	public Stream<SSTDumpProgress> readAllSST(SSTRange range, boolean failOnError) {
 		AtomicLong fileScanned = new AtomicLong();
-		final long fileEstimate = fr.countEstimate;
-		AtomicBoolean mustSeek = new AtomicBoolean(true);
-		AtomicBoolean streamEnded = new AtomicBoolean(false);
-		streamContent = resourceStream(
-				() -> LLUtils.generateCustomReadOptions(null, false, isBoundedRange(rangePartial), false),
-				ro -> {
-					ro.setIterateLowerBound(rangePartial.getMin() != null ? requireNonNull(LLUtils.asArray(rangePartial.getMin())) : null);
-					ro.setIterateUpperBound(rangePartial.getMax() != null ? requireNonNull(LLUtils.asArray(rangePartial.getMax())) : null);
-					ro.setFillCache(false);
-					ro.setIgnoreRangeDeletions(true);
-					if (!rangePartial.isSingle()) {
-						ro.setReadaheadSize(256 * 1024 * 1024);
+		AtomicLong fileTotal = new AtomicLong();
+		return iterate(range).<SSTDumpProgress>mapMulti((state, consumer) -> {
+			switch (state) {
+				case RocksDBFileIterationStateBegin begin -> {
+					var countEstimate = begin.metadata().countEstimate();
+					if (countEstimate != null) {
+						fileTotal.set(countEstimate);
 					}
-					ro.setVerifyChecksums(true);
-					return resourceStream(() -> ro.newIterator(db, cfh, IteratorMetrics.NO_OP), rocksIterator -> StreamUtils
-							.<Optional<VerificationProgress>>streamWhileNonNull(() -> {
-								boolean mustSeekVal = mustSeek.compareAndSet(true, false);
-								if (!mustSeekVal && !rocksIterator.isValid()) {
-									if (streamEnded.compareAndSet(false, true)) {
-										return Optional.of(new FileOk(databaseDisplayName, columnObj, path, fileScanned.get()));
-									} else {
-										//noinspection OptionalAssignedToNull
-										return null;
-									}
-								}
-								boolean shouldSendStatus;
-								Buf rawKey = null;
-								try {
-									if (mustSeekVal) {
-										if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
-											logger.info("Seeking to {}->{}->first on file {}", databaseDisplayName, columnDisplayName, filename);
-										}
-										rocksIterator.seekToFirst();
-										shouldSendStatus = true;
-									} else {
-										rawKey = rocksIterator.keyBuf().copy();
-										shouldSendStatus = fileScanned.incrementAndGet() % 1_000_000 == 0;
-										if (PRINT_ALL_CHECKSUM_VERIFICATION_STEPS) {
-											logger.info("Checking {}->{}->{} on file {}", databaseDisplayName, columnDisplayName, rawKey.toString(), filename);
-										}
-										rocksIterator.next();
-									}
-								} catch (RocksDBException ex) {
-									return Optional.of(new BlockBad(databaseDisplayName, columnObj, rawKey, path, ex));
-								}
-								if (shouldSendStatus) {
-									long fileScannedVal = fileScanned.get();
-									return Optional.of(new Progress(databaseDisplayName,
-											columnObj,
-											path,
-											-1,
-											-1,
-											fileScannedVal,
-											Math.max(fileEstimate, fileScannedVal)
-									));
-								} else {
-									return Optional.empty();
-								}
-							}).filter(Optional::isPresent).map(Optional::get).onClose(() -> {
-								rocksIterator.close();
-								ro.close();
-							}));
+					consumer.accept(new SSTStart(begin.metadata()));
 				}
+				case RocksDBFileIterationStateKey key -> {
+					var scanned = fileScanned.incrementAndGet();
+					switch (key.state()) {
+						case RocksDBFileIterationStateKeyOk ignored -> {
+							consumer.accept(new SSTBlockKeyValue(key.key(), ignored.value()));
+							consumer.accept(new SSTProgressReport(scanned, Math.max(scanned, fileTotal.get())));
+						}
+						case RocksDBFileIterationStateKeyError keyError -> {
+							if (failOnError) {
+								throw new CompletionException(keyError.exception());
+							} else {
+								logger.error("Corrupted SST \"{}\" after \"{}\" scanned keys", sstNumber, scanned);
+								// This is sent before bad block, so takewhile still returns ok before the end, if failOnError is false
+								consumer.accept(new SSTOk(scanned));
+							}
+							consumer.accept(new SSTBlockFail(keyError.exception));
+						}
+					}
+				}
+				case RocksDBFileIterationStateEnd end -> consumer.accept(new SSTOk(end.scannedCount()));
+			}
+		}).takeWhile(data -> !(data instanceof SSTBlockFail));
+	}
+
+	public Stream<RocksDBFileIterationState> iterate(SSTRange rangeFull) {
+		var intersectedRange = RocksDBFile.intersectWithMetadata(metadata.keysRange(), rangeFull);
+
+		Path filePath = metadata.filePath();
+		String filePathString = filePath.toString();
+		var meta = new IterationMetadata(filePath,
+				metadata.fileName().replace("/", ""),
+				intersectedRange,
+				metadata.numEntries() > 0 ? metadata.numEntries() : null,
+				sstNumber
 		);
-		return Stream.concat(streamInit, streamContent);
+
+		Stream<RocksDBFileIterationState> streamContent;
+		// Ignore the file if it's outside the requested range
+		if (intersectedRange instanceof SSTRangeNone) {
+			streamContent = Stream.of(new RocksDBFileIterationStateBegin(meta), new RocksDBFileIterationStateEnd(0L));
+		} else {
+			AtomicLong fileScanned = new AtomicLong();
+			AtomicBoolean mustSeek = new AtomicBoolean(true);
+			try {
+				streamContent = resourceStream(() -> new LLSstFileReader(false, filePathString),
+						r -> resourceStream(() -> LLUtils.generateCustomReadOptions(null, false, intersectedRange.isBounded(), false),
+								ro -> {
+									long skipToIndex;
+									long readToCount;
+									switch (intersectedRange) {
+										case SSTLLRange sstllRange -> {
+											var llRange = sstllRange.toLLRange();
+											requireNonNull(llRange);
+											ro.setIterateLowerBound(
+													llRange.getMin() != null ? requireNonNull(LLUtils.asArray(llRange.getMin())) : null);
+											ro.setIterateUpperBound(
+													llRange.getMax() != null ? requireNonNull(LLUtils.asArray(llRange.getMax())) : null);
+											skipToIndex = 0;
+											readToCount = Long.MAX_VALUE;
+										}
+										case SSTRangeOffset offset -> {
+											skipToIndex = offset.offsetMin() == null ? 0 : offset.offsetMin();
+											readToCount = offset.offsetMax() == null ? Long.MAX_VALUE : (offset.offsetMax() - skipToIndex);
+										}
+										default -> throw new IllegalStateException("Unexpected value: " + intersectedRange);
+									}
+									ro.setFillCache(true);
+									ro.setIgnoreRangeDeletions(true);
+									if (!(intersectedRange instanceof SSTSingleKey)) {
+										ro.setReadaheadSize(256 * 1024 * 1024);
+									}
+									ro.setVerifyChecksums(true);
+									return resourceStream(() -> ro.newIterator(r.get(), IteratorMetrics.NO_OP),
+											rocksIterator -> StreamUtils.<RocksDBFileIterationState>streamUntil(() -> {
+												boolean mustSeekVal = mustSeek.compareAndSet(true, false);
+												if (!mustSeekVal && !rocksIterator.isValid()) {
+													return new RocksDBFileIterationStateEnd(fileScanned.get());
+												}
+												Buf rawKey = null;
+												Buf rawValue = null;
+												RocksDBFileIterationKeyState keyResult;
+												var index = fileScanned.getAndIncrement();
+												if (index >= readToCount) {
+													return new RocksDBFileIterationStateEnd(fileScanned.get());
+												} else {
+													try {
+														if (mustSeekVal) {
+															rocksIterator.seekToFirstUnsafe();
+															if (skipToIndex > 0) {
+																for (long i = 0; i < skipToIndex; i++) {
+																	if (!rocksIterator.isValid()) {
+																		break;
+																	}
+																	rocksIterator.nextUnsafe();
+																}
+															}
+															return new RocksDBFileIterationStateBegin(meta);
+														} else {
+															rawKey = rocksIterator.keyBuf().copy();
+															rawValue = rocksIterator.valueBuf().copy();
+															rocksIterator.next();
+														}
+														keyResult = new RocksDBFileIterationStateKeyOk(rawValue);
+													} catch (RocksDBException ex) {
+														keyResult = new RocksDBFileIterationStateKeyError(ex);
+													}
+
+													return new RocksDBFileIterationStateKey(rawKey, keyResult, index);
+												}
+											}, x -> x instanceof RocksDBFileIterationStateEnd).onClose(() -> {
+												rocksIterator.close();
+												ro.close();
+											})
+									);
+								}
+						)
+				);
+			} catch (RocksDBException e) {
+				streamContent = Stream.of(new RocksDBFileIterationStateBegin(meta),
+						new RocksDBFileIterationStateKey(null, new RocksDBFileIterationStateKeyError(e), 0));
+			}
+		}
+		return streamContent;
 	}
 
 	@Override
@@ -211,4 +270,28 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 		}
 		return Long.compare(this.sstNumber, o.sstNumber);
 	}
+
+	public Long getSstNumber() {
+		return sstNumber;
+	}
+
+	public sealed interface RocksDBFileIterationState {
+
+		record RocksDBFileIterationStateBegin(IterationMetadata metadata) implements RocksDBFileIterationState {}
+
+		record RocksDBFileIterationStateKey(Buf key, RocksDBFileIterationKeyState state, long scannedCount) implements
+				RocksDBFileIterationState {}
+
+		record RocksDBFileIterationStateEnd(long scannedCount) implements RocksDBFileIterationState {}
+	}
+
+	public sealed interface RocksDBFileIterationKeyState {
+
+		record RocksDBFileIterationStateKeyOk(Buf value) implements RocksDBFileIterationKeyState {}
+
+		record RocksDBFileIterationStateKeyError(RocksDBException exception) implements RocksDBFileIterationKeyState {}
+	}
+
+	public record IterationMetadata(Path filePath, String filename, @NotNull SSTRange range,
+																	@Nullable Long countEstimate, @Nullable Long sstNumber) {}
 }

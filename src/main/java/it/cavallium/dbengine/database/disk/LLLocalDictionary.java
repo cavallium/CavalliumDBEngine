@@ -4,27 +4,25 @@ import static it.cavallium.dbengine.database.LLUtils.MARKER_ROCKSDB;
 import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
-import static it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase.PRINT_ALL_CHECKSUM_VERIFICATION_STEPS;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
 import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
 import static it.cavallium.dbengine.utils.StreamUtils.fastSummingLong;
 import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
-import static it.cavallium.dbengine.utils.StreamUtils.streamWhileNonNull;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
-import static java.util.Objects.requireNonNullElse;
 
-import com.google.common.primitives.Longs;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.VerificationProgress;
-import it.cavallium.dbengine.client.VerificationProgress.BlockBad;
-import it.cavallium.dbengine.client.VerificationProgress.FileOk;
-import it.cavallium.dbengine.client.VerificationProgress.FileStart;
-import it.cavallium.dbengine.client.VerificationProgress.Progress;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.DbProgress.DbSSTProgress;
+import it.cavallium.dbengine.client.SSTProgress.SSTOk;
+import it.cavallium.dbengine.client.SSTProgress.SSTProgressReport;
+import it.cavallium.dbengine.client.SSTProgress.SSTStart;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress.SSTBlockBad;
 import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLDelta;
 import it.cavallium.dbengine.database.LLDictionary;
@@ -38,32 +36,28 @@ import it.cavallium.dbengine.database.RocksDBLongProperty;
 import it.cavallium.dbengine.database.SerializedKey;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.disk.RocksDBFile.IterationMetadata;
 import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.utils.DBException;
-import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.IOException;
 import java.math.BigInteger;
-import java.nio.file.LinkOption;
-import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -645,7 +639,7 @@ public class LLLocalDictionary implements LLDictionary {
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum(LLRange rangeFull) {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum(LLRange rangeFull) {
 		Set<String> brokenFiles = new ConcurrentHashMap<String, Boolean>().keySet(true);
 		LongAdder totalScanned = new LongAdder();
 		long totalEstimate;
@@ -665,30 +659,38 @@ public class LLLocalDictionary implements LLDictionary {
 
 			var liveFiles = db.getAllLiveFiles().toList();
 			var liveFilesCount = liveFiles.size();
-			ConcurrentHashMap<String, Long> fileToInitialEstimate = new ConcurrentHashMap<>();
 
 			return liveFiles.stream()
 					.sorted(Comparator.reverseOrder())
-					.flatMap(fr -> fr.verify(databaseName, columnName, rangeFull))
-					.map(status -> switch (status) {
-						case FileStart fileStart -> {
-							Long numEntriesEstimate = Objects.requireNonNullElse(fileStart.numEntriesEstimate(), totalEstimate / liveFilesCount);
-							totalScanned.add(numEntriesEstimate);
-							fileToInitialEstimate.put(fileStart.file(), numEntriesEstimate);
-							yield status;
-						}
-						case FileOk fileEnd -> {
-							long initialNumEntriesEstimate = Objects.requireNonNullElse(fileToInitialEstimate.remove(fileEnd.file()), 0L);
-							long numEntriesScanned = fileEnd.scanned();
-							totalScanned.add(numEntriesScanned - initialNumEntriesEstimate);
-							yield status;
-						}
-						case Progress progress -> new Progress(progress.databaseName(), progress.column(), progress.file(), totalScanned.longValue(), totalEstimate, progress.fileScanned(), progress.fileTotal());
-						default -> status;
+					.flatMap(fr -> {
+						AtomicReference<IterationMetadata> metadataRef = new AtomicReference<>();
+						AtomicLong initialEstimate = new AtomicLong();
+						return fr
+								.verify(SSTRange.parse(rangeFull))
+								.map(status -> switch (status) {
+									case SSTStart fileStart -> {
+										metadataRef.set(fileStart.metadata());
+										long numEntriesEstimate = Objects.requireNonNullElse(fileStart.metadata().countEstimate(), totalEstimate / liveFilesCount);
+										totalScanned.add(numEntriesEstimate);
+										initialEstimate.set(numEntriesEstimate);
+										yield status;
+									}
+									case SSTOk fileEnd -> {
+										long initialNumEntriesEstimate = initialEstimate.get();
+										long numEntriesScanned = fileEnd.scannedCount();
+										totalScanned.add(numEntriesScanned - initialNumEntriesEstimate);
+										yield status;
+									}
+									case SSTProgressReport ignored -> status;
+									case SSTBlockBad ignored -> status;
+								})
+								.<DbProgress<SSTVerificationProgress>>map(sstProgress -> new DbProgress.DbSSTProgress<>(databaseName, column, metadataRef.get().filePath(), totalScanned.longValue(), totalEstimate, sstProgress));
 					})
-					.filter(err -> !(err instanceof BlockBad blockBad && blockBad.rawKey() == null && !brokenFiles.add(blockBad.file())));
+					.filter(err -> !(err instanceof DbProgress.DbSSTProgress<SSTVerificationProgress> sstProgress
+							&& sstProgress.sstProgress() instanceof SSTBlockBad blockBad
+							&& blockBad.rawKey() == null && !brokenFiles.add(sstProgress.fileString())));
 		} catch (RocksDBException e) {
-			return Stream.of(new BlockBad(databaseName, column, null, null, e));
+			return Stream.of(new DbProgress.DbSSTProgress<>(databaseName, column, null, 0, 0, new SSTBlockBad(null, e)));
 		}
 	}
 

@@ -34,7 +34,6 @@ import it.cavallium.dbengine.rpc.current.data.NoFilter;
 import java.io.File;
 import java.io.IOException;
 import it.cavallium.dbengine.utils.DBException;
-import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -115,8 +114,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.paranoidfilechecks", "false"));
 	private static final boolean FORCE_COLUMN_FAMILY_CONSISTENCY_CHECKS
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.forcecolumnfamilyconsistencychecks", "true"));
-	static final boolean PRINT_ALL_CHECKSUM_VERIFICATION_STEPS
-			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.verification.print", "false"));
 	private static final InfoLogLevel LOG_LEVEL = InfoLogLevel.getInfoLogLevel(Byte.parseByte(System.getProperty("it.cavallium.dbengine.log.levelcode", "" + InfoLogLevel.WARN_LEVEL.getValue())));
 
 	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
@@ -631,7 +628,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			var liveFilesMetadata = db.getLiveFilesMetaData();
 			List<RocksDBFile> files = new ArrayList<>();
 			for (LiveFileMetaData file : liveFilesMetadata) {
-				files.add(new RocksDBFile(db, getCfh(file.columnFamilyName()), file));
+				files.add(new RocksDBColumnFile(db, getCfh(file.columnFamilyName()), file));
 			}
 			return files.stream();
 		} finally {

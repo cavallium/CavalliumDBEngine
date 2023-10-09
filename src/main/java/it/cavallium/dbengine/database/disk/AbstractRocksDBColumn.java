@@ -7,12 +7,10 @@ import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.database.ColumnUtils;
 import it.cavallium.dbengine.database.LLRange;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.RepeatedElementList;
 import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
-import it.cavallium.dbengine.database.disk.rocksdb.LLSlice;
 import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -22,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Stream;
@@ -35,10 +34,11 @@ import org.rocksdb.CompactRangeOptions;
 import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist;
-import org.rocksdb.LiveFileMetaData;
+import org.rocksdb.LevelMetaData;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksObject;
+import org.rocksdb.SstFileMetaData;
 import org.rocksdb.TableProperties;
 import org.rocksdb.Transaction;
 import org.rocksdb.TransactionOptions;
@@ -564,11 +564,10 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
-			db.getLiveFiles(); // flushes the memtable
 			byte[] cfhName = cfh.getName();
-			return db.getLiveFilesMetaData().stream()
-					.filter(file -> Arrays.equals(cfhName, file.columnFamilyName()))
-					.map(file -> new RocksDBFile(db, cfh, file));
+			return db.getColumnFamilyMetaData(cfh).levels().stream()
+					.flatMap(l -> l.files().stream()
+							.map(sstFileMetaData -> new RocksDBColumnFile(db, cfh, sstFileMetaData, cfhName, l.level())));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}

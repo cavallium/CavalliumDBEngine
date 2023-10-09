@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.DbProgress;
 import it.cavallium.dbengine.client.Mapper;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
@@ -107,7 +108,7 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum() {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum() {
 		return this.serializedSingle.verifyChecksum();
 	}
 

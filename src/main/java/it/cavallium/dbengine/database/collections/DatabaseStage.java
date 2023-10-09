@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database.collections;
 
-import it.cavallium.dbengine.client.VerificationProgress;
+import it.cavallium.dbengine.client.DbProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
@@ -64,5 +65,5 @@ public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
 		return leavesCount(snapshot, false) <= 0;
 	}
 
-	Stream<VerificationProgress> verifyChecksum();
+	Stream<DbProgress<SSTVerificationProgress>> verifyChecksum();
 }

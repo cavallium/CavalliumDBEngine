@@ -1,7 +1,8 @@
 package it.cavallium.dbengine.database;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.VerificationProgress;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.List;
@@ -64,7 +65,7 @@ public interface LLDictionary extends LLKeyValueDatabaseStructure {
 			int prefixLength,
 			boolean smallRange);
 
-	Stream<VerificationProgress> verifyChecksum(LLRange range);
+	Stream<DbProgress<SSTVerificationProgress>> verifyChecksum(LLRange range);
 
 	void setRange(LLRange range, Stream<LLEntry> entries, boolean smallRange);
 

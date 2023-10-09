@@ -1,8 +1,9 @@
 package it.cavallium.dbengine.database.collections;
 
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
@@ -148,7 +149,7 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum() {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum() {
 		return this.subDictionary.verifyChecksum();
 	}
 

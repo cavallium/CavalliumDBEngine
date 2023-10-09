@@ -34,7 +34,7 @@ public class RocksDBUtils {
 			if (!excludeLastLevel || level.level() < lastLevelId) {
 				for (SstFileMetaData file : level.files()) {
 					if (file.fileName().endsWith(".sst")) {
-						files.add(new RocksDBFile(db, cfh, file, meta.name(), level.level()));
+						files.add(new RocksDBColumnFile(db, cfh, file, meta.name(), level.level()));
 					}
 				}
 			}

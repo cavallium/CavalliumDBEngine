@@ -68,6 +68,10 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 	}
 
 	public Path getDatabasePath(String databaseName) {
+		return getDatabasePath(basePath, databaseName);
+	}
+
+	public static Path getDatabasePath(Path basePath, String databaseName) {
 		return basePath.resolve("database_" + databaseName);
 	}
 

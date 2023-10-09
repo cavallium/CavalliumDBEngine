@@ -3,8 +3,9 @@ package it.cavallium.dbengine.database.collections;
 import it.cavallium.buffer.Buf;
 import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
-import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLDictionaryResultType;
@@ -121,7 +122,7 @@ public final class DatabaseMapSingle<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum() {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum() {
 		return dictionary.verifyChecksum(LLRange.single(key));
 	}
 

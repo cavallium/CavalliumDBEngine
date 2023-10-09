@@ -3,8 +3,9 @@ package it.cavallium.dbengine.database.collections;
 import it.cavallium.buffer.Buf;
 import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
-import it.cavallium.dbengine.client.VerificationProgress;
 import it.cavallium.dbengine.client.CompositeSnapshot;
+import it.cavallium.dbengine.client.DbProgress;
+import it.cavallium.dbengine.client.SSTVerificationProgress;
 import it.cavallium.dbengine.database.Delta;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
@@ -119,7 +120,7 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 	}
 
 	@Override
-	public Stream<VerificationProgress> verifyChecksum() {
+	public Stream<DbProgress<SSTVerificationProgress>> verifyChecksum() {
 		return Stream.empty();
 	}
 }

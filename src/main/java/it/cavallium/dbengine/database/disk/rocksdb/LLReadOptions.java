@@ -9,6 +9,7 @@ import org.rocksdb.ReadOptions;
 import org.rocksdb.ReadTier;
 import org.rocksdb.RocksDB;
 import org.rocksdb.Snapshot;
+import org.rocksdb.SstFileReader;
 
 public final class LLReadOptions extends SimpleResource {
 
@@ -115,7 +116,11 @@ public final class LLReadOptions extends SimpleResource {
 	}
 
 	public RocksIteratorObj newIterator(RocksDB db, ColumnFamilyHandle cfh, IteratorMetrics iteratorMetrics) {
-		return new RocksIteratorObj(db.newIterator(cfh, val), this, iteratorMetrics);
+		return RocksIteratorObj.create(db.newIterator(cfh, val), this, iteratorMetrics);
+	}
+
+	public RocksIteratorObj newIterator(SstFileReader r, IteratorMetrics iteratorMetrics) {
+		return RocksIteratorObj.create(r.newIterator(val), this, iteratorMetrics);
 	}
 
 	public void setFillCache(boolean fillCache) {

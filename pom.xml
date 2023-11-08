@@ -14,7 +14,7 @@
 		<dbengine.ci>false</dbengine.ci>
 		<micrometer.version>1.10.4</micrometer.version>
 		<lucene.version>9.8.0</lucene.version>
-    <rocksdb.version>8.5.4</rocksdb.version>
+    <rocksdb.version>8.6.7</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
     <data.generator.version>1.0.18</data.generator.version>
 	</properties>

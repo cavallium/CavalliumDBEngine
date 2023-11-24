@@ -477,7 +477,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				} catch (RocksDBException ex) {
 					switch (ex.getMessage()) {
 						case "Direct I/O is not supported by the specified DB." -> {
-							logger.warn(ex.getLocalizedMessage());
+							logger.warn("RocksDB options failed: {}", ex.getLocalizedMessage());
 							rocksdbOptions
 									.setUseDirectReads(false)
 									.setUseDirectIoForFlushAndCompaction(false)

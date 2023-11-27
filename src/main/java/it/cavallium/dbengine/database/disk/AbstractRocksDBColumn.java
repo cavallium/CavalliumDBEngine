@@ -323,29 +323,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try {
 			ensureOpen();
 			ensureOwned(readOptions);
-			int size = RocksDB.NOT_FOUND;
 			byte[] keyBytes = LLUtils.asArray(key);
-			Holder<byte[]> data = new Holder<>();
-			boolean mayExistHit = false;
-			if (db.keyMayExist(cfh, readOptions.getUnsafe(), keyBytes, data)) {
-				mayExistHit = true;
-				if (data.getValue() != null) {
-					size = data.getValue().length;
-				} else {
-					size = db.get(cfh, readOptions.getUnsafe(), keyBytes, NO_DATA);
-				}
-			}
-			boolean found = size != RocksDB.NOT_FOUND;
-			if (found) {
-				readValueFoundWithBloomSimpleBufferSize.record(size);
-			} else {
-				if (mayExistHit) {
-					readValueNotFoundWithMayExistBloomBufferSize.record(0);
-				} else {
-					readValueNotFoundWithBloomBufferSize.record(0);
-				}
-			}
-			return found;
+			return db.keyExists(cfh, readOptions.getUnsafe(), keyBytes);
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}

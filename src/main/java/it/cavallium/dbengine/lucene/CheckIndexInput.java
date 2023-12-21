@@ -83,6 +83,12 @@ public class CheckIndexInput extends IndexInput {
 		var ras = input.randomAccessSlice(offset, length);
 		return new RandomAccessInput() {
 			@Override
+			public long length() {
+				checkThread();
+				return ras.length();
+			}
+
+			@Override
 			public byte readByte(long pos) throws IOException {
 				checkThread();
 				return ras.readByte(pos);

@@ -147,7 +147,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		} catch (SerializationException ex) {
 			throw ex;
 		} catch (Exception ex) {
-			throw new SerializationException("Failed to serialize value");
+			throw new SerializationException("Failed to serialize value", ex);
 		}
 		return valBuf.asList();
 	}

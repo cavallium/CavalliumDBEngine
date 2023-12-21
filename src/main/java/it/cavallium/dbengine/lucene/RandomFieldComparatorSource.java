@@ -4,6 +4,7 @@ import it.cavallium.dbengine.utils.LFSR;
 import java.util.concurrent.ThreadLocalRandom;
 import org.apache.lucene.search.FieldComparator;
 import org.apache.lucene.search.FieldComparatorSource;
+import org.apache.lucene.search.Pruning;
 
 public class RandomFieldComparatorSource extends FieldComparatorSource {
 
@@ -14,7 +15,7 @@ public class RandomFieldComparatorSource extends FieldComparatorSource {
 	}
 
 	@Override
-	public FieldComparator<?> newComparator(String fieldName, int numHits, boolean enableSkipping, boolean reversed) {
+	public FieldComparator<?> newComparator(String fieldname, int numHits, Pruning pruning, boolean reversed) {
 		return new RandomFieldComparator(rand.iterator(), numHits);
 	}
 }

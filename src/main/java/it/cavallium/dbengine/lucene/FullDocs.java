@@ -10,6 +10,7 @@ import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.Comparator;
 import java.util.stream.Stream;
 import org.apache.lucene.search.FieldComparator;
+import org.apache.lucene.search.Pruning;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TotalHits;
@@ -115,7 +116,7 @@ public interface FullDocs<T extends LLDoc> extends ResourceIterable<T> {
 
 				for (int compIDX = 0; compIDX < sortFields.length; ++compIDX) {
 					SortField sortField = sortFields[compIDX];
-					comparators[compIDX] = sortField.getComparator(1, compIDX == 0);
+					comparators[compIDX] = sortField.getComparator(1, Pruning.NONE);
 					reverseMul[compIDX] = sortField.getReverse() ? -1 : 1;
 				}
 

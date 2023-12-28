@@ -103,7 +103,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	private static final boolean DELETE_LOG_FILES = false;
 	private static final boolean FOLLOW_ROCKSDB_OPTIMIZATIONS = true;
 	private static final boolean USE_CLOCK_CACHE
-			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.clockcache.enable", "false"));
+			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.clockcache.enable", "true"));
 	private static final boolean PARANOID_CHECKS
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.paranoid", "true"));
 	private static final boolean VERIFY_COMPRESSION
@@ -116,7 +116,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			= Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.checks.forcecolumnfamilyconsistencychecks", "true"));
 	private static final InfoLogLevel LOG_LEVEL = InfoLogLevel.getInfoLogLevel(Byte.parseByte(System.getProperty("it.cavallium.dbengine.log.levelcode", "" + InfoLogLevel.WARN_LEVEL.getValue())));
 
-	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new ClockCacheFactory() : new LRUCacheFactory();
+	private static final CacheFactory CACHE_FACTORY = USE_CLOCK_CACHE ? new HyperClockCacheFactory() : new LRUCacheFactory();
 	private static final boolean ALLOW_SNAPSHOTS = Boolean.parseBoolean(System.getProperty("it.cavallium.dbengine.snapshots.allow", "true"));
 
 	static {

@@ -258,7 +258,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				} else {
 					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(false);
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
-					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 					columnFamilyOptions.setMaxBytesForLevelBase(256 * SizeUnit.MB);
 					// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 					columnFamilyOptions.setMaxBytesForLevelMultiplier(10);
@@ -349,14 +349,12 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 						.orElse(true);
 				if (databaseOptions.spinning()) {
-					if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
-						// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-						// cacheIndexAndFilterBlocks = true;
-						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-						columnFamilyOptions.setMinWriteBufferNumberToMerge(3);
-						// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-						columnFamilyOptions.setMaxWriteBufferNumber(4);
-					}
+					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
+					// cacheIndexAndFilterBlocks = true;
+					// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					columnFamilyOptions.setMinWriteBufferNumberToMerge(3);
+					// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					columnFamilyOptions.setMaxWriteBufferNumber(4);
 				}
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
 					blockBasedTableConfig
@@ -380,7 +378,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 							.setVerifyCompression(VERIFY_COMPRESSION)
 							// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 							// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-							// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+							// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 							.setBlockSize(columnOptions.blockSize().orElse((databaseOptions.spinning() ? 128 : 16) * 1024))
 							.setBlockCache(optionsWithCache.standardCache())
 							.setPersistentCache(resolvePersistentCache(persistentCaches,
@@ -413,7 +411,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					// // Increasing this value can reduce the frequency of compaction and reduce write amplification,
 					// // but it will also cause old data to be unable to be cleaned up in time, thus increasing read amplification.
 					// // This parameter is not easy to adjust. It is generally not recommended to set it above 256MB.
-					// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 					columnFamilyOptions.setTargetFileSizeBase(64 * SizeUnit.MB);
 					// // For each level up, the threshold is multiplied by the factor target_file_size_multiplier
 					// // (but the default value is 1, which means that the maximum sstable of each level is the same).
@@ -980,7 +978,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
 			options.setMaxFileOpeningThreads(Runtime.getRuntime().availableProcessors());
 			if (databaseOptions.spinning()) {
-				// https://nightlies.apache.org/flink/flink-docs-release-1.3/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+				// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
 				options.setUseFsync(false);
 			}
 
@@ -998,6 +996,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				var backgroundJobs = Integer.parseInt(System.getProperty("it.cavallium.dbengine.jobs.background.num", "-1"));
 				if (backgroundJobs >= 0) {
 					options.setMaxBackgroundJobs(backgroundJobs);
+				} else if (databaseOptions.spinning()) {
+					// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
+					options.setMaxBackgroundJobs(4);
 				}
 			}
 

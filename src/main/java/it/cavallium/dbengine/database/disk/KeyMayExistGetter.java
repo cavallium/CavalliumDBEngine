@@ -23,7 +23,7 @@ public abstract class KeyMayExistGetter {
 
 	private static final boolean WORKAROUND_MAY_EXIST_FAKE_ZERO = parseBoolean(getProperty(
 			"it.cavallium.dbengine.workaround_may_exist_fake_zero",
-			"true"
+			"false"
 	));
 	private static final boolean STRICT_MAYEXIST_NO_VALUE = parseBoolean(getProperty(
 			"it.cavallium.dbengine.mayexist.strict_no_value",

@@ -13,7 +13,7 @@ superTypesData:
     DoubleNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, FloatPointExactQuery,
     FloatPointExactQuery, DoublePointExactQuery, LongNDPointExactQuery, FloatNDPointExactQuery,
     DoubleNDPointExactQuery, IntPointSetQuery, LongPointSetQuery, FloatPointSetQuery, DoublePointSetQuery,
-    StandardQuery, FieldExistsQuery
+    StandardQuery, FieldExistsQuery, FilterConfigQuery, SolrFunctionQuery
   ]
   Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
   Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
@@ -129,6 +129,16 @@ baseTypesData:
   FieldExistsQuery:
     data:
       field: String
+  # Query used to configure the Solr cache.
+  FilterConfigQuery:
+    data:
+      query: Query
+      cached: boolean
+  # Query that represents a Solr Function Query (https://solr.apache.org/guide/solr/latest/query-guide/function-queries.html)
+  SolrFunctionQuery:
+    data:
+      query: String
+      boost: double
   # Query that matches a phrase.
   PhraseQuery:
     data:

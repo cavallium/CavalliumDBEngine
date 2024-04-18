@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentNavigableMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -448,5 +449,15 @@ public class LLMemoryDictionary implements LLDictionary {
 	@Override
 	public String getDatabaseName() {
 		return databaseName;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return ForkJoinPool.commonPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return ForkJoinPool.commonPool();
 	}
 }

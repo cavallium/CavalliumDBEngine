@@ -31,6 +31,7 @@ import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.NoFilter;
+import it.cavallium.dbengine.utils.StreamUtils;
 import java.io.File;
 import java.io.IOException;
 import it.cavallium.dbengine.utils.DBException;
@@ -48,6 +49,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
@@ -126,6 +128,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	protected static final Logger logger = LogManager.getLogger(LLLocalKeyValueDatabase.class);
 
 	private final MeterRegistry meterRegistry;
+	private ForkJoinPool dbReadPool;
+	private ForkJoinPool dbWritePool;
 
 	private final Timer snapshotTime;
 
@@ -159,6 +163,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			DatabaseOptions databaseOptions) {
 		this.name = name;
 		this.meterRegistry = meterRegistry;
+		this.dbReadPool = StreamUtils.newNamedForkJoinPool("db-" + name, false);
+		this.dbWritePool = StreamUtils.newNamedForkJoinPool("db-" + name, false);
 
 		this.snapshotTime = Timer
 				.builder("db.snapshot.timer")
@@ -186,9 +192,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 			// Check column names validity
 			for (NamedColumnOptions columnOption : databaseOptions.columnOptions()) {
-				if (columns.stream().map(Column::name).noneMatch(columnName -> columnName.equals(columnOption.columnName()))) {
+				if (columns.stream().map(Column::name).noneMatch(columnName -> columnName.equals(columnOption.name()))) {
 					throw new IllegalArgumentException(
-							"Column " + columnOption.columnName() + " does not exist. Available columns: " + columns
+							"Column " + columnOption.name() + " does not exist. Available columns: " + columns
 									.stream()
 									.map(Column::name)
 									.collect(Collectors.joining(", ", "[", "]")));
@@ -209,10 +215,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				var columnOptions = databaseOptions
 						.columnOptions()
 						.stream()
-						.filter(opts -> opts.columnName().equals(column.name()))
+						.filter(opts -> opts.name().equals(column.name()))
 						.findFirst()
-						.map(opts -> (ColumnOptions) opts)
-						.orElse(databaseOptions.defaultColumnOptions());
+						.map(NamedColumnOptions::options)
+						.orElseGet(databaseOptions::defaultColumnOptions);
 
 				//noinspection ConstantConditions
 				if (columnOptions.memtableMemoryBudgetBytes() != null) {
@@ -794,6 +800,16 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 		return name;
 	}
 
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return dbReadPool;
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return dbWritePool;
+	}
+
 	public StampedLock getCloseLock() {
 		return closeLock;
 	}
@@ -1236,17 +1252,21 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					name,
 					cfh,
 					meterRegistry,
-					closeLock
+					closeLock,
+					dbReadPool,
+					dbWritePool
 			);
 		} else if (db instanceof TransactionDB transactionDB) {
 			return new PessimisticRocksDBColumn(transactionDB,
 					name,
 					cfh,
 					meterRegistry,
-					closeLock
+					closeLock,
+					dbReadPool,
+					dbWritePool
 			);
 		} else {
-			return new StandardRocksDBColumn(db, name, cfh, meterRegistry, closeLock);
+			return new StandardRocksDBColumn(db, name, cfh, meterRegistry, closeLock, dbReadPool, dbWritePool);
 		}
 	}
 
@@ -1558,8 +1578,12 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	public void close() {
 		closeRequested = true;
 		if (statistics != null) {
-			statistics.close();
-			statistics = null;
+			try {
+				statistics.close();
+				statistics = null;
+			} catch (Exception ex) {
+				logger.error("Failed to close db statistics", ex);
+			}
 		}
 		try {
 			flushAndCloseDb(db,
@@ -1575,6 +1599,23 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			deleteUnusedOldLogFiles();
 		} catch (Exception e) {
 			throw new DBException("Failed to close", e);
+		} finally {
+			if (dbReadPool != null) {
+				try {
+					dbReadPool.close();
+					dbReadPool = null;
+				} catch (Exception ex) {
+					logger.error("Failed to close db pool", ex);
+				}
+			}
+			if (dbWritePool != null) {
+				try {
+					dbWritePool.close();
+					dbWritePool = null;
+				} catch (Exception ex) {
+					logger.error("Failed to close db pool", ex);
+				}
+			}
 		}
 	}
 
@@ -1590,7 +1631,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	private void resumeWrites() {
 		try {
 			db.continueBackgroundWork();
-			db.enableFileDeletions(false);
+			db.enableFileDeletions();
 		} catch (RocksDBException e) {
 			throw new DBException(e);
 		}

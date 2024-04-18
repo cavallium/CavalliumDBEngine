@@ -13,20 +13,6 @@ interfacesData:
     extendInterfaces: [RPCEvent]
   ServerBoundResponse:
     extendInterfaces: [RPCEvent]
-  ColumnOptions:
-    commonGetters:
-      levels: DatabaseLevel[]
-      memtableMemoryBudgetBytes: -long
-      cacheIndexAndFilterBlocks: -boolean
-      partitionFilters: -boolean
-      filter: -Filter
-      blockSize: -int
-      persistentCacheId: -String
-      writeBufferSize: -long
-      blobFiles: boolean
-      minBlobSize: -long
-      blobFileSize: -long
-      blobCompressionType: -Compression
 superTypesData:
   RPCEvent: [
     Empty,
@@ -93,10 +79,6 @@ superTypesData:
   Filter: [
     NoFilter,
     BloomFilter
-  ]
-  ColumnOptions: [
-    DefaultColumnOptions,
-    NamedColumnOptions
   ]
 customTypesData:
   Path:
@@ -251,14 +233,13 @@ baseTypesData:
       persistentCaches: PersistentCache[]
       writeBufferManager: -long
       spinning: boolean
-      defaultColumnOptions: DefaultColumnOptions
+      defaultColumnOptions: ColumnOptions
       columnOptions: NamedColumnOptions[]
       logPath: -String
       walPath: -String
       openAsSecondary: boolean
       secondaryDirectoryName: -String
-  # Remember to update ColumnOptions common getters
-  DefaultColumnOptions:
+  ColumnOptions:
     data:
       levels: DatabaseLevel[]
       memtableMemoryBudgetBytes: -long
@@ -272,22 +253,10 @@ baseTypesData:
       minBlobSize: -long
       blobFileSize: -long
       blobCompressionType: -Compression
-  # Remember to update ColumnOptions common getters
   NamedColumnOptions:
     data:
-      columnName: String
-      levels: DatabaseLevel[]
-      memtableMemoryBudgetBytes: -long
-      cacheIndexAndFilterBlocks: -boolean
-      partitionFilters: -boolean
-      filter: -Filter
-      blockSize: -int
-      persistentCacheId: -String
-      writeBufferSize: -long
-      blobFiles: boolean
-      minBlobSize: -long
-      blobFileSize: -long
-      blobCompressionType: -Compression
+      name: String
+      options: ColumnOptions
   NoFilter:
     data: {}
   BloomFilter:

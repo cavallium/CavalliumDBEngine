@@ -5,7 +5,7 @@
 
 	<groupId>it.cavallium</groupId>
 	<artifactId>dbengine</artifactId>
-	<version>4.0.${revision}</version>
+	<version>4.2.${revision}</version>
 
 	<packaging>jar</packaging>
 	<properties>
@@ -13,8 +13,8 @@
 		<revision>0-SNAPSHOT</revision>
 		<dbengine.ci>false</dbengine.ci>
 		<micrometer.version>1.10.4</micrometer.version>
-		<lucene.version>9.9.1</lucene.version>
-    <rocksdb.version>8.10.0</rocksdb.version>
+		<lucene.version>9.10.0</lucene.version>
+    <rocksdb.version>9.0.0</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
     <data.generator.version>1.0.26</data.generator.version>
 	</properties>
@@ -66,11 +66,23 @@
 			<id>mchv-release-distribution</id>
 			<name>MCHV Release Apache Maven Packages Distribution</name>
 			<url>https://mvn.mchv.eu/repository/mchv</url>
+      <releases>
+        <enabled>true</enabled>
+      </releases>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
 		</repository>
 		<snapshotRepository>
 			<id>mchv-snapshot-distribution</id>
 			<name>MCHV Snapshot Apache Maven Packages Distribution</name>
 			<url>https://mvn.mchv.eu/repository/mchv-snapshot</url>
+      <releases>
+        <enabled>false</enabled>
+      </releases>
+      <snapshots>
+        <enabled>true</enabled>
+      </snapshots>
 		</snapshotRepository>
 	</distributionManagement>
 	<scm>
@@ -92,7 +104,7 @@
 		<dependency>
 			<groupId>com.google.guava</groupId>
 			<artifactId>guava</artifactId>
-			<version>31.1-jre</version>
+			<version>33.0.0-jre</version>
 		</dependency>
 		<dependency>
 			<groupId>org.yaml</groupId>
@@ -159,7 +171,7 @@
 		<dependency>
 			<groupId>org.apache.logging.log4j</groupId>
 			<artifactId>log4j-slf4j2-impl</artifactId>
-			<version>2.20.0</version>
+			<version>2.22.1</version>
 			<scope>test</scope>
       <exclusions>
         <exclusion>

@@ -21,6 +21,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.StampedLock;
 import java.util.stream.Stream;
@@ -55,6 +56,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	private final ColumnFamilyHandle cfh;
 
 	protected final MeterRegistry meterRegistry;
+	private final ForkJoinPool dbReadPool;
+	private final ForkJoinPool dbWritePool;
 	protected final StampedLock closeLock;
 	protected final String columnName;
 
@@ -89,7 +92,9 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
-			StampedLock closeLock) {
+			StampedLock closeLock,
+			ForkJoinPool dbReadPool,
+			ForkJoinPool dbWritePool) {
 		this.db = db;
 		this.cfh = cfh;
 		String columnName;
@@ -100,6 +105,8 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		}
 		this.columnName = columnName;
 		this.meterRegistry = meterRegistry;
+		this.dbReadPool = dbReadPool;
+		this.dbWritePool = dbWritePool;
 		this.closeLock = closeLock;
 
 		this.keyBufferSize = DistributionSummary
@@ -271,6 +278,16 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 
 	protected ColumnFamilyHandle getCfh() {
 		return cfh;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return dbReadPool;
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return dbWritePool;
 	}
 
 	protected void ensureOpen() {

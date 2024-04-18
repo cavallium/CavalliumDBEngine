@@ -16,6 +16,7 @@ import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -133,6 +134,16 @@ public class LLLocalSingleton implements LLSingleton {
 	@Override
 	public String getDatabaseName() {
 		return databaseName;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return db.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return db.getDbWritePool();
 	}
 
 	@Override

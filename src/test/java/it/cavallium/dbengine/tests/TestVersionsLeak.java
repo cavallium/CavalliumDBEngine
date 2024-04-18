@@ -24,6 +24,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
@@ -70,7 +71,7 @@ public class TestVersionsLeak {
 					var keyF = key;
 					toByteArray(key, keyBytes);
 
-					StreamUtils.collectOn(StreamUtils.ROCKSDB_POOL,
+					StreamUtils.collectOn(ForkJoinPool.commonPool(),
 							Stream.of(1, 2, 3, 4).parallel(),
 							StreamUtils.executing(x -> {
 								dict.put(Buf.wrap(keyBytes), val, LLDictionaryResultType.PREVIOUS_VALUE);

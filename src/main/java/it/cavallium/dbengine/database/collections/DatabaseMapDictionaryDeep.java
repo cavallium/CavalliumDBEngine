@@ -24,6 +24,7 @@ import java.util.Map.Entry;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import org.apache.commons.lang3.function.TriFunction;
@@ -308,6 +309,16 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 	@Override
 	public Stream<Entry<T, U>> setAllEntriesAndGetPrevious(Stream<Entry<T, U>> entries) {
 		return resourceStream(() -> this.getAllEntries(null, false), () -> setAllEntries(entries));
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return dictionary.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return dictionary.getDbWritePool();
 	}
 
 	@Override

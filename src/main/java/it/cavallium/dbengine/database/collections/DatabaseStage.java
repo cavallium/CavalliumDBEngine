@@ -8,10 +8,14 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.util.Objects;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 
 public interface DatabaseStage<T> extends DatabaseStageWithEntry<T> {
+
+	ForkJoinPool getDbReadPool();
+	ForkJoinPool getDbWritePool();
 
 	@Nullable T get(@Nullable CompositeSnapshot snapshot);
 

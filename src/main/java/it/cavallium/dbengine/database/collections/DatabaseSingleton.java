@@ -14,6 +14,7 @@ import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -63,6 +64,16 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 		var valBuf = BufDataOutput.create(valSizeHint);
 		serializer.serialize(value, valBuf);
 		return valBuf.asList();
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return this.singleton.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return this.singleton.getDbWritePool();
 	}
 
 	@Override

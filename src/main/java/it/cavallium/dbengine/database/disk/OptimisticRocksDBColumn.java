@@ -13,6 +13,7 @@ import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.lucene.ExponentialPageLimits;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.StampedLock;
@@ -38,8 +39,10 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 			String databaseName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
-			StampedLock closeLock) {
-		super(db, databaseName, cfh, meterRegistry, closeLock);
+			StampedLock closeLock,
+			ForkJoinPool dbReadPool,
+			ForkJoinPool dbWritePool) {
+		super(db, databaseName, cfh, meterRegistry, closeLock, dbReadPool, dbWritePool);
 		this.optimisticAttempts = DistributionSummary
 				.builder("db.optimistic.attempts.distribution")
 				.publishPercentiles(0.2, 0.5, 0.95)

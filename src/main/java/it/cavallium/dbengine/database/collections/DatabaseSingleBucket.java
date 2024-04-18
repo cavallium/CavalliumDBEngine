@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -35,6 +36,16 @@ public class DatabaseSingleBucket<K, V, TH> implements DatabaseStageEntry<V> {
 	private DatabaseSingleBucket(DatabaseStage<ObjectArraySet<Entry<K, V>>> bucketStage, K key) {
 		this.key = key;
 		this.bucketStage = (DatabaseStageEntry<ObjectArraySet<Entry<K, V>>>) bucketStage;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return bucketStage.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return bucketStage.getDbWritePool();
 	}
 
 	@Override

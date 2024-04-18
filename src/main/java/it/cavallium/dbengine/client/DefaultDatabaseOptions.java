@@ -4,10 +4,10 @@ import it.cavallium.datagen.nativedata.NullableString;
 import it.cavallium.datagen.nativedata.Nullableboolean;
 import it.cavallium.datagen.nativedata.Nullableint;
 import it.cavallium.datagen.nativedata.Nullablelong;
+import it.cavallium.dbengine.rpc.current.data.ColumnOptions;
+import it.cavallium.dbengine.rpc.current.data.ColumnOptionsBuilder;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptionsBuilder;
-import it.cavallium.dbengine.rpc.current.data.DefaultColumnOptions;
-import it.cavallium.dbengine.rpc.current.data.DefaultColumnOptionsBuilder;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptionsBuilder;
 import it.cavallium.dbengine.rpc.current.data.nullables.NullableCompression;
@@ -20,7 +20,7 @@ import org.rocksdb.RocksDB;
 
 public class DefaultDatabaseOptions {
 
-	public static DefaultColumnOptions DEFAULT_DEFAULT_COLUMN_OPTIONS = new DefaultColumnOptions(
+	public static ColumnOptions DEFAULT_DEFAULT_COLUMN_OPTIONS = new ColumnOptions(
 			Collections.emptyList(),
 			Nullablelong.empty(),
 			Nullableboolean.empty(),
@@ -37,18 +37,7 @@ public class DefaultDatabaseOptions {
 
 	public static NamedColumnOptions DEFAULT_NAMED_COLUMN_OPTIONS = new NamedColumnOptions(
 			new String(RocksDB.DEFAULT_COLUMN_FAMILY, StandardCharsets.UTF_8),
-			Collections.emptyList(),
-			Nullablelong.empty(),
-			Nullableboolean.empty(),
-			Nullableboolean.empty(),
-			NullableFilter.empty(),
-			Nullableint.empty(),
-			NullableString.empty(),
-			Nullablelong.empty(),
-			false,
-			Nullablelong.empty(),
-			Nullablelong.empty(),
-			NullableCompression.empty()
+			DEFAULT_DEFAULT_COLUMN_OPTIONS
 	);
 
 	public static DatabaseOptions DEFAULT_DATABASE_OPTIONS = new DatabaseOptions(List.of(),
@@ -75,8 +64,8 @@ public class DefaultDatabaseOptions {
 		return DatabaseOptionsBuilder.builder(DEFAULT_DATABASE_OPTIONS);
 	}
 
-	public static DefaultColumnOptionsBuilder defaultColumnOptionsBuilder() {
-		return DefaultColumnOptionsBuilder.builder(DEFAULT_DEFAULT_COLUMN_OPTIONS);
+	public static ColumnOptionsBuilder defaultColumnOptionsBuilder() {
+		return ColumnOptionsBuilder.builder(DEFAULT_DEFAULT_COLUMN_OPTIONS);
 	}
 
 	public static NamedColumnOptionsBuilder namedColumnOptionsBuilder() {

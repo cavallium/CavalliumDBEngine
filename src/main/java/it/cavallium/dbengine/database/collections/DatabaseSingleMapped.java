@@ -9,6 +9,7 @@ import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
 
@@ -27,6 +28,16 @@ public class DatabaseSingleMapped<A, B> implements DatabaseStageEntry<A> {
 		this.mapper = mapper;
 
 		this.serializedSingle = (DatabaseStageEntry<B>) serializedSingle;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return serializedSingle.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return serializedSingle.getDbWritePool();
 	}
 
 	@Override

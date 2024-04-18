@@ -6,6 +6,7 @@ import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
+import java.util.concurrent.ForkJoinPool;
 import org.jetbrains.annotations.Nullable;
 
 public class DatabaseInt implements LLKeyValueDatabaseStructure {
@@ -32,5 +33,15 @@ public class DatabaseInt implements LLKeyValueDatabaseStructure {
 	@Override
 	public String getDatabaseName() {
 		return singleton.getDatabaseName();
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return singleton.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return singleton.getDbWritePool();
 	}
 }

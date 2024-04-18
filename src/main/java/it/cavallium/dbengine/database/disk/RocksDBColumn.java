@@ -10,6 +10,7 @@ import it.cavallium.dbengine.database.disk.rocksdb.RocksIteratorObj;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -89,4 +90,8 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 	boolean supportsTransactions();
 
 	void forceCompaction(int volumeId);
+
+	ForkJoinPool getDbReadPool();
+
+	ForkJoinPool getDbWritePool();
 }

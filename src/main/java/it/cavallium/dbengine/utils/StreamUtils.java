@@ -44,10 +44,6 @@ public class StreamUtils {
 
 	public static final ForkJoinPool LUCENE_POOL = newNamedForkJoinPool("Lucene", false);
 
-	public static final ForkJoinPool GRAPH_POOL = newNamedForkJoinPool("Graph", false);
-
-	public static final ForkJoinPool ROCKSDB_POOL = newNamedForkJoinPool("RocksDB", false);
-
 	private static final Collector<?, ?, ?> TO_LIST_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> COUNT_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> FIRST_FAKE_COLLECTOR = new FakeCollector();

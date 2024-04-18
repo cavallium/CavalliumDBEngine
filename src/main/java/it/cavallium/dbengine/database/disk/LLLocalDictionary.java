@@ -5,11 +5,9 @@ import static it.cavallium.dbengine.database.LLUtils.isBoundedRange;
 import static it.cavallium.dbengine.database.LLUtils.mapList;
 import static it.cavallium.dbengine.database.LLUtils.toStringSafe;
 import static it.cavallium.dbengine.database.disk.UpdateAtomicResultMode.DELTA;
-import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
 import static it.cavallium.dbengine.utils.StreamUtils.fastSummingLong;
-import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 import static java.util.Objects.requireNonNull;
 import static it.cavallium.dbengine.utils.StreamUtils.batches;
 
@@ -54,6 +52,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
@@ -198,6 +197,16 @@ public class LLLocalDictionary implements LLDictionary {
 
 	public String getColumnName() {
 		return columnName;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return db.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return db.getDbWritePool();
 	}
 
 	@NotNull
@@ -355,9 +364,7 @@ public class LLLocalDictionary implements LLDictionary {
 			}
 			assert result != null;
 			return switch (updateReturnMode) {
-				case NOTHING -> {
-					yield null;
-				}
+				case NOTHING -> null;
 				case GET_NEW_VALUE -> ((UpdateAtomicResultCurrent) result).current();
 				case GET_OLD_VALUE -> ((UpdateAtomicResultPrevious) result).previous();
 			};
@@ -451,7 +458,7 @@ public class LLLocalDictionary implements LLDictionary {
 
 	@Override
 	public void putMulti(Stream<LLEntry> entries) {
-		collectOn(ROCKSDB_POOL,
+		collectOn(getDbWritePool(),
 				batches(entries, Math.min(MULTI_GET_WINDOW, CAPPED_WRITE_BATCH_CAP)),
 				executing(entriesWindow -> {
 					try (var writeOptions = new LLWriteOptions()) {
@@ -778,7 +785,7 @@ public class LLLocalDictionary implements LLDictionary {
 				throw new DBException("Failed to set a range: " + ex.getMessage());
 			}
 
-			collectOn(ROCKSDB_POOL, batches(entries, MULTI_GET_WINDOW), executing(entriesList -> {
+			collectOn(getDbWritePool(), batches(entries, MULTI_GET_WINDOW), executing(entriesList -> {
 				try (var writeOptions = new LLWriteOptions()) {
 					if (!USE_WRITE_BATCHES_IN_SET_RANGE) {
 						for (LLEntry entry : entriesList) {
@@ -814,7 +821,7 @@ public class LLLocalDictionary implements LLDictionary {
 			if (USE_WRITE_BATCHES_IN_SET_RANGE) {
 				throw new UnsupportedOperationException("Can't use write batches in setRange without window. Please fix the parameters");
 			}
-			collectOn(ROCKSDB_POOL, this.getRange(null, range, false, smallRange), executing(oldValue -> {
+			collectOn(getDbWritePool(), this.getRange(null, range, false, smallRange), executing(oldValue -> {
 				try (var writeOptions = new LLWriteOptions()) {
 					db.delete(writeOptions, oldValue.getKey());
 				} catch (RocksDBException ex) {
@@ -822,7 +829,7 @@ public class LLLocalDictionary implements LLDictionary {
 				}
 			}));
 
-			collectOn(ROCKSDB_POOL, entries, executing(entry -> {
+			collectOn(getDbWritePool(), entries, executing(entry -> {
 				if (entry.getKey() != null && entry.getValue() != null) {
 					this.putInternal(entry.getKey(), entry.getValue());
 				}
@@ -1142,7 +1149,7 @@ public class LLLocalDictionary implements LLDictionary {
 			readOpts.setVerifyChecksums(VERIFY_CHECKSUMS_WHEN_NOT_NEEDED);
 
 			if (PARALLEL_EXACT_SIZE) {
-				return collectOn(ROCKSDB_POOL, parallelizeRange(LLRange.all()).map(range -> {
+				return collectOn(getDbReadPool(), parallelizeRange(LLRange.all()).map(range -> {
 							long partialCount = 0;
 							try (var rangeReadOpts = readOpts.copy()) {
 								try {

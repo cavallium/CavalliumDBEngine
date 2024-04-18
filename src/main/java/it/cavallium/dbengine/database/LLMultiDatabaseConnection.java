@@ -1,6 +1,6 @@
 package it.cavallium.dbengine.database;
 
-import static it.cavallium.dbengine.utils.StreamUtils.ROCKSDB_POOL;
+import static it.cavallium.dbengine.utils.StreamUtils.collect;
 import static it.cavallium.dbengine.utils.StreamUtils.collectOn;
 import static it.cavallium.dbengine.utils.StreamUtils.executing;
 
@@ -88,7 +88,7 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public LLDatabaseConnection connect() {
-		collectOn(ROCKSDB_POOL, allConnections.stream(), executing(connection -> {
+		collect(allConnections.stream(), executing(connection -> {
 			try {
 				connection.connect();
 			} catch (Exception ex) {
@@ -166,7 +166,7 @@ public class LLMultiDatabaseConnection implements LLDatabaseConnection {
 
 	@Override
 	public void disconnect() {
-		collectOn(ROCKSDB_POOL, allConnections.stream(), executing(connection -> {
+		collect(allConnections.stream(), executing(connection -> {
 			try {
 				connection.disconnect();
 			} catch (Exception ex) {

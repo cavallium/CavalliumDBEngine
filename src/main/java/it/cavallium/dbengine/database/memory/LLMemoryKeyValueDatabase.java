@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentSkipListMap;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 import org.jetbrains.annotations.Nullable;
@@ -160,6 +161,16 @@ public class LLMemoryKeyValueDatabase implements LLKeyValueDatabase {
 	@Override
 	public String getDatabaseName() {
 		return name;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return ForkJoinPool.commonPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return ForkJoinPool.commonPool();
 	}
 
 	@Override

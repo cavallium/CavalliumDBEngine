@@ -8,6 +8,7 @@ import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ForkJoinPool;
 import org.jetbrains.annotations.Nullable;
 
 public class LLMemorySingleton implements LLSingleton {
@@ -25,6 +26,16 @@ public class LLMemorySingleton implements LLSingleton {
 	@Override
 	public String getDatabaseName() {
 		return dict.getDatabaseName();
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return dict.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return dict.getDbWritePool();
 	}
 
 	@Override

@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
+import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.locks.StampedLock;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -30,8 +31,10 @@ public final class PessimisticRocksDBColumn extends AbstractRocksDBColumn<Transa
 			String dbName,
 			ColumnFamilyHandle cfh,
 			MeterRegistry meterRegistry,
-			StampedLock closeLock) {
-		super(db, dbName, cfh, meterRegistry, closeLock);
+			StampedLock closeLock,
+			ForkJoinPool dbReadPool,
+			ForkJoinPool dbWritePool) {
+		super(db, dbName, cfh, meterRegistry, closeLock, dbReadPool, dbWritePool);
 	}
 
 	@Override

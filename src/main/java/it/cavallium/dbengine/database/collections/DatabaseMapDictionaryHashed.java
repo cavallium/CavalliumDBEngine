@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ForkJoinPool;
 import java.util.function.Function;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
@@ -107,6 +108,16 @@ public class DatabaseMapDictionaryHashed<T, U, TH> implements DatabaseStageMap<T
 		var newMap = new Object2ObjectLinkedOpenHashMap<T, U>(map.size());
 		map.forEach((hash, set) -> set.forEach(entry -> newMap.put(entry.getKey(), entry.getValue())));
 		return newMap;
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return subDictionary.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return subDictionary.getDbWritePool();
 	}
 
 	@Override

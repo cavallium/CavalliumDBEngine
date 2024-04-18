@@ -17,6 +17,7 @@ import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
+import java.util.concurrent.ForkJoinPool;
 import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -65,6 +66,16 @@ public final class DatabaseMapSingle<U> implements DatabaseStageEntry<U> {
 		BufDataOutput valBuf = BufDataOutput.create(serializer.getSerializedSizeHint());
 		serializer.serialize(value, valBuf);
 		return valBuf.asList();
+	}
+
+	@Override
+	public ForkJoinPool getDbReadPool() {
+		return dictionary.getDbReadPool();
+	}
+
+	@Override
+	public ForkJoinPool getDbWritePool() {
+		return dictionary.getDbWritePool();
 	}
 
 	@Override

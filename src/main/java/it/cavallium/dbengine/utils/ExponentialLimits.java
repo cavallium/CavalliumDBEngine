@@ -1,9 +1,9 @@
-package it.cavallium.dbengine.lucene;
+package it.cavallium.dbengine.utils;
 
 /**
  * <pre>y = 2 ^ (x + pageIndexOffset) + firstPageLimit</pre>
  */
-public class ExponentialPageLimits implements PageLimits {
+public class ExponentialLimits {
 
 	private static final int DEFAULT_PAGE_INDEX_OFFSET = 0;
 
@@ -11,25 +11,12 @@ public class ExponentialPageLimits implements PageLimits {
 	private final int firstPageLimit;
 	private final int maxItemsPerPage;
 
-	public ExponentialPageLimits() {
-		this(DEFAULT_PAGE_INDEX_OFFSET);
-	}
-
-	public ExponentialPageLimits(int pageIndexOffset) {
-		this(pageIndexOffset, DEFAULT_MIN_ITEMS_PER_PAGE);
-	}
-
-	public ExponentialPageLimits(int pageIndexOffset, int firstPageLimit) {
-		this(pageIndexOffset, firstPageLimit, DEFAULT_MAX_ITEMS_PER_PAGE);
-	}
-
-	public ExponentialPageLimits(int pageIndexOffset, int firstPageLimit, int maxItemsPerPage) {
+	public ExponentialLimits(int pageIndexOffset, int firstPageLimit, int maxItemsPerPage) {
 		this.pageIndexOffset = pageIndexOffset;
 		this.firstPageLimit = firstPageLimit;
 		this.maxItemsPerPage = maxItemsPerPage;
 	}
 
-	@Override
 	public int getPageLimit(int pageIndex) {
 		var offsetedIndex = pageIndex + pageIndexOffset;
 		var power = 0b1L << offsetedIndex;
@@ -40,6 +27,16 @@ public class ExponentialPageLimits implements PageLimits {
 
 		var min = Math.max(firstPageLimit, Math.min(maxItemsPerPage, firstPageLimit + power));
 		assert min > 0;
-		return LuceneUtils.safeLongToInt(min);
+		return safeLongToInt(min);
+	}
+
+	private static int safeLongToInt(long l) {
+		if (l > 2147483630) {
+			return 2147483630;
+		} else if (l < -2147483630) {
+			return -2147483630;
+		} else {
+			return (int) l;
+		}
 	}
 }

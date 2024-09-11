@@ -1,10 +1,6 @@
 # A type that starts with "-" is an optional type, otherwise it can't be null
 currentVersion: "0.0.0"
 interfacesData:
-  StandardFSDirectoryOptions:
-    extendInterfaces: [PathDirectoryOptions]
-  PathDirectoryOptions:
-    extendInterfaces: [LuceneDirectoryOptions]
   ClientBoundRequest:
     extendInterfaces: [RPCEvent]
   ClientBoundResponse:
@@ -21,7 +17,6 @@ superTypesData:
     SingletonUpdateOldData,
     GeneratedEntityId,
     GetDatabase,
-    GetLuceneIndex,
     Disconnect,
     GetSingleton,
     SingletonGet,
@@ -29,19 +24,16 @@ superTypesData:
     SingletonUpdateInit,
     SingletonUpdateEnd,
     RPCCrash,
-    CloseDatabase,
-    CloseLuceneIndex
+    CloseDatabase
   ]
   ServerBoundRequest: [
     GetDatabase,
-    GetLuceneIndex,
     Disconnect,
     GetSingleton,
     SingletonGet,
     SingletonSet,
     SingletonUpdateInit,
-    CloseDatabase,
-    CloseLuceneIndex
+    CloseDatabase
   ]
   ClientBoundResponse: [
     Empty,
@@ -57,25 +49,6 @@ superTypesData:
     Empty,
     SingletonUpdateEnd
   ]
-  LuceneDirectoryOptions: [
-    ByteBuffersDirectory,
-    MemoryMappedFSDirectory,
-    NIOFSDirectory,
-    RAFFSDirectory,
-    DirectIOFSDirectory,
-    NRTCachingDirectory
-  ]
-  StandardFSDirectoryOptions: [
-    MemoryMappedFSDirectory,
-    NIOFSDirectory,
-    RAFFSDirectory
-  ]
-  PathDirectoryOptions: [
-    MemoryMappedFSDirectory,
-    NIOFSDirectory,
-    RAFFSDirectory,
-    StandardFSDirectoryOptions
-  ]
   Filter: [
     NoFilter,
     BloomFilter
@@ -87,12 +60,6 @@ customTypesData:
   Compression:
     javaClass: it.cavallium.dbengine.client.Compression
     serializer: it.cavallium.dbengine.database.remote.CompressionSerializer
-  TextFieldsAnalyzer:
-    javaClass: it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer
-    serializer: it.cavallium.dbengine.database.remote.TextFieldsAnalyzerSerializer
-  TextFieldsSimilarity:
-    javaClass: it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity
-    serializer: it.cavallium.dbengine.database.remote.TextFieldsSimilaritySerializer
   Duration:
     javaClass: java.time.Duration
     serializer: it.cavallium.dbengine.database.remote.DurationSerializer
@@ -102,9 +69,6 @@ customTypesData:
   ColumnFamilyHandle:
     javaClass: org.rocksdb.ColumnFamilyHandle
     serializer: it.cavallium.dbengine.database.remote.ColumnFamilyHandleSerializer
-  LuceneHacks:
-    javaClass: it.cavallium.dbengine.lucene.LuceneHacks
-    serializer: it.cavallium.dbengine.database.remote.LuceneHacksSerializer
   UpdateReturnMode:
     javaClass: it.cavallium.dbengine.database.UpdateReturnMode
     serializer: it.cavallium.dbengine.database.remote.UpdateReturnModeSerializer
@@ -118,12 +82,6 @@ customTypesData:
   StringMap:
     javaClass: java.util.Map<java.lang.String, java.lang.String>
     serializer: it.cavallium.dbengine.database.remote.StringMapSerializer
-  String2FieldAnalyzerMap:
-    javaClass: java.util.Map<java.lang.String, it.cavallium.dbengine.lucene.analyzer.TextFieldsAnalyzer>
-    serializer: it.cavallium.dbengine.database.remote.String2FieldAnalyzerMapSerializer
-  String2FieldSimilarityMap:
-    javaClass: java.util.Map<java.lang.String, it.cavallium.dbengine.lucene.analyzer.TextFieldsSimilarity>
-    serializer: it.cavallium.dbengine.database.remote.String2FieldSimilarityMapSerializer
   String2ColumnFamilyHandleMap:
     javaClass: java.util.Map<java.lang.String, org.rocksdb.ColumnFamilyHandle>
     serializer: it.cavallium.dbengine.database.remote.String2ColumnFamilyHandleMapSerializer
@@ -139,13 +97,6 @@ baseTypesData:
       name: String
       columns: Column[]
       databaseOptions: DatabaseOptions
-  GetLuceneIndex:
-    data:
-      clusterName: String
-      structure: LuceneIndexStructure
-      indicizerAnalyzers: IndicizerAnalyzers
-      indicizerSimilarities: IndicizerSimilarities
-      luceneOptions: LuceneOptions
   Disconnect: { data: { } }
   GetSingleton:
     data:
@@ -172,9 +123,6 @@ baseTypesData:
   CloseDatabase:
     data:
       databaseId: long
-  CloseLuceneIndex:
-    data:
-      luceneIndexId: long
 
   # Client-bound responses
 
@@ -198,17 +146,6 @@ baseTypesData:
 
   # Data
 
-  LuceneIndexStructure:
-    data:
-      totalShards: int
-      activeShards: int[]
-  SingleIndex:
-    data:
-      name: String
-  ClusteredShardIndex:
-    data:
-      clusterName: String
-      shard: int
   BinaryOptional:
     data:
       val: -Binary
@@ -277,58 +214,6 @@ baseTypesData:
     data:
       maxDictBytes: int
       compression: Compression
-  IndicizerAnalyzers:
-    data:
-      defaultAnalyzer: TextFieldsAnalyzer
-      fieldAnalyzer: String2FieldAnalyzerMap
-  IndicizerSimilarities:
-    data:
-      defaultSimilarity: TextFieldsSimilarity
-      fieldSimilarity: String2FieldSimilarityMap
-  LuceneOptions:
-    data:
-      extraFlags: StringMap
-      queryRefreshDebounceTime: Duration
-      commitDebounceTime: Duration
-      lowMemory: boolean
-      directoryOptions: LuceneDirectoryOptions
-      indexWriterReaderPooling: -boolean
-      indexWriterRAMBufferSizeMB: -double
-      indexWriterMaxBufferedDocs: -int
-      applyAllDeletes: -boolean
-      writeAllDeletes: -boolean
-      maxInMemoryResultEntries: int
-      mergePolicy: TieredMergePolicy
-  TieredMergePolicy:
-    data:
-      forceMergeDeletesPctAllowed: -double
-      deletesPctAllowed: -double
-      maxMergeAtOnce: -int
-      maxMergedSegmentBytes: -long
-      floorSegmentBytes: -long
-      segmentsPerTier: -double
-      maxCFSSegmentSizeBytes: -long
-      noCFSRatio: -double
-  ByteBuffersDirectory: { data: { } }
-  MemoryMappedFSDirectory:
-    data:
-      managedPath: Path
-  NIOFSDirectory:
-    data:
-      managedPath: Path
-  RAFFSDirectory:
-    data:
-      managedPath: Path
-  DirectIOFSDirectory:
-    data:
-      delegate: StandardFSDirectoryOptions
-      mergeBufferSize: -int
-      minBytesDirect: -long
-  NRTCachingDirectory:
-    data:
-      delegate: LuceneDirectoryOptions
-      maxMergeSizeBytes: long
-      maxCachedBytes: long
 versions:
   0.0.0:
     details:

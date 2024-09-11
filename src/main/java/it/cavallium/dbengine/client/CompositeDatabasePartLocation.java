@@ -18,8 +18,7 @@ public class CompositeDatabasePartLocation {
 	}
 
 	public enum CompositeDatabasePartType {
-		KV_DATABASE,
-		LUCENE_INDEX
+		KV_DATABASE
 	}
 
 	public CompositeDatabasePartType getPartType() {

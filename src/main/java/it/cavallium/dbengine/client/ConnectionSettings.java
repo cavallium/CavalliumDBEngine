@@ -29,8 +29,6 @@ public sealed interface ConnectionSettings {
 
 	sealed interface ConnectionPart {
 
-		record ConnectionPartLucene(@Nullable String name) implements ConnectionPart {}
-
 		record ConnectionPartRocksDB(@Nullable String name) implements ConnectionPart {}
 	}
 }

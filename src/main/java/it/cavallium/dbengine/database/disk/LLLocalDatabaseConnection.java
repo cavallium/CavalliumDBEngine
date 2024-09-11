@@ -2,14 +2,8 @@ package it.cavallium.dbengine.database.disk;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
-import it.cavallium.dbengine.database.LLLuceneIndex;
-import it.cavallium.dbengine.lucene.LuceneHacks;
 import it.cavallium.dbengine.rpc.current.data.Column;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
-import it.cavallium.dbengine.rpc.current.data.IndicizerAnalyzers;
-import it.cavallium.dbengine.rpc.current.data.IndicizerSimilarities;
-import it.cavallium.dbengine.rpc.current.data.LuceneIndexStructure;
-import it.cavallium.dbengine.rpc.current.data.LuceneOptions;
 import it.cavallium.dbengine.utils.DBException;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,7 +12,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicBoolean;
-import org.jetbrains.annotations.Nullable;
 
 public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
@@ -73,38 +66,6 @@ public class LLLocalDatabaseConnection implements LLDatabaseConnection {
 
 	public static Path getDatabasePath(Path basePath, String databaseName) {
 		return basePath.resolve("database_" + databaseName);
-	}
-
-	@Override
-	public LLLuceneIndex getLuceneIndex(String clusterName,
-			LuceneIndexStructure indexStructure,
-			IndicizerAnalyzers indicizerAnalyzers,
-			IndicizerSimilarities indicizerSimilarities,
-			LuceneOptions luceneOptions,
-			@Nullable LuceneHacks luceneHacks) {
-		if (clusterName == null) {
-			throw new IllegalArgumentException("Cluster name must be set");
-		}
-		if (indexStructure.activeShards().size() != 1) {
-			return new LLLocalMultiLuceneIndex(meterRegistry,
-					clusterName,
-					indexStructure.activeShards(),
-					indexStructure.totalShards(),
-					indicizerAnalyzers,
-					indicizerSimilarities,
-					luceneOptions,
-					luceneHacks
-			);
-		} else {
-			return new LLLocalLuceneIndex(meterRegistry,
-					clusterName,
-					indexStructure.activeShards().getInt(0),
-					indicizerAnalyzers,
-					indicizerSimilarities,
-					luceneOptions,
-					luceneHacks
-			);
-		}
 	}
 
 	@Override

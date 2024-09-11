@@ -42,8 +42,6 @@ import org.jetbrains.annotations.Nullable;
 
 public class StreamUtils {
 
-	public static final ForkJoinPool LUCENE_POOL = newNamedForkJoinPool("Lucene", false);
-
 	private static final Collector<?, ?, ?> TO_LIST_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> COUNT_FAKE_COLLECTOR = new FakeCollector();
 	private static final Collector<?, ?, ?> FIRST_FAKE_COLLECTOR = new FakeCollector();

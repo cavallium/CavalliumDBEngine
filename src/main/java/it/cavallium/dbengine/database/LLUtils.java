@@ -5,13 +5,8 @@ import static org.apache.commons.lang3.ArrayUtils.EMPTY_BYTE_ARRAY;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import it.cavallium.buffer.Buf;
-import it.cavallium.dbengine.client.HitEntry;
-import it.cavallium.dbengine.client.HitKey;
 import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.lucene.LuceneCloseable;
-import it.cavallium.dbengine.lucene.LuceneUtils;
-import it.cavallium.dbengine.lucene.RandomSortField;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodHandles.Lookup;
@@ -22,49 +17,25 @@ import java.util.Collection;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.stream.Stream;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.MarkerManager;
-import org.apache.lucene.document.Document;
-import org.apache.lucene.document.DoublePoint;
-import org.apache.lucene.document.Field;
-import org.apache.lucene.document.Field.Store;
-import org.apache.lucene.document.FloatPoint;
-import org.apache.lucene.document.IntPoint;
-import org.apache.lucene.document.LongPoint;
-import org.apache.lucene.document.NumericDocValuesField;
-import org.apache.lucene.document.SortedNumericDocValuesField;
-import org.apache.lucene.document.StoredField;
-import org.apache.lucene.document.StringField;
-import org.apache.lucene.document.TextField;
-import org.apache.lucene.index.Term;
-import org.apache.lucene.search.ScoreDoc;
-import org.apache.lucene.search.ScoreMode;
-import org.apache.lucene.search.Sort;
-import org.apache.lucene.search.SortField;
-import org.apache.lucene.search.SortedNumericSortField;
-import org.apache.lucene.util.BytesRef;
-import org.apache.lucene.util.BytesRefBuilder;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.AbstractImmutableNativeReference;
 import org.rocksdb.AbstractNativeReference;
-import org.rocksdb.ReadOptions;
 
 @SuppressWarnings("unused")
 public class LLUtils {
 
 	private static final Logger logger = LogManager.getLogger(LLUtils.class);
 	public static final Marker MARKER_ROCKSDB = MarkerManager.getMarker("ROCKSDB");
-	public static final Marker MARKER_LUCENE = MarkerManager.getMarker("LUCENE");
 
 	public static final int INITIAL_DIRECT_READ_BYTE_BUF_SIZE_BYTES = 4096;
 	public static final ByteBuffer EMPTY_BYTE_BUFFER = ByteBuffer.allocateDirect(0).asReadOnlyBuffer();
@@ -144,116 +115,6 @@ public class LLUtils {
 		return bool ? BUF_TRUE : BUF_FALSE;
 	}
 
-	@Nullable
-	public static Sort toSort(@Nullable LLSort sort) {
-		if (sort == null) {
-			return null;
-		}
-		if (sort.getType() == LLSortType.LONG) {
-			return new Sort(new SortedNumericSortField(sort.getFieldName(), SortField.Type.LONG, sort.isReverse()));
-		} else if (sort.getType() == LLSortType.RANDOM) {
-			return new Sort(new RandomSortField());
-		} else if (sort.getType() == LLSortType.SCORE) {
-			return new Sort(SortField.FIELD_SCORE);
-		} else if (sort.getType() == LLSortType.DOC) {
-			return new Sort(SortField.FIELD_DOC);
-		}
-		return null;
-	}
-
-	public static ScoreMode toScoreMode(LLScoreMode scoreMode) {
-		return switch (scoreMode) {
-			case COMPLETE -> ScoreMode.COMPLETE;
-			case TOP_SCORES -> ScoreMode.TOP_SCORES;
-			case COMPLETE_NO_SCORES -> ScoreMode.COMPLETE_NO_SCORES;
-			case NO_SCORES -> ScoreMode.TOP_DOCS;
-		};
-	}
-
-	public static Term toTerm(LLTerm term) {
-		var valueRef = new FakeBytesRefBuilder(term);
-		return new Term(term.getKey(), valueRef);
-	}
-
-	public static Document toDocument(LLUpdateDocument document) {
-		return toDocument(document.items());
-	}
-
-	public static Document toDocument(List<LLItem> document) {
-		Document d = new Document();
-		for (LLItem item : document) {
-			if (item != null) {
-				d.add(LLUtils.toField(item));
-			}
-		}
-		return d;
-	}
-
-	public static Field[] toFields(List<LLItem> fields) {
-		Field[] d = new Field[fields.size()];
-		for (int i = 0; i < fields.size(); i++) {
-			d[i] = LLUtils.toField(fields.get(i));
-		}
-		return d;
-	}
-
-	public static Collection<Document> toDocuments(Collection<LLUpdateDocument> document) {
-		List<Document> d = new ArrayList<>(document.size());
-		for (LLUpdateDocument doc : document) {
-			d.add(LLUtils.toDocument(doc));
-		}
-		return d;
-	}
-
-	public static Collection<Document> toDocumentsFromEntries(Collection<Entry<LLTerm, LLUpdateDocument>> documentsList) {
-		ArrayList<Document> results = new ArrayList<>(documentsList.size());
-		for (Entry<LLTerm, LLUpdateDocument> entry : documentsList) {
-			results.add(LLUtils.toDocument(entry.getValue()));
-		}
-		return results;
-	}
-
-	public static Iterable<Term> toTerms(Iterable<LLTerm> terms) {
-		List<Term> d = new ArrayList<>();
-		for (LLTerm term : terms) {
-			d.add(LLUtils.toTerm(term));
-		}
-		return d;
-	}
-
-	private static Field toField(LLItem item) {
-		return switch (item.getType()) {
-			case IntPoint -> new IntPoint(item.getName(), item.intData());
-			case DoublePoint -> new DoublePoint(item.getName(), item.doubleData());
-			case IntPointND -> new IntPoint(item.getName(), item.intArrayData());
-			case LongPoint -> new LongPoint(item.getName(), item.longData());
-			case LongPointND -> new LongPoint(item.getName(), item.longArrayData());
-			case FloatPointND -> new FloatPoint(item.getName(), item.floatArrayData());
-			case DoublePointND -> new DoublePoint(item.getName(), item.doubleArrayData());
-			case LongStoredField -> new StoredField(item.getName(), item.longData());
-			case BytesStoredField -> new StoredField(item.getName(), (BytesRef) item.getData());
-			case FloatPoint -> new FloatPoint(item.getName(), item.floatData());
-			case TextField -> new TextField(item.getName(), item.stringValue(), Store.NO);
-			case TextFieldStored -> new TextField(item.getName(), item.stringValue(), Store.YES);
-			case SortedNumericDocValuesField -> new SortedNumericDocValuesField(item.getName(), item.longData());
-			case NumericDocValuesField -> new NumericDocValuesField(item.getName(), item.longData());
-			case StringField -> {
-				if (item.getData() instanceof BytesRef bytesRef) {
-					yield new StringField(item.getName(), bytesRef, Store.NO);
-				} else {
-					yield new StringField(item.getName(), item.stringValue(), Store.NO);
-				}
-			}
-			case StringFieldStored -> {
-				if (item.getData() instanceof BytesRef bytesRef) {
-					yield new StringField(item.getName(), bytesRef, Store.YES);
-				} else {
-					yield new StringField(item.getName(), item.stringValue(), Store.YES);
-				}
-			}
-		};
-	}
-
 	private static int[] getIntArray(byte[] data) {
 		var count = data.length / Integer.BYTES;
 		var items = new int[count];
@@ -282,10 +143,6 @@ public class LLUtils {
 			);
 		}
 		return items;
-	}
-
-	public static it.cavallium.dbengine.database.LLKeyScore toKeyScore(LLKeyScore hit) {
-		return new it.cavallium.dbengine.database.LLKeyScore(hit.docId(), hit.shardId(), hit.score(), hit.key());
 	}
 
 	public static String toStringSafe(byte @Nullable[] key) {
@@ -449,15 +306,6 @@ public class LLUtils {
 		}
 
 		return buf.hashCode();
-	}
-
-	public static boolean isSet(ScoreDoc[] scoreDocs) {
-		for (ScoreDoc scoreDoc : scoreDocs) {
-			if (scoreDoc == null) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	public static boolean isBoundedRange(LLRange rangeShared) {
@@ -625,11 +473,7 @@ public class LLUtils {
 	private static void closeResource(Object next, boolean manual) {
 		if (next instanceof SafeCloseable closeable) {
 			if (manual || closeable instanceof DiscardingCloseable) {
-				if (!manual && !LuceneUtils.isLuceneThread() && closeable instanceof LuceneCloseable luceneCloseable) {
-					luceneCloseable.close();
-				} else {
-					closeable.close();
-				}
+				closeable.close();
 			}
 		} else if (next instanceof List<?> iterable) {
 			iterable.forEach(obj -> closeResource(obj, manual));
@@ -679,19 +523,5 @@ public class LLUtils {
 
 	public static Buf wrapNullable(byte[] array) {
 		return array != null ? Buf.wrap(array) : null;
-	}
-
-	private static class FakeBytesRefBuilder extends BytesRefBuilder {
-
-		private final LLTerm term;
-
-		public FakeBytesRefBuilder(LLTerm term) {
-			this.term = term;
-		}
-
-		@Override
-		public BytesRef toBytesRef() {
-			return term.getValueBytesRef();
-		}
 	}
 }

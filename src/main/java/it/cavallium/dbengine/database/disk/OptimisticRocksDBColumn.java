@@ -10,9 +10,8 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.disk.rocksdb.LLReadOptions;
 import it.cavallium.dbengine.database.disk.rocksdb.LLWriteOptions;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
-import it.cavallium.dbengine.lucene.ExponentialPageLimits;
+import it.cavallium.dbengine.utils.ExponentialLimits;
 import it.cavallium.dbengine.utils.DBException;
-import java.io.IOException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.locks.LockSupport;
@@ -21,13 +20,11 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.rocksdb.ColumnFamilyHandle;
 import org.rocksdb.OptimisticTransactionDB;
-import org.rocksdb.ReadOptions;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.Status.Code;
 import org.rocksdb.Transaction;
 import org.rocksdb.TransactionOptions;
 import org.rocksdb.WriteBatch;
-import org.rocksdb.WriteOptions;
 
 public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<OptimisticTransactionDB> {
 
@@ -95,7 +92,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 				try (var tx = beginTransaction(writeOptions, txOpts)) {
 					boolean committedSuccessfully;
 					int retries = 0;
-					ExponentialPageLimits retryTime = null;
+					ExponentialLimits retryTime = null;
 					Buf prevData;
 					Buf newData;
 					boolean changed;
@@ -160,7 +157,7 @@ public final class OptimisticRocksDBColumn extends AbstractRocksDBColumn<Optimis
 							retries++;
 
 							if (retries == 1) {
-								retryTime = new ExponentialPageLimits(0, 2, 2000);
+								retryTime = new ExponentialLimits(0, 2, 2000);
 							}
 							long retryNs = 1000000L * retryTime.getPageLimit(retries);
 

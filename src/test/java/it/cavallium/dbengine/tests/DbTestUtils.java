@@ -4,12 +4,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import it.cavallium.buffer.BufDataInput;
 import it.cavallium.buffer.BufDataOutput;
-import it.cavallium.dbengine.client.LuceneIndex;
-import it.cavallium.dbengine.client.LuceneIndexImpl;
 import it.cavallium.dbengine.database.LLDatabaseConnection;
 import it.cavallium.dbengine.database.LLDictionary;
 import it.cavallium.dbengine.database.LLKeyValueDatabase;
-import it.cavallium.dbengine.database.LLLuceneIndex;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionary;
 import it.cavallium.dbengine.database.collections.DatabaseMapDictionaryDeep;
@@ -26,11 +23,15 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Function;
-import org.apache.lucene.util.IOSupplier;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.Assertions;
 
 public class DbTestUtils {
+
+	@FunctionalInterface
+	public interface IOSupplier<T> {
+		T get() throws IOException;
+	}
 
 	public static final String BIG_STRING = generateBigString();
 	public static final int MAX_IN_MEMORY_RESULT_ENTRIES = 8192;
@@ -72,9 +73,6 @@ public class DbTestUtils {
 	}
 
 	public record TempDb(LLDatabaseConnection connection, LLKeyValueDatabase db,
-											 LLLuceneIndex luceneSingle,
-											 LLLuceneIndex luceneMulti,
-											 SwappableLuceneSearcher swappableLuceneSearcher,
 											 Path path) {}
 
 	public static void ensureNoLeaks() {
@@ -89,10 +87,6 @@ public class DbTestUtils {
 			String name,
 			UpdateMode updateMode) {
 		return database.getDictionary(name, updateMode);
-	}
-
-	public static LuceneIndex<String, String> tempLuceneIndex(LLLuceneIndex index) {
-		return new LuceneIndexImpl<>(index, new StringIndicizer());
 	}
 
 

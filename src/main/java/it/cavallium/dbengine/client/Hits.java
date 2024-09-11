@@ -6,7 +6,6 @@ import it.cavallium.dbengine.database.DiscardingCloseable;
 import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SafeCloseable;
 import it.cavallium.dbengine.database.collections.ValueGetter;
-import it.cavallium.dbengine.lucene.LuceneCloseable;
 import it.cavallium.dbengine.utils.SimpleResource;
 import java.util.ArrayList;
 import java.util.List;

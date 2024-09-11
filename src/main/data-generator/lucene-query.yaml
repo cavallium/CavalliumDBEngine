@@ -368,7 +368,7 @@ baseTypesData:
   DocSort:
     data: { }
   TotalHitsCount:
-    stringRepresenter: "it.cavallium.dbengine.lucene.LuceneUtils.toHumanReadableString"
+    stringRepresenter: "it.cavallium.dbengine.client.query.QueryUtil.toHumanReadableString"
     data:
       value: long
       exact: boolean

@@ -5,7 +5,7 @@
 
 	<groupId>it.cavallium</groupId>
 	<artifactId>dbengine</artifactId>
-	<version>4.2.${revision}</version>
+	<version>4.3.${revision}</version>
 
 	<packaging>jar</packaging>
 	<properties>

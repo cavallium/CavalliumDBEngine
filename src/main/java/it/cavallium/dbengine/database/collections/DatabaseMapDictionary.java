@@ -17,6 +17,15 @@ import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
+import it.cavallium.dbengine.database.disk.LLLocalDictionary;
+import it.cavallium.dbengine.database.disk.RocksDBFile;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationKeyState.RocksDBFileIterationStateKeyError;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationKeyState.RocksDBFileIterationStateKeyOk;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateBegin;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateEnd;
+import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateKey;
+import it.cavallium.dbengine.database.disk.SSTRange;
+import it.cavallium.dbengine.database.disk.SSTRange.SSTRangeFull;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -26,6 +35,7 @@ import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
@@ -38,6 +48,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+import org.rocksdb.RocksDBException;
 
 /**
  * Optimized implementation of "DatabaseMapDictionary with SubStageGetterSingle"
@@ -551,6 +562,29 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			dictionary.remove(range.getSingleUnsafe(), LLDictionaryResultType.VOID);
 		} else {
 			dictionary.setRange(range, Stream.empty(), false);
+		}
+	}
+
+	public static <T, U> Stream<Stream<Entry<T, U>>> getAllEntriesFastUnsafe(DatabaseMapDictionary<T, U> dict) {
+		try {
+			return ((LLLocalDictionary) dict.dictionary)
+					.getAllLiveFiles()
+					.map(file -> file.iterate(new SSTRangeFull()).map(state -> switch (state) {
+						case RocksDBFileIterationStateBegin rocksDBFileIterationStateBegin:
+							yield null;
+						case RocksDBFileIterationStateEnd rocksDBFileIterationStateEnd:
+							yield null;
+						case RocksDBFileIterationStateKey rocksDBFileIterationStateKey:
+							yield switch (rocksDBFileIterationStateKey.state()) {
+								case RocksDBFileIterationStateKeyError e -> null;
+								case RocksDBFileIterationStateKeyOk rocksDBFileIterationStateKeyOk ->
+										Map.entry(dict.deserializeSuffix(BufDataInput.create(rocksDBFileIterationStateKey.key())),
+												dict.deserializeValue(rocksDBFileIterationStateKeyOk.value())
+										);
+							};
+					}));
+		} catch (RocksDBException e) {
+			throw new RuntimeException(e);
 		}
 	}
 

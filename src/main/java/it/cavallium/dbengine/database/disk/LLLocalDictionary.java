@@ -15,7 +15,6 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Timer;
 import it.cavallium.buffer.Buf;
 import it.cavallium.dbengine.client.DbProgress;
-import it.cavallium.dbengine.client.DbProgress.DbSSTProgress;
 import it.cavallium.dbengine.client.SSTProgress.SSTOk;
 import it.cavallium.dbengine.client.SSTProgress.SSTProgressReport;
 import it.cavallium.dbengine.client.SSTProgress.SSTStart;
@@ -1204,6 +1203,10 @@ public class LLLocalDictionary implements LLDictionary {
 				throw new DBException("Failed to remove key", e);
 			}
 		}
+	}
+
+	public Stream<RocksDBFile> getAllLiveFiles() throws RocksDBException {
+		return db.getAllLiveFiles();
 	}
 
 }

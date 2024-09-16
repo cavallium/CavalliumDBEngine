@@ -582,7 +582,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 												dict.deserializeValue(rocksDBFileIterationStateKeyOk.value())
 										);
 							};
-					}));
+					}).filter(Objects::nonNull));
 		} catch (RocksDBException e) {
 			throw new RuntimeException(e);
 		}

@@ -320,10 +320,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					columnFamilyOptions.setCompressionPerLevel(compressionTypes);
 				}
 
-				final TableFormatConfig tableOptions = inMemory ? new PlainTableConfig() : new BlockBasedTableConfig();
+				final TableFormatConfig tableOptions = inMemory && Boolean.parseBoolean(System.getProperty("rocksdb.debugging.useplaintablewheninmemory", "true")) ? new PlainTableConfig() : new BlockBasedTableConfig();
 				if (!FOLLOW_ROCKSDB_OPTIMIZATIONS) {
 					if (!databaseOptions.lowMemory()) {
-						// tableOptions.setOptimizeFiltersForMemory(true);
 						columnFamilyOptions.setWriteBufferSize(256 * SizeUnit.MB);
 					}
 				}
@@ -332,6 +331,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				}
 				columnFamilyOptions.setMaxWriteBufferNumberToMaintain(1);
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
+					blockBasedTableConfig.setOptimizeFiltersForMemory(true);
 					blockBasedTableConfig.setVerifyCompression(VERIFY_COMPRESSION);
 				}
 				if (columnOptions.filter().isPresent()) {

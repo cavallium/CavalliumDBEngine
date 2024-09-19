@@ -13,7 +13,7 @@ public enum	LLScoreMode {
 	COMPLETE_NO_SCORES,
 	/**
 	 * Produced scorers will optionally allow skipping over non-competitive
-	 * hits using the {@link org.apache.lucene.search.Scorer#setMinCompetitiveScore(float)} API.
+	 * hits using the Scorer#setMinCompetitiveScore(float) API.
 	 * This can reduce time if using setMinCompetitiveScore.
 	 */
 	TOP_SCORES,

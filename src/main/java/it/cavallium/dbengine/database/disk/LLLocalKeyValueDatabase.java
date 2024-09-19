@@ -781,7 +781,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 							if (closed) {
 								return 0d;
 							}
-							return database.getAggregatedLongProperty(propertyName) / (double) handles.size();
+							return database.getAggregatedLongProperty(propertyName);
 						} catch (RocksDBException e) {
 							if ("NotFound".equals(e.getMessage())) {
 								return 0d;
@@ -1344,10 +1344,10 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					db.getAggregatedLongProperty(RocksDBLongProperty.SIZE_ALL_MEM_TABLES.getName()),
 					db.getAggregatedLongProperty(RocksDBLongProperty.CUR_SIZE_ALL_MEM_TABLES.getName()),
 					db.getAggregatedLongProperty(RocksDBLongProperty.ESTIMATE_NUM_KEYS.getName()),
-					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_CAPACITY.getName()) / this.handles.size(),
-					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_USAGE.getName()) / this.handles.size(),
-					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_PINNED_USAGE.getName()) / this.handles.size(),
-					db.getAggregatedLongProperty(RocksDBLongProperty.NUM_LIVE_VERSIONS.getName()) / this.handles.size()
+					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_CAPACITY.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_USAGE.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.BLOCK_CACHE_PINNED_USAGE.getName()),
+					db.getAggregatedLongProperty(RocksDBLongProperty.NUM_LIVE_VERSIONS.getName())
 			);
 		} catch (RocksDBException e) {
 			throw new DBException("Failed to read memory stats", e);

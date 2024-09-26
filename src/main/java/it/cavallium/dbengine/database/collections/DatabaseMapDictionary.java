@@ -35,6 +35,7 @@ import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -567,8 +568,10 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 
 	public static <T, U> Stream<Stream<Entry<T, U>>> getAllEntriesFastUnsafe(DatabaseMapDictionary<T, U> dict) {
 		try {
+			Comparator<RocksDBFile> comparator = Comparator.<RocksDBFile>comparingInt(x -> x.getMetadata().level()).reversed();
 			return ((LLLocalDictionary) dict.dictionary)
 					.getAllLiveFiles()
+					.sorted(comparator)
 					.map(file -> file.iterate(new SSTRangeFull()).map(state -> switch (state) {
 						case RocksDBFileIterationStateBegin rocksDBFileIterationStateBegin:
 							yield null;

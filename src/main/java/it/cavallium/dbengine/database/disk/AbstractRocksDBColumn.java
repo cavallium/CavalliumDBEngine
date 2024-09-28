@@ -18,8 +18,10 @@ import it.cavallium.dbengine.utils.SimpleResource;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.TimeUnit;
@@ -36,6 +38,7 @@ import org.rocksdb.FlushOptions;
 import org.rocksdb.Holder;
 import org.rocksdb.KeyMayExist;
 import org.rocksdb.LevelMetaData;
+import org.rocksdb.LiveFileMetaData;
 import org.rocksdb.RocksDB;
 import org.rocksdb.RocksDBException;
 import org.rocksdb.RocksObject;
@@ -561,9 +564,11 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 		try {
 			ensureOpen();
 			byte[] cfhName = cfh.getName();
-			return db.getColumnFamilyMetaData(cfh).levels().stream()
-					.flatMap(l -> l.files().stream()
-							.map(sstFileMetaData -> new RocksDBColumnFile(db, cfh, sstFileMetaData, cfhName, l.level())));
+			return db.getLiveFilesMetaData()
+					.parallelStream()
+					.filter(x -> Arrays.equals(cfhName, x.columnFamilyName()))
+					.sorted(Comparator.comparingInt(LiveFileMetaData::level).reversed())
+					.map(sstFileMetaData -> new RocksDBColumnFile(db, cfh, sstFileMetaData, cfhName, sstFileMetaData.level()));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}

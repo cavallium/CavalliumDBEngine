@@ -168,6 +168,10 @@ public abstract class RocksIteratorObj extends SimpleResource {
 		rocksIterator.next();
 	}
 
+	public synchronized void statusUnsafe() throws RocksDBException {
+		rocksIterator.status();
+	}
+
 	public synchronized void seekToLast() throws RocksDBException {
 		ensureOpen();
 		startedIterSeek.increment();

@@ -225,6 +225,7 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 															}
 															return new RocksDBFileIterationStateBegin(meta);
 														} else {
+															rocksIterator.statusUnsafe();
 															rawKey = rocksIterator.keyBuf().copy();
 															rawValue = rocksIterator.valueBuf().copy();
 															rocksIterator.next();

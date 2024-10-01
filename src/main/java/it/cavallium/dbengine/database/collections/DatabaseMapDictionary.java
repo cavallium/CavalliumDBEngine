@@ -571,10 +571,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public static <T, U> Stream<Stream<Entry<T, U>>> getAllEntriesFastUnsafe(DatabaseMapDictionary<T, U> dict,
 			BiConsumer<Entry<Buf, Buf>, Throwable> deserializationErrorHandler) {
 		try {
-			Comparator<RocksDBFile> comparator = Comparator.<RocksDBFile>comparingInt(x -> x.getMetadata().level()).reversed();
 			return ((LLLocalDictionary) dict.dictionary)
 					.getAllLiveFiles()
-					.sorted(comparator)
+					.sequential()
 					.map(file -> file.iterate(new SSTRangeFull()).map(state -> switch (state) {
 						case RocksDBFileIterationStateBegin rocksDBFileIterationStateBegin:
 							yield null;

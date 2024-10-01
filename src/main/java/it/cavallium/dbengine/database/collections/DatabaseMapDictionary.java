@@ -571,9 +571,9 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public static <T, U> Stream<Stream<Entry<T, U>>> getAllEntriesFastUnsafe(DatabaseMapDictionary<T, U> dict,
 			BiConsumer<Entry<Buf, Buf>, Throwable> deserializationErrorHandler) {
 		try {
-			return ((LLLocalDictionary) dict.dictionary)
-					.getAllLiveFiles()
-					.sequential()
+			var liveFiles = StreamUtils.toListOn(dict.getDbReadPool(),
+					((LLLocalDictionary) dict.dictionary).getAllLiveFiles());
+			return liveFiles.stream()
 					.map(file -> file.iterate(new SSTRangeFull()).map(state -> switch (state) {
 						case RocksDBFileIterationStateBegin rocksDBFileIterationStateBegin:
 							yield null;

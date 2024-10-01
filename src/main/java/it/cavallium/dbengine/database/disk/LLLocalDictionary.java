@@ -663,7 +663,7 @@ public class LLLocalDictionary implements LLDictionary {
 		Column column = ColumnUtils.special(columnName);
 		try {
 
-			var liveFiles = db.getAllLiveFiles().toList();
+			var liveFiles = db.getAllLiveFiles();
 			var liveFilesCount = liveFiles.size();
 
 			return liveFiles.stream()
@@ -1205,7 +1205,7 @@ public class LLLocalDictionary implements LLDictionary {
 		}
 	}
 
-	public Stream<RocksDBFile> getAllLiveFiles() throws RocksDBException {
+	public List<RocksDBFile> getAllLiveFiles() throws RocksDBException {
 		return db.getAllLiveFiles();
 	}
 

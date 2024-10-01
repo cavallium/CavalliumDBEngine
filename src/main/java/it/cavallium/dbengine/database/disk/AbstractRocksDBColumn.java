@@ -1,5 +1,6 @@
 package it.cavallium.dbengine.database.disk;
 
+import static it.cavallium.dbengine.utils.StreamUtils.toListOn;
 import static java.util.Objects.requireNonNull;
 
 import io.micrometer.core.instrument.Counter;
@@ -559,16 +560,16 @@ public sealed abstract class AbstractRocksDBColumn<T extends RocksDB> implements
 	}
 
 	@Override
-	public Stream<RocksDBFile> getAllLiveFiles() throws RocksDBException {
+	public List<RocksDBFile> getAllLiveFiles() throws RocksDBException {
 		var closeReadLock = closeLock.readLock();
 		try {
 			ensureOpen();
 			byte[] cfhName = cfh.getName();
-			return db.getLiveFilesMetaData()
+			return toListOn(dbReadPool, db.getLiveFilesMetaData()
 					.parallelStream()
 					.filter(x -> Arrays.equals(cfhName, x.columnFamilyName()))
 					.sorted(Comparator.comparingInt(LiveFileMetaData::level).reversed())
-					.map(sstFileMetaData -> new RocksDBColumnFile(db, cfh, sstFileMetaData, cfhName, sstFileMetaData.level()));
+					.map(sstFileMetaData -> new RocksDBColumnFile(db, cfh, sstFileMetaData, cfhName, sstFileMetaData.level())));
 		} finally {
 			closeLock.unlockRead(closeReadLock);
 		}

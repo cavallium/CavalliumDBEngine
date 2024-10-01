@@ -55,7 +55,7 @@ public sealed interface RocksDBColumn permits AbstractRocksDBColumn {
 
 	@NotNull RocksIteratorObj newIterator(@NotNull LLReadOptions readOptions, @Nullable Buf min, @Nullable Buf max);
 
-	Stream<RocksDBFile> getAllLiveFiles() throws RocksDBException;
+	List<RocksDBFile> getAllLiveFiles() throws RocksDBException;
 
 	@NotNull UpdateAtomicResult updateAtomic(@NotNull LLReadOptions readOptions,
 			@NotNull LLWriteOptions writeOptions,

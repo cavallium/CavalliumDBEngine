@@ -55,7 +55,6 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 		Long sstNumber = null;
 		if (extensionIndex != -1) {
 			String numberRaw = fileName.substring(0, extensionIndex);
-			//noinspection UnstableApiUsage
 			this.sstNumber = Longs.tryParse(numberRaw);
 		} else {
 			this.sstNumber = null;
@@ -95,7 +94,7 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 	public Stream<SSTVerificationProgress> verify(SSTRange range) {
 		AtomicLong fileScanned = new AtomicLong();
 		AtomicLong fileTotal = new AtomicLong();
-		return iterate(range).map(state -> switch (state) {
+		return iterate(range, true).map(state -> switch (state) {
 			case RocksDBFileIterationStateBegin begin -> {
 				var countEstimate = begin.metadata().countEstimate();
 				if (countEstimate != null) {
@@ -115,10 +114,10 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 		});
 	}
 
-	public Stream<SSTDumpProgress> readAllSST(SSTRange range, boolean failOnError) {
+	public Stream<SSTDumpProgress> readAllSST(SSTRange range, boolean failOnError, boolean disableRocksdbChecks) {
 		AtomicLong fileScanned = new AtomicLong();
 		AtomicLong fileTotal = new AtomicLong();
-		return iterate(range).<SSTDumpProgress>mapMulti((state, consumer) -> {
+		return iterate(range, disableRocksdbChecks).<SSTDumpProgress>mapMulti((state, consumer) -> {
 			switch (state) {
 				case RocksDBFileIterationStateBegin begin -> {
 					var countEstimate = begin.metadata().countEstimate();
@@ -151,7 +150,7 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 		}).takeWhile(data -> !(data instanceof SSTBlockFail));
 	}
 
-	public Stream<RocksDBFileIterationState> iterate(SSTRange rangeFull) {
+	public Stream<RocksDBFileIterationState> iterate(SSTRange rangeFull, boolean disableRocksdbChecks) {
 		var intersectedRange = RocksDBFile.intersectWithMetadata(metadata.keysRange(), rangeFull);
 
 		Path filePath = metadata.filePath();
@@ -171,7 +170,7 @@ public class RocksDBFile implements Comparable<RocksDBFile> {
 			AtomicLong fileScanned = new AtomicLong();
 			AtomicBoolean mustSeek = new AtomicBoolean(true);
 			try {
-				streamContent = resourceStream(() -> new LLSstFileReader(false, filePathString),
+				streamContent = resourceStream(() -> new LLSstFileReader(!disableRocksdbChecks, filePathString),
 						r -> resourceStream(() -> LLUtils.generateCustomReadOptions(null, false, intersectedRange.isBounded(), false),
 								ro -> {
 									long skipToIndex;

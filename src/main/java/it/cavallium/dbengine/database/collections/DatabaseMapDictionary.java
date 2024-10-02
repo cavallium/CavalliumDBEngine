@@ -2,7 +2,6 @@ package it.cavallium.dbengine.database.collections;
 
 import static it.cavallium.dbengine.utils.StreamUtils.resourceStream;
 
-import com.google.common.collect.Collections2;
 import com.google.common.collect.Lists;
 import it.cavallium.buffer.Buf;
 import it.cavallium.buffer.BufDataInput;
@@ -20,7 +19,6 @@ import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
 import it.cavallium.dbengine.database.disk.LLLocalDictionary;
-import it.cavallium.dbengine.database.disk.RocksDBFile;
 import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationKeyState.RocksDBFileIterationStateKeyError;
 import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationKeyState.RocksDBFileIterationStateKeyOk;
 import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateBegin;
@@ -36,7 +34,6 @@ import it.cavallium.dbengine.utils.StreamUtils;
 import it.unimi.dsi.fastutil.objects.Object2ObjectLinkedOpenHashMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMap;
 import it.unimi.dsi.fastutil.objects.Object2ObjectSortedMaps;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -568,37 +565,52 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		}
 	}
 
-	public static <T, U> List<Stream<Entry<T, U>>> getAllEntriesFastUnsafe(DatabaseMapDictionary<T, U> dict,
-			BiConsumer<Entry<Buf, Buf>, Throwable> deserializationErrorHandler) {
+	public static <T, U> List<Stream<UnsafeSSTEntry<T, U>>> getAllEntriesFastUnsafe(DatabaseMapDictionary<T, U> dict,
+			boolean disableRocksdbChecks,
+			BiConsumer<UnsafeRawSSTEntry<T, U>, Throwable> deserializationErrorHandler) {
 		try {
 			var liveFiles = ((LLLocalDictionary) dict.dictionary).getAllLiveFiles();
-			return Lists.transform(liveFiles, file -> file.iterate(new SSTRangeFull()).map(state -> switch (state) {
-				case RocksDBFileIterationStateBegin rocksDBFileIterationStateBegin:
-					yield null;
-				case RocksDBFileIterationStateEnd rocksDBFileIterationStateEnd:
-					yield null;
-				case RocksDBFileIterationStateKey rocksDBFileIterationStateKey:
-					yield switch (rocksDBFileIterationStateKey.state()) {
-						case RocksDBFileIterationStateKeyError e -> null;
-						case RocksDBFileIterationStateKeyOk rocksDBFileIterationStateKeyOk -> {
-							try {
-								yield Map.entry(dict.deserializeSuffix(BufDataInput.create(rocksDBFileIterationStateKey.key())),
-										dict.deserializeValue(rocksDBFileIterationStateKeyOk.value())
-								);
-							} catch (Throwable t) {
-								if (deserializationErrorHandler != null) {
-									deserializationErrorHandler.accept(Map.entry(rocksDBFileIterationStateKey.key().copy(),
-											rocksDBFileIterationStateKeyOk.value().copy()
-									), t);
-									yield null;
-								} else {
-									throw t;
+			return Lists.transform(liveFiles, file -> file.iterate(new SSTRangeFull(), disableRocksdbChecks)
+					.map(state -> switch (state) {
+						case RocksDBFileIterationStateBegin rocksDBFileIterationStateBegin:
+							yield null;
+						case RocksDBFileIterationStateEnd rocksDBFileIterationStateEnd:
+							yield null;
+						case RocksDBFileIterationStateKey rocksDBFileIterationStateKey:
+							yield switch (rocksDBFileIterationStateKey.state()) {
+								case RocksDBFileIterationStateKeyError e -> null;
+								case RocksDBFileIterationStateKeyOk rocksDBFileIterationStateKeyOk -> {
+									var key = rocksDBFileIterationStateKey.key();
+									var value = rocksDBFileIterationStateKeyOk.value();
+									try {
+										var deserializedKey = dict.deserializeSuffix(BufDataInput.create(key));
+										var deserializedValue = dict.deserializeValue(value);
+										yield new UnsafeSSTEntry<>(file,
+												deserializedKey,
+												deserializedValue,
+												key,
+												value,
+												k -> dict.deserializeSuffix(BufDataInput.create(k)),
+												dict::deserializeValue
+										);
+									} catch (Throwable t) {
+										if (deserializationErrorHandler != null) {
+											deserializationErrorHandler.accept(new UnsafeRawSSTEntry<>(file,
+													key,
+													value,
+													k -> dict.deserializeSuffix(BufDataInput.create(k)),
+													dict::deserializeValue
+											), t);
+											yield null;
+										} else {
+											throw t;
+										}
+									}
 								}
-							}
-						}
 
-					};
-			}).filter(Objects::nonNull));
+							};
+					})
+					.filter(Objects::nonNull));
 		} catch (RocksDBException e) {
 			throw new RuntimeException(e);
 		}

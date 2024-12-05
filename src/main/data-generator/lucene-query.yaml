@@ -13,7 +13,7 @@ superTypesData:
     DoubleNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, FloatPointExactQuery,
     FloatPointExactQuery, DoublePointExactQuery, LongNDPointExactQuery, FloatNDPointExactQuery,
     DoubleNDPointExactQuery, IntPointSetQuery, LongPointSetQuery, FloatPointSetQuery, DoublePointSetQuery,
-    StandardQuery, FieldExistsQuery, FilterConfigQuery, SolrFunctionQuery
+    StandardQuery, FieldExistsQuery, FilterConfigQuery, SolrFunctionQuery, MoreLikeThisQuery
   ]
   Occur: [OccurMust, OccurMustNot, OccurShould, OccurFilter]
   Sort: [NoSort, NumericSort, ScoreSort, DocSort, RandomSort]
@@ -139,6 +139,20 @@ baseTypesData:
     data:
       query: String
       boost: double
+  MoreLikeThisQuery:
+    data:
+      id: String
+      fieldList: String[]
+      minTf: -int
+      minDf: -int
+      maxDf: -int
+      maxDfPct: -int
+      minWl: -int
+      maxWl: -int
+      maxQt: -int
+      maxNtp: -int
+      boost: -boolean
+      qf: String[]
   # Query that matches a phrase.
   PhraseQuery:
     data:

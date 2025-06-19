@@ -13,7 +13,7 @@
 		<revision>0-SNAPSHOT</revision>
 		<dbengine.ci>false</dbengine.ci>
 		<micrometer.version>1.10.4</micrometer.version>
-    <rocksdb.version>9.10.0</rocksdb.version>
+    <rocksdb.version>10.2.1</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
     <data.generator.version>1.1.18</data.generator.version>
 	</properties>

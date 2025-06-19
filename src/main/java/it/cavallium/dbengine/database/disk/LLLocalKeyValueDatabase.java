@@ -329,7 +329,6 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				if (columnOptions.writeBufferSize().isPresent()) {
 					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
 				}
-				columnFamilyOptions.setMaxWriteBufferNumberToMaintain(1);
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
 					blockBasedTableConfig.setOptimizeFiltersForMemory(true);
 					blockBasedTableConfig.setVerifyCompression(VERIFY_COMPRESSION);

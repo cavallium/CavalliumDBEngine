@@ -218,7 +218,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public Object2ObjectSortedMap<T, U> setAndGetPrevious(Object2ObjectSortedMap<T, U> value) {
 		Object2ObjectSortedMap<T, U> prev = this.get(null);
 		if (value == null || value.isEmpty()) {
-			dictionary.clear();
+			// Clear only this dictionary's range, not the entire column
+			dictionary.setRange(range, Stream.empty(), false);
 		} else {
 			dictionary.setRange(range, value.entrySet().stream().map(this::serializeEntry), true);
 		}

@@ -13,7 +13,6 @@
 		<revision>0-SNAPSHOT</revision>
 		<dbengine.ci>false</dbengine.ci>
 		<micrometer.version>1.10.4</micrometer.version>
-    <rocksdb.version>10.2.1</rocksdb.version>
 		<junit.jupiter.version>5.9.0</junit.jupiter.version>
     <data.generator.version>1.1.18</data.generator.version>
 	</properties>
@@ -51,6 +50,10 @@
       <id>maven_central</id>
       <name>Maven Central</name>
       <url>https://repo.maven.apache.org/maven2/</url>
+    </repository>
+    <repository>
+      <id>gitea</id>
+      <url>https://git.tgdb.org/api/packages/andreacavalli/maven</url>
     </repository>
   </repositories>
 	<pluginRepositories>
@@ -213,9 +216,10 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
-			<groupId>org.rocksdb</groupId>
+			<groupId>it.cavallium</groupId>
 			<artifactId>rocksdbjni</artifactId>
-			<version>${rocksdb.version}</version>
+			<version>11.1.2.5</version>
+			<classifier>linux64</classifier>
 		</dependency>
 		<dependency>
 			<groupId>org.jetbrains</groupId>

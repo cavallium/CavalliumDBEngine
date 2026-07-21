@@ -952,7 +952,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			var options = new DBOptions();
 			refs.track(options);
 			options.setParanoidChecks(PARANOID_CHECKS);
-			options.setSkipCheckingSstFileSizesOnDbOpen(!VERIFY_FILE_SIZE);
+			options.setMaxFileOpeningThreads(8);
+			options.setOpenFilesAsync(true);
 			options.setEnablePipelinedWrite(true);
 			var maxSubCompactions = Integer.parseInt(System.getProperty("it.cavallium.dbengine.compactions.max.sub", "-1"));
 			if (maxSubCompactions > 0) {

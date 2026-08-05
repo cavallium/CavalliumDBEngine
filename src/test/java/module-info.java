@@ -12,5 +12,7 @@ module dbengine.tests {
 	requires org.apache.logging.log4j.core;
 	requires org.apache.commons.lang3;
 	requires rocksdbjni;
+	requires moshi;
+	requires kotlin.stdlib;
 	opens it.cavallium.dbengine.tests;
 }

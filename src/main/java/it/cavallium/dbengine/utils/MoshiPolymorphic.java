@@ -213,6 +213,9 @@ public abstract class MoshiPolymorphic<OBJ> {
 				int i = 0;
 				for (Field declaredField : this.declaredFields) {
 					fieldNames[i] = declaredField.getName();
+					if (getterStyle == GetterStyle.FIELDS && !declaredField.trySetAccessible()) {
+						throw new IllegalStateException("Field is not accessible: " + declaredField);
+					}
 
 					switch (getterStyle) {
 						case STANDARD_GETTERS -> {

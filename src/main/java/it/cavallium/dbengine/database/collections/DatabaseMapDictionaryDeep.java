@@ -16,6 +16,7 @@ import it.cavallium.dbengine.database.LLUtils;
 import it.cavallium.dbengine.database.SubStageEntry;
 import it.cavallium.dbengine.database.UpdateMode;
 import it.cavallium.dbengine.database.collections.DatabaseEmpty.Nothing;
+import it.cavallium.dbengine.database.serialization.DatabaseDataInput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.Serializer;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
@@ -282,7 +283,7 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 				.map(groupKeyWithoutExt -> {
 					T deserializedSuffix;
 					var splittedGroupSuffix = suffixSubList(groupKeyWithoutExt);
-					deserializedSuffix = this.deserializeSuffix(BufDataInput.create(splittedGroupSuffix));
+					deserializedSuffix = this.deserializeSuffix(DatabaseDataInput.create(splittedGroupSuffix));
 					return new SubStageEntry<>(deserializedSuffix,
 							this.subStageGetter.subStage(dictionary, snapshot, groupKeyWithoutExt));
 				});
@@ -407,11 +408,11 @@ public class DatabaseMapDictionaryDeep<T, U, US extends DatabaseStage<U>> implem
 						var valueBuf = entry.getValue();
 						try {
 							assert keyBuf != null;
-							var suffix1And2 = BufDataInput.create(keyBuf.subList(deepMap.keyPrefixLength, deepMap.keyPrefixLength + deepMap.keySuffixLength + deepMap.keyExtLength));
+							var suffix1And2 = DatabaseDataInput.create(keyBuf.subList(deepMap.keyPrefixLength, deepMap.keyPrefixLength + deepMap.keySuffixLength + deepMap.keyExtLength));
 							key1 = keySuffix1Serializer.deserialize(suffix1And2);
 							key2 = keySuffix2Serializer.deserialize(suffix1And2);
 							assert valueBuf != null;
-							Object value = valueSerializer.deserialize(BufDataInput.create(valueBuf));
+							Object value = valueSerializer.deserialize(DatabaseDataInput.create(valueBuf));
 							if (isHashedSet) {
 								//noinspection unchecked
 								Set<K2> set = (Set<K2>) value;

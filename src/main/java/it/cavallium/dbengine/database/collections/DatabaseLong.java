@@ -7,6 +7,7 @@ import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
+import it.cavallium.dbengine.database.serialization.DatabaseDataInput;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.concurrent.ForkJoinPool;
 import org.jetbrains.annotations.Nullable;
@@ -24,7 +25,7 @@ public class DatabaseLong implements LLKeyValueDatabaseStructure {
 	}
 
 	public Long get(@Nullable LLSnapshot snapshot) {
-		var result = BufDataInput.create(singleton.get(snapshot));
+		var result = DatabaseDataInput.create(singleton.get(snapshot));
 		if (result.available() == 4) {
 			return (long) (int) bugSerializer.deserialize(result);
 		} else {

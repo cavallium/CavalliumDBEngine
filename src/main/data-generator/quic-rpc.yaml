@@ -56,35 +56,35 @@ superTypesData:
 customTypesData:
   Path:
     javaClass: java.nio.file.Path
-    serializer: it.cavallium.dbengine.database.remote.PathSerializer
+    codec: it.cavallium.dbengine.database.remote.PathSerializer
   Compression:
     javaClass: it.cavallium.dbengine.client.Compression
-    serializer: it.cavallium.dbengine.database.remote.CompressionSerializer
+    codec: it.cavallium.dbengine.database.remote.CompressionSerializer
   Duration:
     javaClass: java.time.Duration
-    serializer: it.cavallium.dbengine.database.remote.DurationSerializer
+    codec: it.cavallium.dbengine.database.remote.DurationSerializer
   RocksDB:
     javaClass: org.rocksdb.RocksDB
-    serializer: it.cavallium.dbengine.database.remote.RocksDBSerializer
+    codec: it.cavallium.dbengine.database.remote.RocksDBSerializer
   ColumnFamilyHandle:
     javaClass: org.rocksdb.ColumnFamilyHandle
-    serializer: it.cavallium.dbengine.database.remote.ColumnFamilyHandleSerializer
+    codec: it.cavallium.dbengine.database.remote.ColumnFamilyHandleSerializer
   UpdateReturnMode:
     javaClass: it.cavallium.dbengine.database.UpdateReturnMode
-    serializer: it.cavallium.dbengine.database.remote.UpdateReturnModeSerializer
+    codec: it.cavallium.dbengine.database.remote.UpdateReturnModeSerializer
   LLSnapshot:
     javaClass: it.cavallium.dbengine.database.LLSnapshot
-    serializer: it.cavallium.dbengine.database.remote.LLSnapshotSerializer
+    codec: it.cavallium.dbengine.database.remote.LLSnapshotSerializer
 
   Bytes:
     javaClass: it.cavallium.buffer.Buf
-    serializer: it.cavallium.dbengine.database.remote.BufSerializer
+    codec: it.cavallium.dbengine.database.remote.BufSerializer
   StringMap:
     javaClass: java.util.Map<java.lang.String, java.lang.String>
-    serializer: it.cavallium.dbengine.database.remote.StringMapSerializer
+    codec: it.cavallium.dbengine.database.remote.StringMapSerializer
   String2ColumnFamilyHandleMap:
     javaClass: java.util.Map<java.lang.String, org.rocksdb.ColumnFamilyHandle>
-    serializer: it.cavallium.dbengine.database.remote.String2ColumnFamilyHandleMapSerializer
+    codec: it.cavallium.dbengine.database.remote.String2ColumnFamilyHandleMapSerializer
 baseTypesData:
   BoxedRPCEvent:
     data:

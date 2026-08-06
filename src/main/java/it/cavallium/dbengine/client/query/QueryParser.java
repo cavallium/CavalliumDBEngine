@@ -43,8 +43,10 @@ import it.cavallium.dbengine.client.query.current.data.TermPosition;
 import it.cavallium.dbengine.client.query.current.data.TermQuery;
 import it.cavallium.dbengine.client.query.current.data.WildcardQuery;
 import java.text.BreakIterator;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Locale;
+import java.util.stream.IntStream;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.Nullable;
 
@@ -64,22 +66,22 @@ public class QueryParser {
 				var standardQuery = (it.cavallium.dbengine.client.query.current.data.StandardQuery) query;
 
 				out.append("<UserQuery");
-				if (standardQuery.defaultFields().size() > 1) {
+				if (standardQuery.defaultFieldsSize() > 1) {
 					throw new UnsupportedOperationException("Maximum supported default fields count: 1");
 				}
 				if (boost != null) {
 					out.append(" boost=\"").append(boost).append("\"");
 				}
-				if (standardQuery.defaultFields().size() == 1) {
+				if (standardQuery.defaultFieldsSize() == 1) {
 					out
 							.append(" fieldName=\"")
-							.append(XmlEscapers.xmlAttributeEscaper().escape(standardQuery.defaultFields().get(0)))
+							.append(XmlEscapers.xmlAttributeEscaper().escape(standardQuery.defaultFields(0)))
 							.append("\"");
 				}
-				if (!standardQuery.termFields().isEmpty()) {
+				if (standardQuery.termFieldsSize() != 0) {
 					throw new UnsupportedOperationException("Term fields unsupported");
 				}
-				if (!standardQuery.pointsConfig().isEmpty()) {
+				if (standardQuery.pointsConfigSize() != 0) {
 					throw new UnsupportedOperationException("Points config unsupported");
 				}
 				out.append(">");
@@ -88,9 +90,9 @@ public class QueryParser {
 			}
 			case BooleanQuery -> {
 				var booleanQuery = (it.cavallium.dbengine.client.query.current.data.BooleanQuery) query;
-				if (booleanQuery.parts().size() == 1
-						&& booleanQuery.parts().get(0).occur().getBaseType$() == BaseType.OccurMust) {
-					toQueryXML(out, booleanQuery.parts().get(0).query(), boost);
+				if (booleanQuery.partsSize() == 1
+						&& booleanQuery.parts(0).occur().getBaseType$() == BaseType.OccurMust) {
+					toQueryXML(out, booleanQuery.parts(0).query(), boost);
 				} else {
 					out.append("<BooleanQuery");
 					if (boost != null) {
@@ -99,7 +101,7 @@ public class QueryParser {
 					out.append(" minimumNumberShouldMatch=\"").append(booleanQuery.minShouldMatch()).append("\"");
 					out.append(">\n");
 
-					for (BooleanQueryPart part : booleanQuery.parts()) {
+					for (BooleanQueryPart part : booleanQuery.partsUnsafeArray()) {
 						out.append("<Clause");
 						out.append(" occurs=\"").append(switch (part.occur().getBaseType$()) {
 							case OccurFilter -> "filter";
@@ -178,34 +180,34 @@ public class QueryParser {
 			case IntPointSetQuery -> {
 				var intPointSetQuery = (IntPointSetQuery) query;
 				// Polyfill
-				toQueryXML(out, BooleanQuery.of(intPointSetQuery.values().intStream()
+				toQueryXML(out, BooleanQuery.of(Arrays.stream(intPointSetQuery.valuesUnsafeArray())
 						.mapToObj(val -> IntPointExactQuery.of(intPointSetQuery.field(), val))
 						.map(q -> BooleanQueryPart.of(q, OccurShould.of()))
-						.toList(), 1), boost);
+						.toArray(BooleanQueryPart[]::new), 1), boost);
 			}
 			case LongPointSetQuery -> {
 				var longPointSetQuery = (LongPointSetQuery) query;
 				// Polyfill
-				toQueryXML(out, BooleanQuery.of(longPointSetQuery.values().longStream()
+				toQueryXML(out, BooleanQuery.of(Arrays.stream(longPointSetQuery.valuesUnsafeArray())
 						.mapToObj(val -> LongPointExactQuery.of(longPointSetQuery.field(), val))
 						.map(q -> BooleanQueryPart.of(q, OccurShould.of()))
-						.toList(), 1), boost);
+						.toArray(BooleanQueryPart[]::new), 1), boost);
 			}
 			case FloatPointSetQuery -> {
 				var floatPointSetQuery = (FloatPointSetQuery) query;
 				// Polyfill
-				toQueryXML(out, BooleanQuery.of(floatPointSetQuery.values().stream()
-						.map(val -> FloatPointExactQuery.of(floatPointSetQuery.field(), val))
+				toQueryXML(out, BooleanQuery.of(IntStream.range(0, floatPointSetQuery.valuesSize())
+						.mapToObj(index -> FloatPointExactQuery.of(floatPointSetQuery.field(), floatPointSetQuery.values(index)))
 						.map(q -> BooleanQueryPart.of(q, OccurShould.of()))
-						.toList(), 1), boost);
+						.toArray(BooleanQueryPart[]::new), 1), boost);
 			}
 			case DoublePointSetQuery -> {
 				var doublePointSetQuery = (DoublePointSetQuery) query;
 				// Polyfill
-				toQueryXML(out, BooleanQuery.of(doublePointSetQuery.values().doubleStream()
+				toQueryXML(out, BooleanQuery.of(Arrays.stream(doublePointSetQuery.valuesUnsafeArray())
 						.mapToObj(val -> DoublePointExactQuery.of(doublePointSetQuery.field(), val))
 						.map(q -> BooleanQueryPart.of(q, OccurShould.of()))
-						.toList(), 1), boost);
+						.toArray(BooleanQueryPart[]::new), 1), boost);
 			}
 			case TermQuery -> {
 				var termQuery = (TermQuery) query;
@@ -391,7 +393,7 @@ public class QueryParser {
 				}
 				out.append(" inOrder=\"true\"");
 				out.append(">\n");
-				phraseQuery.phrase().stream().sorted(Comparator.comparingInt(TermPosition::position)).forEach(term -> {
+				Arrays.stream(phraseQuery.phraseUnsafeArray()).sorted(Comparator.comparingInt(TermPosition::position)).forEach(term -> {
 					out
 							.append("<SpanTerm fieldName=\"")
 							.append(XmlEscapers.xmlAttributeEscaper().escape(term.term().field()))

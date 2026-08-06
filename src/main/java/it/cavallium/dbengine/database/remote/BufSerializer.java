@@ -1,15 +1,13 @@
 package it.cavallium.dbengine.database.remote;
 
-import it.cavallium.datagen.DataSerializer;
 import it.cavallium.buffer.Buf;
+import it.cavallium.datagen.DataCodec;
+import it.cavallium.datagen.ProjectionReadSupport;
 import it.cavallium.stream.SafeDataInput;
 import it.cavallium.stream.SafeDataOutput;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
 import org.jetbrains.annotations.NotNull;
 
-public class BufSerializer implements DataSerializer<Buf> {
+public class BufSerializer implements DataCodec<Buf> {
 
 	@Override
 	public void serialize(SafeDataOutput dataOutput, @NotNull Buf bytes) {
@@ -20,12 +18,18 @@ public class BufSerializer implements DataSerializer<Buf> {
 	}
 
 	@Override
-	public @NotNull Buf deserialize(SafeDataInput dataInput) {
-		var size = dataInput.readInt();
+	public @NotNull Buf read(SafeDataInput dataInput) {
+		var size = ProjectionReadSupport.readLength(dataInput);
+		ProjectionReadSupport.preparePayload(dataInput, size);
 		var bal = Buf.create(size);
 		for (int i = 0; i < size; i++) {
 			bal.add(dataInput.readByte());
 		}
 		return bal;
+	}
+
+	@Override
+	public void skip(SafeDataInput dataInput) {
+		ProjectionReadSupport.skipPayload(dataInput, ProjectionReadSupport.readLength(dataInput));
 	}
 }

@@ -1,15 +1,13 @@
 package it.cavallium.dbengine.database.remote;
 
-import it.cavallium.datagen.DataSerializer;
+import it.cavallium.datagen.DataCodec;
+import it.cavallium.datagen.ProjectionReadSupport;
 import it.cavallium.stream.SafeDataInput;
 import it.cavallium.stream.SafeDataOutput;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
 import java.nio.file.Path;
 import org.jetbrains.annotations.NotNull;
 
-public class PathSerializer implements DataSerializer<Path> {
+public class PathSerializer implements DataCodec<Path> {
 
 	@Override
 	public void serialize(SafeDataOutput dataOutput, @NotNull Path path) {
@@ -17,7 +15,12 @@ public class PathSerializer implements DataSerializer<Path> {
 	}
 
 	@Override
-	public @NotNull Path deserialize(SafeDataInput dataInput) {
+	public @NotNull Path read(SafeDataInput dataInput) {
 		return Path.of(dataInput.readUTF());
+	}
+
+	@Override
+	public void skip(SafeDataInput dataInput) {
+		ProjectionReadSupport.skipPayload(dataInput, dataInput.readUnsignedShort());
 	}
 }

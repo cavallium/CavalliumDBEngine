@@ -1,7 +1,6 @@
 package it.cavallium.dbengine.tests;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import it.cavallium.datagen.nativedata.Nullablelong;
 import it.cavallium.dbengine.database.RocksDBLongProperty;
 import it.cavallium.dbengine.database.disk.LLLocalKeyValueDatabase;
 import it.cavallium.dbengine.rpc.current.data.Column;
@@ -36,7 +35,7 @@ public class TestBlockCacheCapacity {
 		System.setProperty("it.cavallium.dbengine.log.levelcode", "2");
 		System.setProperty("rocksdb.debugging.useplaintablewheninmemory", "false");
 		tmpDir = Files.createTempDirectory("rocksdb");
-		opts = DEFAULT_DATABASE_OPTIONS.setBlockCache(Nullablelong.of(cacheSmallSize));
+		opts = DEFAULT_DATABASE_OPTIONS.setBlockCache(cacheSmallSize);
 	}
 
 	@AfterEach
@@ -51,7 +50,7 @@ public class TestBlockCacheCapacity {
 
 	private void startDb() {
 		var cols = new ArrayList<Column>();
-		cols.add(new Column("main"));
+		cols.add(Column.of("main"));
 		handles = new ArrayList<ColumnFamilyHandle>();
 		db = new LLLocalKeyValueDatabase(new SimpleMeterRegistry(), "test", true, tmpDir, cols, handles, opts);
 	}
@@ -64,7 +63,7 @@ public class TestBlockCacheCapacity {
 
 	@Test
 	public void testSpinningBlockCacheCapeacity() throws IOException {
-		opts.setSpinning(true);
+		opts = opts.setSpinning(true);
 		startDb();
 		testConditions(1.0f, 1.5f);
 	}

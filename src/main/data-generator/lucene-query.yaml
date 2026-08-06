@@ -11,7 +11,7 @@ superTypesData:
     ConstantScoreQuery, BoostQuery, IntPointRangeQuery, IntNDPointRangeQuery, LongPointRangeQuery,
     FloatPointRangeQuery, DoublePointRangeQuery, LongNDPointRangeQuery, FloatNDPointRangeQuery,
     DoubleNDPointRangeQuery, IntPointExactQuery, IntNDPointExactQuery, LongPointExactQuery, FloatPointExactQuery,
-    FloatPointExactQuery, DoublePointExactQuery, LongNDPointExactQuery, FloatNDPointExactQuery,
+    DoublePointExactQuery, LongNDPointExactQuery, FloatNDPointExactQuery,
     DoubleNDPointExactQuery, IntPointSetQuery, LongPointSetQuery, FloatPointSetQuery, DoublePointSetQuery,
     StandardQuery, FieldExistsQuery, FilterConfigQuery, SolrFunctionQuery, MoreLikeThisQuery
   ]

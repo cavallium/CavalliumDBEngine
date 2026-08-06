@@ -11,7 +11,6 @@ import static org.rocksdb.ColumnFamilyOptionsInterface.DEFAULT_COMPACTION_MEMTAB
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Timer;
-import it.cavallium.datagen.nativedata.NullableString;
 import it.cavallium.dbengine.client.Backuppable;
 import it.cavallium.dbengine.client.MemoryStats;
 import it.cavallium.dbengine.database.ColumnProperty;
@@ -191,7 +190,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			descriptors.add(new ColumnFamilyDescriptor(RocksDB.DEFAULT_COLUMN_FAMILY, defaultColumnOptions));
 
 			// Check column names validity
-			for (NamedColumnOptions columnOption : databaseOptions.columnOptions()) {
+			for (NamedColumnOptions columnOption : databaseOptions.columnOptionsUnsafeArray()) {
 				if (columns.stream().map(Column::name).noneMatch(columnName -> columnName.equals(columnOption.name()))) {
 					throw new IllegalArgumentException(
 							"Column " + columnOption.name() + " does not exist. Available columns: " + columns
@@ -212,22 +211,19 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						.setForceConsistencyChecks(FORCE_COLUMN_FAMILY_CONSISTENCY_CHECKS)
 						.setParanoidFileChecks(PARANOID_FILE_CHECKS);
 
-				var columnOptions = databaseOptions
-						.columnOptions()
-						.stream()
+				var columnOptions = Arrays
+						.stream(databaseOptions.columnOptionsUnsafeArray())
 						.filter(opts -> opts.name().equals(column.name()))
 						.findFirst()
 						.map(NamedColumnOptions::options)
 						.orElseGet(databaseOptions::defaultColumnOptions);
 
-				//noinspection ConstantConditions
-				if (columnOptions.memtableMemoryBudgetBytes() != null) {
-					// about 512MB of ram will be used for level style compaction
-					columnFamilyOptions.optimizeLevelStyleCompaction(columnOptions.memtableMemoryBudgetBytes().orElse(
-							databaseOptions.lowMemory()
-									? (DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET / 4)
-									: DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET));
-				}
+				// about 512MB of ram will be used for level style compaction
+				columnFamilyOptions.optimizeLevelStyleCompaction(columnOptions.hasMemtableMemoryBudgetBytes()
+						? columnOptions.memtableMemoryBudgetBytes()
+						: databaseOptions.lowMemory()
+								? (DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET / 4)
+								: DEFAULT_COMPACTION_MEMTABLE_MEMORY_BUDGET);
 
 				if (isDisableAutoCompactions()) {
 					columnFamilyOptions.setDisableAutoCompactions(true);
@@ -240,14 +236,14 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					logger.error("Failed to set prepopulate blob cache", ex);
 				}
 				if (blobFiles) {
-					if (columnOptions.blobFileSize().isPresent()) {
-						columnFamilyOptions.setBlobFileSize(columnOptions.blobFileSize().get());
+					if (columnOptions.hasBlobFileSize()) {
+						columnFamilyOptions.setBlobFileSize(columnOptions.blobFileSize());
 					}
-					if (columnOptions.minBlobSize().isPresent()) {
-						columnFamilyOptions.setMinBlobSize(columnOptions.minBlobSize().get());
+					if (columnOptions.hasMinBlobSize()) {
+						columnFamilyOptions.setMinBlobSize(columnOptions.minBlobSize());
 					}
-					if (columnOptions.blobCompressionType().isPresent()) {
-						columnFamilyOptions.setCompressionType(columnOptions.blobCompressionType().get().getType());
+					if (columnOptions.hasBlobCompressionType()) {
+						columnFamilyOptions.setCompressionType(columnOptions.blobCompressionType().getType());
 					} else {
 						columnFamilyOptions.setCompressionType(CompressionType.LZ4_COMPRESSION);
 					}
@@ -258,7 +254,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				// This option is not supported with multiple db paths
 				// https://www.arangodb.com/docs/stable/programs-arangod-rocksdb.html
 				// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
-				boolean dynamicLevelBytes = databaseOptions.volumes().size() <= 1;
+				boolean dynamicLevelBytes = databaseOptions.volumesSize() <= 1;
 				if (dynamicLevelBytes) {
 					columnFamilyOptions.setLevelCompactionDynamicLevelBytes(true);
 				} else {
@@ -288,19 +284,20 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					columnFamilyOptions.setLevel0StopWritesTrigger(36);
 				}
 
-				if (!columnOptions.levels().isEmpty()) {
-					columnFamilyOptions.setNumLevels(columnOptions.levels().size());
-					var firstLevelOptions = getRocksLevelOptions(columnOptions.levels().get(0), refs);
+				if (columnOptions.levelsSize() != 0) {
+					columnFamilyOptions.setNumLevels(columnOptions.levelsSize());
+					var firstLevelOptions = getRocksLevelOptions(columnOptions.levels(0), refs);
 					columnFamilyOptions.setCompressionType(firstLevelOptions.compressionType);
 					columnFamilyOptions.setCompressionOptions(firstLevelOptions.compressionOptions);
 
-					var lastLevelOptions = getRocksLevelOptions(columnOptions
-							.levels()
-							.get(columnOptions.levels().size() - 1), refs);
+					var lastLevelOptions = getRocksLevelOptions(
+							columnOptions.levels(columnOptions.levelsSize() - 1), refs);
 					columnFamilyOptions.setBottommostCompressionType(lastLevelOptions.compressionType);
 					columnFamilyOptions.setBottommostCompressionOptions(lastLevelOptions.compressionOptions);
 
-					columnFamilyOptions.setCompressionPerLevel(mapList(columnOptions.levels(), v -> v.compression().getType()));
+					columnFamilyOptions.setCompressionPerLevel(Arrays.stream(columnOptions.levelsUnsafeArray())
+							.map(v -> v.compression().getType())
+							.toList());
 				} else {
 					columnFamilyOptions.setNumLevels(7);
 					List<CompressionType> compressionTypes = new ArrayList<>(7);
@@ -326,15 +323,15 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						columnFamilyOptions.setWriteBufferSize(256 * SizeUnit.MB);
 					}
 				}
-				if (columnOptions.writeBufferSize().isPresent()) {
-					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize().get());
+				if (columnOptions.hasWriteBufferSize()) {
+					columnFamilyOptions.setWriteBufferSize(columnOptions.writeBufferSize());
 				}
 				if (tableOptions instanceof BlockBasedTableConfig blockBasedTableConfig) {
 					blockBasedTableConfig.setOptimizeFiltersForMemory(true);
 					blockBasedTableConfig.setVerifyCompression(VERIFY_COMPRESSION);
 				}
-				if (columnOptions.filter().isPresent()) {
-					var filterOptions = columnOptions.filter().get();
+				if (columnOptions.hasFilter()) {
+					var filterOptions = columnOptions.filter();
 
 					if (filterOptions instanceof it.cavallium.dbengine.rpc.current.data.BloomFilter bloomFilterOptions) {
 						// If OptimizeFiltersForHits == true: memory size = bitsPerKey * (totalKeys * 0.1)
@@ -350,9 +347,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						}
 					}
 				}
-				boolean cacheIndexAndFilterBlocks = columnOptions.cacheIndexAndFilterBlocks()
+				boolean cacheIndexAndFilterBlocks = columnOptions.hasCacheIndexAndFilterBlocks()
 						// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-						.orElse(true);
+						? columnOptions.cacheIndexAndFilterBlocks() : true;
 				if (databaseOptions.spinning()) {
 					// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 					// cacheIndexAndFilterBlocks = true;
@@ -376,20 +373,20 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 							.setCacheIndexAndFilterBlocks(cacheIndexAndFilterBlocks)
 							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
 							// Enabling partition filters increase the reads by 2x
-							.setPartitionFilters(columnOptions.partitionFilters().orElse(false))
+							.setPartitionFilters(columnOptions.hasPartitionFilters() && columnOptions.partitionFilters())
 							// https://github.com/facebook/rocksdb/wiki/Partitioned-Index-Filters
-							.setIndexType(columnOptions.partitionFilters().orElse(false) ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
+							.setIndexType(columnOptions.hasPartitionFilters() && columnOptions.partitionFilters() ? IndexType.kTwoLevelIndexSearch : IndexType.kBinarySearch)
 							.setChecksumType(ChecksumType.kXXH3)
 							.setVerifyCompression(VERIFY_COMPRESSION)
 							// Spinning disks: 64KiB to 256KiB (also 512KiB). SSDs: 16KiB
 							// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 							// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
-							.setBlockSize(columnOptions.blockSize().orElse((databaseOptions.spinning() ? 128 : 16) * 1024))
+							.setBlockSize(columnOptions.hasBlockSize() ? columnOptions.blockSize() : (databaseOptions.spinning() ? 128 : 16) * 1024)
 							.setBlockCache(optionsWithCache.standardCache())
 							.setPersistentCache(resolvePersistentCache(persistentCaches,
 									rocksdbOptions,
-									databaseOptions.persistentCaches(),
-									columnOptions.persistentCacheId(),
+									databaseOptions.persistentCachesUnsafeArray(),
+									columnOptions.persistentCacheIdOrNull(),
 									refs,
 									rocksLogger
 							));
@@ -400,14 +397,14 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					columnFamilyOptions.useFixedLengthPrefixExtractor(3);
 				}
 				columnFamilyOptions.setCompactionPriority(CompactionPriority.MinOverlappingRatio);
-				if (columnOptions.filter().isPresent()) {
-					var filterOptions = columnOptions.filter().get();
+				if (columnOptions.hasFilter()) {
+					var filterOptions = columnOptions.filter();
 
 					if (filterOptions instanceof it.cavallium.dbengine.rpc.current.data.BloomFilter bloomFilterOptions) {
-						boolean optimizeForHits = bloomFilterOptions.optimizeForHits()
+						boolean optimizeForHits = bloomFilterOptions.hasOptimizeForHits()
 								// https://github.com/facebook/rocksdb/wiki/Tuning-RocksDB-on-Spinning-Disks
 								// https://github.com/EighteenZi/rocksdb_wiki/blob/master/RocksDB-Tuning-Guide.md#throughput-gap-between-random-read-vs-sequential-read-is-much-higher-in-spinning-disks-suggestions=
-								.orElse(databaseOptions.spinning());
+								? bloomFilterOptions.optimizeForHits() : databaseOptions.spinning();
 						columnFamilyOptions.setOptimizeFiltersForHits(optimizeForHits);
 					}
 				}
@@ -448,7 +445,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					if (databaseOptions.openAsSecondary()) {
 						var secondaryPath = dbPath
 								.resolve("secondary-log")
-								.resolve(databaseOptions.secondaryDirectoryName().orElse("unnamed-" + UUID.randomUUID()));
+								.resolve(databaseOptions.hasSecondaryDirectoryName()
+										? databaseOptions.secondaryDirectoryName()
+										: "unnamed-" + UUID.randomUUID());
 						try {
 							Files.createDirectories(secondaryPath);
 						} catch (IOException e) {
@@ -565,25 +564,24 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 	private synchronized PersistentCache resolvePersistentCache(HashMap<String, PersistentCache> caches,
 			DBOptions rocksdbOptions,
-			List<it.cavallium.dbengine.rpc.current.data.PersistentCache> persistentCaches,
-			NullableString persistentCacheId,
+			it.cavallium.dbengine.rpc.current.data.PersistentCache[] persistentCaches,
+			@Nullable String persistentCacheId,
 			RocksDBRefs refs,
 			RocksLog4jLogger rocksLogger) throws RocksDBException {
-		if (persistentCacheId.isEmpty()) {
+		if (persistentCacheId == null) {
 			return null;
 		}
-		var existingPersistentCache = caches.get(persistentCacheId.get());
+		var existingPersistentCache = caches.get(persistentCacheId);
 		if (existingPersistentCache != null) {
 			return existingPersistentCache;
 		}
 
-		var foundCaches = persistentCaches
-				.stream()
-				.filter(cache -> cache.id().equals(persistentCacheId.get()))
+		var foundCaches = Arrays.stream(persistentCaches)
+				.filter(cache -> cache.id().equals(persistentCacheId))
 				.toList();
 		if (foundCaches.size() > 1) {
 			throw new IllegalArgumentException("There are " + foundCaches.size()
-					+ " defined persistent caches with the id \"" + persistentCacheId.get() + "\"");
+					+ " defined persistent caches with the id \"" + persistentCacheId + "\"");
 		}
 		for (it.cavallium.dbengine.rpc.current.data.PersistentCache foundCache : foundCaches) {
 			var persistentCache = new PersistentCache(Env.getDefault(),
@@ -593,13 +591,13 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 					foundCache.optimizeForNvm()
 			);
 			refs.track(persistentCache);
-			var prev = caches.put(persistentCacheId.get(), persistentCache);
+			var prev = caches.put(persistentCacheId, persistentCache);
 			if (prev != null) {
 				throw new IllegalStateException();
 			}
 			return persistentCache;
 		}
-		throw new IllegalArgumentException("Persistent cache " + persistentCacheId.get() + " is not defined");
+		throw new IllegalArgumentException("Persistent cache " + persistentCacheId + " is not defined");
 	}
 
 	public Map<Column, ColumnFamilyHandle> getAllColumnFamilyHandles() {
@@ -607,7 +605,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	public int getLastVolumeId() {
-		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumes());
+		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumesUnsafeArray());
 		return paths.size() - 1;
 	}
 
@@ -932,17 +930,14 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			} else {
 				databasesDirPath = null;
 			}
-			//noinspection ConstantConditions
-			if (databaseOptions.persistentCaches() != null) {
-				for (var persistentCache : databaseOptions.persistentCaches()) {
-					var persistentCachePath = Paths.get(persistentCache.path());
-					if (Files.notExists(persistentCachePath)) {
-						Files.createDirectories(persistentCachePath);
-						if (!Files.isDirectory(persistentCachePath)) {
-							throw new IllegalArgumentException(
-									"Persistent cache \"" + persistentCache.id() + "\" path \"" + persistentCachePath
-											+ "\" is not a directory!");
-						}
+			for (var persistentCache : databaseOptions.persistentCachesUnsafeArray()) {
+				var persistentCachePath = Paths.get(persistentCache.path());
+				if (Files.notExists(persistentCachePath)) {
+					Files.createDirectories(persistentCachePath);
+					if (!Files.isDirectory(persistentCachePath)) {
+						throw new IllegalArgumentException(
+								"Persistent cache \"" + persistentCache.id() + "\" path \"" + persistentCachePath
+										+ "\" is not a directory!");
 					}
 				}
 			}
@@ -963,11 +958,11 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			if (customWriteRate >= 0) {
 				options.setDelayedWriteRate(customWriteRate);
 			}
-			if (databaseOptions.logPath().isPresent()) {
-				options.setDbLogDir(databaseOptions.logPath().get());
+			if (databaseOptions.hasLogPath()) {
+				options.setDbLogDir(databaseOptions.logPath());
 			}
-			if (databaseOptions.walPath().isPresent()) {
-				options.setWalDir(databaseOptions.walPath().get());
+			if (databaseOptions.hasWalPath()) {
+				options.setWalDir(databaseOptions.walPath());
 			}
 			options.setCreateIfMissing(true);
 			options.setSkipStatsUpdateOnDbOpen(true);
@@ -987,11 +982,11 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 			requireNonNull(databasesDirPath);
 			requireNonNull(path.getFileName());
-			List<DbPath> paths = mapList(convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumes()),
-					p -> new DbPath(p.path, p.targetSize)
+			List<DbPath> paths = mapList(convertPaths(databasesDirPath, path.getFileName(), databaseOptions.volumesUnsafeArray()),
+					p -> new DbPath(p.path(), p.targetSize())
 			);
 			options.setDbPaths(paths);
-			options.setMaxOpenFiles(databaseOptions.maxOpenFiles().orElse(-1));
+			options.setMaxOpenFiles(databaseOptions.hasMaxOpenFiles() ? databaseOptions.maxOpenFiles() : -1);
 			options.setMaxFileOpeningThreads(Runtime.getRuntime().availableProcessors());
 			if (databaseOptions.spinning()) {
 				// https://nightlies.apache.org/flink/flink-docs-release-1.17/api/java/org/apache/flink/contrib/streaming/state/PredefinedOptions.html
@@ -999,8 +994,8 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 			}
 
 			long writeBufferManagerSize;
-			if (databaseOptions.writeBufferManager().isPresent()) {
-				writeBufferManagerSize = databaseOptions.writeBufferManager().get();
+			if (databaseOptions.hasWriteBufferManager()) {
+				writeBufferManagerSize = databaseOptions.writeBufferManager();
 			} else {
 				writeBufferManagerSize = 0;
 			}
@@ -1038,7 +1033,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						.setWalTtlSeconds(60)
 						.setMaxTotalWalSize(10 * SizeUnit.GB)
 				;
-				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse(8L * SizeUnit.MB));
+				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + (databaseOptions.hasBlockCache() ? databaseOptions.blockCache() : 8L * SizeUnit.MB));
 				refs.track(blockCache);
 
 				if (useDirectIO) {
@@ -1068,7 +1063,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 						.setWalSizeLimitMB(0) // Auto
 						.setMaxTotalWalSize(0) // AUto
 				;
-				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + databaseOptions.blockCache().orElse( 512 * SizeUnit.MB));
+				blockCache = CACHE_FACTORY.newCache(writeBufferManagerSize + (databaseOptions.hasBlockCache() ? databaseOptions.blockCache() : 512 * SizeUnit.MB));
 				refs.track(blockCache);
 
 				if (useDirectIO) {
@@ -1090,7 +1085,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 				options.setIncreaseParallelism(Runtime.getRuntime().availableProcessors());
 			}
 
-			if (databaseOptions.writeBufferManager().isPresent()) {
+			if (databaseOptions.hasWriteBufferManager()) {
 				var writeBufferManager = new WriteBufferManager(writeBufferManagerSize, blockCache, false);
 				refs.track(writeBufferManager);
 				options.setWriteBufferManager(writeBufferManager);
@@ -1120,9 +1115,9 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 
 	record DbPathRecord(Path path, long targetSize) {}
 
-	private static List<DbPathRecord> convertPaths(Path databasesDirPath, Path path, List<DatabaseVolume> volumes) {
-		var paths = new ArrayList<DbPathRecord>(volumes.size());
-		if (volumes.isEmpty()) {
+	private static List<DbPathRecord> convertPaths(Path databasesDirPath, Path path, DatabaseVolume[] volumes) {
+		var paths = new ArrayList<DbPathRecord>(volumes.length);
+		if (volumes.length == 0) {
 			return List.of(new DbPathRecord(databasesDirPath.resolve(path.getFileName() + "_hot"),
 							0), // Legacy
 					new DbPathRecord(databasesDirPath.resolve(path.getFileName() + "_cold"),
@@ -1281,7 +1276,7 @@ public class LLLocalKeyValueDatabase extends Backuppable implements LLKeyValueDa
 	}
 
 	public Stream<Path> getSSTS() {
-		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumes());
+		var paths = convertPaths(dbPath.toAbsolutePath().getParent(), dbPath.getFileName(), databaseOptions.volumesUnsafeArray());
 
 		var closeReadLock = closeLock.readLock();
 		try {

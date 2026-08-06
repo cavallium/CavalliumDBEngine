@@ -10,15 +10,15 @@ public class ColumnUtils {
 	}
 
 	public static Column dictionary(String name) {
-		return new Column("hash_map_" + name);
+		return Column.of("hash_map_" + name);
 	}
 
 	public static Column deprecatedSet(String name) {
-		return new Column("hash_set_" + name);
+		return Column.of("hash_set_" + name);
 	}
 
 	public static Column special(String name) {
-		return new Column(name);
+		return Column.of(name);
 	}
 
 	public static String toString(byte[] name) {

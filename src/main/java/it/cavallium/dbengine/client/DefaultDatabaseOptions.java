@@ -1,74 +1,76 @@
 package it.cavallium.dbengine.client;
 
-import it.cavallium.datagen.nativedata.NullableString;
-import it.cavallium.datagen.nativedata.Nullableboolean;
-import it.cavallium.datagen.nativedata.Nullableint;
-import it.cavallium.datagen.nativedata.Nullablelong;
 import it.cavallium.dbengine.rpc.current.data.ColumnOptions;
-import it.cavallium.dbengine.rpc.current.data.ColumnOptionsBuilder;
+import it.cavallium.dbengine.rpc.current.data.DatabaseLevel;
 import it.cavallium.dbengine.rpc.current.data.DatabaseOptions;
-import it.cavallium.dbengine.rpc.current.data.DatabaseOptionsBuilder;
+import it.cavallium.dbengine.rpc.current.data.DatabaseVolume;
 import it.cavallium.dbengine.rpc.current.data.NamedColumnOptions;
-import it.cavallium.dbengine.rpc.current.data.NamedColumnOptionsBuilder;
-import it.cavallium.dbengine.rpc.current.data.nullables.NullableCompression;
-import it.cavallium.dbengine.rpc.current.data.nullables.NullableFilter;
+import it.cavallium.dbengine.rpc.current.data.PersistentCache;
 import java.nio.charset.StandardCharsets;
-import java.util.Collections;
-import java.util.List;
 import java.util.Map;
 import org.rocksdb.RocksDB;
 
 public class DefaultDatabaseOptions {
 
-	public static ColumnOptions DEFAULT_DEFAULT_COLUMN_OPTIONS = new ColumnOptions(
-			Collections.emptyList(),
-			Nullablelong.empty(),
-			Nullableboolean.empty(),
-			Nullableboolean.empty(),
-			NullableFilter.empty(),
-			Nullableint.empty(),
-			NullableString.empty(),
-			Nullablelong.empty(),
+	public static ColumnOptions DEFAULT_DEFAULT_COLUMN_OPTIONS = ColumnOptions.of(
+			new DatabaseLevel[0],
 			false,
-			Nullablelong.empty(),
-			Nullablelong.empty(),
-			NullableCompression.empty()
+			0L,
+			false,
+			false,
+			false,
+			false,
+			null,
+			false,
+			0,
+			null,
+			false,
+			0L,
+			false,
+			false,
+			0L,
+			false,
+			0L,
+			null
 	);
 
-	public static NamedColumnOptions DEFAULT_NAMED_COLUMN_OPTIONS = new NamedColumnOptions(
+	public static NamedColumnOptions DEFAULT_NAMED_COLUMN_OPTIONS = NamedColumnOptions.of(
 			new String(RocksDB.DEFAULT_COLUMN_FAMILY, StandardCharsets.UTF_8),
 			DEFAULT_DEFAULT_COLUMN_OPTIONS
 	);
 
-	public static DatabaseOptions DEFAULT_DATABASE_OPTIONS = new DatabaseOptions(List.of(),
+	public static DatabaseOptions DEFAULT_DATABASE_OPTIONS = DatabaseOptions.of(new DatabaseVolume[0],
 			Map.of(),
 			false,
 			false,
 			false,
 			false,
 			true,
-			Nullableint.empty(),
-			Nullablelong.empty(),
-			Collections.emptyList(),
-			Nullablelong.empty(),
+			false,
+			0,
+			false,
+			0L,
+			new PersistentCache[0],
+			false,
+			0L,
 			false,
 			DEFAULT_DEFAULT_COLUMN_OPTIONS,
-			List.of(),
-			NullableString.empty(),
-			NullableString.empty(),
+			new NamedColumnOptions[0],
+			null,
+			null,
 			false,
-			NullableString.empty()
+			null
 	);
 
-	public static DatabaseOptionsBuilder builder() {
-		return DatabaseOptionsBuilder.builder(DEFAULT_DATABASE_OPTIONS);
+	public static DatabaseOptions.Builder builder() {
+		return DEFAULT_DATABASE_OPTIONS.builder();
 	}
 
-	public static ColumnOptionsBuilder defaultColumnOptionsBuilder() {
-		return ColumnOptionsBuilder.builder(DEFAULT_DEFAULT_COLUMN_OPTIONS);
+	public static ColumnOptions.Builder defaultColumnOptionsBuilder() {
+		return DEFAULT_DEFAULT_COLUMN_OPTIONS.builder();
 	}
 
-	public static NamedColumnOptionsBuilder namedColumnOptionsBuilder() {
-		return NamedColumnOptionsBuilder.builder(DEFAULT_NAMED_COLUMN_OPTIONS);
+	public static NamedColumnOptions.Builder namedColumnOptionsBuilder() {
+		return DEFAULT_NAMED_COLUMN_OPTIONS.builder();
 	}
 }

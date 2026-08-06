@@ -11,6 +11,7 @@ import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
 import it.cavallium.dbengine.database.UpdateReturnMode;
 import it.cavallium.dbengine.database.disk.CachedSerializationFunction;
+import it.cavallium.dbengine.database.serialization.DatabaseDataInput;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
 import it.cavallium.dbengine.database.serialization.Serializer;
@@ -45,7 +46,7 @@ public class DatabaseSingleton<U> implements DatabaseStageEntry<U> {
 			return null;
 		}
 		try {
-			return serializer.deserialize(BufDataInput.create(value));
+			return serializer.deserialize(DatabaseDataInput.create(value));
 		} catch (IndexOutOfBoundsException ex) {
 			var exMessage = ex.getMessage();
 			if (exMessage != null && exMessage.contains("read 0 to 0, write 0 to ")) {

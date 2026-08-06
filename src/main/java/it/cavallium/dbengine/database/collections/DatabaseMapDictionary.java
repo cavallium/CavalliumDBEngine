@@ -25,6 +25,7 @@ import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState
 import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateEnd;
 import it.cavallium.dbengine.database.disk.RocksDBFile.RocksDBFileIterationState.RocksDBFileIterationStateKey;
 import it.cavallium.dbengine.database.disk.SSTRange.SSTRangeFull;
+import it.cavallium.dbengine.database.serialization.DatabaseDataInput;
 import it.cavallium.dbengine.database.serialization.KVSerializationFunction;
 import it.cavallium.dbengine.database.serialization.SerializationException;
 import it.cavallium.dbengine.database.serialization.SerializationFunction;
@@ -119,7 +120,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	}
 
 	private U deserializeValue(Buf value) {
-		return valueSerializer.deserialize(BufDataInput.create(value));
+		return valueSerializer.deserialize(DatabaseDataInput.create(value));
 	}
 
 	private @Nullable U deserializeValue(T keySuffix, BufDataInput value) {
@@ -195,8 +196,8 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					Entry<T, U> deserializedEntry;
 					T key;
 					// serializedKey
-					var buf1 = BufDataInput.create(entry.getKey());
-					var serializedValue = BufDataInput.create(entry.getValue());
+					var buf1 = DatabaseDataInput.create(entry.getKey());
+					var serializedValue = DatabaseDataInput.create(entry.getValue());
 					// after this, it becomes serializedSuffixAndExt
 					buf1.skipNBytes(keyPrefixLength);
 					suffixAndExtKeyConsistency(buf1.available());
@@ -256,7 +257,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public U getValue(@Nullable CompositeSnapshot snapshot, T keySuffix) {
 		var keySuffixBuf = serializeKeySuffixToKey(keySuffix);
 		Buf value = dictionary.get(resolveSnapshot(snapshot), keySuffixBuf);
-		return value != null ? deserializeValue(keySuffix, BufDataInput.create(value)) : null;
+		return value != null ? deserializeValue(keySuffix, DatabaseDataInput.create(value)) : null;
 	}
 
 	@Override
@@ -300,7 +301,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 			if (oldSerialized == null) {
 				result = updater.apply(key, null);
 			} else {
-				result = updater.apply(key, valueSerializer.deserialize(BufDataInput.create(oldSerialized)));
+				result = updater.apply(key, valueSerializer.deserialize(DatabaseDataInput.create(oldSerialized)));
 			}
 			if (result == null) {
 				return null;
@@ -318,7 +319,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		if (valueBuf == null) {
 			return null;
 		}
-		return deserializeValue(keySuffix, BufDataInput.create(valueBuf));
+		return deserializeValue(keySuffix, DatabaseDataInput.create(valueBuf));
 	}
 
 	@Override
@@ -326,7 +327,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 		var keyMono = serializeKeySuffixToKey(keySuffix);
 		var valueMono = serializeValue(value);
 		var oldValueBuf = dictionary.put(keyMono, valueMono, LLDictionaryResultType.PREVIOUS_VALUE);
-		var oldValue = oldValueBuf != null ? deserializeValue(keySuffix, BufDataInput.create(oldValueBuf)) : null;
+		var oldValue = oldValueBuf != null ? deserializeValue(keySuffix, DatabaseDataInput.create(oldValueBuf)) : null;
 		if (oldValue == null) {
 			return value != null;
 		} else {
@@ -344,7 +345,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 	public U removeAndGetPrevious(T keySuffix) {
 		var keyMono = serializeKeySuffixToKey(keySuffix);
 		var valueBuf = dictionary.remove(keyMono, LLDictionaryResultType.PREVIOUS_VALUE);
-		return valueBuf != null ? deserializeValue(keySuffix, BufDataInput.create(valueBuf)) : null;
+		return valueBuf != null ? deserializeValue(keySuffix, DatabaseDataInput.create(valueBuf)) : null;
 	}
 
 	@Override
@@ -360,7 +361,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.getMulti(resolveSnapshot(snapshot), mappedKeys)
 				.map(valueBufOpt -> {
 					if (valueBufOpt.isPresent()) {
-						return Optional.of(valueSerializer.deserialize(BufDataInput.create(valueBufOpt.get())));
+						return Optional.of(valueSerializer.deserialize(DatabaseDataInput.create(valueBufOpt.get())));
 					} else {
 						return Optional.empty();
 					}
@@ -446,7 +447,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.map(keyBuf -> {
 					assert keyBuf.size() == keyPrefixLength + keySuffixLength + keyExtLength;
 					// Remove prefix. Keep only the suffix and the ext
-					var suffixAndExtIn = BufDataInput.create(keyBuf);
+					var suffixAndExtIn = DatabaseDataInput.create(keyBuf);
 					suffixAndExtIn.skipBytes(keyPrefixLength);
 
 					suffixKeyLengthConsistency(suffixAndExtIn.available());
@@ -463,7 +464,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 				.map(keyBuf -> {
 					assert keyBuf.size() == keyPrefixLength + keySuffixLength + keyExtLength;
 					// Remove prefix. Keep only the suffix and the ext
-					var suffixAndExtIn = BufDataInput.create(keyBuf);
+					var suffixAndExtIn = DatabaseDataInput.create(keyBuf);
 					suffixAndExtIn.skipBytes(keyPrefixLength);
 
 					suffixKeyLengthConsistency(suffixAndExtIn.available());
@@ -534,14 +535,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 					assert keyBuf.size() == keyPrefixLength + keySuffixLength + keyExtLength;
 
 					// Remove prefix. Keep only the suffix and the ext
-					var suffixAndExtIn = BufDataInput.create(keyBuf);
+					var suffixAndExtIn = DatabaseDataInput.create(keyBuf);
 					suffixAndExtIn.skipBytes(keyPrefixLength);
 
 					assert suffixKeyLengthConsistency(suffixAndExtIn.available());
 					T keySuffix = deserializeSuffix(suffixAndExtIn);
 
 					assert serializedEntry.getValue() != null;
-					U value = valueSerializer.deserialize(BufDataInput.create(serializedEntry.getValue()));
+					U value = valueSerializer.deserialize(DatabaseDataInput.create(serializedEntry.getValue()));
 					entry = mapper.apply(keySuffix, value);
 					return entry;
 				});
@@ -584,14 +585,14 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 									var key = rocksDBFileIterationStateKey.key();
 									var value = rocksDBFileIterationStateKeyOk.value();
 									try {
-										var deserializedKey = dict.deserializeSuffix(BufDataInput.create(key));
+										var deserializedKey = dict.deserializeSuffix(DatabaseDataInput.create(key));
 										var deserializedValue = dict.deserializeValue(value);
 										yield new UnsafeSSTEntry<>(file,
 												deserializedKey,
 												deserializedValue,
 												key,
 												value,
-												k -> dict.deserializeSuffix(BufDataInput.create(k)),
+												k -> dict.deserializeSuffix(DatabaseDataInput.create(k)),
 												dict::deserializeValue
 										);
 									} catch (Throwable t) {
@@ -599,7 +600,7 @@ public class DatabaseMapDictionary<T, U> extends DatabaseMapDictionaryDeep<T, U,
 											deserializationErrorHandler.accept(new UnsafeRawSSTEntry<>(file,
 													key,
 													value,
-													k -> dict.deserializeSuffix(BufDataInput.create(k)),
+													k -> dict.deserializeSuffix(DatabaseDataInput.create(k)),
 													dict::deserializeValue
 											), t);
 											yield null;

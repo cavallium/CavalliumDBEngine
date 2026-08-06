@@ -5,6 +5,7 @@ import it.cavallium.buffer.BufDataOutput;
 import it.cavallium.dbengine.database.LLKeyValueDatabaseStructure;
 import it.cavallium.dbengine.database.LLSingleton;
 import it.cavallium.dbengine.database.LLSnapshot;
+import it.cavallium.dbengine.database.serialization.DatabaseDataInput;
 import it.cavallium.dbengine.database.serialization.SerializerFixedBinaryLength;
 import java.util.concurrent.ForkJoinPool;
 import org.jetbrains.annotations.Nullable;
@@ -21,7 +22,7 @@ public class DatabaseInt implements LLKeyValueDatabaseStructure {
 
 	public Integer get(@Nullable LLSnapshot snapshot) {
 		var result = singleton.get(snapshot);
-		return serializer.deserialize(BufDataInput.create(result));
+		return serializer.deserialize(DatabaseDataInput.create(result));
 	}
 
 	public void set(int value) {

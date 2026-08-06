@@ -1,18 +1,16 @@
 package it.cavallium.dbengine.database.remote;
 
-import it.cavallium.datagen.DataSerializer;
+import it.cavallium.datagen.DataCodec;
+import it.cavallium.datagen.ProjectionReadSupport;
 import it.cavallium.stream.SafeDataInput;
 import it.cavallium.stream.SafeDataOutput;
-import java.io.DataInput;
-import java.io.DataOutput;
-import java.io.IOException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 import org.jetbrains.annotations.NotNull;
 
-public class StringMapSerializer implements DataSerializer<Map<String, String>> {
+public class StringMapSerializer implements DataCodec<Map<String, String>> {
 
 	@Override
 	public void serialize(SafeDataOutput dataOutput, @NotNull Map<String, String> stringTextFieldsAnalyzerMap) {
@@ -24,12 +22,23 @@ public class StringMapSerializer implements DataSerializer<Map<String, String>> 
 	}
 
 	@Override
-	public @NotNull Map<String, String> deserialize(SafeDataInput dataInput) {
-		var size = dataInput.readInt();
+	public @NotNull Map<String, String> read(SafeDataInput dataInput) {
+		var size = ProjectionReadSupport.readLength(dataInput);
+		ProjectionReadSupport.prepareArrayAllocation(dataInput, size, 2 * Short.BYTES);
 		var result = new HashMap<String, String>(size);
 		for (int i = 0; i < size; i++) {
 			result.put(dataInput.readUTF(), dataInput.readUTF());
 		}
 		return Collections.unmodifiableMap(result);
+	}
+
+	@Override
+	public void skip(SafeDataInput dataInput) {
+		int size = ProjectionReadSupport.readLength(dataInput);
+		ProjectionReadSupport.prepareArrayAllocation(dataInput, size, 2 * Short.BYTES);
+		for (int i = 0; i < size; i++) {
+			ProjectionReadSupport.skipPayload(dataInput, dataInput.readUnsignedShort());
+			ProjectionReadSupport.skipPayload(dataInput, dataInput.readUnsignedShort());
+		}
 	}
 }

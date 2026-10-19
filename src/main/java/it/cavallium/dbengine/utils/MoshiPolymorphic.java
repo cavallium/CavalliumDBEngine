@@ -9,8 +9,10 @@ import com.squareup.moshi.Moshi;
 import com.squareup.moshi.Types;
 import dev.zacsweers.moshix.records.RecordsJsonAdapterFactory;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -21,7 +23,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -38,6 +39,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 	private final GetterStyle getterStyle;
 	private boolean initialized = false;
 	private Moshi abstractMoshi;
+	private List<JsonAdapter.Factory> extraAdapterFactories;
 	private final Map<Type, JsonAdapter<OBJ>> abstractClassesSerializers = new ConcurrentHashMap<>();
 	private final Map<Type, JsonAdapter<List<OBJ>>> abstractListClassesSerializers = new ConcurrentHashMap<>();
 	private final Map<Type, JsonAdapter<OBJ>> concreteClassesSerializers = new ConcurrentHashMap<>();
@@ -56,11 +58,12 @@ public abstract class MoshiPolymorphic<OBJ> {
 
 	private synchronized void initialize() {
 		if (!this.initialized) {
-			this.initialized = true;
 			var abstractMoshiBuilder = new Moshi.Builder();
 			var abstractClasses = getAbstractClasses();
 			var concreteClasses = getConcreteClasses();
 			var extraAdapters = getExtraAdapters();
+			extraAdapterFactories = List.copyOf(getExtraAdapterFactories());
+			extraAdapterFactories.forEach(abstractMoshiBuilder::add);
 
 			extraAdapters.forEach((extraClass, jsonAdapter) -> {
 				extraClassesSerializers.put(extraClass, jsonAdapter);
@@ -97,6 +100,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 			abstractMoshiBuilder.addLast(new RecordsJsonAdapterFactory());
 
 			abstractMoshi = abstractMoshiBuilder.build();
+			this.initialized = true;
 		}
 	}
 
@@ -108,10 +112,28 @@ public abstract class MoshiPolymorphic<OBJ> {
 		return Map.of();
 	}
 
+	protected List<JsonAdapter.Factory> getExtraAdapterFactories() {
+		return List.of();
+	}
+
+	/**
+	 * Returns the boolean presence getter for an optional primitive field. Requires static factory
+	 * instantiation, with a boolean presence parameter immediately before the primitive value parameter.
+	 */
+	protected @Nullable Method getFieldPresenceGetter(Field field) {
+		return null;
+	}
+
+	protected Method getFactoryMethod(Class<?> declaredClass, List<Class<?>> parameterTypes)
+			throws NoSuchMethodException {
+		return declaredClass.getMethod("of", parameterTypes.toArray(Class<?>[]::new));
+	}
+
 	protected abstract boolean shouldIgnoreField(String fieldName);
 
 	public Moshi.Builder registerAdapters(Moshi.Builder moshiBuilder) {
 		initialize();
+		extraAdapterFactories.forEach(moshiBuilder::add);
 		extraClassesSerializers.forEach(moshiBuilder::add);
 		abstractClassesSerializers.forEach(moshiBuilder::add);
 		abstractListClassesSerializers.forEach(moshiBuilder::add);
@@ -133,6 +155,9 @@ public abstract class MoshiPolymorphic<OBJ> {
 		@Nullable
 		@Override
 		public T fromJson(@NotNull JsonReader jsonReader) throws IOException {
+			if (jsonReader.peek() == JsonReader.Token.NULL) {
+				return jsonReader.nextNull();
+			}
 			String type = null;
 
 			jsonReader.beginObject();
@@ -193,6 +218,8 @@ public abstract class MoshiPolymorphic<OBJ> {
 		private final Class<?> declaredClass;
 		private final List<Field> declaredFields;
 		private final Function<T, Object>[] fieldGetters;
+		private final Method[] presenceGetters;
+		private final List<Class<?>> factoryParameterTypes;
 
 		private NormalValueAdapter(String adapterName, Class<?> declaredClass) {
 			try {
@@ -210,9 +237,24 @@ public abstract class MoshiPolymorphic<OBJ> {
 				String[] fieldNames = new String[this.declaredFields.size()];
 				//noinspection unchecked
 				this.fieldGetters = new Function[this.declaredFields.size()];
+				this.presenceGetters = new Method[this.declaredFields.size()];
+				var parameterTypes = new ArrayList<Class<?>>();
 				int i = 0;
 				for (Field declaredField : this.declaredFields) {
 					fieldNames[i] = declaredField.getName();
+					presenceGetters[i] = getFieldPresenceGetter(declaredField);
+					if (presenceGetters[i] != null) {
+						if (!instantiateUsingStaticOf) {
+							throw new IllegalArgumentException("Presence getters require static factory instantiation: " + declaredField);
+						}
+						if (!declaredField.getType().isPrimitive()
+								|| presenceGetters[i].getReturnType() != boolean.class
+								|| presenceGetters[i].getParameterCount() != 0) {
+							throw new IllegalArgumentException("Invalid presence getter for " + declaredField);
+						}
+						parameterTypes.add(boolean.class);
+					}
+					parameterTypes.add(declaredField.getType());
 					if (getterStyle == GetterStyle.FIELDS && !declaredField.trySetAccessible()) {
 						throw new IllegalStateException("Field is not accessible: " + declaredField);
 					}
@@ -250,7 +292,9 @@ public abstract class MoshiPolymorphic<OBJ> {
 					}
 
 					i++;
-				} this.names = Options.of(fieldNames);
+				}
+				this.names = Options.of(fieldNames);
+				this.factoryParameterTypes = List.copyOf(parameterTypes);
 			} catch (NoSuchMethodException e) {
 				throw new RuntimeException(e);
 			}
@@ -259,42 +303,51 @@ public abstract class MoshiPolymorphic<OBJ> {
 		@Nullable
 		@Override
 		public T fromJson(@NotNull JsonReader jsonReader) throws IOException {
+			if (jsonReader.peek() == JsonReader.Token.NULL) {
+				return jsonReader.nextNull();
+			}
 			try {
-				Object instance;
-				Object[] fields;
-				if (instantiateUsingStaticOf) {
-					fields = new Object[declaredFields.size()];
-					instance = null;
-				} else {
-					fields = null;
-					instance = declaredClass.getConstructor().newInstance();
-				}
-
+				Object instance = instantiateUsingStaticOf ? null : declaredClass.getConstructor().newInstance();
+				Object[] fields = new Object[declaredFields.size()];
+				boolean[] seen = new boolean[declaredFields.size()];
 				jsonReader.beginObject();
 				while (jsonReader.hasNext()) {
 					var nameId = jsonReader.selectName(names);
-					if (nameId >= 0 && nameId < this.declaredFields.size()) {
-						var fieldValue = abstractMoshi.adapter(declaredFields.get(nameId).getGenericType()).fromJson(jsonReader);
-						if (instantiateUsingStaticOf) {
-							fields[nameId] = fieldValue;
-						} else {
-							declaredFields.get(nameId).set(instance, fieldValue);
-						}
-					} else {
-						String keyName = jsonReader.nextName();
-						throw new JsonDataException("Key \"" + keyName + "\" is invalid");
+					if (nameId < 0) {
+						throw new JsonDataException("Key \"" + jsonReader.nextName() + "\" is invalid");
 					}
+					seen[nameId] = true;
+					fields[nameId] = declaredFields.get(nameId).getType().isPrimitive()
+							&& jsonReader.peek() == JsonReader.Token.NULL
+							? jsonReader.nextNull()
+							: abstractMoshi.adapter(declaredFields.get(nameId).getGenericType()).fromJson(jsonReader);
 				}
 				jsonReader.endObject();
 
-				if (instantiateUsingStaticOf) {
-					Class[] params = new Class[declaredFields.size()];
-					for (int i = 0; i < declaredFields.size(); i++) {
-						params[i] = declaredFields.get(i).getType();
+				var arguments = new ArrayList<Object>();
+				for (int i = 0; i < declaredFields.size(); i++) {
+					if (!instantiateUsingStaticOf && !seen[i]) {
+						continue;
 					}
-					instance = declaredClass.getMethod("of", params).invoke(null, fields);
+					var field = declaredFields.get(i);
+					Object value = fields[i];
+					if (presenceGetters[i] != null) {
+						arguments.add(value != null);
+						if (value == null) {
+							value = Array.get(Array.newInstance(field.getType(), 1), 0);
+						}
+					} else if (field.getType().isPrimitive() && value == null) {
+						throw new JsonDataException("Required primitive field \"" + field.getName()
+								+ "\" is missing or null at " + jsonReader.getPath());
+					}
+					arguments.add(value);
+					if (!instantiateUsingStaticOf && seen[i]) {
+						field.set(instance, value);
+					}
 				}
-
+				if (instantiateUsingStaticOf) {
+					instance = getFactoryMethod(declaredClass, factoryParameterTypes).invoke(null, arguments.toArray());
+				}
 				//noinspection unchecked
 				return (T) instance;
 			} catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
@@ -310,16 +363,17 @@ public abstract class MoshiPolymorphic<OBJ> {
 				jsonWriter.beginObject();
 				int i = 0;
 				for (Field declaredField : declaredFields) {
+					boolean present;
+					try {
+						present = presenceGetters[i] == null || (boolean) presenceGetters[i].invoke(t);
+					} catch (IllegalAccessException | InvocationTargetException e) {
+						throw new JsonDataException(e);
+					}
 					jsonWriter.name(declaredField.getName());
-					Class<?> fieldType = declaredField.getType();
-					if (abstractClassesSerializers.containsKey(fieldType)) {
-						//noinspection unchecked
-						abstractClassesSerializers.<OBJ>get(fieldType).toJson(jsonWriter, (OBJ) fieldGetters[i].apply(t));
-					} else if (concreteClassesSerializers.containsKey(fieldType)) {
-						//noinspection unchecked
-						concreteClassesSerializers.<OBJ>get(fieldType).toJson(jsonWriter, (OBJ) fieldGetters[i].apply(t));
+					if (present) {
+						abstractMoshi.<Object>adapter(declaredField.getGenericType()).toJson(jsonWriter, fieldGetters[i].apply(t));
 					} else {
-						abstractMoshi.<Object>adapter(fieldType).toJson(jsonWriter, fieldGetters[i].apply(t));
+						jsonWriter.nullValue();
 					}
 					i++;
 				}
@@ -339,6 +393,9 @@ public abstract class MoshiPolymorphic<OBJ> {
 		@Nullable
 		@Override
 		public List<T> fromJson(@NotNull JsonReader jsonReader) throws IOException {
+			if (jsonReader.peek() == JsonReader.Token.NULL) {
+				return jsonReader.nextNull();
+			}
 			jsonReader.beginArray();
 			var result = new ArrayList<T>();
 			while (jsonReader.hasNext()) {
@@ -355,7 +412,7 @@ public abstract class MoshiPolymorphic<OBJ> {
 			} else {
 				jsonWriter.beginArray();
 				for (T value : ts) {
-					valueAdapter.toJson(jsonWriter.valueSink(), value);
+					valueAdapter.toJson(jsonWriter, value);
 				}
 				jsonWriter.endArray();
 			}
